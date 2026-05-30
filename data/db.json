@@ -1,0 +1,486 @@
+{
+  "settings": {
+    "eventDate": "June 26, 2026",
+    "eventVenue": "Astana Technopark, Block C4",
+    "adminPassword": "admin",
+    "contactEmail": "info@mainedu.kz",
+    "contactPhone": "+7 (7172) 55-44-33"
+  },
+  "speakers": [
+    {
+      "id": "1",
+      "name_ru": "Асель Алимжанова",
+      "name_en": "Asel Alimzhanova",
+      "university": "Harvard University",
+      "major_ru": "Компьютерные Науки (Computer Science)",
+      "major_en": "Computer Science",
+      "admissionYear": "Class of 2027",
+      "story_ru": "Поступила в Гарвард после успешного преодоления конкурса с процентом приема <3%. Асель разработала мобильное приложение для подготовки к ЕНТ на казахском языке, что стало важным социальным проектом (Social Impact) в ее анкете. Сдала SAT на 1560 баллов, IELTS на 8.5.",
+      "story_en": "Admitted to Harvard with an acceptance rate under 3%. Asel developed a mobile app for Kazakh university entrance prep, which served as a major social impact project in her application. She scored 1560 on the SAT and 8.5 on the IELTS.",
+      "lectureTopic_ru": "Стратегия Личного Бренда: Как написать эссе для Лиги Плюща",
+      "lectureTopic_en": "Personal Branding Strategy: Crafting Ivy League Essays That Stand Out",
+      "lectureTime": "10:30 am",
+      "colorTheme": "blue",
+      "isFeatured": true
+    },
+    {
+      "id": "2",
+      "name_ru": "Райгуль Ахметова",
+      "name_en": "Raygul Akhmetova",
+      "university": "Stanford University",
+      "major_ru": "Символические Системы (Symbolic Systems)",
+      "major_en": "Symbolic Systems",
+      "admissionYear": "Class of 2028",
+      "story_ru": "Получила полную стипендию в Стэнфорде, объединяя знания в области лингвистики, нейронаук и программирования. Основательница дебатного клуба и призер международных олимпиад по лингвистике.",
+      "story_en": "Awarded a full ride at Stanford, bridging linguistics, neuroscience, and computer science. She is the founder of a regional debate league and a prize winner in international linguistics olympiads.",
+      "lectureTopic_ru": "Как объединить разные интересы в сильный междисциплинарный профиль",
+      "lectureTopic_en": "Interdisciplinary Focus: Blending Tech & Humanities in a Stanford Application",
+      "lectureTime": "11:15 am",
+      "colorTheme": "purple",
+      "isFeatured": true
+    },
+    {
+      "id": "3",
+      "name_ru": "Даниал Сериков",
+      "name_en": "Danial Serikov",
+      "university": "MIT",
+      "major_ru": "Физика и Квантовые Вычисления",
+      "major_en": "Physics & Quantum Computing",
+      "admissionYear": "Class of 2026",
+      "story_ru": "Победитель Международной физической олимпиады (IPhO), автор двух научных статей по квантовой механике. Даниал поделится тем, насколько важны олимпийские достижения для поступления в топ-3 технологических вуза мира.",
+      "story_en": "International Physics Olympiad (IPhO) gold medalist and developer of quantum simulation models. Danial will discuss the weight of olympiad metrics in securing top-3 STEM admissions.",
+      "lectureTopic_ru": "Олимпиады vs Исследовательские проекты: Взгляд из MIT",
+      "lectureTopic_en": "Olympiads vs Research Projects: A Strategy Guide from MIT",
+      "lectureTime": "12:00 pm",
+      "colorTheme": "rose",
+      "isFeatured": true
+    },
+    {
+      "id": "4",
+      "name_ru": "Зарина Есимова",
+      "name_en": "Zarina Yesimova",
+      "university": "Columbia University",
+      "major_ru": "Экономика и Бизнес-аналитика",
+      "major_en": "Economics & Business Analytics",
+      "admissionYear": "Class of 2027",
+      "story_ru": "Провела независимое исследование влияния инфляции на малый бизнес в регионах Казахстана. Прошла стажировку в Big Four и вела блог по финансовой грамотности для подростков.",
+      "story_en": "Published research assessing inflation rates on rural micro-businesses. Secured an early internship at a Big Four firm and hosted financial literacy workshops for local youth.",
+      "lectureTopic_ru": "Исследовательская работа школьника: От идеи до публикации",
+      "lectureTopic_en": "High School Research: From Raw Idea to Academic Publication",
+      "lectureTime": "02:00 pm",
+      "colorTheme": "cyan",
+      "isFeatured": true
+    },
+    {
+      "id": "5",
+      "name_ru": "Адиль Турсунов",
+      "name_en": "Adil Tursunov",
+      "university": "University of Oxford",
+      "major_ru": "Философия, Политика, Экономика (PPE)",
+      "major_en": "Philosophy, Politics & Economics (PPE)",
+      "admissionYear": "Class of 2027",
+      "story_ru": "Прошел сложнейшие письменные тесты Оксфорда TSA и два тура устных интервью с профессорами. Специализируется на государственном управлении и этике ИИ.",
+      "story_en": "Scored in the top percentile of Oxford's TSA exam and cleared three rounds of rigorous Oxbridge tutorial style interviews. Passionate about public policy and AI ethics.",
+      "lectureTopic_ru": "Интервью в Оксфорд и Кембридж: Искусство мыслить вслух",
+      "lectureTopic_en": "Oxbridge Interviews: Deconstructing Academic Thinking Live",
+      "lectureTime": "02:45 pm",
+      "colorTheme": "indigo",
+      "isFeatured": true
+    },
+    {
+      "id": "6",
+      "name_ru": "Камила Байсеитова",
+      "name_en": "Kamila Baiseitova",
+      "university": "Nazarbayev University",
+      "major_ru": "Химическая инженерия",
+      "major_en": "Chemical Engineering",
+      "admissionYear": "Class of 2026",
+      "story_ru": "Ведущий исследователь лабаратории зеленых технологий, обладательница гранта на стажировку в Германии. Камила расскажет о силе комьюнити Назарбаев Университета и путях выхода на международную арену.",
+      "story_en": "Lead student researcher in renewable solutions and recipient of a German DAAD chemical engineering fellowship. Kamila talks about NU's local facilities and pathway to EU research labs.",
+      "lectureTopic_ru": "Академические возможности в NU: Как уехать на стажировку за рубеж",
+      "lectureTopic_en": "Unlocking NU Academic Power: Fully Funded Global Research Internships",
+      "lectureTime": "03:30 pm",
+      "colorTheme": "teal",
+      "isFeatured": false
+    },
+    {
+      "id": "7",
+      "name_ru": "Алишер Омаров",
+      "name_en": "Alisher Omarov",
+      "university": "Yale University",
+      "major_ru": "История и Международные Отношения",
+      "major_en": "History & International Relations",
+      "admissionYear": "Class of 2028",
+      "story_ru": "Автор блога об истории Центральной Азии с 30 тыс. подписчиков. Президент модели ООН (MUN), организовавший конференцию для 600 школьников.",
+      "story_en": "Author of a popular Central Asian historical archive blog with 30k followers. Organized a multi-city MUN conference accommodating 600 students.",
+      "lectureTopic_ru": "Внеклассная деятельность (Extracurriculars): Как уйти от клише",
+      "lectureTopic_en": "Extracurricular Profiles: Stepping Beyond the Standard Resume",
+      "lectureTime": "04:15 pm",
+      "colorTheme": "amber",
+      "isFeatured": false
+    },
+    {
+      "id": "8",
+      "name_ru": "Меруерт Кайратова",
+      "name_en": "Meruert Kairatova",
+      "university": "Princeton University",
+      "major_ru": "Математика (Mathematics)",
+      "major_en": "Mathematics",
+      "admissionYear": "Class of 2027",
+      "story_ru": "Призер Европейской девичьей математической олимпиады (EGMO). Меруерт разрушит стереотипы о математиках и расскажет о креативности в точных науках.",
+      "story_en": "Silver Medalist at the European Girls' Mathematical Olympiad (EGMO). Meruert deconstructs math application profiling and shares her creative focus on abstract theory.",
+      "lectureTopic_ru": "Женщины в STEM: Путь в Принстон и олимпиадная карьера",
+      "lectureTopic_en": "Women in STEM: Navigating Math Olympiads to Princeton Admissions",
+      "lectureTime": "05:00 pm",
+      "colorTheme": "orange",
+      "isFeatured": false
+    },
+    {
+      "id": "9",
+      "name_ru": "Султанбек Бекетов",
+      "name_en": "Sultanbek Beketov",
+      "university": "University of Cambridge",
+      "major_ru": "Инженерия (Engineering)",
+      "major_en": "Engineering",
+      "admissionYear": "Class of 2026",
+      "story_ru": "Обучается в Тринити-колледже Кембриджа. Спроектировал действующую модель водоочистительного фильтра для отдаленных деревень Казахстана.",
+      "story_en": "Studying at Trinity College, Cambridge. Designed and deployed an eco-conscious low-cost water filtration unit prototype for remote communities in Kazakhstan.",
+      "lectureTopic_ru": "Инженерные проекты, которые меняют жизнь: Личный опыт в Кембридже",
+      "lectureTopic_en": "Engineering for Good: Launching Real Systems to Impress Oxbridge",
+      "lectureTime": "11:15 am",
+      "colorTheme": "indigo",
+      "isFeatured": false
+    },
+    {
+      "id": "10",
+      "name_ru": "Аида Сагындыкова",
+      "name_en": "Aida Sagyndykova",
+      "university": "UCLA",
+      "major_ru": "Психология и Когнитивные науки",
+      "major_en": "Psychology & Cognitive Sciences",
+      "admissionYear": "Class of 2027",
+      "story_ru": "Аида разработала онлайн-платформу психологической разгрузки для школьников, испытывающих выгорание перед экзаменами. Работает ассистентом в лаборатории исследований стресса в США.",
+      "story_en": "Developed a mental health portal for students suffering from academic pre-exam burnout. Currently works as an assistant in a UCLA stress research laboratory.",
+      "lectureTopic_ru": "Борьба с синдромом самозванца во время поступления",
+      "lectureTopic_en": "Conquering Imposter Syndrome in High-Stakes Application Cycles",
+      "lectureTime": "02:00 pm",
+      "colorTheme": "rose",
+      "isFeatured": false
+    },
+    {
+      "id": "11",
+      "name_ru": "Данияр Кенжебеков",
+      "name_en": "Daniyar Kenzhebekov",
+      "university": "University of Chicago",
+      "major_ru": "Политология и Право",
+      "major_en": "Political Science & Pre-Law",
+      "admissionYear": "Class of 2027",
+      "story_ru": "Данияр активно участвовал в дебатах мирового уровня, дважды побеждал в национальном туре школьных дебатов. Имеет сильное портфолио в сфере гражданского активизма.",
+      "story_en": "Top competitor in World Schools Debate, winning the national championship twice. Built a stellar application centering social advocacy and citizen rights.",
+      "lectureTopic_ru": "Искусство Аргументации: Как сделать ваши эссе убедительными",
+      "lectureTopic_en": "The Art of Argument: Making your Application Essays Convincing",
+      "lectureTime": "03:30 pm",
+      "colorTheme": "slate",
+      "isFeatured": false
+    },
+    {
+      "id": "12",
+      "name_ru": "Томирис Абишева",
+      "name_en": "Tomiris Abisheva",
+      "university": "UPenn Wharton",
+      "major_ru": "Финансы (Finance)",
+      "major_en": "Finance",
+      "admissionYear": "Class of 2028",
+      "story_ru": "Основала школьное социальное предприятие по пошиву эко-сумок, прибыль от которого пошла на благотворительность. Прошла летний лагерь Wharton LBW.",
+      "story_en": "Founded a high-school social enterprise crafting recycled tote bags. Alumna of the selective Wharton Global Youth Leadership in the Business World (LBW) summer track.",
+      "lectureTopic_ru": "Wharton Guide: Как показать лидерский потенциал и бизнес-мышление",
+      "lectureTopic_en": "Wharton Guide: Demonstrating Strategic Leadership and Business Acumen",
+      "lectureTime": "04:15 pm",
+      "colorTheme": "emerald",
+      "isFeatured": false
+    },
+    {
+      "id": "13",
+      "name_ru": "Ерасыл Нурпеисов",
+      "name_en": "Erasyl Nurpeisov",
+      "university": "California Institute of Technology",
+      "major_ru": "Робототехника (Robotics)",
+      "major_en": "Robotics",
+      "admissionYear": "Class of 2026",
+      "story_ru": "Создатель роботизированного протеза руки на базе нейроинтерфейса. Победитель международных соревнований по робототехнике в Сингапуре.",
+      "story_en": "Creator of a neuro-controlled prosthetic arm prototype. Winner of regional Singaporean robotics challenges.",
+      "lectureTopic_ru": "Техническое портфолио для Caltech: Реальные хард-скиллы",
+      "lectureTopic_en": "Caltech Technical Portfolio Guide: Showcasing Real Engineering Mastery",
+      "lectureTime": "12:00 pm",
+      "colorTheme": "orange",
+      "isFeatured": false
+    },
+    {
+      "id": "14",
+      "name_ru": "Малика Искакова",
+      "name_en": "Malika Iskakova",
+      "university": "Cornell University",
+      "major_ru": "Архитектура (Architecture)",
+      "major_en": "Architecture",
+      "admissionYear": "Class of 2028",
+      "story_ru": "Собрала уникальное творческое портфолио, отражающее казахский номадизм через современный эко-дизайн зданий. Финалист национальных художественных конкурсов.",
+      "story_en": "Compiled a distinct portfolio reimagining ancient nomadic architecture structures with modern sustainable materials. Multi-time visual arts awards finalist.",
+      "lectureTopic_ru": "Творческое портфолио: Как впечатлить приемную комиссию",
+      "lectureTopic_en": "Creative Portfolios: Formatting Visual Artistry for Ivy Admissions",
+      "lectureTime": "10:30 am",
+      "colorTheme": "emerald",
+      "isFeatured": false
+    },
+    {
+      "id": "15",
+      "name_ru": "Бекжан Жакупов",
+      "name_en": "Bekzhan Zhakupov",
+      "university": "Nazarbayev University",
+      "major_ru": "Компьютерные Науки",
+      "major_en": "Computer Science",
+      "admissionYear": "Class of 2025",
+      "story_ru": "Победитель республиканского хакатона, архитектор нескольких опенсорс проектов со 100+ звездами на GitHub. Активно менторит абитуриентов.",
+      "story_en": "Winner of Kazakh state hackathons and contributor to multiple open-source utilities reaching 100+ stars on GitHub. Active tech mentor.",
+      "lectureTopic_ru": "Разработка в Казахстане: Как найти команду и построить первый стартап",
+      "lectureTopic_en": "Build Locally, Think Globally: Launching Tech Products from Kazakhstan",
+      "lectureTime": "11:15 am",
+      "colorTheme": "cyan",
+      "isFeatured": false
+    },
+    {
+      "id": "16",
+      "name_ru": "Аиша Муратова",
+      "name_en": "Aisha Muratova",
+      "university": "Columbia University",
+      "major_ru": "Сравнительное Литературоведение",
+      "major_en": "Comparative Literature",
+      "admissionYear": "Class of 2027",
+      "story_ru": "Аиша переводит казахский эпос на английский язык. Ее стихи публиковались в зарубежных литературных журналах. Сильнейший гуманитарный профиль.",
+      "story_en": "Translates Kazakh traditional epics into English verse. Her independent creative writing is published in several international high-school magazines.",
+      "lectureTopic_ru": "Гуманитарные науки в США: Зарабатываем стипендии словом",
+      "lectureTopic_en": "Humanities Admissions: Scoring Ivy Grants Through Creative Expression",
+      "lectureTime": "05:00 pm",
+      "colorTheme": "amber",
+      "isFeatured": false
+    },
+    {
+      "id": "17",
+      "name_ru": "Темирлан Амангельды",
+      "name_en": "Temirlan Amankeldi",
+      "university": "Duke University",
+      "major_ru": "Нейробиология (Neuroscience)",
+      "major_en": "Neuroscience",
+      "story_ru": "Увлекается исследованиями мозга и разработкой интерфейсов мозг-компьютер (BCI). Стажировался в лаборатории функционального МРТ.",
+      "story_en": "Focused on brain-computer interfacing (BCI) diagnostics and interned in deep neuroimaging simulation labs.",
+      "admissionYear": "Class of 2027",
+      "lectureTopic_ru": "Биология будущего: Как уехать на передовые медицинские лаборатории",
+      "lectureTopic_en": "Biology of Tomorrow: Gaining early admission into advanced medical sciences",
+      "lectureTime": "03:30 pm",
+      "colorTheme": "violet",
+      "isFeatured": false
+    }
+  ],
+  "program": [
+    {
+      "id": "s1",
+      "time": "09:30 - 10:15",
+      "title_ru": "Регистрация участников и утренний кофе",
+      "title_en": "Check-in & Morning Networking Break",
+      "description_ru": "Сбор гостей, выдача бейджей, раздаточных материалов, легкие закуски и первое знакомство.",
+      "description_en": "Guest collection, badge handouts, networking starter drinks and early orientation.",
+      "speakerId": ""
+    },
+    {
+      "id": "s2",
+      "time": "10:15 - 10:30",
+      "title_ru": "Торжественное открытие форума",
+      "title_en": "Grand Opening Ceremony",
+      "description_ru": "Приветственная речь организаторов и представителей стартап-хаба Astana Technopark.",
+      "description_en": "Opening welcoming notes from organizers and technological ecosystem partners at Technopark.",
+      "speakerId": ""
+    },
+    {
+      "id": "s3",
+      "time": "10:30 - 11:15",
+      "title_ru": "Панель 1: Новое поколение абитуриентов",
+      "title_en": "Session 1: Creative Artistry & Writing Mastery",
+      "description_ru": "Выступления Асель Алимжановой (Harvard) и Малики Искаковой (Cornell) о структуре успешного портфолио.",
+      "description_en": "Learn critical tricks from Asel Alimzhanova (Harvard) and Malika Iskakova (Cornell) on creative presentation.",
+      "speakerId": "1"
+    },
+    {
+      "id": "s4",
+      "time": "11:15 - 12:00",
+      "title_ru": "Панель 2: Стэнфорд, Кембридж и Междисциплинарность",
+      "title_en": "Session 2: Stanford & Cambridge Engineering Tracks",
+      "description_ru": "Райгуль Ахметова (Stanford) и Султанбек Бекетов (Cambridge) об уникальных инженерных и лингвистических кейсах.",
+      "description_en": "Engaging lessons from Raygul Akhmetova (Stanford) and Sultanbek Beketov (Cambridge) about system pipelines.",
+      "speakerId": "2"
+    },
+    {
+      "id": "s5",
+      "time": "12:00 - 13:00",
+      "title_ru": "Технологический Стек: Физика, Робототехника, MIT и Caltech",
+      "title_en": "Session 3: Hard Science Frontiers & Deep STEM",
+      "description_ru": "Круглый стол с участием Даниала Серикова (MIT) и Ерасыла Нурпеисова (Caltech). Как собирать техническое портфолио.",
+      "description_en": "Deep dive discussion with Danial Serikov (MIT) and Erasyl Nurpeisov (Caltech) regarding top tech pipelines.",
+      "speakerId": "3"
+    },
+    {
+      "id": "s6",
+      "time": "13:00 - 14:00",
+      "title_ru": "Обед и Нетворкинг",
+      "title_en": "Catered Lunch & Peer Mentoring Meetup",
+      "description_ru": "Горячий обед в холле Технопарка. Зоны консультаций: возможность задать вопросы спикерам.",
+      "description_en": "Catered premium lunch inside the Technopark gallery. Dynamic physical roundtables grouped by colleges.",
+      "speakerId": ""
+    },
+    {
+      "id": "s7",
+      "time": "14:00 - 14:45",
+      "title_ru": "Панель 3: Исследования и Бизнес Лидерство (Wharton & Columbia)",
+      "title_en": "Session 4: Research, Business Leadership & Economics",
+      "description_ru": "Лекции Зарины Есимовой (Columbia) и Аиды Сагындыковой (UCLA) о проведении школьных исследований.",
+      "description_en": "Zarina Yesimova (Columbia) and Aida Sagyndykova (UCLA) share actionable feedback on creating social programs.",
+      "speakerId": "4"
+    },
+    {
+      "id": "s8",
+      "time": "14:45 - 15:30",
+      "title_ru": "Гуманитарный Олимп: Оксфорд и Литературные стипендии",
+      "title_en": "Session 5: Humanities, Oxbridge and Social Advocacy",
+      "description_ru": "Адиль Турсунов (Oxford) раскрывает каверзные вопросы интервью и делится спецификой британского отбора.",
+      "description_en": "Adil Tursunov (Oxford) breaks down critical thinking models and details how to prepare for Oxbridge interviews.",
+      "speakerId": "5"
+    },
+    {
+      "id": "s9",
+      "time": "15:30 - 17:00",
+      "title_ru": "Практические Воркшопы & Индивидуальный Разбор Профилей",
+      "title_en": "Practical Workshops & Individual Profile Audits",
+      "description_ru": "Спикеры разбиваются на группы. Участники показывают черновики своих эссе и получают мгновенный фидбэк.",
+      "description_en": "Interactive cohort assignments where attendees split into university tracks to receive active advice.",
+      "speakerId": ""
+    },
+    {
+      "id": "s10",
+      "time": "17:00 - 18:00",
+      "title_ru": "Q&A сессия и Закрытие",
+      "title_en": "Global Q&A with 16+ Alumni & Closing Ceremony",
+      "description_ru": "Финальная сессия ответов на вопросы, нетворкинг, групповое фото всех 16+ спикеров и участников.",
+      "description_en": "Direct panel wrap-up, community photos, distribution of certificates, and open networking lounge.",
+      "speakerId": ""
+    }
+  ],
+  "partners": [
+    {
+      "id": "p1",
+      "name": "Astana Technopark",
+      "role_ru": "Генеральный партнер, место проведения",
+      "role_en": "General Partner & Official Venue",
+      "tier": "general"
+    },
+    {
+      "id": "p2",
+      "name": "Tilu English Education",
+      "role_ru": "Академический спонсор",
+      "role_en": "Academic Language Sponsor",
+      "tier": "sponsor"
+    },
+    {
+      "id": "p3",
+      "name": "Nazarbayev University Alumni",
+      "role_ru": "Комьюнити-партнер",
+      "role_en": "Community & Liaison Network",
+      "tier": "partner"
+    },
+    {
+      "id": "p4",
+      "name": "European Youth Forum Liaison",
+      "role_ru": "Информационный партнер",
+      "role_en": "Media & Youth Outreach Partner",
+      "tier": "partner"
+    },
+    {
+      "id": "p5",
+      "name": "IELTS Kazakhstan Consortium",
+      "role_ru": "Премиум партнер",
+      "role_en": "Testing & Proficiency Advisor",
+      "tier": "partner"
+    },
+    {
+      "id": "p6",
+      "name": "Bilim Consulting",
+      "role_ru": "Организационный спонсор",
+      "role_en": "Strategic Educational Advisor",
+      "tier": "sponsor"
+    }
+  ],
+  "tickets": [
+    {
+      "id": "t1",
+      "name_ru": "Стандартный пропуск (Standard)",
+      "name_en": "Standard Pass",
+      "price": "15,000 KZT",
+      "features_ru": [
+        "Доступ ко всем основным лекциям и панелям",
+        "Общий раздаточный материал в Telegram",
+        "Посещение партнерской Q&A зоны"
+      ],
+      "features_en": [
+        "Access to all primary panels and lectures",
+        "Standard digital handouts packet via Telegram",
+        "Entrance to partner Q&A exhibition zones"
+      ],
+      "url": "https://ticketmaster.kz/event/main-edu-standard",
+      "utm_source": "mainedu_web",
+      "utm_medium": "landing_page",
+      "utm_campaign": "june_forum"
+    },
+    {
+      "id": "t2",
+      "name_ru": "Бизнес пропуск (Business)",
+      "name_en": "Business Pass",
+      "price": "35,000 KZT",
+      "features_ru": [
+        "Все привилегии Стандарта",
+        "Участие в практических воркшопах и разборе эссе",
+        "Сертификат участника форума",
+        "Доступ в закрытую беседу с менторами"
+      ],
+      "features_en": [
+        "All Standard benefits and seating options",
+        "Participation in structured writing workshops",
+        "Official signed completion certificate",
+        "Admission to the exclusive alumni mentoring channel"
+      ],
+      "url": "https://ticketmaster.kz/event/main-edu-business",
+      "utm_source": "mainedu_web",
+      "utm_medium": "landing_page",
+      "utm_campaign": "june_forum"
+    },
+    {
+      "id": "t3",
+      "name_ru": "VIP пропуск (VIP)",
+      "name_en": "VIP All-Access",
+      "price": "75,000 KZT",
+      "features_ru": [
+        "Все привилегии Бизнеса",
+        "Индивидуальный разбор вашего профиля у спикера на выбор",
+        "Доступ в VIP-лаундж с питанием и спикерами",
+        "Записи прошедших вебинаров по вузам Лиги Плюща за год"
+      ],
+      "features_en": [
+        "All Business benefits with premium priority seats",
+        "Direct 15-min personal profile audit by chosen speaker",
+        "Access to physical VIP catered hospitality lounge",
+        "Archived library consisting of Ivy admissions webinars"
+      ],
+      "url": "https://ticketmaster.kz/event/main-edu-vip",
+      "utm_source": "mainedu_web",
+      "utm_medium": "landing_page",
+      "utm_campaign": "june_forum"
+    }
+  ],
+  "subscribers": []
+}
