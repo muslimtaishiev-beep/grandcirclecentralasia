@@ -1,10 +1,10 @@
 {
   "settings": {
-    "eventDate": "June 26, 2026",
-    "eventVenue": "Astana Technopark, Block C4",
+    "eventDate": "TBD",
+    "eventVenue": "Кыргызстан, Бишкек, Технопарк",
     "adminPassword": "admin",
-    "contactEmail": "info@mainedu.kz",
-    "contactPhone": "+7 (7172) 55-44-33"
+    "contactEmail": "",
+    "contactPhone": "+995 222 140 709"
   },
   "speakers": [
     {
@@ -282,204 +282,153 @@
   ],
   "program": [
     {
-      "id": "s1",
+      "id": "p1",
+      "time": "12:00",
+      "title_ru": "Открытие и Развлекательная программа",
+      "title_en": "Opening & Entertainment",
+      "title_kg": "Ачылыш жана Көңүл ачуу программасы",
+      "description_ru": "",
+      "description_en": "",
+      "speakerId": ""
+    },
+    {
+      "id": "p2",
+      "time": "14:00",
+      "title_ru": "Крупнейшее Essay Competition в Центральной Азии",
+      "title_en": "Largest Essay Competition in Central Asia",
+      "title_kg": "Борбордук Азиядагы эң чоң эссе конкурсу",
+      "description_ru": "",
+      "description_en": "",
+      "speakerId": ""
+    },
+    {
+      "id": "p3",
+      "time": "19:00",
+      "title_ru": "Закрытие форума",
+      "title_en": "Closing",
+      "title_kg": "Форумдун жабылышы",
+      "description_ru": "",
+      "description_en": "",
+      "speakerId": ""
+    },
+    {
+      "id": "s_1780227678656",
       "time": "09:30 - 10:15",
-      "title_ru": "Регистрация участников и утренний кофе",
-      "title_en": "Check-in & Morning Networking Break",
-      "description_ru": "Сбор гостей, выдача бейджей, раздаточных материалов, легкие закуски и первое знакомство.",
-      "description_en": "Guest collection, badge handouts, networking starter drinks and early orientation.",
-      "speakerId": ""
-    },
-    {
-      "id": "s2",
-      "time": "10:15 - 10:30",
-      "title_ru": "Торжественное открытие форума",
-      "title_en": "Grand Opening Ceremony",
-      "description_ru": "Приветственная речь организаторов и представителей стартап-хаба Astana Technopark.",
-      "description_en": "Opening welcoming notes from organizers and technological ecosystem partners at Technopark.",
-      "speakerId": ""
-    },
-    {
-      "id": "s3",
-      "time": "10:30 - 11:15",
-      "title_ru": "Панель 1: Новое поколение абитуриентов",
-      "title_en": "Session 1: Creative Artistry & Writing Mastery",
-      "description_ru": "Выступления Асель Алимжановой (Harvard) и Малики Искаковой (Cornell) о структуре успешного портфолио.",
-      "description_en": "Learn critical tricks from Asel Alimzhanova (Harvard) and Malika Iskakova (Cornell) on creative presentation.",
-      "speakerId": "1"
-    },
-    {
-      "id": "s4",
-      "time": "11:15 - 12:00",
-      "title_ru": "Панель 2: Стэнфорд, Кембридж и Междисциплинарность",
-      "title_en": "Session 2: Stanford & Cambridge Engineering Tracks",
-      "description_ru": "Райгуль Ахметова (Stanford) и Султанбек Бекетов (Cambridge) об уникальных инженерных и лингвистических кейсах.",
-      "description_en": "Engaging lessons from Raygul Akhmetova (Stanford) and Sultanbek Beketov (Cambridge) about system pipelines.",
-      "speakerId": "2"
-    },
-    {
-      "id": "s5",
-      "time": "12:00 - 13:00",
-      "title_ru": "Технологический Стек: Физика, Робототехника, MIT и Caltech",
-      "title_en": "Session 3: Hard Science Frontiers & Deep STEM",
-      "description_ru": "Круглый стол с участием Даниала Серикова (MIT) и Ерасыла Нурпеисова (Caltech). Как собирать техническое портфолио.",
-      "description_en": "Deep dive discussion with Danial Serikov (MIT) and Erasyl Nurpeisov (Caltech) regarding top tech pipelines.",
-      "speakerId": "3"
-    },
-    {
-      "id": "s6",
-      "time": "13:00 - 14:00",
-      "title_ru": "Обед и Нетворкинг",
-      "title_en": "Catered Lunch & Peer Mentoring Meetup",
-      "description_ru": "Горячий обед в холле Технопарка. Зоны консультаций: возможность задать вопросы спикерам.",
-      "description_en": "Catered premium lunch inside the Technopark gallery. Dynamic physical roundtables grouped by colleges.",
-      "speakerId": ""
-    },
-    {
-      "id": "s7",
-      "time": "14:00 - 14:45",
-      "title_ru": "Панель 3: Исследования и Бизнес Лидерство (Wharton & Columbia)",
-      "title_en": "Session 4: Research, Business Leadership & Economics",
-      "description_ru": "Лекции Зарины Есимовой (Columbia) и Аиды Сагындыковой (UCLA) о проведении школьных исследований.",
-      "description_en": "Zarina Yesimova (Columbia) and Aida Sagyndykova (UCLA) share actionable feedback on creating social programs.",
-      "speakerId": "4"
-    },
-    {
-      "id": "s8",
-      "time": "14:45 - 15:30",
-      "title_ru": "Гуманитарный Олимп: Оксфорд и Литературные стипендии",
-      "title_en": "Session 5: Humanities, Oxbridge and Social Advocacy",
-      "description_ru": "Адиль Турсунов (Oxford) раскрывает каверзные вопросы интервью и делится спецификой британского отбора.",
-      "description_en": "Adil Tursunov (Oxford) breaks down critical thinking models and details how to prepare for Oxbridge interviews.",
-      "speakerId": "5"
-    },
-    {
-      "id": "s9",
-      "time": "15:30 - 17:00",
-      "title_ru": "Практические Воркшопы & Индивидуальный Разбор Профилей",
-      "title_en": "Practical Workshops & Individual Profile Audits",
-      "description_ru": "Спикеры разбиваются на группы. Участники показывают черновики своих эссе и получают мгновенный фидбэк.",
-      "description_en": "Interactive cohort assignments where attendees split into university tracks to receive active advice.",
-      "speakerId": ""
-    },
-    {
-      "id": "s10",
-      "time": "17:00 - 18:00",
-      "title_ru": "Q&A сессия и Закрытие",
-      "title_en": "Global Q&A with 16+ Alumni & Closing Ceremony",
-      "description_ru": "Финальная сессия ответов на вопросы, нетворкинг, групповое фото всех 16+ спикеров и участников.",
-      "description_en": "Direct panel wrap-up, community photos, distribution of certificates, and open networking lounge.",
+      "title_ru": "КОНКУРС ЭССЕ",
+      "title_en": "ESSAY COMPETITION",
+      "description_ru": "самое крупное состязание в написании в Центральной Азии",
+      "description_en": "THE BIGGEST writing competition in Central Asia",
       "speakerId": ""
     }
   ],
   "partners": [
     {
       "id": "p1",
-      "name": "Astana Technopark",
-      "role_ru": "Генеральный партнер, место проведения",
-      "role_en": "General Partner & Official Venue",
-      "tier": "general"
+      "name": "Partner Logo",
+      "tier": "partner",
+      "role_ru": "",
+      "role_en": ""
     },
     {
       "id": "p2",
-      "name": "Tilu English Education",
-      "role_ru": "Академический спонсор",
-      "role_en": "Academic Language Sponsor",
-      "tier": "sponsor"
+      "name": "Partner Logo",
+      "tier": "partner",
+      "role_ru": "",
+      "role_en": ""
     },
     {
       "id": "p3",
-      "name": "Nazarbayev University Alumni",
-      "role_ru": "Комьюнити-партнер",
-      "role_en": "Community & Liaison Network",
-      "tier": "partner"
+      "name": "Partner Logo",
+      "tier": "partner",
+      "role_ru": "",
+      "role_en": ""
     },
     {
       "id": "p4",
-      "name": "European Youth Forum Liaison",
-      "role_ru": "Информационный партнер",
-      "role_en": "Media & Youth Outreach Partner",
-      "tier": "partner"
-    },
-    {
-      "id": "p5",
-      "name": "IELTS Kazakhstan Consortium",
-      "role_ru": "Премиум партнер",
-      "role_en": "Testing & Proficiency Advisor",
-      "tier": "partner"
-    },
-    {
-      "id": "p6",
-      "name": "Bilim Consulting",
-      "role_ru": "Организационный спонсор",
-      "role_en": "Strategic Educational Advisor",
-      "tier": "sponsor"
+      "name": "Partner Logo",
+      "tier": "partner",
+      "role_ru": "",
+      "role_en": ""
     }
   ],
   "tickets": [
     {
       "id": "t1",
-      "name_ru": "Стандартный пропуск (Standard)",
-      "name_en": "Standard Pass",
-      "price": "15,000 KZT",
+      "name_ru": "Онлайн",
+      "name_en": "Online",
+      "name_kg": "Онлайн",
+      "price": "500 мест",
       "features_ru": [
-        "Доступ ко всем основным лекциям и панелям",
-        "Общий раздаточный материал в Telegram",
-        "Посещение партнерской Q&A зоны"
+        "Доступ к онлайн-трансляции",
+        "Записи лекций",
+        "Электронный сертификат"
       ],
       "features_en": [
-        "Access to all primary panels and lectures",
-        "Standard digital handouts packet via Telegram",
-        "Entrance to partner Q&A exhibition zones"
+        "Live stream access",
+        "Lecture recordings",
+        "E-certificate"
       ],
-      "url": "https://ticketmaster.kz/event/main-edu-standard",
-      "utm_source": "mainedu_web",
-      "utm_medium": "landing_page",
-      "utm_campaign": "june_forum"
+      "features_kg": [
+        "Онлайн трансляцияга кирүү",
+        "Лекциялардын жазуулары",
+        "Электрондук сертификат"
+      ],
+      "url": "#",
+      "utm_source": "",
+      "utm_medium": "",
+      "utm_campaign": ""
     },
     {
       "id": "t2",
-      "name_ru": "Бизнес пропуск (Business)",
-      "name_en": "Business Pass",
-      "price": "35,000 KZT",
+      "name_ru": "Офлайн (Early/Regular/Late)",
+      "name_en": "Offline (Early/Regular/Late)",
+      "name_kg": "Офлайн (Early/Regular/Late)",
+      "price": "Потоки",
       "features_ru": [
-        "Все привилегии Стандарта",
-        "Участие в практических воркшопах и разборе эссе",
-        "Сертификат участника форума",
-        "Доступ в закрытую беседу с менторами"
+        "Личное участие",
+        "Увлекательная развлекательная программа",
+        "Крупнейший Essay Competition"
       ],
       "features_en": [
-        "All Standard benefits and seating options",
-        "Participation in structured writing workshops",
-        "Official signed completion certificate",
-        "Admission to the exclusive alumni mentoring channel"
+        "In-person attendance",
+        "Exciting entertainment",
+        "Largest Essay Competition"
       ],
-      "url": "https://ticketmaster.kz/event/main-edu-business",
-      "utm_source": "mainedu_web",
-      "utm_medium": "landing_page",
-      "utm_campaign": "june_forum"
+      "features_kg": [
+        "Жеке катышуу",
+        "Кызыктуу көңүл ачуу программасы",
+        "Эң чоң эссе конкурсу"
+      ],
+      "url": "#",
+      "utm_source": "",
+      "utm_medium": "",
+      "utm_campaign": ""
     },
     {
       "id": "t3",
-      "name_ru": "VIP пропуск (VIP)",
-      "name_en": "VIP All-Access",
-      "price": "75,000 KZT",
+      "name_ru": "Офлайн + Ужин со спикерами",
+      "name_en": "Offline + Dinner with Speakers",
+      "name_kg": "Офлайн + Спикерлер менен кечки тамак",
+      "price": "VIP",
       "features_ru": [
-        "Все привилегии Бизнеса",
-        "Индивидуальный разбор вашего профиля у спикера на выбор",
-        "Доступ в VIP-лаундж с питанием и спикерами",
-        "Записи прошедших вебинаров по вузам Лиги Плюща за год"
+        "Все опции Офлайн",
+        "Ужин в ресторане со спикерами",
+        "Личный нетворкинг"
       ],
       "features_en": [
-        "All Business benefits with premium priority seats",
-        "Direct 15-min personal profile audit by chosen speaker",
-        "Access to physical VIP catered hospitality lounge",
-        "Archived library consisting of Ivy admissions webinars"
+        "All Offline features",
+        "Restaurant dinner with speakers",
+        "Personal networking"
       ],
-      "url": "https://ticketmaster.kz/event/main-edu-vip",
-      "utm_source": "mainedu_web",
-      "utm_medium": "landing_page",
-      "utm_campaign": "june_forum"
+      "features_kg": [
+        "Бардык Офлайн опциялары",
+        "Спикерлер менен ресторанда кечки тамак",
+        "Жеке нетворкинг"
+      ],
+      "url": "#",
+      "utm_source": "",
+      "utm_medium": "",
+      "utm_campaign": ""
     }
   ],
   "subscribers": []

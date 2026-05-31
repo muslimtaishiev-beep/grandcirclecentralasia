@@ -1,171 +1,194 @@
-import React, { useState } from "react";
-import { Clock, MessageSquare, ChevronDown, ChevronUp, User, Globe } from "lucide-react";
-import { ProgramSlot, Speaker } from "../types";
+import React, { useRef } from "react";
+import { motion, useScroll, useSpring, useTransform } from "motion/react";
 
 interface SchedulePanelProps {
-  program: ProgramSlot[];
-  speakers: Speaker[];
-  lang: "ru" | "en";
+  lang: "ru" | "en" | "kg";
 }
 
-export default function SchedulePanel({ program, speakers, lang }: SchedulePanelProps) {
-  const [expandedSlots, setExpandedSlots] = useState<Record<string, boolean>>({
-    "s1": true, // Pre-expand first slot
-    "s3": true, // Pre-expand key session
+const travelStops = [
+  {
+    id: "extracurriculars",
+    title_ru: "База & Внеучебка",
+    title_kg: "Мектептен тышкаркы",
+    title_en: "Extracurriculars",
+    time: "10:00 - 11:30",
+    desc_ru: "Старт маршрута. Плавание, проекты и спорт.",
+    desc_en: "Journey starts here. Swimming, projects, and sports.",
+    image: "/assets/map_region_start_v2_1780228834772.png",
+    x: 25,
+    y: 15
+  },
+  {
+    id: "europe",
+    title_ru: "Европа",
+    title_kg: "Европа",
+    title_en: "Europe",
+    time: "12:00 - 13:30",
+    desc_ru: "Архитектура и культура Старого Света.",
+    desc_en: "Architecture and culture of the Old World.",
+    image: "/assets/map_region_europe_1780228519337.png",
+    x: 75,
+    y: 40
+  },
+  {
+    id: "usa",
+    title_ru: "США",
+    title_kg: "АКШ",
+    title_en: "USA",
+    time: "14:30 - 16:00",
+    desc_ru: "Дух свободы и инноваций Нового Света.",
+    desc_en: "The spirit of freedom and innovation.",
+    image: "/assets/map_region_usa_1780228532055.png",
+    x: 30,
+    y: 65
+  },
+  {
+    id: "asia",
+    title_ru: "Китай и Азия",
+    title_kg: "Кытай жана Азия",
+    title_en: "China & Asia",
+    time: "16:30 - 18:00",
+    desc_ru: "Завершение пути на Востоке. Традиции и sci-fi будущее.",
+    desc_en: "Ending the journey in the East. Tradition meets sci-fi.",
+    image: "/assets/map_region_asia_v2_1780228848350.png",
+    x: 70,
+    y: 90
+  }
+];
+
+export default function SchedulePanel({ lang }: SchedulePanelProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ["start center", "end center"]
   });
 
-  const toggleSlot = (id: string) => {
-    setExpandedSlots(prev => ({
-      ...prev,
-      [id]: !prev[id]
-    }));
-  };
-
-  // Find associated speaker for a slot
-  const findSpeaker = (speakerId: string): Speaker | undefined => {
-    if (!speakerId) return undefined;
-    return speakers.find(s => s.id === speakerId);
-  };
-
-  const scrollToSpeaker = (speakerId: string) => {
-    const el = document.getElementById(`speaker_card_${speakerId}`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      // Add a brief flashing highlight
-      el.classList.add("ring-4", "ring-sky-400", "ring-offset-2");
-      setTimeout(() => {
-        el.classList.remove("ring-4", "ring-sky-400", "ring-offset-2");
-      }, 2000);
-    }
-  };
+  const smoothProgress = useSpring(scrollYProgress, { stiffness: 60, damping: 20 });
+  const pathLength = useTransform(smoothProgress, [0, 1], [0, 1]);
 
   return (
-    <div className="mx-auto max-w-4xl" id="schedule_panel_container">
-      {/* Intro text */}
-      <div className="text-center mb-10">
-        <span className="border border-slate-200 bg-slate-100/30 px-3.5 py-1.5 text-2xs font-extrabold text-slate-500 tracking-widest uppercase font-mono">
-          {lang === "ru" ? "ПРОГРАММА ДНЯ" : "AGENDA TIMELINE"}
-        </span>
-        <h2 className="mt-5 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl uppercase font-display" id="schedule_sec_title">
-          {lang === "ru" ? "Интерактивная Программа" : "Interactive Program Schedule"}
+    <div className="mx-auto w-full py-20 px-4 sm:px-6 relative overflow-hidden" id="schedule">
+      
+      <div className="text-center mb-16 md:mb-8 relative z-10">
+        <h2 className="text-4xl sm:text-5xl md:text-6xl font-black uppercase tracking-tighter">
+          <span className="text-slate-900">
+            {lang === "kg" ? "Маршрут" : "Карта"}
+          </span>{" "}
+          <span className="text-[#A259FF]">
+            {lang === "kg" ? "форуму" : lang === "en" ? "Journey" : "маршрута"}
+          </span>
         </h2>
-        <p className="mt-3 text-sm text-slate-500 leading-relaxed max-w-2xl mx-auto">
-          {lang === "ru" 
-            ? "Весь день наполнен практическими разборами, живым нетворкингом и полезными сессиями." 
-            : "A packed timeline of profile audits, writing workshops, and direct networking with Ivy League students."}
+        <p className="mt-4 text-slate-500 max-w-2xl mx-auto font-medium">
+          {lang === "ru" ? "Визуальное путешествие по программе. Отправляйтесь в путь!" : "A visual journey through the schedule. Let's hit the road!"}
         </p>
       </div>
 
-      {/* Timeline Tree */}
-      <div className="relative border-l border-slate-200 pl-4 sm:pl-8 ml-2 sm:ml-6 space-y-6" id="schedule_timeline_tree">
-        {/* Sort program by schedule slots structure or return raw mapped items */}
-        {program.map((slot, index) => {
-          const isExpanded = !!expandedSlots[slot.id];
-          const speaker = findSpeaker(slot.speakerId);
+      {/* --- DESKTOP 2D MAP --- */}
+      <div ref={containerRef} className="hidden md:block relative w-full max-w-[1200px] mx-auto aspect-[4/3] xl:aspect-[16/10]">
+        
+        {/* Zigzag SVG Route */}
+        <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none drop-shadow-lg">
+          {/* Base dashed path */}
+          <path 
+            d="M 250 150 C 500 150, 500 400, 750 400 C 1000 400, 0 650, 300 650 C 550 650, 450 900, 700 900" 
+            fill="none" stroke="#E2E8F0" strokeWidth="8" strokeDasharray="16 16" strokeLinecap="round"
+          />
+          {/* Animated filling path */}
+          <motion.path 
+            d="M 250 150 C 500 150, 500 400, 750 400 C 1000 400, 0 650, 300 650 C 550 650, 450 900, 700 900" 
+            fill="none" stroke="#A259FF" strokeWidth="8" strokeDasharray="16 16" strokeLinecap="round"
+            style={{ pathLength }}
+          />
+        </svg>
+
+        {/* Scattered Cards */}
+        {travelStops.map((stop, i) => {
+          const title = lang === "ru" ? stop.title_ru : lang === "kg" ? stop.title_kg : stop.title_en;
+          const desc = lang === "ru" ? stop.desc_ru : lang === "en" ? stop.desc_en : stop.desc_ru;
 
           return (
             <div 
-              key={slot.id} 
-              className="relative group transition-all"
-              id={`timeline_node_${slot.id}`}
+              key={stop.id}
+              className="absolute z-10"
+              style={{
+                left: `${stop.x}%`,
+                top: `${stop.y}%`,
+              }}
             >
-              {/* Vertical line connector badge node */}
-              <div 
-                className={`absolute -left-[20px] sm:-left-[36px] top-6 flex h-[10px] w-[9px] items-center justify-center border transition duration-200 ${
-                  isExpanded 
-                    ? "border-blue-500 bg-blue-500 text-white shadow-xs" 
-                    : "border-slate-300 bg-white group-hover:border-slate-400"
-                }`}
-                style={{ zIndex: 5 }}
-              />
+              <motion.div 
+                className="w-64 lg:w-72 flex flex-col bg-white rounded-[2rem] shadow-2xl border-2 border-white overflow-hidden group cursor-pointer will-change-transform"
+                initial={{ x: "-50%", y: "-50%", rotate: i % 2 === 0 ? -2 : 3 }}
+                whileHover={{ scale: 1.05, rotate: 0, zIndex: 30 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+              >
+                {/* Watercolor Illustration */}
+              <div className="w-full h-40 lg:h-48 p-2">
+                <div className="w-full h-full rounded-[2rem] overflow-hidden relative bg-white">
+                   <img src={stop.image} alt={title} className="w-full h-full object-cover object-center group-hover:scale-110 transition-transform duration-700" />
+                   
+                   {/* Time Tag overlaid on image */}
+                   <div className="absolute bottom-3 right-3 bg-white/90 backdrop-blur-sm text-slate-900 font-bold px-3 py-1 text-sm rounded-xl shadow-sm">
+                     {stop.time}
+                   </div>
+                </div>
+              </div>
 
-              {/* Main row card */}
-              <div className={`border transition-all duration-300 p-5 rounded-none ${
-                isExpanded 
-                  ? "border-slate-300 bg-white" 
-                  : "border-slate-200 bg-white hover:border-slate-350"
-              }`}>
-                {/* Clicking toggles the detail content */}
-                <div 
-                  onClick={() => toggleSlot(slot.id)}
-                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none"
-                  id={`slot_trigger_${slot.id}`}
-                >
-                  {/* Left Side: Time and Title */}
-                  <div className="flex items-start sm:items-center space-x-3 text-left">
-                    <span className="flex items-center space-x-1 font-mono text-[10px] font-bold bg-slate-50 border border-slate-200 text-slate-600 rounded-none px-2.5 py-1 flex-shrink-0">
-                      <Clock className="h-3 w-3 text-slate-450" />
-                      <span>{slot.time}</span>
-                    </span>
-                    <h3 className="text-sm sm:text-base font-extrabold text-slate-900 leading-tight uppercase font-display group-hover:text-blue-500">
-                      {lang === "ru" ? slot.title_ru : slot.title_en}
-                    </h3>
-                  </div>
+              {/* Text Info */}
+              <div className="px-6 pb-6 pt-2 text-center">
+                <h3 className="text-xl lg:text-2xl font-black text-slate-800 mb-2">{title}</h3>
+                <p className="text-slate-500 font-medium text-sm leading-snug">
+                  {desc}
+                </p>
+              </div>
+            </motion.div>
+          </div>
+          );
+        })}
+        
+        {/* Nano Banana Easter Egg */}
+        <div className="absolute top-[8%] left-[70%] text-2xl opacity-40 hover:opacity-100 cursor-help transform rotate-45 transition-opacity" title="Нано-банан 🍌">🍌</div>
 
-                  {/* Right Side: Indicators / Expand details toggle indicator */}
-                  <div className="flex items-center justify-between sm:justify-end gap-3 border-t sm:border-t-0 border-slate-100 pt-2 sm:pt-0">
-                    {/* Speaker indicator tag */}
-                    {speaker && (
-                      <span 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          scrollToSpeaker(speaker.id);
-                        }}
-                        className="inline-flex items-center space-x-1 border border-slate-200 bg-slate-50 px-2.5 py-1 text-[9px] font-bold text-slate-500 hover:border-slate-300 hover:text-blue-500 transition rounded-none font-mono"
-                        title={lang === "ru" ? "Посмотреть автора" : "View Speaker Link"}
-                      >
-                        <User className="h-3 w-3 text-slate-400" />
-                        <span>{lang === "ru" ? speaker.name_ru.split(" ")[0] : speaker.name_en.split(" ")[0]}</span>
-                      </span>
-                    )}
+      </div>
 
-                    <div className="text-slate-400 transition hover:text-slate-600">
-                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+      {/* --- MOBILE FALLBACK (Vertical Timeline) --- */}
+      <div className="md:hidden flex flex-col gap-12 relative w-full pt-10">
+        
+        {/* Vertical Dashed Line */}
+        <div className="absolute left-8 top-0 bottom-0 w-1 border-l-4 border-dashed border-slate-200" />
+        
+        <div className="flex flex-col gap-12 relative z-10">
+          {travelStops.map((stop) => {
+            const title = lang === "ru" ? stop.title_ru : lang === "kg" ? stop.title_kg : stop.title_en;
+            const desc = lang === "ru" ? stop.desc_ru : lang === "en" ? stop.desc_en : stop.desc_ru;
+
+            return (
+              <div key={stop.id} className="w-full pl-20 relative">
+                
+                {/* Node Marker */}
+                <div className="absolute left-[34px] top-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-[#A259FF] border-4 border-white shadow-md z-20" />
+                
+                {/* Mobile Card */}
+                <div className="w-full bg-white rounded-[2rem] shadow-xl border-2 border-slate-100 overflow-hidden p-2">
+                  <div className="w-full h-48 rounded-3xl overflow-hidden relative bg-slate-50">
+                    <img src={stop.image} alt={title} className="w-full h-full object-cover object-center" />
+                    <div className="absolute top-3 left-3 bg-white/95 text-slate-900 font-bold px-3 py-1 text-sm rounded-xl shadow-sm">
+                      {stop.time}
                     </div>
+                  </div>
+                  <div className="px-4 py-4">
+                    <h3 className="text-xl font-black text-slate-800 mb-1">{title}</h3>
+                    <p className="text-slate-500 font-medium text-sm leading-snug">
+                      {desc}
+                    </p>
                   </div>
                 </div>
 
-                {/* Expanded content */}
-                {isExpanded && (
-                  <div className="mt-4 border-t border-slate-200 pt-4 text-left animate-slide-down">
-                    <p className="text-sm text-slate-600 leading-relaxed font-sans">
-                      {lang === "ru" ? slot.description_ru : slot.description_en}
-                    </p>
-
-                    {/* Micro card of speaker inside the timeline description block */}
-                    {speaker && (
-                      <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between border border-slate-200 bg-slate-50/50 p-4 gap-3 rounded-none">
-                        <div className="flex items-center space-x-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-none bg-white border border-slate-200">
-                            <span className="font-mono text-2xs font-extrabold text-slate-550 uppercase">
-                              {speaker.university.split(" ")[0]}
-                            </span>
-                          </div>
-                          <div>
-                            <p className="text-xs font-black text-slate-800">
-                              {lang === "ru" ? speaker.name_ru : speaker.name_en}
-                            </p>
-                            <p className="text-[10px] font-bold text-slate-400 font-mono uppercase tracking-widest mt-0.5">
-                              {speaker.university} | {lang === "ru" ? speaker.major_ru : speaker.major_en}
-                            </p>
-                          </div>
-                        </div>
-
-                        <button 
-                          onClick={() => scrollToSpeaker(speaker.id)}
-                          className="w-full sm:w-auto bg-slate-900 px-4 py-2 text-2xs font-bold uppercase tracking-widest text-white hover:bg-blue-500 transition cursor-pointer text-center rounded-none duration-150"
-                        >
-                          {lang === "ru" ? "Профиль Спикера" : "View Story Bio"}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
+      
     </div>
   );
 }
