@@ -18,6 +18,7 @@ import { MetricsCarousel } from "./components/MetricsCarousel";
 import GlobalWatermarks from "./components/GlobalWatermarks";
 
 import { PublicData } from "./types";
+import { staticDb } from "./data/staticDb";
 
 export default function App() {
   const [lang, setLang] = useState<"ru" | "en" | "kg">("ru");
@@ -76,41 +77,7 @@ export default function App() {
     );
   }
 
-  const data = publicData || {
-    settings: {
-      eventDate: "TBD",
-      eventVenue: "Кыргызстан, Бишкек, Технопарк",
-      contactPhone: "+995 222 140 709",
-      contactEmail: "info@mainedu.kz"
-    },
-    speakers: [],
-    program: [
-      { id: "p1", time: "12:00", title_ru: "Открытие и Развлекательная программа", title_en: "Opening & Entertainment", title_kg: "Ачылыш жана Көңүл ачуу программасы", description_ru: "", description_en: "", speakerId: "" },
-      { id: "p2", time: "14:00", title_ru: "Крупнейшее Essay Competition в Центральной Азии", title_en: "Largest Essay Competition in Central Asia", title_kg: "Борбордук Азиядагы эң чоң эссе конкурсу", description_ru: "", description_en: "", speakerId: "" },
-      { id: "p3", time: "19:00", title_ru: "Закрытие форума", title_en: "Closing", title_kg: "Форумдун жабылышы", description_ru: "", description_en: "", speakerId: "" }
-    ],
-    partners: [],
-    tickets: [
-      {
-        id: "t1",
-        name_ru: "Онлайн", name_en: "Online", name_kg: "Онлайн", price: "500 мест",
-        features_ru: ["Доступ к онлайн-трансляции", "Записи лекций", "Электронный сертификат"], features_en: ["Live stream access", "Lecture recordings", "E-certificate"], features_kg: ["Онлайн трансляцияга кирүү", "Лекциялардын жазуулары", "Электрондук сертификат"],
-        url: "#", utm_source: "", utm_medium: "", utm_campaign: ""
-      },
-      {
-        id: "t2",
-        name_ru: "Офлайн (Early/Regular/Late)", name_en: "Offline (Early/Regular/Late)", name_kg: "Офлайн (Early/Regular/Late)", price: "Потоки",
-        features_ru: ["Личное участие", "Увлекательная развлекательная программа", "Крупнейший Essay Competition"], features_en: ["In-person attendance", "Exciting entertainment", "Largest Essay Competition"], features_kg: ["Жеке катышуу", "Кызыктуу көңүл ачуу программасы", "Эң чоң эссе конкурсу"],
-        url: "#", utm_source: "", utm_medium: "", utm_campaign: ""
-      },
-      {
-        id: "t3",
-        name_ru: "Офлайн + Ужин со спикерами", name_en: "Offline + Dinner with Speakers", name_kg: "Офлайн + Спикерлер менен кечки тамак", price: "VIP",
-        features_ru: ["Все опции Офлайн", "Ужин в ресторане со спикерами", "Личный нетворкинг"], features_en: ["All Offline features", "Restaurant dinner with speakers", "Personal networking"], features_kg: ["Бардык Офлайн опциялары", "Спикерлер менен ресторанда кечки тамак", "Жеке нетворкинг"],
-        url: "#", utm_source: "", utm_medium: "", utm_campaign: ""
-      }
-    ]
-  };
+  const data = publicData || staticDb as unknown as PublicData;
 
   const isAdminPath = currentPath === "/admin";
   const isTicketsPath = currentPath === "/tickets";
