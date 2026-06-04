@@ -432,5 +432,15 @@ export const staticDb =
       "utm_campaign": ""
     }
   ],
-  "subscribers": []
+  "subscribers": [],
+  "metrics": [
+    { "id": "m1", "value": "500+", "label_en": "Attendees", "label_ru": "Участников", "sublabel_en": "Students, parents, professionals", "sublabel_ru": "Школьники, студенты, родители", "order": 1 },
+    { "id": "m2", "value": "1", "label_en": "Intense Day", "label_ru": "День форума", "order": 2 },
+    { "id": "m3", "value": "20+", "label_en": "Speakers", "label_ru": "Спикеров", "order": 3 },
+    { "id": "m4", "value": "Essay", "label_en": "Competition", "label_ru": "Competition", "sublabel_en": "Largest in CA", "sublabel_ru": "Крупнейший в ЦА", "order": 4 },
+    { "id": "m5", "value": "∞", "label_en": "Motivation", "label_ru": "Мотивации", "order": 5 },
+    { "id": "m6", "value": "4", "label_en": "Panel Sessions", "label_ru": "Панельные сессии", "sublabel_en": "Admission strategies", "sublabel_ru": "Стратегии поступления", "order": 6 },
+    { "id": "m7", "value": "VIP", "label_en": "Dinner", "label_ru": "Ужин", "order": 7 },
+    { "id": "m8", "value": "100%", "label_en": "Networking", "label_ru": "Нетворкинг", "order": 8 }
+  ]
 }

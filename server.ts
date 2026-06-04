@@ -44,19 +44,6 @@ let activeSessions = new Set<string>();
 
 // Helper to read database
 async function readDb() {
-  if (useFirebase) {
-    try {
-      const dbRef = admin.firestore().collection("system").doc("db");
-      const doc = await dbRef.get();
-      if (doc.exists) {
-        return doc.data();
-      }
-    } catch (e) {
-      console.error("Firebase read error", e);
-    }
-  }
-
-  // Fallback / Initial schema
   const defaultMetrics = [
     { id: "m1", value: "500+", label_en: "Attendees", label_ru: "Участников", sublabel_en: "Students, parents, professionals", sublabel_ru: "Школьники, студенты, родители", order: 1 },
     { id: "m2", value: "1", label_en: "Intense Day", label_ru: "День форума", order: 2 },
@@ -68,13 +55,29 @@ async function readDb() {
     { id: "m8", value: "100%", label_en: "Networking", label_ru: "Нетворкинг", order: 8 }
   ];
 
+  if (useFirebase) {
+    try {
+      const dbRef = admin.firestore().collection("system").doc("db");
+      const doc = await dbRef.get();
+      if (doc.exists) {
+        const data = doc.data() || {};
+        if (!data.metrics || data.metrics.length === 0) {
+          data.metrics = defaultMetrics;
+          await dbRef.set(data);
+        }
+        return data;
+      }
+    } catch (e) {
+      console.error("Firebase read error", e);
+    }
+  }
+
+  // Fallback / Initial schema
   try {
     const data = await fs.readFile(DB_PATH, "utf-8");
     const parsed = JSON.parse(data);
-    // If metrics are missing from the existing DB, inject defaults
     if (!parsed.metrics || parsed.metrics.length === 0) {
       parsed.metrics = defaultMetrics;
-      // Auto-save the repaired structure locally
       fs.writeFile(DB_PATH, JSON.stringify(parsed, null, 2), "utf-8").catch(e => console.error(e));
     }
     return parsed;
