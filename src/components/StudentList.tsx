@@ -98,7 +98,6 @@ function DesktopExpandingCard({ student, isActive, onSelect, cardRef }: { studen
       <motion.button
         type="button"
         onClick={() => onSelect(student.id)}
-        whileTap={{ scale: 0.985 }}
         transition={SPRING}
         className={cn(
           "group/card relative w-full text-left transition-shadow duration-300 overflow-hidden",
@@ -114,120 +113,38 @@ function DesktopExpandingCard({ student, isActive, onSelect, cardRef }: { studen
   );
 }
 
-const MOBILE_SLIDE_WIDTH = "w-[85vw] max-w-[420px] shrink-0 snap-center";
-
-function MobileExpandingCard({ student, isActive, onSelect, cardRef }: { student: AppStudent; isActive: boolean; onSelect: (id: string) => void; cardRef: (el: HTMLDivElement | null) => void }) {
-  return (
-    <div ref={cardRef} data-id={student.id} className={MOBILE_SLIDE_WIDTH}>
-      <motion.div animate={{ scale: isActive ? 1 : 0.96, opacity: isActive ? 1 : 0.72 }} transition={SPRING} className="w-full origin-center">
-        <button
-          type="button"
-          onClick={() => onSelect(student.id)}
-          className={cn(
-            "group/card relative w-full text-left transition-shadow duration-300 rounded-2xl overflow-hidden",
-            isActive ? "bg-[#F5F3FF] p-6 shadow-xl ring-2 ring-[#9F7AEA] z-10" : "bg-white/50 p-3 border border-slate-200/80"
-          )}
-        >
-          {isActive && (
-            <div className="absolute inset-0 z-0 opacity-[0.04]" style={{ backgroundImage: "repeating-linear-gradient(-45deg, #9F7AEA 0, #9F7AEA 2px, transparent 2px, transparent 12px)" }} />
-          )}
-          {isActive ? <ActiveCardContent student={student} /> : <InactiveCardContent student={student} />}
-        </button>
-      </motion.div>
-    </div>
-  );
-}
-
-function MobileStudentCarousel({ students, activeId, onSelect }: { students: AppStudent[]; activeId: string | null; onSelect: (id: string) => void }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const isProgrammaticScroll = useRef(false);
-  const selectionFromScroll = useRef(false);
-  const activeIndex = Math.max(0, students.findIndex((s) => s.id === activeId));
-
-  const scrollToStudent = useCallback((id: string, smooth = true) => {
-    const root = containerRef.current;
-    const el = cardRefs.current[id];
-    if (!root || !el) return;
-    isProgrammaticScroll.current = true;
-    const target = el.offsetLeft - (root.clientWidth - el.offsetWidth) / 2;
-    root.scrollTo({ left: Math.max(0, target), behavior: smooth ? "smooth" : "auto" });
-    window.setTimeout(() => { isProgrammaticScroll.current = false; }, smooth ? 520 : 0);
-  }, []);
-
-  const selectExternal = useCallback((id: string) => {
-    selectionFromScroll.current = false;
-    onSelect(id);
-    scrollToStudent(id);
-  }, [onSelect, scrollToStudent]);
-
-  useEffect(() => {
-    const root = containerRef.current;
-    if (!root) return;
-    let raf = 0;
-    const handleScroll = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        if (isProgrammaticScroll.current) return;
-        const rootRect = root.getBoundingClientRect();
-        const centerX = rootRect.left + rootRect.width / 2;
-        let closestId: string | null = null;
-        let closestDist = Infinity;
-        for (const student of students) {
-          const el = cardRefs.current[student.id];
-          if (!el) continue;
-          const rect = el.getBoundingClientRect();
-          const cardCenter = rect.left + rect.width / 2;
-          const dist = Math.abs(cardCenter - centerX);
-          if (dist < closestDist) { closestDist = dist; closestId = student.id; }
-        }
-        if (closestId && closestId !== activeId) {
-          selectionFromScroll.current = true;
-          onSelect(closestId);
-        }
-      });
-    };
-    root.addEventListener("scroll", handleScroll, { passive: true });
-    return () => { root.removeEventListener("scroll", handleScroll); cancelAnimationFrame(raf); };
-  }, [students, activeId, onSelect]);
-
-  useEffect(() => {
-    if (!activeId || selectionFromScroll.current) { selectionFromScroll.current = false; return; }
-    scrollToStudent(activeId);
-  }, [activeId, scrollToStudent]);
-
-  useEffect(() => {
-    if (!activeId) return;
-    const el = cardRefs.current[activeId];
-    const root = containerRef.current;
-    if (!el || !root) return;
-    const recenter = () => {
-      const target = el.offsetLeft - (root.clientWidth - el.offsetWidth) / 2;
-      root.scrollTo({ left: Math.max(0, target), behavior: "auto" });
-    };
-    const ro = new ResizeObserver(() => requestAnimationFrame(recenter));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [activeId]);
+function MobileStudentGrid({ students, activeId, onSelect }: { students: AppStudent[]; activeId: string | null; onSelect: (id: string) => void }) {
+  const [showAll, setShowAll] = useState(false);
+  const displayedStudents = showAll ? students : students.slice(0, 4);
 
   return (
-    <div className="md:hidden">
-      <div ref={containerRef} className="flex items-start gap-0 overflow-x-auto overflow-y-visible overscroll-x-contain scroll-px-4 px-4 pb-2 snap-x snap-mandatory scrollbar-hide">
-        {students.map((student) => (
-          <MobileExpandingCard key={student.id} student={student} isActive={student.id === activeId} onSelect={selectExternal} cardRef={(el) => { cardRefs.current[student.id] = el; }} />
-        ))}
-      </div>
-      <div className="mt-4 flex items-center justify-center gap-3 px-4">
-        <div className="flex items-center gap-1.5">
-          {students.map((student, index) => {
-            const isActive = student.id === activeId;
-            return (
-              <button key={student.id} type="button" aria-label={`Студент ${index + 1}: ${student.name}`} onClick={() => selectExternal(student.id)} className={cn("rounded-full transition-all duration-300", isActive ? "h-2 w-6 bg-[#9F7AEA]" : "h-2 w-2 bg-slate-300 hover:bg-[#C4B5FD]")} />
-            );
-          })}
+    <div className="md:hidden flex flex-col gap-3 px-4">
+      {displayedStudents.map((student) => (
+        <div key={student.id} className="w-full">
+          <button
+            type="button"
+            onClick={() => onSelect(student.id)}
+            className={cn(
+              "group/card relative w-full text-left transition-shadow duration-300 rounded-2xl overflow-hidden",
+              student.id === activeId ? "bg-[#F5F3FF] p-6 shadow-xl ring-2 ring-[#9F7AEA] z-10" : "bg-white/50 p-3 border border-slate-200/80"
+            )}
+          >
+            {student.id === activeId && (
+              <div className="absolute inset-0 z-0 opacity-[0.04]" style={{ backgroundImage: "repeating-linear-gradient(-45deg, #9F7AEA 0, #9F7AEA 2px, transparent 2px, transparent 12px)" }} />
+            )}
+            {student.id === activeId ? <ActiveCardContent student={student} /> : <InactiveCardContent student={student} />}
+          </button>
         </div>
-        <span className="font-sans text-xs tabular-nums text-slate-400">{activeIndex + 1}/{students.length}</span>
-      </div>
+      ))}
+      
+      {students.length > 4 && (
+        <button 
+          onClick={() => setShowAll(!showAll)}
+          className="mt-2 py-3 w-full rounded-xl bg-white border border-[#9F7AEA]/30 hover:bg-[#F5F3FF] text-[#9F7AEA] font-bold text-sm transition-colors shadow-sm"
+        >
+          {showAll ? "Скрыть" : "Показать полный список спикеров"}
+        </button>
+      )}
     </div>
   );
 }
@@ -259,7 +176,7 @@ function DesktopStudentGrid({ students, activeId, onSelect }: { students: AppStu
 export function StudentList({ students, activeId, onSelect }: { students: AppStudent[]; activeId: string | null; onSelect: (id: string) => void }) {
   return (
     <>
-      <MobileStudentCarousel students={students} activeId={activeId} onSelect={onSelect} />
+      <MobileStudentGrid students={students} activeId={activeId} onSelect={onSelect} />
       <DesktopStudentGrid students={students} activeId={activeId} onSelect={onSelect} />
     </>
   );

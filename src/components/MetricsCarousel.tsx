@@ -29,7 +29,7 @@ export const MetricsCarousel: React.FC<MetricsCarouselProps> = ({ lang, metrics 
             <div className="relative overflow-hidden bg-[#F5F3FF] shadow-md ring-1 ring-[#9F7AEA]/50 rounded-2xl p-3 md:p-4 w-full h-[120px] md:h-[130px] text-center group flex flex-col justify-center transition-all hover:shadow-lg">
               
               {/* Chaotic SVG Fragment - perfectly aligned to form a whole across the 4x2 grid on desktop */}
-              <div className="absolute inset-0 z-0 opacity-30 pointer-events-none flex items-center justify-center">
+              <div className="hidden md:flex absolute inset-0 z-0 opacity-30 pointer-events-none items-center justify-center">
                 <svg 
                   viewBox={`${(idx % 4) * 300} ${Math.floor(idx / 4) * 200} 300 200`} 
                   preserveAspectRatio="none" 
@@ -66,6 +66,38 @@ export const MetricsCarousel: React.FC<MetricsCarouselProps> = ({ lang, metrics 
                   />
                   <motion.path 
                     d="M -150,200 C 300,500 500,-100 900,350 C 1300,800 1400,-150 1600,200" 
+                    stroke="#E9D5FF" strokeWidth="24" fill="none" strokeLinecap="round"
+                    initial={{ pathLength: 0, pathOffset: 1 }}
+                    animate={{ pathLength: [0, 1, 1, 0], pathOffset: [1, 1, 0, 0] }}
+                    transition={{ duration: 11, repeat: Infinity, ease: "easeInOut", delay: 3 }}
+                  />
+                </svg>
+              </div>
+
+              {/* Vertical SVG Fragment for Mobile - flows top to bottom */}
+              <div className="flex md:hidden absolute inset-0 z-0 opacity-30 pointer-events-none items-center justify-center">
+                <svg 
+                  viewBox={`0 ${idx * 150} 300 150`} 
+                  preserveAspectRatio="none" 
+                  className="w-full h-full object-fill scale-[1.02]" 
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <motion.path 
+                    d="M 150,-100 C 50,200 250,400 150,700 C 50,1000 250,1200 150,1500" 
+                    stroke="#9F7AEA" strokeWidth="12" fill="none" strokeLinecap="round"
+                    initial={{ pathLength: 0, pathOffset: 0 }}
+                    animate={{ pathLength: [0, 1, 1, 0], pathOffset: [0, 0, 1, 1] }}
+                    transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+                  />
+                  <motion.path 
+                    d="M 100,-50 C 300,150 -100,550 100,750 C 300,950 -100,1350 100,1550" 
+                    stroke="#C4B5FD" strokeWidth="16" fill="none" strokeLinecap="round"
+                    initial={{ pathLength: 0, pathOffset: 1 }}
+                    animate={{ pathLength: [0, 1, 1, 0], pathOffset: [1, 1, 0, 0] }}
+                    transition={{ duration: 10, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+                  />
+                  <motion.path 
+                    d="M 200,-100 C 0,300 300,450 200,850 C 0,1150 300,1300 200,1700" 
                     stroke="#E9D5FF" strokeWidth="24" fill="none" strokeLinecap="round"
                     initial={{ pathLength: 0, pathOffset: 1 }}
                     animate={{ pathLength: [0, 1, 1, 0], pathOffset: [1, 1, 0, 0] }}
