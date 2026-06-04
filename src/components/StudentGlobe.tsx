@@ -8,14 +8,11 @@ import {
 } from "react";
 import { Canvas, useFrame, useLoader } from "@react-three/fiber";
 import { AdaptiveDpr, AdaptiveEvents, Line, OrbitControls } from "@react-three/drei";
-import { AnimatePresence, motion } from "framer-motion";
 import { Suspense } from "react";
-import { GraduationCap, MapPin, Route } from "lucide-react";
 import * as THREE from "three";
 import { cn } from "../lib/utils";
 import {
   BISHKEK,
-  distanceFromBishkek,
   studentLatLon,
   type AppStudent,
 } from "../data/appStudents";
@@ -238,54 +235,6 @@ function OrbitalRings() {
         </mesh>
       ))}
     </group>
-  );
-}
-
-function ActiveStudentGlobeBadge({ student }: { student: AppStudent }) {
-  const km = distanceFromBishkek(student);
-
-  return (
-    <motion.div
-      key={student.id}
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 8 }}
-      transition={{ type: "spring", stiffness: 320, damping: 28 }}
-      className="
-        pointer-events-none absolute bottom-6 left-4 right-4 z-10
-        mx-auto max-w-[280px] rounded-2xl border border-white/50
-        bg-white/80 p-3 shadow-[0_12px_32px_-12px_rgba(159,122,234,0.35)]
-        backdrop-blur-lg sm:left-6 sm:max-w-[300px]
-      "
-    >
-      <div className="flex items-center gap-3">
-        <img
-          src={student.avatarUrl}
-          alt=""
-          className="h-10 w-10 shrink-0 rounded-full border-2 border-[#C4B5FD]/60 bg-slate-100 object-cover"
-        />
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-sans text-sm font-semibold text-slate-900">
-            {student.name}
-          </p>
-          <p className="mt-0.5 flex items-center gap-1 truncate font-sans text-xs text-[#9F7AEA]">
-            <GraduationCap className="h-3 w-3 shrink-0" aria-hidden />
-            <span className="truncate">{student.university}</span>
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-slate-200/60 pt-2.5">
-        <span className="flex items-center gap-1 font-sans text-[11px] text-slate-500">
-          <Route className="h-3 w-3 shrink-0 text-[#C4B5FD]" aria-hidden />
-          Бишкек → {student.city}
-        </span>
-        <span className="flex items-center gap-1 rounded-full bg-[#EDE9FE] px-2 py-0.5 font-sans text-[10px] font-medium tabular-nums text-[#9F7AEA]">
-          <MapPin className="h-2.5 w-2.5 shrink-0" aria-hidden />
-          {km.toLocaleString("ru-RU")} км
-        </span>
-      </div>
-    </motion.div>
   );
 }
 
@@ -526,15 +475,10 @@ export function StudentGlobe({
   onSelect,
   className,
 }: StudentGlobeProps) {
-  const active = useMemo(
-    () => students.find((s) => s.id === activeId) ?? null,
-    [students, activeId],
-  );
-
   return (
-    <div className={cn("relative h-full w-full bg-transparent", className)}>
+    <div className={cn("relative w-full h-full bg-transparent flex items-center justify-center", className)}>
       <Canvas
-        className="h-full w-full bg-transparent shadow-none"
+        className="w-full h-full bg-transparent"
         camera={{ position: CAM, fov: 40, near: 0.1, far: 100 }}
         gl={{ antialias: true, alpha: true }}
         dpr={[1, 2]}
@@ -553,12 +497,6 @@ export function StudentGlobe({
           />
         </Suspense>
       </Canvas>
-
-      <AnimatePresence mode="wait">
-        {active && showDesktopTooltip && (
-          <ActiveStudentGlobeBadge key={active.id} student={active} />
-        )}
-      </AnimatePresence>
     </div>
   );
 }
