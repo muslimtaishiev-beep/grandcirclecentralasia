@@ -47,7 +47,7 @@ export function GlobeSplitSection() {
           }}
           className="mb-10 md:mb-14"
         >
-          <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/60 px-3.5 py-1.5 text-xs font-medium uppercase tracking-[0.18em] text-[#9F7AEA] backdrop-blur-md">
+          <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/60 px-3.5 py-1.5 text-xs font-medium uppercase tracking-[0.18em] text-[#9F7AEA] backdrop-blur-sm">
             <span className="h-1.5 w-1.5 rounded-full bg-[#C4B5FD]" />
             Карта выпускников
           </span>
@@ -73,10 +73,6 @@ export function GlobeSplitSection() {
                 focusKey={focusKey}
                 showDesktopTooltip={isDesktopTooltip}
                 onSelect={handleSelect}
-              />
-              <div
-                className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_40%,white_70%)]"
-                aria-hidden
               />
             </div>
           </div>
