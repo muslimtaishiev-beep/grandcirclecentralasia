@@ -27,7 +27,7 @@ export default function Newsletter({ lang }: NewsletterProps) {
   };
 
   return (
-    <div className="mx-auto max-w-4xl bg-slate-900 text-white p-10 sm:p-16 text-center rounded-[32px] shadow-2xl relative overflow-hidden">
+    <div className="mx-auto max-w-4xl bg-white p-10 sm:p-16 text-center rounded-[32px] shadow-lg relative overflow-hidden">
       
       {status === "success" ? (
         <div className="space-y-6 py-10 relative z-10 animate-fade-in">
@@ -35,10 +35,10 @@ export default function Newsletter({ lang }: NewsletterProps) {
             <CheckCircle className="h-8 w-8" />
           </div>
           <div>
-            <h3 className="text-3xl font-bold tracking-tight">
+            <h3 className="text-3xl font-bold tracking-tight text-slate-900">
               {lang === "ru" ? "Успешно" : lang === "kg" ? "Ийгиликтүү" : "Success"}
             </h3>
-            <p className="mt-4 text-base text-slate-300 max-w-md mx-auto leading-relaxed">
+            <p className="mt-4 text-base text-slate-600 max-w-md mx-auto leading-relaxed">
               {lang === "ru" 
                 ? "Мы отправим материалы на указанную электронную почту." 
                 : lang === "kg"
@@ -48,7 +48,7 @@ export default function Newsletter({ lang }: NewsletterProps) {
           </div>
           <button
             onClick={() => setStatus("idle")}
-            className="mt-6 bg-white px-8 py-3 text-xs font-bold uppercase tracking-wide text-slate-900 hover:bg-slate-200 transition rounded-full"
+            className="mt-6 bg-blue-600 px-8 py-3 text-xs font-bold uppercase tracking-wide text-white hover:bg-blue-700 transition rounded-full"
           >
             {lang === "ru" ? "Вернуться" : lang === "kg" ? "Артка" : "Go Back"}
           </button>
@@ -56,10 +56,10 @@ export default function Newsletter({ lang }: NewsletterProps) {
       ) : (
         <div className="space-y-8 relative z-10">
           <div>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">
+            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">
               {lang === "ru" ? "Получите полезные материалы" : lang === "kg" ? "Пайдалуу материалдарды алыңыз" : "Get Useful Materials"}
             </h2>
-            <p className="mt-4 text-base text-slate-300 max-w-xl mx-auto leading-relaxed">
+            <p className="mt-4 text-base text-slate-600 max-w-xl mx-auto leading-relaxed">
               {lang === "ru" 
                 ? "Оставьте почту, чтобы получить подборку эссе студентов." 
                 : lang === "kg"
@@ -77,14 +77,14 @@ export default function Newsletter({ lang }: NewsletterProps) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="example@gmail.com"
-                className="w-full rounded-full border border-slate-700 bg-slate-800 p-4 pl-14 text-sm text-white focus:outline-none focus:border-sky-500 transition"
+                className="w-full rounded-full border border-slate-200 bg-white p-4 pl-14 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
               />
             </div>
             
             <button
               type="submit"
               disabled={status === "loading"}
-              className="bg-[#2563EB] px-8 py-4 text-xs font-bold uppercase tracking-wide text-white transition-all rounded-full hover:bg-blue-600 disabled:opacity-70 disabled:cursor-not-allowed whitespace-nowrap"
+              className="bg-blue-600 px-8 py-4 text-xs font-bold uppercase tracking-wide text-white transition-all rounded-full hover:bg-blue-700 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {status === "loading" ? (
                 <Loader2 className="h-5 w-5 animate-spin text-white mx-auto" />
@@ -95,7 +95,7 @@ export default function Newsletter({ lang }: NewsletterProps) {
           </form>
 
           {status === "error" && (
-            <div className="mt-4 flex items-center justify-center space-x-2 text-red-400 animate-shake text-sm">
+            <div className="mt-4 flex items-center justify-center space-x-2 text-red-500 animate-shake text-sm">
               <AlertCircle className="h-4 w-4" />
               <span>{message}</span>
             </div>
