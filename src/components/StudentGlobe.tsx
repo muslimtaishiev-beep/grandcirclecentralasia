@@ -189,30 +189,7 @@ function Graticule() {
 }
 
 function Atmosphere() {
-  return (
-    <>
-      {/* Outer large soft glow - REMOVED or reduced significantly */}
-      <mesh renderOrder={-1}>
-        <sphereGeometry args={[GLOBE_R * 1.15, 48, 48]} />
-        <meshBasicMaterial color={C_LINE_SOFT} transparent opacity={0.05} side={THREE.BackSide} depthWrite={false} />
-      </mesh>
-      {/* Mid glow */}
-      <mesh renderOrder={-1}>
-        <sphereGeometry args={[GLOBE_R * 1.08, 48, 48]} />
-        <meshBasicMaterial color={C_LINE_SOFT} transparent opacity={0.08} side={THREE.BackSide} depthWrite={false} />
-      </mesh>
-      {/* Inner strong glow rim */}
-      <mesh renderOrder={-1}>
-        <sphereGeometry args={[GLOBE_R * 1.03, 48, 48]} />
-        <meshBasicMaterial color={C_LINE} transparent opacity={0.05} side={THREE.BackSide} depthWrite={false} />
-      </mesh>
-      {/* Front slight tint */}
-      <mesh renderOrder={2}>
-        <sphereGeometry args={[GLOBE_R * 1.002, 48, 48]} />
-        <meshBasicMaterial color={C_LINE_SOFT} transparent opacity={0.03} side={THREE.FrontSide} depthWrite={false} />
-      </mesh>
-    </>
-  );
+  return null;
 }
 
 const RING_DEFS = [
