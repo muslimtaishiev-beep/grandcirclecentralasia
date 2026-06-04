@@ -77,7 +77,14 @@ export default function App() {
     );
   }
 
-  const data = publicData || staticDb as unknown as PublicData;
+  const data = {
+    settings: publicData?.settings || staticDb.settings,
+    speakers: publicData?.speakers || staticDb.speakers,
+    program: publicData?.program || staticDb.program,
+    partners: publicData?.partners || staticDb.partners,
+    tickets: publicData?.tickets || staticDb.tickets,
+    metrics: publicData?.metrics && publicData.metrics.length > 0 ? publicData.metrics : staticDb.metrics
+  } as unknown as PublicData;
 
   const isAdminPath = currentPath === "/admin";
   const isTicketsPath = currentPath === "/tickets";
