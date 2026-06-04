@@ -18,6 +18,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   // Active Admin States
   const [currentTab, setCurrentTab] = useState<AdminTab>("metrics");
@@ -99,21 +100,30 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
 
   const fetchAdminData = async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const response = await fetch((import.meta.env.VITE_API_URL || "") + "/api/admin/data", {
         headers: { "Authorization": `Bearer ${token}` }
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setDbData(data);
-        setSettingsForm(data.settings);
-      } else {
-        // Token expired/invalid
+      if (!response.ok) {
         handleLogout();
+        return;
       }
-    } catch (err) {
+
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        throw new Error("Invalid response from server (possible routing issue or backend offline).");
+      }
+
+      setDbData(data);
+      setSettingsForm(data.settings);
+    } catch (err: any) {
       console.error("Failed to load admin data", err);
+      setLoadError(err.message || "Failed to reach server");
     } finally {
       setLoading(false);
     }
@@ -343,10 +353,26 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
   if (!dbData) {
     return (
       <div className="flex flex-col items-center justify-center p-16 space-y-4" id="admin_loading_state">
-        <Loader2 className="h-8 w-8 animate-spin text-sky-500" />
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">
-          Syncing Core CMS Modules...
-        </p>
+        {loadError ? (
+          <>
+            <ShieldAlert className="h-10 w-10 text-red-500" />
+            <p className="text-sm font-bold text-slate-800">Connection Error</p>
+            <p className="text-xs font-medium text-slate-500 text-center max-w-sm">{loadError}</p>
+            <p className="text-xs font-medium text-slate-400 text-center max-w-sm mt-2">
+              If the backend server is not deployed or configured, the CMS will not load.
+            </p>
+            <button onClick={handleLogout} className="mt-4 rounded-full border border-slate-200 px-6 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer transition">
+              Back to Login
+            </button>
+          </>
+        ) : (
+          <>
+            <Loader2 className="h-8 w-8 animate-spin text-sky-500" />
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">
+              Syncing Core CMS Modules...
+            </p>
+          </>
+        )}
       </div>
     );
   }
