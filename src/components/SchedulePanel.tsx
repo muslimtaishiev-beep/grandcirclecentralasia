@@ -15,8 +15,9 @@ const travelStops = [
     desc_ru: "Старт маршрута. Плавание, проекты и спорт.",
     desc_en: "Journey starts here. Swimming, projects, and sports.",
     image: "/assets/map_region_start_v2_1780228834772.png",
+    image: "/assets/map_region_start_v2_1780228834772.png",
     x: 25,
-    y: 15
+    y: 10
   },
   {
     id: "europe",
@@ -27,8 +28,9 @@ const travelStops = [
     desc_ru: "Архитектура и культура Старого Света.",
     desc_en: "Architecture and culture of the Old World.",
     image: "/assets/map_region_europe_1780228519337.png",
+    image: "/assets/map_region_europe_1780228519337.png",
     x: 75,
-    y: 40
+    y: 35
   },
   {
     id: "usa",
@@ -39,8 +41,9 @@ const travelStops = [
     desc_ru: "Дух свободы и инноваций Нового Света.",
     desc_en: "The spirit of freedom and innovation.",
     image: "/assets/map_region_usa_1780228532055.png",
+    image: "/assets/map_region_usa_1780228532055.png",
     x: 30,
-    y: 65
+    y: 55
   },
   {
     id: "asia",
@@ -51,8 +54,9 @@ const travelStops = [
     desc_ru: "Завершение пути на Востоке. Традиции и sci-fi будущее.",
     desc_en: "Ending the journey in the East. Tradition meets sci-fi.",
     image: "/assets/map_region_asia_v2_1780228848350.png",
+    image: "/assets/map_region_asia_v2_1780228848350.png",
     x: 70,
-    y: 90
+    y: 75
   }
 ];
 
@@ -60,16 +64,15 @@ export default function SchedulePanel({ lang }: SchedulePanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
     target: containerRef,
-    offset: ["start center", "end center"]
+    offset: ["start 80%", "end 60%"]
   });
 
   const smoothProgress = useSpring(scrollYProgress, { stiffness: 60, damping: 20 });
   const pathLength = useTransform(smoothProgress, [0, 1], [0, 1]);
 
   return (
-    <div className="mx-auto w-full py-20 px-4 sm:px-6 relative overflow-hidden" id="schedule">
-      
-      <div className="text-center mb-16 md:mb-8 relative z-10">
+    <div className="mx-auto w-full py-8 px-4 sm:px-6 relative overflow-hidden" id="schedule">
+      <div className="text-center mb-24 md:mb-32 relative z-10">
         <h2 className="text-4xl sm:text-5xl md:text-6xl font-black uppercase tracking-tighter">
           <span className="text-slate-900">
             {lang === "kg" ? "Маршрут" : "Карта"}
@@ -90,12 +93,12 @@ export default function SchedulePanel({ lang }: SchedulePanelProps) {
         <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none drop-shadow-lg">
           {/* Base dashed path */}
           <path 
-            d="M 250 150 C 500 150, 500 400, 750 400 C 1000 400, 0 650, 300 650 C 550 650, 450 900, 700 900" 
+            d="M 250 100 C 500 100, 500 350, 750 350 C 1000 350, 0 550, 300 550 C 550 550, 450 750, 700 750" 
             fill="none" stroke="#E2E8F0" strokeWidth="8" strokeDasharray="16 16" strokeLinecap="round"
           />
           {/* Animated filling path */}
           <motion.path 
-            d="M 250 150 C 500 150, 500 400, 750 400 C 1000 400, 0 650, 300 650 C 550 650, 450 900, 700 900" 
+            d="M 250 100 C 500 100, 500 350, 750 350 C 1000 350, 0 550, 300 550 C 550 550, 450 750, 700 750" 
             fill="none" stroke="#A259FF" strokeWidth="8" strokeDasharray="16 16" strokeLinecap="round"
             style={{ pathLength }}
           />
@@ -116,13 +119,13 @@ export default function SchedulePanel({ lang }: SchedulePanelProps) {
               }}
             >
               <motion.div 
-                className="w-64 lg:w-72 flex flex-col bg-white rounded-[2rem] shadow-2xl border-2 border-white overflow-hidden group cursor-pointer will-change-transform"
+                className="w-56 lg:w-64 flex flex-col bg-white rounded-[2rem] shadow-2xl border-2 border-white overflow-hidden group cursor-pointer will-change-transform"
                 initial={{ x: "-50%", y: "-50%", rotate: i % 2 === 0 ? -2 : 3 }}
                 whileHover={{ scale: 1.05, rotate: 0, zIndex: 30 }}
                 transition={{ duration: 0.2, ease: "easeOut" }}
               >
                 {/* Watercolor Illustration */}
-              <div className="w-full h-40 lg:h-48 p-2">
+              <div className="w-full h-36 lg:h-40 p-2">
                 <div className="w-full h-full rounded-[2rem] overflow-hidden relative bg-white">
                    <img src={stop.image} alt={title} className="w-full h-full object-cover object-center group-hover:scale-110 transition-transform duration-700" />
                    
@@ -134,9 +137,9 @@ export default function SchedulePanel({ lang }: SchedulePanelProps) {
               </div>
 
               {/* Text Info */}
-              <div className="px-6 pb-6 pt-2 text-center">
-                <h3 className="text-xl lg:text-2xl font-black text-slate-800 mb-2">{title}</h3>
-                <p className="text-slate-500 font-medium text-sm leading-snug">
+              <div className="px-5 pb-5 pt-1 text-center">
+                <h3 className="text-lg lg:text-xl font-black text-slate-800 mb-1">{title}</h3>
+                <p className="text-slate-500 font-medium text-xs leading-snug">
                   {desc}
                 </p>
               </div>
@@ -144,10 +147,6 @@ export default function SchedulePanel({ lang }: SchedulePanelProps) {
           </div>
           );
         })}
-        
-        {/* Nano Banana Easter Egg */}
-        <div className="absolute top-[8%] left-[70%] text-2xl opacity-40 hover:opacity-100 cursor-help transform rotate-45 transition-opacity" title="Нано-банан 🍌">🍌</div>
-
       </div>
 
       {/* --- MOBILE FALLBACK (Vertical Timeline) --- */}

@@ -8,7 +8,7 @@ import {
 // Components
 import Header from "./components/Header";
 import Hero from "./components/Hero";
-import SpeakerCard from "./components/SpeakerCard";
+import { GlobeSplitSection } from "./components/GlobeSplitSection";
 import SchedulePanel from "./components/SchedulePanel";
 import TicketsPanel from "./components/TicketsPanel";
 import PartnersPanel from "./components/PartnersPanel";
@@ -68,8 +68,8 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 space-y-4">
-        <Loader2 className="h-8 w-8 animate-spin text-[#2563EB]" />
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#EDE9FE] space-y-4">
+        <Loader2 className="h-8 w-8 animate-spin text-[#9F7AEA]" />
         <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
           Loading Data...
         </p>
@@ -83,7 +83,7 @@ export default function App() {
   const isTicketsPath = currentPath === "/tickets";
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 antialiased font-sans flex flex-col justify-between" id="main_app_wrapper">
+    <div className="min-h-screen bg-[#EDE9FE] text-slate-800 antialiased font-sans flex flex-col justify-between" id="main_app_wrapper">
       
       {/* Header is global */}
       {!isAdminPath && (
@@ -96,7 +96,7 @@ export default function App() {
 
       <main className="flex-grow">
         {isAdminPath ? (
-          <div className="bg-slate-50 min-h-[75vh]">
+          <div className="bg-[#EDE9FE] min-h-[75vh]">
             <AdminCMS lang={lang} onDataChange={forceRefetch} />
           </div>
         ) : isTicketsPath ? (
@@ -111,7 +111,7 @@ export default function App() {
           </motion.div>
         ) : (
           /* MAIN LANDING PAGE */
-          <div className="space-y-32 pb-32 relative">
+          <div className="space-y-0 pb-10 relative">
             <GlobalWatermarks />
             
             <Hero lang={lang} settings={data.settings} onNavigate={navigate} />
@@ -122,55 +122,13 @@ export default function App() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-100px" }}
               transition={{ duration: 0.6, ease: "easeOut" }}
-              className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 -mt-20 relative z-20"
+              className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 relative z-20"
             >
-              <MetricsCarousel lang={lang} />
+              <MetricsCarousel lang={lang} metrics={data.metrics} />
             </motion.section>
 
-            {/* SPEAKERS SECTION */}
-            <motion.section 
-              initial={{ opacity: 0, y: 40 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-100px" }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-              className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8" id="speakers"
-            >
-              <div className="text-center mb-16">
-                <h2 className="text-4xl sm:text-5xl font-bold text-slate-900 tracking-tight">
-                  {lang === "ru" 
-                    ? "Узнайте стратегии поступления напрямую от студентов" 
-                    : lang === "kg" 
-                    ? "Кирүү стратегияларын түз эле студенттерден үйрөнүңүз"
-                    : "Learn admission strategies directly from students"}
-                </h2>
-                <p className="mt-6 text-lg text-slate-600 max-w-2xl mx-auto">
-                  {lang === "ru"
-                    ? "Мы пригласили студентов Лиги Плюща. Они покажут свои реальные эссе, результаты тестов и портфолио."
-                    : lang === "kg"
-                    ? "Биз Плющ Лигасынын студенттерин чакырдык. Алар өздөрүнүн реалдуу эсселерин, тест жыйынтыктарын жана портфолиолорун көрсөтүшөт."
-                    : "We invited Ivy League students. They will show their actual essays, test scores, and portfolios."}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {(showAllSpeakers ? data.speakers : data.speakers.slice(0, 4)).map(speaker => (
-                  <SpeakerCard key={speaker.id} speaker={speaker} lang={lang} />
-                ))}
-              </div>
-
-              {data.speakers.length > 4 && (
-                <div className="mt-12 text-center">
-                  <button 
-                    onClick={() => setShowAllSpeakers(!showAllSpeakers)}
-                    className="inline-flex items-center justify-center bg-white border border-slate-300 hover:border-[#2563EB] px-8 py-3 text-sm font-bold text-slate-700 hover:text-[#2563EB] uppercase rounded-full transition-colors shadow-sm"
-                  >
-                    {showAllSpeakers 
-                      ? (lang === "ru" ? "Скрыть" : lang === "kg" ? "Жашыруу" : "Hide") 
-                      : (lang === "ru" ? "Показать всех" : lang === "kg" ? "Бардыгын көрсөтүү" : "Show All")}
-                  </button>
-                </div>
-              )}
-            </motion.section>
+            {/* GLOBE & SPEAKERS SECTION */}
+            <GlobeSplitSection />
  
             {/* TIMELINE SECTION */}
             <motion.section 
@@ -189,7 +147,7 @@ export default function App() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-100px" }}
               transition={{ duration: 0.6, ease: "easeOut" }}
-              className="bg-white py-24 border-y border-slate-200" id="partners"
+              className="py-8 md:py-10 border-y border-[#E9D5FF]/50" id="partners"
             >
               <PartnersPanel partners={data.partners} lang={lang} />
             </motion.section>
@@ -210,13 +168,13 @@ export default function App() {
       </main>
  
       {/* Footer Branding Area */}
-      <footer className="border-t border-slate-200 bg-white py-12">
+      <footer className="border-t border-[#E9D5FF]/80 py-12">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           
           <div className="flex flex-col sm:flex-row items-center justify-between border-b border-slate-100 pb-8 gap-4">
             <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
               <span className="block text-xl font-bold text-slate-900 tracking-tight">
-                LEAD+ <span className="text-[#2563EB]">Forum</span>
+                LEAD+ <span className="text-[#9F7AEA]">Forum</span>
               </span>
               <span className="block text-sm text-slate-500 mt-1">
                 Кыргызстан, Бишкек, Технопарк
@@ -224,12 +182,12 @@ export default function App() {
             </div>
  
             <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-600 font-medium">
-              <a href={`tel:${data.settings.contactPhone}`} className="hover:text-[#2563EB] flex items-center space-x-2 transition">
+              <a href={`tel:${data.settings.contactPhone}`} className="hover:text-[#9F7AEA] flex items-center space-x-2 transition">
                 <Phone className="h-4 w-4 text-slate-400" />
                 <span>{data.settings.contactPhone}</span>
               </a>
               <span className="hidden sm:inline text-slate-300">|</span>
-              <a href="https://www.instagram.com/youthleadnetwork?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw==" target="_blank" rel="noopener noreferrer" className="hover:text-[#2563EB] font-bold">
+              <a href="https://www.instagram.com/youthleadnetwork?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw==" target="_blank" rel="noopener noreferrer" className="hover:text-[#9F7AEA] font-bold">
                 Instagram
               </a>
             </div>

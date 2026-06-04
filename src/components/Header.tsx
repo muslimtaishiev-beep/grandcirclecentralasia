@@ -27,19 +27,19 @@ export default function Header({ lang, setLang, onNavigate }: HeaderProps) {
         
         {/* Logo */}
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleNavigate("hero")}>
-          <GraduationCap className="h-8 w-8 text-[#2563EB]" />
-          <span className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-            Study Free <span className="text-[#2563EB]">Forum</span>
+          <GraduationCap className="h-8 w-8 text-[#9F7AEA]" />
+          <span className="text-xl font-black tracking-tighter text-slate-900 hidden sm:block">
+            Study Free <span className="text-[#9F7AEA]">Forum</span>
           </span>
         </div>
 
         {/* Navigation */}
         <nav className="hidden md:flex items-center gap-10 font-medium text-sm text-slate-600">
-          <button onClick={() => handleNavigate("speakers")} className="hover:text-[#2563EB] transition-colors">
+          <button onClick={() => handleNavigate("speakers")} className="hover:text-[#9F7AEA] transition-colors">
             {lang === "ru" ? "Спикеры" : lang === "kg" ? "Спикерлер" : "Speakers"}
           </button>
-          <button onClick={() => handleNavigate("schedule")} className="hover:text-[#2563EB] transition-colors">
-            {lang === "ru" ? "Программа" : lang === "kg" ? "Программа" : "Schedule"}
+          <button onClick={() => handleNavigate("schedule")} className="hover:text-[#9F7AEA] transition-colors">
+            {lang === "ru" ? "Программа" : lang === "kg" ? "Программа" : "Program"}
           </button>
         </nav>
 
@@ -49,13 +49,13 @@ export default function Header({ lang, setLang, onNavigate }: HeaderProps) {
             onClick={() => setLang(lang === "ru" ? "en" : lang === "en" ? "kg" : "ru")}
             className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-600 hover:bg-slate-50 transition-colors shadow-sm"
           >
-            <Globe className="h-4 w-4 text-[#2563EB]" />
+            <Globe className="h-4 w-4 text-[#9F7AEA]" />
             <span>{lang.toUpperCase()}</span>
           </button>
 
           <button
             onClick={() => onNavigate && onNavigate("/tickets")}
-            className="hidden lg:flex items-center justify-center bg-[#2563EB] rounded-full px-6 py-2.5 text-xs font-bold uppercase tracking-wide text-white hover:bg-blue-700 transition-colors shadow-md"
+            className="hidden lg:flex items-center justify-center bg-[#9F7AEA] rounded-full px-6 py-2.5 text-xs font-bold uppercase tracking-wide text-white hover:bg-[#8B5CF6] transition-colors shadow-md"
           >
             {lang === "ru" ? "Забронировать" : lang === "kg" ? "Билет алуу" : "Get Tickets"}
           </button>

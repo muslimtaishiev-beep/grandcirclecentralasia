@@ -64,6 +64,18 @@ export interface Ticket {
   utm_campaign: string;
 }
 
+export interface Metric {
+  id: string;
+  value: string;
+  label_ru: string;
+  label_en: string;
+  label_kg?: string;
+  sublabel_ru?: string;
+  sublabel_en?: string;
+  sublabel_kg?: string;
+  order: number;
+}
+
 export interface Subscriber {
   id: string;
   name: string;
@@ -78,4 +90,5 @@ export interface PublicData {
   program: ProgramSlot[];
   partners: Partner[];
   tickets: Ticket[];
+  metrics: Metric[];
 }

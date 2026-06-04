@@ -1,14 +1,40 @@
 import express from "express";
 import path from "path";
-import { promises as fs } from "fs";
+import { promises as fs, existsSync, readFileSync } from "fs";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
+import * as admin from "firebase-admin";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3005;
 const DB_PATH = path.join(process.cwd(), "data", "db.json");
+
+// Attempt to initialize Firebase Admin
+let useFirebase = false;
+try {
+  const keyPath = path.join(process.cwd(), "serviceAccountKey.json");
+  if (existsSync(keyPath)) {
+    const serviceAccount = JSON.parse(readFileSync(keyPath, "utf8"));
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    useFirebase = true;
+    console.log("🔥 Firebase Admin SDK initialized successfully from serviceAccountKey.json.");
+  } else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    useFirebase = true;
+    console.log("🔥 Firebase Admin SDK initialized successfully from .env.");
+  } else {
+    console.warn("⚠️ No serviceAccountKey.json found. Falling back to local db.json.");
+  }
+} catch (e) {
+  console.warn("⚠️ Failed to initialize Firebase Admin. Falling back to local db.json.", e);
+}
 
 // Middleware
 app.use(express.json());
@@ -18,9 +44,40 @@ let activeSessions = new Set<string>();
 
 // Helper to read database
 async function readDb() {
+  if (useFirebase) {
+    try {
+      const dbRef = admin.firestore().collection("system").doc("db");
+      const doc = await dbRef.get();
+      if (doc.exists) {
+        return doc.data();
+      }
+    } catch (e) {
+      console.error("Firebase read error", e);
+    }
+  }
+
+  // Fallback / Initial schema
+  const defaultMetrics = [
+    { id: "m1", value: "500+", label_en: "Attendees", label_ru: "Участников", sublabel_en: "Students, parents, professionals", sublabel_ru: "Школьники, студенты, родители", order: 1 },
+    { id: "m2", value: "1", label_en: "Intense Day", label_ru: "День форума", order: 2 },
+    { id: "m3", value: "20+", label_en: "Speakers", label_ru: "Спикеров", order: 3 },
+    { id: "m4", value: "Essay", label_en: "Competition", label_ru: "Competition", sublabel_en: "Largest in CA", sublabel_ru: "Крупнейший в ЦА", order: 4 },
+    { id: "m5", value: "∞", label_en: "Motivation", label_ru: "Мотивации", order: 5 },
+    { id: "m6", value: "4", label_en: "Panel Sessions", label_ru: "Панельные сессии", sublabel_en: "Admission strategies", sublabel_ru: "Стратегии поступления", order: 6 },
+    { id: "m7", value: "VIP", label_en: "Dinner", label_ru: "Ужин", order: 7 },
+    { id: "m8", value: "100%", label_en: "Networking", label_ru: "Нетворкинг", order: 8 }
+  ];
+
   try {
     const data = await fs.readFile(DB_PATH, "utf-8");
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    // If metrics are missing from the existing DB, inject defaults
+    if (!parsed.metrics || parsed.metrics.length === 0) {
+      parsed.metrics = defaultMetrics;
+      // Auto-save the repaired structure locally
+      fs.writeFile(DB_PATH, JSON.stringify(parsed, null, 2), "utf-8").catch(e => console.error(e));
+    }
+    return parsed;
   } catch (error) {
     console.error("Database reading error, reloading blank structure.", error);
     return {
@@ -35,13 +92,24 @@ async function readDb() {
       program: [],
       partners: [],
       tickets: [],
-      subscribers: []
+      subscribers: [],
+      metrics: defaultMetrics
     };
   }
 }
 
 // Helper to write database
 async function writeDb(data: any) {
+  if (useFirebase) {
+    try {
+      const dbRef = admin.firestore().collection("system").doc("db");
+      await dbRef.set(data);
+      return true;
+    } catch (e) {
+      console.error("Firebase write error", e);
+    }
+  }
+
   try {
     await fs.writeFile(DB_PATH, JSON.stringify(data, null, 2), "utf-8");
     return true;
@@ -77,7 +145,8 @@ app.get("/api/public/data", async (req, res) => {
     speakers: db.speakers || [],
     program: db.program || [],
     partners: db.partners || [],
-    tickets: db.tickets || []
+    tickets: db.tickets || [],
+    metrics: db.metrics || []
   });
 });
 
@@ -372,6 +441,70 @@ app.delete("/api/admin/partners/:id", requireAuth, async (req, res) => {
   const db = await readDb();
   
   db.partners = db.partners.filter((p: any) => p.id !== id);
+  await writeDb(db);
+  res.json({ success: true });
+});
+
+// --- Metrics CRUD ---
+app.post("/api/admin/metrics", requireAuth, async (req, res) => {
+  const { value, label_ru, label_en, sublabel_ru, sublabel_en, order } = req.body;
+  if (!value || !label_en) {
+    return res.status(400).json({ error: "Value and English Label are required." });
+  }
+
+  const db = await readDb();
+  if (!db.metrics) db.metrics = [];
+  
+  const nextId = "m_" + Date.now();
+  const newMetric = {
+    id: nextId,
+    value,
+    label_ru: label_ru || label_en,
+    label_en,
+    sublabel_ru: sublabel_ru || "",
+    sublabel_en: sublabel_en || "",
+    order: order || db.metrics.length + 1
+  };
+
+  db.metrics.push(newMetric);
+  db.metrics.sort((a: any, b: any) => a.order - b.order);
+  await writeDb(db);
+  res.status(201).json({ success: true, metric: newMetric });
+});
+
+app.put("/api/admin/metrics/:id", requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const db = await readDb();
+  if (!db.metrics) db.metrics = [];
+  
+  const index = db.metrics.findIndex((m: any) => m.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: "Metric not found." });
+  }
+
+  const { value, label_ru, label_en, sublabel_ru, sublabel_en, order } = req.body;
+
+  db.metrics[index] = {
+    ...db.metrics[index],
+    value: value !== undefined ? value : db.metrics[index].value,
+    label_ru: label_ru !== undefined ? label_ru : db.metrics[index].label_ru,
+    label_en: label_en !== undefined ? label_en : db.metrics[index].label_en,
+    sublabel_ru: sublabel_ru !== undefined ? sublabel_ru : db.metrics[index].sublabel_ru,
+    sublabel_en: sublabel_en !== undefined ? sublabel_en : db.metrics[index].sublabel_en,
+    order: order !== undefined ? order : db.metrics[index].order
+  };
+
+  db.metrics.sort((a: any, b: any) => a.order - b.order);
+  await writeDb(db);
+  res.json({ success: true, metric: db.metrics[index] });
+});
+
+app.delete("/api/admin/metrics/:id", requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const db = await readDb();
+  if (!db.metrics) db.metrics = [];
+  
+  db.metrics = db.metrics.filter((m: any) => m.id !== id);
   await writeDb(db);
   res.json({ success: true });
 });

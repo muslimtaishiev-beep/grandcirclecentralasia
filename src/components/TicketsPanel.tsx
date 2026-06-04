@@ -37,7 +37,7 @@ export default function TicketsPanel({ tickets, lang }: TicketsPanelProps) {
               key={ticket.id}
               className={`relative flex flex-col justify-between p-10 transition-all duration-300 rounded-[24px] ${
                 isBusiness 
-                  ? "bg-[#2563EB] text-white shadow-2xl scale-100 z-10 lg:-translate-y-4 border-none" 
+                  ? "bg-[#9F7AEA] text-white shadow-2xl scale-100 z-10 lg:-translate-y-4 border-none" 
                   : "bg-white border border-slate-100 shadow-xl hover:shadow-2xl text-slate-900"
               }`}
             >
@@ -50,7 +50,7 @@ export default function TicketsPanel({ tickets, lang }: TicketsPanelProps) {
               )}
 
               <div>
-                <h3 className={`text-xl font-bold uppercase tracking-wide ${isBusiness ? "text-white" : "text-[#2563EB]"}`}>
+                <h3 className={`text-xl font-bold uppercase tracking-wide ${isBusiness ? "text-white" : "text-[#9F7AEA]"}`}>
                   {lang === "ru" ? ticket.name_ru : lang === "kg" ? (ticket.name_kg || ticket.name_ru) : ticket.name_en}
                 </h3>
                 
@@ -63,7 +63,7 @@ export default function TicketsPanel({ tickets, lang }: TicketsPanelProps) {
                 <ul className="mt-8 space-y-5">
                   {(lang === "ru" ? ticket.features_ru : lang === "kg" ? (ticket.features_kg || ticket.features_ru) : ticket.features_en).map((feature, fIdx) => (
                     <li key={fIdx} className="flex items-start space-x-4 text-left">
-                      <div className={`mt-0.5 rounded-full p-1 flex-shrink-0 ${isBusiness ? "bg-white/20 text-white" : "bg-sky-50 text-[#2563EB]"}`}>
+                      <div className={`mt-0.5 rounded-full p-1 flex-shrink-0 ${isBusiness ? "bg-white/20 text-white" : "bg-purple-50 text-[#9F7AEA]"}`}>
                         <Check className="h-3 w-3" />
                       </div>
                       <span className={`text-sm font-medium leading-relaxed ${isBusiness ? "text-white/90" : "text-slate-600"}`}>
@@ -81,8 +81,8 @@ export default function TicketsPanel({ tickets, lang }: TicketsPanelProps) {
                   rel="noopener noreferrer"
                   className={`flex w-full items-center justify-center space-x-2 px-6 py-4 text-sm font-bold uppercase tracking-wide transition-all duration-300 rounded-full shadow-sm ${
                     isBusiness
-                      ? "bg-white text-[#2563EB] hover:bg-slate-50"
-                      : "bg-slate-50 text-slate-900 hover:bg-[#2563EB] hover:text-white"
+                      ? "bg-white text-[#9F7AEA] hover:bg-slate-50"
+                      : "bg-slate-50 text-slate-900 hover:bg-[#9F7AEA] hover:text-white"
                   }`}
                 >
                   <span>{lang === "ru" ? "Купить билет" : lang === "kg" ? "Билет сатып алуу" : "Purchase Ticket"}</span>

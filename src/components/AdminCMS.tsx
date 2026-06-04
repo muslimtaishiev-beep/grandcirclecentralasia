@@ -4,14 +4,14 @@ import {
   Settings as SettingsIcon, Users, Calendar, Award, DollarSign, ShieldAlert, LogOut,
   Landmark
 } from "lucide-react";
-import { Speaker, ProgramSlot, Partner, Ticket, Settings, Subscriber } from "../types";
+import { Speaker, ProgramSlot, Partner, Ticket, Settings, Subscriber, Metric } from "../types";
 
 interface AdminCMSProps {
   lang: "ru" | "en";
   onDataChange: () => void; // Trigger a refresh on the parent public frame
 }
 
-type AdminTab = "subscribers" | "speakers" | "program" | "tickets" | "partners" | "settings";
+type AdminTab = "metrics" | "subscribers" | "speakers" | "program" | "tickets" | "partners" | "settings";
 
 export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
   const [token, setToken] = useState<string>(localStorage.getItem("admin_token") || "");
@@ -20,7 +20,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
   const [loading, setLoading] = useState(false);
 
   // Active Admin States
-  const [currentTab, setCurrentTab] = useState<AdminTab>("subscribers");
+  const [currentTab, setCurrentTab] = useState<AdminTab>("metrics");
   const [dbData, setDbData] = useState<{
     settings: Settings;
     speakers: Speaker[];
@@ -28,9 +28,11 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
     partners: Partner[];
     tickets: Ticket[];
     subscribers: Subscriber[];
+    metrics: Metric[];
   } | null>(null);
 
   // Editing Actions / Modal controls
+  const [editingMetric, setEditingMetric] = useState<Partial<Metric> | null>(null);
   const [editingSpeaker, setEditingSpeaker] = useState<Partial<Speaker> | null>(null);
   const [editingSlot, setEditingSlot] = useState<Partial<ProgramSlot> | null>(null);
   const [editingPartner, setEditingPartner] = useState<Partial<Partner> | null>(null);
@@ -145,6 +147,25 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
       return null;
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // METRICS HANDLERS
+  const saveMetric = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMetric) return;
+    const isEdit = !!editingMetric.id;
+    const url = isEdit ? `/api/admin/metrics/${editingMetric.id}` : "/api/admin/metrics";
+    const method = isEdit ? "PUT" : "POST";
+    const success = await makeRequest(url, method, editingMetric);
+    if (success) {
+      setEditingMetric(null);
+    }
+  };
+
+  const deleteMetric = async (id: string) => {
+    if (window.confirm("Are you sure you want to delete this metric?")) {
+      await makeRequest(`/api/admin/metrics/${id}`, "DELETE", null);
     }
   };
 
@@ -359,11 +380,12 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
       {/* Tabs navigation list */}
       <div className="flex flex-wrap gap-2 border-b border-slate-100 pb-4 mb-8" id="admin_tab_row">
         {[
+          { id: "metrics", label_ru: "Метрики", label_en: "Metrics Grid", badge: dbData.metrics?.length || 0, icon: Plus },
           { id: "subscribers", label_ru: "База Рассылки", label_en: "Mailing Base", badge: dbData.subscribers.length, icon: Users },
           { id: "speakers", label_ru: "Спикеры (+16)", label_en: "Speakers Deck", badge: dbData.speakers.length, icon: Award },
           { id: "program", label_ru: "Программа дня", label_en: "Program slots", badge: dbData.program.length, icon: Calendar },
           { id: "tickets", label_ru: "Билеты / UTM", label_en: "Tickets Layout", badge: dbData.tickets.length, icon: DollarSign },
-          { id: "partners", label_ru: "Партнеры", label_en: "Partners", badge: dbData.partners.length, icon: Landmark },
+          { id: "partners", label_ru: "Спонсоры и Партнеры", label_en: "Sponsors & Partners", badge: dbData.partners.length, icon: Landmark },
           { id: "settings", label_ru: "Глобальные настройки", label_en: "HQ Settings", icon: SettingsIcon }
         ].map((tab) => {
           const IconComp = tab.icon;
@@ -403,6 +425,99 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
       )}
 
       {/* RENDER ACTIVE TAB VIEW */}
+
+      {/* TAB: METRICS CRUD */}
+      {currentTab === "metrics" && (
+        <div className="space-y-6" id="tab_metrics_view">
+          <div className="flex border-b border-dashed border-slate-100 pb-4 justify-between items-center text-left">
+            <div>
+              <h2 className="text-lg font-extrabold text-slate-800">
+                {lang === "ru" ? "Управление Метриками" : "Metrics Grid Content"}
+              </h2>
+              <p className="text-xs text-slate-400">
+                {lang === "ru" ? "Главные карточки с цифрами на стартовом экране." : "The primary statistics and numbers shown on the hero grid."}
+              </p>
+            </div>
+            <button
+              onClick={() => setEditingMetric({ value: "", label_en: "", label_ru: "", sublabel_en: "", sublabel_ru: "", order: (dbData.metrics?.length || 0) + 1 })}
+              className="flex items-center space-x-1.5 rounded-full bg-slate-900 border hover:bg-slate-800 text-white font-bold text-xs px-4 py-2 transition cursor-pointer"
+            >
+              <Plus className="h-4 w-4" />
+              <span>{lang === "ru" ? "Добавить Метрику" : "Add Metric"}</span>
+            </button>
+          </div>
+
+          {editingMetric && (
+            <form onSubmit={saveMetric} className="rounded-3xl border border-slate-200 bg-slate-50/40 p-6 sm:p-8 space-y-5 text-left animate-slide-down">
+              <div className="flex justify-between items-center border-b border-slate-200/60 pb-3 mb-2">
+                <h3 className="font-extrabold text-sm sm:text-base text-slate-800">
+                  {editingMetric.id ? "Редактирование Метрики" : "Добавление Метрики"}
+                </h3>
+                <button type="button" onClick={() => setEditingMetric(null)} className="rounded-full bg-slate-200 p-1.5 text-slate-400 hover:text-slate-600 cursor-pointer">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Big Value (e.g. 500+)</label>
+                  <input type="text" required value={editingMetric.value || ""} onChange={(e) => setEditingMetric({...editingMetric, value: e.target.value})} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
+                </div>
+                <div>
+                  <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Display Order</label>
+                  <input type="number" required value={editingMetric.order || 1} onChange={(e) => setEditingMetric({...editingMetric, order: parseInt(e.target.value) || 1})} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Label (English) *</label>
+                  <input type="text" required value={editingMetric.label_en || ""} onChange={(e) => setEditingMetric({...editingMetric, label_en: e.target.value})} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
+                </div>
+                <div>
+                  <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Заголовок (Русский)</label>
+                  <input type="text" value={editingMetric.label_ru || ""} onChange={(e) => setEditingMetric({...editingMetric, label_ru: e.target.value})} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Sublabel (English)</label>
+                  <input type="text" value={editingMetric.sublabel_en || ""} onChange={(e) => setEditingMetric({...editingMetric, sublabel_en: e.target.value})} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
+                </div>
+                <div>
+                  <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Подзаголовок (Русский)</label>
+                  <input type="text" value={editingMetric.sublabel_ru || ""} onChange={(e) => setEditingMetric({...editingMetric, sublabel_ru: e.target.value})} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-3 border-t border-slate-200/60">
+                <button type="button" onClick={() => setEditingMetric(null)} className="rounded-full border border-slate-200 px-6 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-100 cursor-pointer">Cancel</button>
+                <button type="submit" disabled={actionLoading} className="rounded-full bg-slate-950 hover:bg-slate-800 text-white px-6 py-2.5 text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer">
+                  {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                  <span>Save changes</span>
+                </button>
+              </div>
+            </form>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {(dbData.metrics || []).map((m) => (
+              <div key={m.id} className="rounded-2xl border border-slate-100 bg-white p-4 text-center flex flex-col justify-between shadow-xs">
+                <div>
+                  <span className="text-3xl font-black text-slate-800">{m.value}</span>
+                  <h4 className="mt-1 text-sm font-bold text-slate-700">{m.label_en}</h4>
+                  {m.sublabel_en && <p className="text-xs text-slate-500 mt-0.5">{m.sublabel_en}</p>}
+                </div>
+                <div className="mt-4 pt-3 border-t border-slate-50 flex justify-center space-x-2">
+                  <button onClick={() => setEditingMetric(m)} className="rounded-lg border border-slate-150 p-1.5 text-slate-500 hover:bg-slate-50/50 hover:text-slate-800 cursor-pointer"><Edit2 className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => deleteMetric(m.id)} className="rounded-lg border border-red-150 p-1.5 text-red-500 hover:bg-red-50 hover:border-red-250 cursor-pointer"><Trash2 className="h-3.5 w-3.5" /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* TAB 1: SUBSCRIBERS LIST & CSV EXPORT */}
       {currentTab === "subscribers" && (
@@ -869,27 +984,27 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
         </div>
       )}
 
-      {/* TAB 5: PARTNERS CRUD */}
+      {/* TAB 5: PARTNERS & SPONSORS CRUD */}
       {currentTab === "partners" && (
         <div className="space-y-6" id="tab_partners_view">
           <div className="flex border-b border-dashed border-slate-100 pb-4 justify-between items-center text-left">
             <div>
-              <h2 className="text-lg font-extrabold text-slate-800">HQ Sponsor & Ecosystem Partners</h2>
-              <p className="text-xs text-slate-400">Manage names and specific tiers for supporting institutions.</p>
+              <h2 className="text-lg font-extrabold text-slate-800">HQ Sponsors & Ecosystem Partners</h2>
+              <p className="text-xs text-slate-400">Manage sponsors and partners that appear at the bottom.</p>
             </div>
 
             <button
-              onClick={() => setEditingPartner({ name: "", role_en: "", role_ru: "", tier: "partner" })}
+              onClick={() => setEditingPartner({ name: "", role_en: "", role_ru: "", tier: "sponsor" })}
               className="flex items-center space-x-1.5 rounded-full bg-slate-900 text-white font-bold text-xs px-4 py-2 transition cursor-pointer"
             >
               <Plus className="h-4 w-4" />
-              <span>Add Partner</span>
+              <span>Add Sponsor / Partner</span>
             </button>
           </div>
 
           {editingPartner && (
             <form onSubmit={savePartner} className="rounded-3xl border border-slate-200 bg-slate-50/40 p-6 space-y-4 text-left animate-slide-down">
-              <h3 className="font-extrabold text-xs text-slate-800">Create or modify partner log</h3>
+              <h3 className="font-extrabold text-xs text-slate-800">Create or modify sponsor/partner log</h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -904,7 +1019,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
                 <div>
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1">Target Partnership Level Tier</label>
                   <select
-                    value={editingPartner.tier || "partner"}
+                    value={editingPartner.tier || "sponsor"}
                     onChange={(e) => setEditingPartner({...editingPartner, tier: e.target.value})}
                     className="w-full rounded-xl border border-slate-200 p-2 text-xs font-semibold text-slate-700 bg-white"
                   >
