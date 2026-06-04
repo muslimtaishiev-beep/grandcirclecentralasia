@@ -48,7 +48,7 @@ export default function App() {
   useEffect(() => {
     const fetchPublicData = async () => {
       try {
-        const response = await fetch("/api/public/data");
+        const response = await fetch((import.meta.env.VITE_API_URL || "") + "/api/public/data");
         if (response.ok) {
           const resJson = await response.json();
           setPublicData(resJson);

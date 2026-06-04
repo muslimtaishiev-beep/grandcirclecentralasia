@@ -62,7 +62,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
     setLoginError("");
 
     try {
-      const response = await fetch("/api/admin/login", {
+      const response = await fetch((import.meta.env.VITE_API_URL || "") + "/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
@@ -86,7 +86,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
 
   const handleLogout = async () => {
     try {
-      await fetch("/api/admin/logout", {
+      await fetch((import.meta.env.VITE_API_URL || "") + "/api/admin/logout", {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -100,7 +100,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
   const fetchAdminData = async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/admin/data", {
+      const response = await fetch((import.meta.env.VITE_API_URL || "") + "/api/admin/data", {
         headers: { "Authorization": `Bearer ${token}` }
       });
 
@@ -124,7 +124,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
     setActionLoading(true);
     setActionError("");
     try {
-      const response = await fetch(url, {
+      const response = await fetch((import.meta.env.VITE_API_URL || "") + url, {
         method,
         headers: {
           "Content-Type": "application/json",
@@ -245,7 +245,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
 
   // Download Subscribers Database to CSV
   const triggerCsvDownload = () => {
-    const downloadUrl = `/api/admin/subscribers/export`;
+    const downloadUrl = (import.meta.env.VITE_API_URL || "") + "/api/admin/subscribers/export";
     
     // Create a temporary hidden link element
     const link = document.createElement("a");

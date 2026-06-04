@@ -1,4 +1,5 @@
 import express from "express";
+import cors from "cors";
 import path from "path";
 import { promises as fs, existsSync, readFileSync } from "fs";
 import { createServer as createViteServer } from "vite";
@@ -8,6 +9,12 @@ import * as admin from "firebase-admin";
 dotenv.config();
 
 const app = express();
+app.use(cors({
+  origin: "*",
+  credentials: true
+}));
+app.use(express.json({ limit: '10mb' }));
+
 const PORT = process.env.PORT || 3005;
 const DB_PATH = path.join(process.cwd(), "data", "db.json");
 
