@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { 
-  Lock, Loader2, Download, Plus, Trash2, Edit2, Check, X, 
+import {
+  Lock, Loader2, Download, Plus, Trash2, Edit2, Check, X, UploadCloud,
   Settings as SettingsIcon, Users, Calendar, Award, DollarSign, ShieldAlert, LogOut,
   Landmark
 } from "lucide-react";
@@ -11,7 +11,7 @@ interface AdminCMSProps {
   onDataChange: () => void; // Trigger a refresh on the parent public frame
 }
 
-type AdminTab = "metrics" | "subscribers" | "speakers" | "program" | "tickets" | "partners" | "settings";
+type AdminTab = "metrics" | "subscribers" | "speakers" | "universities" | "program" | "tickets" | "partners" | "settings";
 
 export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
   const [token, setToken] = useState<string>(localStorage.getItem("admin_token") || "");
@@ -30,7 +30,11 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
     tickets: Ticket[];
     subscribers: Subscriber[];
     metrics: Metric[];
+    universities: any[];
   } | null>(null);
+
+  // Editing Actions / Modal controls
+  const [editingUniversity, setEditingUniversity] = useState<any | null>(null);
 
   // Editing Actions / Modal controls
   const [editingMetric, setEditingMetric] = useState<Partial<Metric> | null>(null);
@@ -91,8 +95,8 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
-    } catch (e) {}
-    
+    } catch (e) { }
+
     localStorage.removeItem("admin_token");
     setToken("");
     setDbData(null);
@@ -140,24 +144,76 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         },
-        body: JSON.stringify(body)
+        body: body ? JSON.stringify(body) : undefined
       });
 
-      const result = await response.json();
+      let result;
+      try {
+        result = await response.clone().json();
+      } catch (err) {
+        // If response is not JSON (e.g. 413 Payload Too Large or 502 Gateway), get text
+        const text = await response.text();
+        console.error("Non-JSON API response:", response.status, text);
+        setActionError(`Server Error (${response.status}): The request failed or response is not JSON.`);
+        return null;
+      }
+
       if (response.ok) {
         await fetchAdminData();
         onDataChange();
         return result;
       } else {
-        setActionError(result.error || "Operation failed.");
+        setActionError(result.error || `Operation failed (${response.status})`);
         return null;
       }
-    } catch (e) {
-      setActionError("Network offline error.");
+    } catch (e: any) {
+      console.error("API Fetch Error:", e);
+      setActionError("Network offline error: " + (e.message || ""));
       return null;
     } finally {
       setActionLoading(false);
     }
+  };
+
+  // IMAGE COMPRESSION
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, callback: (base64: string) => void) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 256;
+        const MAX_HEIGHT = 256;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        // Compress to 80% JPEG
+        const base64 = canvas.toDataURL("image/jpeg", 0.8);
+        callback(base64);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
   };
 
   // METRICS HANDLERS
@@ -197,6 +253,27 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
   const deleteSpeaker = async (id: string) => {
     if (window.confirm("Are you sure you want to delete this speaker?")) {
       await makeRequest(`/api/admin/speakers/${id}`, "DELETE", null);
+    }
+  };
+
+  // UNIVERSITIES HANDLERS
+  const saveUniversity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUniversity) return;
+
+    const isEdit = !!editingUniversity.id;
+    const url = isEdit ? `/api/admin/universities/${editingUniversity.id}` : "/api/admin/universities";
+    const method = isEdit ? "PUT" : "POST";
+
+    const success = await makeRequest(url, method, editingUniversity);
+    if (success) {
+      setEditingUniversity(null);
+    }
+  };
+
+  const deleteUniversity = async (id: string) => {
+    if (window.confirm("Are you sure you want to delete this university?")) {
+      await makeRequest(`/api/admin/universities/${id}`, "DELETE", null);
     }
   };
 
@@ -256,7 +333,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
   // Download Subscribers Database to CSV
   const triggerCsvDownload = () => {
     const downloadUrl = (import.meta.env.VITE_API_URL || "") + "/api/admin/subscribers/export";
-    
+
     // Create a temporary hidden link element
     const link = document.createElement("a");
     link.href = downloadUrl;
@@ -267,31 +344,31 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
     fetch(downloadUrl, {
       headers: { "Authorization": `Bearer ${token}` }
     })
-    .then(response => {
-      if (!response.ok) throw new Error("Unauthorized");
-      return response.blob();
-    })
-    .then(blob => {
-      const blobUrl = window.URL.createObjectURL(blob);
-      link.href = blobUrl;
-      link.setAttribute("download", "educational_forum_mailing_list.csv");
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
-    })
-    .catch(err => {
-      alert("Error compilation downloading mailing base: Unauthorized session.");
-    })
-    .finally(() => {
-      setLoading(false);
-    });
+      .then(response => {
+        if (!response.ok) throw new Error("Unauthorized");
+        return response.blob();
+      })
+      .then(blob => {
+        const blobUrl = window.URL.createObjectURL(blob);
+        link.href = blobUrl;
+        link.setAttribute("download", "educational_forum_mailing_list.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
+      })
+      .catch(err => {
+        alert("Error compilation downloading mailing base: Unauthorized session.");
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   };
 
   // RENDER: Authorization Login Panel
   if (!token) {
     return (
-      <div className="mx-auto max-w-md my-12 p-8 rounded-3xl border border-slate-200/85 bg-white shadow-xl bg-gradient-to-b from-white to-slate-50/50 text-left" id="admin_login_box">
+      <div className="mx-auto max-w-md my-12 p-8 rounded-[2rem] border border-white/60 bg-white/80 backdrop-blur-xl shadow-2xl text-left" id="admin_login_box">
         <div className="flex items-center space-x-3 mb-6">
           <div className="rounded-xl bg-sky-50 p-3 text-sky-500">
             <Lock className="h-6 w-6" />
@@ -336,7 +413,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
                 <span className="text-xs font-bold text-slate-500">AUTHORIZING...</span>
               </button>
             ) : (
-              <button type="submit" className="w-full rounded-full bg-slate-950 hover:bg-slate-800 text-white p-3.5 font-bold tracking-wider text-xs sm:text-sm shadow-md cursor-pointer transition">
+              <button type="submit" className="w-full rounded-full bg-[#A259FF] hover:bg-[#8B4DE5] text-white p-3.5 font-bold tracking-wider text-xs sm:text-sm shadow-md cursor-pointer transition">
                 {lang === "ru" ? "Авторизоваться" : "LOG IN"}
               </button>
             )}
@@ -380,9 +457,9 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
   return (
     <div className="w-full mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8" id="admin_dashboard_root">
       {/* CMS Dashboard Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-6 mb-8 text-left">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-purple-200/30 pb-6 mb-8 text-left">
         <div>
-          <span className="rounded-full bg-sky-50 border border-sky-100 px-3 py-1 text-[10px] font-black text-sky-500 uppercase tracking-widest font-mono">
+          <span className="rounded-full bg-[#9F7AEA]/10 border border-[#9F7AEA]/20 px-3 py-1 text-[10px] font-black text-[#9F7AEA] uppercase tracking-widest font-mono">
             🔐 Control Portal • Live Config
           </span>
           <h1 className="mt-2 text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
@@ -404,11 +481,12 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
       </div>
 
       {/* Tabs navigation list */}
-      <div className="flex flex-wrap gap-2 border-b border-slate-100 pb-4 mb-8" id="admin_tab_row">
+      <div className="flex flex-wrap gap-2 border-b border-purple-200/30 pb-4 mb-8" id="admin_tab_row">
         {[
           { id: "metrics", label_ru: "Метрики", label_en: "Metrics Grid", badge: dbData.metrics?.length || 0, icon: Plus },
           { id: "subscribers", label_ru: "База Рассылки", label_en: "Mailing Base", badge: dbData.subscribers.length, icon: Users },
-          { id: "speakers", label_ru: "Спикеры (+16)", label_en: "Speakers Deck", badge: dbData.speakers.length, icon: Award },
+          { id: "speakers", label_ru: "Спикеры", label_en: "Speakers Deck", badge: dbData.speakers?.length || 0, icon: Users },
+          { id: "universities", label_ru: "Университеты", label_en: "Universities", badge: dbData.universities?.length || 0, icon: Landmark },
           { id: "program", label_ru: "Программа дня", label_en: "Program slots", badge: dbData.program.length, icon: Calendar },
           { id: "tickets", label_ru: "Билеты / UTM", label_en: "Tickets Layout", badge: dbData.tickets.length, icon: DollarSign },
           { id: "partners", label_ru: "Спонсоры и Партнеры", label_en: "Sponsors & Partners", badge: dbData.partners.length, icon: Landmark },
@@ -423,11 +501,10 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
                 setCurrentTab(tab.id as AdminTab);
                 setActionError("");
               }}
-              className={`flex items-center space-x-1.5 rounded-full px-4.5 py-2 text-xs font-bold transition cursor-pointer select-none ${
-                isActive 
-                  ? "bg-slate-950 text-white shadow-xs font-black scale-102" 
+              className={`flex items-center space-x-1.5 rounded-full px-4.5 py-2 text-xs font-bold transition cursor-pointer select-none ${isActive
+                  ? "bg-[#A259FF] text-white shadow-md font-black scale-102"
                   : "bg-slate-50 border border-slate-100 hover:bg-slate-100 hover:border-slate-200 text-slate-500"
-              }`}
+                }`}
               id={`tab_select_${tab.id}`}
             >
               <IconComp className="h-3.5 w-3.5" />
@@ -466,7 +543,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
             </div>
             <button
               onClick={() => setEditingMetric({ value: "", label_en: "", label_ru: "", sublabel_en: "", sublabel_ru: "", order: (dbData.metrics?.length || 0) + 1 })}
-              className="flex items-center space-x-1.5 rounded-full bg-slate-900 border hover:bg-slate-800 text-white font-bold text-xs px-4 py-2 transition cursor-pointer"
+              className="flex items-center space-x-1.5 rounded-full bg-[#A259FF] hover:bg-[#8B4DE5] shadow-md text-white font-bold text-xs px-4 py-2 transition cursor-pointer"
             >
               <Plus className="h-4 w-4" />
               <span>{lang === "ru" ? "Добавить Метрику" : "Add Metric"}</span>
@@ -474,7 +551,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
           </div>
 
           {editingMetric && (
-            <form onSubmit={saveMetric} className="rounded-3xl border border-slate-200 bg-slate-50/40 p-6 sm:p-8 space-y-5 text-left animate-slide-down">
+            <form onSubmit={saveMetric} className="rounded-3xl border border-white/50 bg-white/70 backdrop-blur-md p-6 sm:p-8 space-y-5 text-left shadow-lg animate-slide-down">
               <div className="flex justify-between items-center border-b border-slate-200/60 pb-3 mb-2">
                 <h3 className="font-extrabold text-sm sm:text-base text-slate-800">
                   {editingMetric.id ? "Редактирование Метрики" : "Добавление Метрики"}
@@ -487,39 +564,39 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Big Value (e.g. 500+)</label>
-                  <input type="text" required value={editingMetric.value || ""} onChange={(e) => setEditingMetric({...editingMetric, value: e.target.value})} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
+                  <input type="text" required value={editingMetric.value || ""} onChange={(e) => setEditingMetric({ ...editingMetric, value: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
                 </div>
                 <div>
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Display Order</label>
-                  <input type="number" required value={editingMetric.order || 1} onChange={(e) => setEditingMetric({...editingMetric, order: parseInt(e.target.value) || 1})} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
+                  <input type="number" required value={editingMetric.order || 1} onChange={(e) => setEditingMetric({ ...editingMetric, order: parseInt(e.target.value) || 1 })} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Label (English) *</label>
-                  <input type="text" required value={editingMetric.label_en || ""} onChange={(e) => setEditingMetric({...editingMetric, label_en: e.target.value})} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
+                  <input type="text" required value={editingMetric.label_en || ""} onChange={(e) => setEditingMetric({ ...editingMetric, label_en: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
                 </div>
                 <div>
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Заголовок (Русский)</label>
-                  <input type="text" value={editingMetric.label_ru || ""} onChange={(e) => setEditingMetric({...editingMetric, label_ru: e.target.value})} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
+                  <input type="text" value={editingMetric.label_ru || ""} onChange={(e) => setEditingMetric({ ...editingMetric, label_ru: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Sublabel (English)</label>
-                  <input type="text" value={editingMetric.sublabel_en || ""} onChange={(e) => setEditingMetric({...editingMetric, sublabel_en: e.target.value})} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
+                  <input type="text" value={editingMetric.sublabel_en || ""} onChange={(e) => setEditingMetric({ ...editingMetric, sublabel_en: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
                 </div>
                 <div>
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Подзаголовок (Русский)</label>
-                  <input type="text" value={editingMetric.sublabel_ru || ""} onChange={(e) => setEditingMetric({...editingMetric, sublabel_ru: e.target.value})} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
+                  <input type="text" value={editingMetric.sublabel_ru || ""} onChange={(e) => setEditingMetric({ ...editingMetric, sublabel_ru: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden" />
                 </div>
               </div>
 
               <div className="flex justify-end space-x-3 pt-3 border-t border-slate-200/60">
                 <button type="button" onClick={() => setEditingMetric(null)} className="rounded-full border border-slate-200 px-6 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-100 cursor-pointer">Cancel</button>
-                <button type="submit" disabled={actionLoading} className="rounded-full bg-slate-950 hover:bg-slate-800 text-white px-6 py-2.5 text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer">
+                <button type="submit" disabled={actionLoading} className="rounded-full bg-[#A259FF] hover:bg-[#8B4DE5] text-white px-6 py-2.5 text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer shadow-md">
                   {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                   <span>Save changes</span>
                 </button>
@@ -529,7 +606,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {(dbData.metrics || []).map((m) => (
-              <div key={m.id} className="rounded-2xl border border-slate-100 bg-white p-4 text-center flex flex-col justify-between shadow-xs">
+              <div key={m.id} className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur-sm p-4 text-center flex flex-col justify-between shadow-xl">
                 <div>
                   <span className="text-3xl font-black text-slate-800">{m.value}</span>
                   <h4 className="mt-1 text-sm font-bold text-slate-700">{m.label_en}</h4>
@@ -619,9 +696,9 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
 
             <button
               onClick={() => setEditingSpeaker({
-                name_ru: "", name_en: "", university: "Stanford University", major_ru: "", major_en: "",
-                admissionYear: "Class of 2028", story_ru: "", story_en: "", lectureTopic_ru: "", lectureTopic_en: "",
-                lectureTime: "11:15 am", colorTheme: "blue", isFeatured: false
+                name_ru: "", name_en: "", university: "", major_ru: "", major_en: "",
+                admissionYear: "", story_ru: "", story_en: "", lectureTopic_ru: "", lectureTopic_en: "",
+                lectureTime: "", colorTheme: "blue", isFeatured: false, avatarBase64: "", lat: "", lng: ""
               })}
               className="flex items-center space-x-1.5 rounded-full bg-slate-900 border hover:bg-slate-800 text-white font-bold text-xs px-4 py-2 transition cursor-pointer"
               id="btn_add_speaker"
@@ -638,9 +715,9 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
                 <h3 className="font-extrabold text-sm sm:text-base text-slate-800">
                   {editingSpeaker.id ? (lang === "ru" ? "Редактирование Спикера" : "Edit Presenter Properties") : (lang === "ru" ? "Добавление Спикера" : "Register New Speaker Deck")}
                 </h3>
-                <button 
-                  type="button" 
-                  onClick={() => setEditingSpeaker(null)} 
+                <button
+                  type="button"
+                  onClick={() => setEditingSpeaker(null)}
                   className="rounded-full bg-slate-200 p-1.5 text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
                   <X className="h-4 w-4" />
@@ -654,7 +731,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
                   <input
                     type="text" required
                     value={editingSpeaker.name_en || ""}
-                    onChange={(e) => setEditingSpeaker({...editingSpeaker, name_en: e.target.value})}
+                    onChange={(e) => setEditingSpeaker({ ...editingSpeaker, name_en: e.target.value })}
                     placeholder="Asel Alimzhanova"
                     className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
                   />
@@ -664,7 +741,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
                   <input
                     type="text"
                     value={editingSpeaker.name_ru || ""}
-                    onChange={(e) => setEditingSpeaker({...editingSpeaker, name_ru: e.target.value})}
+                    onChange={(e) => setEditingSpeaker({ ...editingSpeaker, name_ru: e.target.value })}
                     placeholder="Асель Алимжанова"
                     className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
                   />
@@ -676,24 +753,13 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">University *</label>
                   <select
                     value={editingSpeaker.university || ""}
-                    onChange={(e) => setEditingSpeaker({...editingSpeaker, university: e.target.value})}
+                    onChange={(e) => setEditingSpeaker({ ...editingSpeaker, university: e.target.value })}
                     className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
                   >
-                    <option value="Harvard University">Harvard University</option>
-                    <option value="Stanford University">Stanford University</option>
-                    <option value="MIT">MIT</option>
-                    <option value="Columbia University">Columbia University</option>
-                    <option value="University of Oxford">University of Oxford</option>
-                    <option value="University of Cambridge">University of Cambridge</option>
-                    <option value="Nazarbayev University">Nazarbayev University</option>
-                    <option value="Princeton University">Princeton University</option>
-                    <option value="Yale University">Yale University</option>
-                    <option value="UPenn Wharton">UPenn Wharton</option>
-                    <option value="California Institute of Technology">Caltech</option>
-                    <option value="Cornell University">Cornell University</option>
-                    <option value="UCLA">UCLA</option>
-                    <option value="University of Chicago">University of Chicago</option>
-                    <option value="Duke University">Duke University</option>
+                    <option value="">Select University...</option>
+                    {(dbData.universities || []).map(u => (
+                      <option key={u.id} value={u.name}>{u.name}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -701,7 +767,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
                   <input
                     type="text"
                     value={editingSpeaker.admissionYear || ""}
-                    onChange={(e) => setEditingSpeaker({...editingSpeaker, admissionYear: e.target.value})}
+                    onChange={(e) => setEditingSpeaker({ ...editingSpeaker, admissionYear: e.target.value })}
                     placeholder="Class of 2028"
                     className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
                   />
@@ -710,7 +776,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Avatar Gradients Theme</label>
                   <select
                     value={editingSpeaker.colorTheme || ""}
-                    onChange={(e) => setEditingSpeaker({...editingSpeaker, colorTheme: e.target.value})}
+                    onChange={(e) => setEditingSpeaker({ ...editingSpeaker, colorTheme: e.target.value })}
                     className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden animate-fade-in"
                   >
                     <option value="blue">Blue</option>
@@ -733,7 +799,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
                   <input
                     type="text" required
                     value={editingSpeaker.major_en || ""}
-                    onChange={(e) => setEditingSpeaker({...editingSpeaker, major_en: e.target.value})}
+                    onChange={(e) => setEditingSpeaker({ ...editingSpeaker, major_en: e.target.value })}
                     placeholder="Computer Science"
                     className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
                   />
@@ -743,99 +809,145 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
                   <input
                     type="text"
                     value={editingSpeaker.major_ru || ""}
-                    onChange={(e) => setEditingSpeaker({...editingSpeaker, major_ru: e.target.value})}
+                    onChange={(e) => setEditingSpeaker({ ...editingSpeaker, major_ru: e.target.value })}
                     placeholder="Компьютерные Науки"
                     className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
                   />
                 </div>
-              </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Широта (Latitude) *</label>
+                    <input
+                      type="number" step="any" required
+                      value={editingSpeaker.lat || ""}
+                      onChange={(e) => setEditingSpeaker({ ...editingSpeaker, lat: parseFloat(e.target.value) || "" })}
+                      placeholder="e.g. 42.8746"
+                      className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
+                    />
+                    <p className="text-[9px] text-slate-400 mt-1 ml-1">Координата вверх/вниз (Google Maps)</p>
+                  </div>
+                  <div>
+                    <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Долгота (Longitude) *</label>
+                    <input
+                      type="number" step="any" required
+                      value={editingSpeaker.lng || ""}
+                      onChange={(e) => setEditingSpeaker({ ...editingSpeaker, lng: parseFloat(e.target.value) || "" })}
+                      placeholder="e.g. 74.5698"
+                      className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
+                    />
+                    <p className="text-[9px] text-slate-400 mt-1 ml-1">Координата влево/вправо (Google Maps)</p>
+                  </div>
+                </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Lecture Topic (English) *</label>
-                  <input
-                    type="text" required
-                    value={editingSpeaker.lectureTopic_en || ""}
-                    onChange={(e) => setEditingSpeaker({...editingSpeaker, lectureTopic_en: e.target.value})}
-                    placeholder="Personal Branding Strategy..."
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
-                  />
+                  <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Avatar / Photo</label>
+                  <div className="flex items-center space-x-4">
+                    {editingSpeaker.avatarBase64 ? (
+                      <img src={editingSpeaker.avatarBase64} alt="Avatar Preview" className="h-16 w-16 rounded-full object-cover border-2 border-[#9F7AEA]" />
+                    ) : (
+                      <div className="h-16 w-16 rounded-full bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center">
+                        <UploadCloud className="h-5 w-5 text-slate-400" />
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleImageUpload(e, (b64) => setEditingSpeaker({ ...editingSpeaker, avatarBase64: b64 }))}
+                        className="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-[#9F7AEA]/10 file:text-[#9F7AEA] hover:file:bg-[#9F7AEA]/20 cursor-pointer"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">Images are automatically resized and compressed.</p>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Тема выступления (Русский)</label>
-                  <input
-                    type="text"
-                    value={editingSpeaker.lectureTopic_ru || ""}
-                    onChange={(e) => setEditingSpeaker({...editingSpeaker, lectureTopic_ru: e.target.value})}
-                    placeholder="Стратегия Личного Бренда..."
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
-                  />
-                </div>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Presentation Timings</label>
-                  <input
-                    type="text"
-                    value={editingSpeaker.lectureTime || ""}
-                    onChange={(e) => setEditingSpeaker({...editingSpeaker, lectureTime: e.target.value})}
-                    placeholder="11:15 am"
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Lecture Topic (English) *</label>
+                    <input
+                      type="text" required
+                      value={editingSpeaker.lectureTopic_en || ""}
+                      onChange={(e) => setEditingSpeaker({ ...editingSpeaker, lectureTopic_en: e.target.value })}
+                      placeholder="Personal Branding Strategy..."
+                      className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Тема выступления (Русский)</label>
+                    <input
+                      type="text"
+                      value={editingSpeaker.lectureTopic_ru || ""}
+                      onChange={(e) => setEditingSpeaker({ ...editingSpeaker, lectureTopic_ru: e.target.value })}
+                      placeholder="Стратегия Личного Бренда..."
+                      className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Show on Landing Page Featured Grid</label>
-                  <select
-                    value={String(editingSpeaker.isFeatured)}
-                    onChange={(e) => setEditingSpeaker({...editingSpeaker, isFeatured: e.target.value === "true"})}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Presentation Timings</label>
+                    <input
+                      type="text"
+                      value={editingSpeaker.lectureTime || ""}
+                      onChange={(e) => setEditingSpeaker({ ...editingSpeaker, lectureTime: e.target.value })}
+                      placeholder="11:15 am"
+                      className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Show on Landing Page Featured Grid</label>
+                    <select
+                      value={String(editingSpeaker.isFeatured)}
+                      onChange={(e) => setEditingSpeaker({ ...editingSpeaker, isFeatured: e.target.value === "true" })}
+                      className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
+                    >
+                      <option value="true">Yes, Featured Primary Grid</option>
+                      <option value="false">No, Collapsed/Standard List</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Detailed Story Biography (English)</label>
+                    <textarea
+                      rows={4}
+                      value={editingSpeaker.story_en || ""}
+                      onChange={(e) => setEditingSpeaker({ ...editingSpeaker, story_en: e.target.value })}
+                      placeholder="Admitted with a 3% acceptance rate. Dedicated to social welfare..."
+                      className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Биография и советы (Русский)</label>
+                    <textarea
+                      rows={4}
+                      value={editingSpeaker.story_ru || ""}
+                      onChange={(e) => setEditingSpeaker({ ...editingSpeaker, story_ru: e.target.value })}
+                      placeholder="Поступила в Гарвард после успешного преодоления конкурса..."
+                      className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
+                    />
+                  </div>
+                </div>
+
+                {/* Loader controls */}
+                <div className="flex justify-end space-x-3 pt-3 border-t border-slate-200/60">
+                  <button
+                    type="button" onClick={() => setEditingSpeaker(null)}
+                    className="rounded-full border border-slate-200 px-6 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-100 cursor-pointer"
                   >
-                    <option value="true">Yes, Featured Primary Grid</option>
-                    <option value="false">No, Collapsed/Standard List</option>
-                  </select>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit" disabled={actionLoading}
+                    className="rounded-full bg-slate-950 hover:bg-slate-800 text-white px-6 py-2.5 text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer"
+                  >
+                    {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                    <span>Save changes</span>
+                  </button>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Detailed Story Biography (English)</label>
-                  <textarea
-                    rows={4}
-                    value={editingSpeaker.story_en || ""}
-                    onChange={(e) => setEditingSpeaker({...editingSpeaker, story_en: e.target.value})}
-                    placeholder="Admitted with a 3% acceptance rate. Dedicated to social welfare..."
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
-                  />
                 </div>
-                <div>
-                  <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Биография и советы (Русский)</label>
-                  <textarea
-                    rows={4}
-                    value={editingSpeaker.story_ru || ""}
-                    onChange={(e) => setEditingSpeaker({...editingSpeaker, story_ru: e.target.value})}
-                    placeholder="Поступила в Гарвард после успешного преодоления конкурса..."
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-700 outline-hidden"
-                  />
-                </div>
-              </div>
-
-              {/* Loader controls */}
-              <div className="flex justify-end space-x-3 pt-3 border-t border-slate-200/60">
-                <button
-                  type="button" onClick={() => setEditingSpeaker(null)}
-                  className="rounded-full border border-slate-200 px-6 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-100 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit" disabled={actionLoading}
-                  className="rounded-full bg-slate-950 hover:bg-slate-800 text-white px-6 py-2.5 text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer"
-                >
-                  {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                  <span>Save changes</span>
-                </button>
-              </div>
             </form>
           )}
 
@@ -844,9 +956,14 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
             {dbData.speakers.map((s) => (
               <div key={s.id} className="rounded-2xl border border-slate-100 bg-white p-4 text-left flex flex-col justify-between shadow-xs">
                 <div>
-                  <span className="text-[10px] uppercase tracking-wide font-mono font-bold text-sky-500 bg-sky-50 px-2 py-0.5 rounded-lg border border-sky-100/60">
-                    {s.university}
-                  </span>
+                  <div className="flex justify-between items-start">
+                    <span className="text-[10px] uppercase tracking-wide font-mono font-bold text-sky-500 bg-sky-50 px-2 py-0.5 rounded-lg border border-sky-100/60">
+                      {s.university}
+                    </span>
+                    {s.avatarBase64 && (
+                      <img src={s.avatarBase64} alt="" className="h-8 w-8 rounded-full object-cover" />
+                    )}
+                  </div>
                   <h4 className="mt-2 text-sm font-extrabold text-slate-800">{s.name_en}</h4>
                   <p className="text-4xs font-mono font-bold text-slate-400 uppercase tracking-widest mt-0.5">{s.lectureTime} | {s.isFeatured ? "Featured" : "Standard List"}</p>
                   <p className="mt-1.5 text-2xs font-semibold text-slate-500 line-clamp-1">💬 {s.lectureTopic_en}</p>
@@ -875,6 +992,125 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
       )}
 
       {/* TAB 3: PROGRAM PANEL */}
+      {/* TAB: UNIVERSITIES */}
+      {currentTab === "universities" && (
+        <div className="space-y-6">
+          <div className="min-h-screen bg-[#EDE9FE] text-slate-800 font-sans py-8 px-2 sm:px-6 lg:px-8 relative">
+            <div className="absolute top-0 inset-x-0 h-64 bg-gradient-to-b from-white/40 to-transparent pointer-events-none" />
+            <div className="mx-auto max-w-7xl relative z-10">
+              <div className="flex border-b border-dashed border-purple-200/30 pb-4 justify-between items-center text-left">
+                <div>
+                  <h2 className="text-lg font-extrabold text-slate-800">
+                    {lang === "ru" ? "Университеты" : "Universities"}
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    {lang === "ru" ? "Загружайте SVG/PNG логотипы для бегущей строки и спикеров." : "Manage universities for the marquee and speakers."}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setEditingUniversity({ name: "", domain: "", logoBase64: "", logoScale: 1 })}
+                  className="flex items-center space-x-1.5 rounded-full bg-[#9F7AEA] hover:bg-purple-600 text-white font-bold text-xs px-4 py-2 transition cursor-pointer"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>{lang === "ru" ? "Добавить университет" : "Add University"}</span>
+                </button>
+              </div>
+
+              {editingUniversity && (
+                <form onSubmit={saveUniversity} className="rounded-[32px] border border-purple-100 bg-white/60 backdrop-blur-xl p-6 sm:p-8 space-y-5 text-left animate-slide-down">
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-2">
+                    <h3 className="font-extrabold text-sm sm:text-base text-slate-800">
+                      {editingUniversity.id ? "Редактирование Университета" : "Добавление Университета"}
+                    </h3>
+                    <button type="button" onClick={() => setEditingUniversity(null)} className="rounded-full bg-slate-100 p-1.5 text-slate-400 hover:text-slate-600 cursor-pointer">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Название *</label>
+                      <input type="text" required value={editingUniversity.name || ""} onChange={(e) => setEditingUniversity({ ...editingUniversity, name: e.target.value })} placeholder="Harvard University" className="w-full rounded-2xl border border-purple-100 bg-white/50 focus:bg-white p-3 text-sm font-semibold text-slate-700 outline-hidden focus:ring-2 focus:ring-purple-200" />
+                    </div>
+                    <div>
+                      <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Размер логотипа (Масштаб)</label>
+                      <input 
+                        type="range" min="0.5" max="3" step="0.1" 
+                        value={editingUniversity.logoScale || 1} 
+                        onChange={(e) => setEditingUniversity({ ...editingUniversity, logoScale: parseFloat(e.target.value) })} 
+                        className="w-full mt-2" 
+                      />
+                      <div className="flex justify-between text-[10px] font-mono text-slate-400 px-1">
+                        <span>0.5x</span>
+                        <span>{editingUniversity.logoScale || 1}x</span>
+                        <span>3.0x</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 ml-1">Логотип (SVG / PNG без фона)</label>
+                    <div className="flex items-center space-x-4">
+                      {editingUniversity.logoBase64 ? (
+                        <img src={editingUniversity.logoBase64} alt="Preview" className="h-16 w-16 object-contain bg-slate-50 p-2 rounded-xl border border-purple-200" />
+                      ) : (
+                        <div className="h-16 w-16 rounded-xl bg-slate-50 border border-dashed border-purple-200 flex items-center justify-center">
+                          <Landmark className="h-6 w-6 text-slate-300" />
+                        </div>
+                      )}
+                      <div className="flex flex-col">
+                        <label className="cursor-pointer rounded-full bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 transition flex items-center space-x-2">
+                          <UploadCloud className="h-4 w-4" />
+                          <span>{lang === "ru" ? "Загрузить лого" : "Upload logo"}</span>
+                          <input type="file" accept="image/png, image/svg+xml" className="hidden" onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = () => {
+                                setEditingUniversity({ ...editingUniversity, logoBase64: reader.result as string });
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }} />
+                        </label>
+                        <span className="text-[10px] text-slate-400 mt-1.5 ml-1">Макс размер 2MB.</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end space-x-3 pt-3 border-t border-slate-100">
+                    <button type="button" onClick={() => setEditingUniversity(null)} className="rounded-full border border-slate-200 px-6 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-50 cursor-pointer">Отмена</button>
+                    <button type="submit" disabled={actionLoading} className="rounded-full bg-[#9F7AEA] hover:bg-purple-600 text-white px-6 py-2.5 text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer">
+                      {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                      <span>Сохранить</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                {(dbData.universities || []).map((u) => (
+                  <div key={u.id} className="rounded-[24px] border border-purple-100 bg-white/40 backdrop-blur-sm p-4 flex flex-col items-center justify-between text-center shadow-xs">
+                    {u.logoBase64 ? (
+                      <div className="h-16 w-full flex items-center justify-center mb-3">
+                        <img src={u.logoBase64} alt={u.name} className="object-contain max-h-full" style={{ transform: `scale(${u.logoScale || 1})` }} />
+                      </div>
+                    ) : (
+                      <Landmark className="h-12 w-12 text-slate-200 mb-3" />
+                    )}
+                    <h4 className="text-sm font-bold text-slate-800 line-clamp-2">{u.name}</h4>
+                    <div className="mt-3 flex space-x-2">
+                      <button onClick={() => setEditingUniversity(u)} className="rounded-full bg-white border border-purple-100 p-2 text-slate-500 hover:text-purple-600 shadow-xs cursor-pointer"><Edit2 className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => deleteUniversity(u.id)} className="rounded-full bg-white border border-red-100 p-2 text-red-400 hover:bg-red-50 hover:text-red-600 shadow-xs cursor-pointer"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {currentTab === "program" && (
         <div className="space-y-6" id="tab_program_view">
           <div className="flex border-b border-dashed border-slate-100 pb-4 justify-between items-center text-left">
@@ -895,13 +1131,13 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
           {editingSlot && (
             <form onSubmit={saveSlot} className="rounded-3xl border border-slate-200 bg-slate-50/40 p-6 space-y-4 text-left animate-slide-down">
               <h3 className="font-extrabold text-xs sm:text-sm text-slate-800">Add or Edit schedule row</h3>
-              
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 select-none">Time Slot interval *</label>
-                  <input 
+                  <input
                     type="text" required value={editingSlot.time || ""}
-                    onChange={(e) => setEditingSlot({...editingSlot, time: e.target.value})}
+                    onChange={(e) => setEditingSlot({ ...editingSlot, time: e.target.value })}
                     placeholder="10:30 - 11:15"
                     className="w-full rounded-xl border border-slate-200 p-2 text-xs font-semibold text-slate-700 bg-white"
                   />
@@ -910,7 +1146,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1 select-none">Linked Presenter Profile</label>
                   <select
                     value={editingSlot.speakerId || ""}
-                    onChange={(e) => setEditingSlot({...editingSlot, speakerId: e.target.value})}
+                    onChange={(e) => setEditingSlot({ ...editingSlot, speakerId: e.target.value })}
                     className="w-full rounded-xl border border-slate-200 p-2 text-xs font-semibold text-slate-700 bg-white"
                   >
                     <option value="">-- No Speaker / General Slot --</option>
@@ -924,18 +1160,18 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1">Title (English) *</label>
-                  <input 
+                  <input
                     type="text" required value={editingSlot.title_en || ""}
-                    onChange={(e) => setEditingSlot({...editingSlot, title_en: e.target.value})}
+                    onChange={(e) => setEditingSlot({ ...editingSlot, title_en: e.target.value })}
                     placeholder="Grand Keynote Opening"
                     className="w-full rounded-xl border border-slate-200 p-2 text-xs font-semibold text-slate-700 bg-white"
                   />
                 </div>
                 <div>
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1">Название (Русский)</label>
-                  <input 
+                  <input
                     type="text" value={editingSlot.title_ru || ""}
-                    onChange={(e) => setEditingSlot({...editingSlot, title_ru: e.target.value})}
+                    onChange={(e) => setEditingSlot({ ...editingSlot, title_ru: e.target.value })}
                     placeholder="Торжественное Открытие"
                     className="w-full rounded-xl border border-slate-200 p-2 text-xs font-semibold text-slate-700 bg-white"
                   />
@@ -945,18 +1181,18 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1">Description (English)</label>
-                  <textarea 
+                  <textarea
                     rows={3} value={editingSlot.description_en || ""}
-                    onChange={(e) => setEditingSlot({...editingSlot, description_en: e.target.value})}
+                    onChange={(e) => setEditingSlot({ ...editingSlot, description_en: e.target.value })}
                     placeholder="Detailed session breakdowns..."
                     className="w-full rounded-xl border border-slate-200 p-2 text-xs font-semibold text-slate-700 bg-white"
                   />
                 </div>
                 <div>
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1">Описание (Русский)</label>
-                  <textarea 
+                  <textarea
                     rows={3} value={editingSlot.description_ru || ""}
-                    onChange={(e) => setEditingSlot({...editingSlot, description_ru: e.target.value})}
+                    onChange={(e) => setEditingSlot({ ...editingSlot, description_ru: e.target.value })}
                     placeholder="Подробный тайминг сессии..."
                     className="w-full rounded-xl border border-slate-200 p-2 text-xs font-semibold text-slate-700 bg-white"
                   />
@@ -1035,9 +1271,9 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1">Institution Name *</label>
-                  <input 
+                  <input
                     type="text" required value={editingPartner.name || ""}
-                    onChange={(e) => setEditingPartner({...editingPartner, name: e.target.value})}
+                    onChange={(e) => setEditingPartner({ ...editingPartner, name: e.target.value })}
                     placeholder="Astana Technopark"
                     className="w-full rounded-xl border border-slate-200 p-2 text-xs font-semibold text-slate-700 bg-white"
                   />
@@ -1046,7 +1282,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1">Target Partnership Level Tier</label>
                   <select
                     value={editingPartner.tier || "sponsor"}
-                    onChange={(e) => setEditingPartner({...editingPartner, tier: e.target.value})}
+                    onChange={(e) => setEditingPartner({ ...editingPartner, tier: e.target.value })}
                     className="w-full rounded-xl border border-slate-200 p-2 text-xs font-semibold text-slate-700 bg-white"
                   >
                     <option value="general">General Venue Partner [Primary banner]</option>
@@ -1059,18 +1295,18 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1">Role attribution description (English)</label>
-                  <input 
+                  <input
                     type="text" value={editingPartner.role_en || ""}
-                    onChange={(e) => setEditingPartner({...editingPartner, role_en: e.target.value})}
+                    onChange={(e) => setEditingPartner({ ...editingPartner, role_en: e.target.value })}
                     placeholder="General Sponsor & Official Venue"
                     className="w-full rounded-xl border border-slate-200 p-2 text-xs font-semibold text-slate-700 bg-white"
                   />
                 </div>
                 <div>
                   <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1">Детали роли / описание (Русский)</label>
-                  <input 
+                  <input
                     type="text" value={editingPartner.role_ru || ""}
-                    onChange={(e) => setEditingPartner({...editingPartner, role_ru: e.target.value})}
+                    onChange={(e) => setEditingPartner({ ...editingPartner, role_ru: e.target.value })}
                     placeholder="Генеральный партнер, место проведения"
                     className="w-full rounded-xl border border-slate-200 p-2 text-xs font-semibold text-slate-700 bg-white"
                   />
@@ -1119,7 +1355,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
               <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1.5 ml-1">Event Date Label</label>
               <input
                 type="text" required value={settingsForm.eventDate}
-                onChange={(e) => setSettingsForm({...settingsForm, eventDate: e.target.value})}
+                onChange={(e) => setSettingsForm({ ...settingsForm, eventDate: e.target.value })}
                 placeholder="June 26, 2026"
                 className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 outline-hidden"
               />
@@ -1129,7 +1365,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
               <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1.5 ml-1">Location Venue details</label>
               <input
                 type="text" required value={settingsForm.eventVenue}
-                onChange={(e) => setSettingsForm({...settingsForm, eventVenue: e.target.value})}
+                onChange={(e) => setSettingsForm({ ...settingsForm, eventVenue: e.target.value })}
                 placeholder="Astana Technopark, Block C4"
                 className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 outline-hidden"
               />
@@ -1140,7 +1376,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
                 <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1.5 ml-1">Global Support Email</label>
                 <input
                   type="email" required value={settingsForm.contactEmail}
-                  onChange={(e) => setSettingsForm({...settingsForm, contactEmail: e.target.value})}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, contactEmail: e.target.value })}
                   className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-700 outline-hidden"
                 />
               </div>
@@ -1148,7 +1384,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
                 <label className="block text-4xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1.5 ml-1">Global Callback Phone</label>
                 <input
                   type="text" required value={settingsForm.contactPhone}
-                  onChange={(e) => setSettingsForm({...settingsForm, contactPhone: e.target.value})}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, contactPhone: e.target.value })}
                   className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-700 outline-hidden"
                 />
               </div>
@@ -1158,7 +1394,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
               <label className="block text-4xs font-bold text-red-500 uppercase tracking-widest font-mono mb-1.5 ml-1">Modify Admin Panel Password ⚠️</label>
               <input
                 type="text" required value={settingsForm.adminPassword || "admin"}
-                onChange={(e) => setSettingsForm({...settingsForm, adminPassword: e.target.value})}
+                onChange={(e) => setSettingsForm({ ...settingsForm, adminPassword: e.target.value })}
                 className="w-full rounded-xl border border-red-150 bg-red-50/20 p-3 text-xs font-mono font-bold text-slate-700 outline-hidden focus:border-red-400"
               />
               <p className="mt-1.5 text-4xs text-slate-400 font-bold tracking-wider font-mono">WARNING: Changing password updates the main credentials instantly. Keep this documented!</p>
@@ -1238,7 +1474,7 @@ function TicketEditor({ ticket, lang, onSave, actionLoading }: TicketEditorProps
       {/* UTM properties */}
       <div className="border-t border-dashed border-slate-100 pt-3 space-y-2.5">
         <span className="block text-4xs font-extrabold text-sky-400 uppercase tracking-widest font-mono">UTM attribution attributes</span>
-        
+
         <div className="grid grid-cols-3 gap-2">
           <div>
             <label className="block text-5xs font-bold text-slate-400 uppercase tracking-widest font-mono mb-1">utm_source</label>
@@ -1270,11 +1506,10 @@ function TicketEditor({ ticket, lang, onSave, actionLoading }: TicketEditorProps
       <div className="pt-2 flex justify-end">
         <button
           type="submit" disabled={actionLoading}
-          className={`rounded-full px-5 py-2 text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
-            saved 
-              ? "bg-emerald-500 text-white shadow-xs" 
+          className={`rounded-full px-5 py-2 text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${saved
+              ? "bg-emerald-500 text-white shadow-xs"
               : "bg-slate-900 text-white hover:bg-slate-800"
-          }`}
+            }`}
         >
           {saved ? <Check className="h-3.5 w-3.5" /> : null}
           <span>{saved ? "Saved" : "Save Changes"}</span>

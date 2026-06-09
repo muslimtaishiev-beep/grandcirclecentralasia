@@ -13,7 +13,7 @@ app.use(cors({
   origin: "*",
   credentials: true
 }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
 
 const PORT = process.env.PORT || 3005;
 const DB_PATH = path.join(process.cwd(), "data", "db.json");
@@ -44,8 +44,7 @@ try {
 }
 
 // Middleware
-app.use(express.json());
-
+// Removed duplicate app.use(express.json()) to preserve the 10MB limit set above.
 // Memory active sessions store
 let activeSessions = new Set<string>();
 
@@ -156,8 +155,32 @@ app.get("/api/public/data", async (req, res) => {
     program: db.program || [],
     partners: db.partners || [],
     tickets: db.tickets || [],
-    metrics: db.metrics || []
+    metrics: db.metrics || [],
+    universities: db.universities || []
   });
+});
+
+// 2. Subscribe to newsletter
+app.post("/api/public/subscribe", async (req, res) => {
+  const { email, name, ticket } = req.body;
+  if (!email || !email.includes("@")) {
+    return res.status(400).json({ error: "Invalid email address." });
+  }
+
+  const db = await readDb();
+  if (!db.subscribers) db.subscribers = [];
+  
+  if (!db.subscribers.some((s: any) => s.email === email)) {
+    db.subscribers.push({
+      id: "sub_" + Date.now(),
+      email,
+      name: name || "",
+      ticket: ticket || "",
+      date: new Date().toISOString()
+    });
+    await writeDb(db);
+  }
+  res.status(201).json({ success: true });
 });
 
 // 2. Submit Newsletter / Subscriber Registration with validation
@@ -266,7 +289,7 @@ app.put("/api/admin/settings", requireAuth, async (req, res) => {
 
 // --- Speakers CRUD ---
 app.post("/api/admin/speakers", requireAuth, async (req, res) => {
-  const { name_ru, name_en, university, major_ru, major_en, admissionYear, story_ru, story_en, lectureTopic_ru, lectureTopic_en, lectureTime, colorTheme, isFeatured } = req.body;
+  const { name_ru, name_en, university, major_ru, major_en, admissionYear, story_ru, story_en, lectureTopic_ru, lectureTopic_en, lectureTime, colorTheme, isFeatured, avatarBase64 } = req.body;
   
   if (!name_en || !university || !lectureTopic_en) {
     return res.status(400).json({ error: "Speaker name, university and topic are required." });
@@ -289,7 +312,8 @@ app.post("/api/admin/speakers", requireAuth, async (req, res) => {
     lectureTopic_en: lectureTopic_en,
     lectureTime: lectureTime || "To Be Determined",
     colorTheme: colorTheme || "blue",
-    isFeatured: isFeatured === true || isFeatured === "true"
+    isFeatured: isFeatured === true || isFeatured === "true",
+    avatarBase64: avatarBase64 || ""
   };
 
   db.speakers.push(newSpeaker);
@@ -307,7 +331,7 @@ app.put("/api/admin/speakers/:id", requireAuth, async (req, res) => {
     return res.status(404).json({ error: "Speaker not found." });
   }
 
-  const { name_ru, name_en, university, major_ru, major_en, admissionYear, story_ru, story_en, lectureTopic_ru, lectureTopic_en, lectureTime, colorTheme, isFeatured } = req.body;
+  const { name_ru, name_en, university, major_ru, major_en, admissionYear, story_ru, story_en, lectureTopic_ru, lectureTopic_en, lectureTime, colorTheme, isFeatured, avatarBase64 } = req.body;
 
   db.speakers[index] = {
     ...db.speakers[index],
@@ -323,7 +347,8 @@ app.put("/api/admin/speakers/:id", requireAuth, async (req, res) => {
     lectureTopic_en: lectureTopic_en !== undefined ? lectureTopic_en : db.speakers[index].lectureTopic_en,
     lectureTime: lectureTime !== undefined ? lectureTime : db.speakers[index].lectureTime,
     colorTheme: colorTheme !== undefined ? colorTheme : db.speakers[index].colorTheme,
-    isFeatured: isFeatured !== undefined ? (isFeatured === true || isFeatured === "true") : db.speakers[index].isFeatured
+    isFeatured: isFeatured !== undefined ? (isFeatured === true || isFeatured === "true") : db.speakers[index].isFeatured,
+    avatarBase64: avatarBase64 !== undefined ? avatarBase64 : db.speakers[index].avatarBase64
   };
 
   await writeDb(db);
@@ -334,7 +359,9 @@ app.delete("/api/admin/speakers/:id", requireAuth, async (req, res) => {
   const { id } = req.params;
   const db = await readDb();
   
-  db.speakers = db.speakers.filter((s: any) => s.id !== id);
+  if (db.speakers) {
+    db.speakers = db.speakers.filter((s: any) => String(s.id) !== String(id));
+  }
   await writeDb(db);
   res.json({ success: true });
 });
@@ -394,14 +421,55 @@ app.delete("/api/admin/program/:id", requireAuth, async (req, res) => {
   const { id } = req.params;
   const db = await readDb();
   
-  db.program = db.program.filter((p: any) => p.id !== id);
+  if (db.program) {
+    db.program = db.program.filter((p: any) => String(p.id) !== String(id));
+  }
+  await writeDb(db);
+  res.status(200).json({ success: true });
+});
+
+// --- Universities CRUD ---
+
+app.post("/api/admin/universities", requireAuth, async (req, res) => {
+  const db = await readDb();
+  if (!db.universities) db.universities = [];
+  
+  const newUniversity = {
+    id: "uni_" + Date.now(),
+    name: req.body.name || "",
+    domain: req.body.domain || "",
+    logoBase64: req.body.logoBase64 || ""
+  };
+  
+  db.universities.push(newUniversity);
+  await writeDb(db);
+  res.status(201).json({ success: true, university: newUniversity });
+});
+
+app.put("/api/admin/universities/:id", requireAuth, async (req, res) => {
+  const db = await readDb();
+  if (!db.universities) db.universities = [];
+  const idx = db.universities.findIndex((u: any) => String(u.id) === String(req.params.id));
+  if (idx !== -1) {
+    db.universities[idx] = { ...db.universities[idx], ...req.body };
+    await writeDb(db);
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ error: "University not found" });
+  }
+});
+
+app.delete("/api/admin/universities/:id", requireAuth, async (req, res) => {
+  const db = await readDb();
+  if (!db.universities) db.universities = [];
+  db.universities = db.universities.filter((u: any) => String(u.id) !== String(req.params.id));
   await writeDb(db);
   res.json({ success: true });
 });
 
 // --- Partners CRUD ---
 app.post("/api/admin/partners", requireAuth, async (req, res) => {
-  const { name, role_ru, role_en, tier } = req.body;
+  const { name, role_ru, role_en, tier, url, logoUrl, logoBase64 } = req.body;
 
   if (!name) {
     return res.status(400).json({ error: "Partner name is required." });
@@ -415,7 +483,10 @@ app.post("/api/admin/partners", requireAuth, async (req, res) => {
     name: name,
     role_ru: role_ru || "",
     role_en: role_en || "",
-    tier: tier || "partner"
+    tier: tier || "partner",
+    url: url || "",
+    logoUrl: logoUrl || "",
+    logoBase64: logoBase64 || ""
   };
 
   db.partners.push(newPartner);
@@ -432,14 +503,17 @@ app.put("/api/admin/partners/:id", requireAuth, async (req, res) => {
     return res.status(404).json({ error: "Partner not found." });
   }
 
-  const { name, role_ru, role_en, tier } = req.body;
+  const { name, role_ru, role_en, tier, url, logoUrl, logoBase64 } = req.body;
 
   db.partners[index] = {
     ...db.partners[index],
     name: name !== undefined ? name : db.partners[index].name,
     role_ru: role_ru !== undefined ? role_ru : db.partners[index].role_ru,
     role_en: role_en !== undefined ? role_en : db.partners[index].role_en,
-    tier: tier !== undefined ? tier : db.partners[index].tier
+    tier: tier !== undefined ? tier : db.partners[index].tier,
+    url: url !== undefined ? url : db.partners[index].url,
+    logoUrl: logoUrl !== undefined ? logoUrl : db.partners[index].logoUrl,
+    logoBase64: logoBase64 !== undefined ? logoBase64 : db.partners[index].logoBase64
   };
 
   await writeDb(db);
@@ -449,8 +523,45 @@ app.put("/api/admin/partners/:id", requireAuth, async (req, res) => {
 app.delete("/api/admin/partners/:id", requireAuth, async (req, res) => {
   const { id } = req.params;
   const db = await readDb();
+
+  if (db.partners) {
+    db.partners = db.partners.filter((p: any) => String(p.id) !== String(id));
+  }
+  await writeDb(db);
+  res.json({ success: true });
+});
+
+// --- Tickets CRUD ---
+app.post("/api/admin/tickets", requireAuth, async (req, res) => {
+  const { name_ru, name_en, name_kg, price, features_ru, features_en, features_kg, url } = req.body;
+  if (!name_en) return res.status(400).json({ error: "Ticket name is required." });
   
-  db.partners = db.partners.filter((p: any) => p.id !== id);
+  const db = await readDb();
+  const nextId = "t_" + Date.now();
+  db.tickets.push({
+    id: nextId, name_ru, name_en, name_kg, price, features_ru, features_en, features_kg, url
+  });
+  await writeDb(db);
+  res.status(201).json({ success: true });
+});
+
+app.put("/api/admin/tickets/:id", requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const db = await readDb();
+  const index = db.tickets.findIndex((t: any) => String(t.id) === String(id));
+  if (index === -1) return res.status(404).json({ error: "Ticket not found." });
+
+  db.tickets[index] = { ...db.tickets[index], ...req.body };
+  await writeDb(db);
+  res.json({ success: true });
+});
+
+app.delete("/api/admin/tickets/:id", requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const db = await readDb();
+  if (db.tickets) {
+    db.tickets = db.tickets.filter((t: any) => String(t.id) !== String(id));
+  }
   await writeDb(db);
   res.json({ success: true });
 });

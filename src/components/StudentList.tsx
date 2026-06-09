@@ -94,7 +94,7 @@ function InactiveCardContent({ student }: { student: AppStudent }) {
 
 function DesktopExpandingCard({ student, isActive, onSelect, cardRef }: { student: AppStudent; isActive: boolean; onSelect: (id: string) => void; cardRef: (el: HTMLDivElement | null) => void }) {
   return (
-    <motion.div ref={cardRef} data-id={student.id} layout="position" animate={{ scale: isActive ? 1.0 : 1, opacity: isActive ? 1 : 0.86 }} transition={SPRING} className={cn("min-w-0 origin-center transition-all duration-300", isActive && "col-span-full order-first z-10")}>
+    <motion.div ref={cardRef} data-id={student.id} layout="position" animate={{ scale: isActive ? 1.0 : 1, opacity: isActive ? 1 : 0.86 }} transition={SPRING} className={cn("min-w-0 origin-center transition-all duration-300", isActive && "col-span-full z-10")}>
       <motion.button
         type="button"
         onClick={() => onSelect(student.id)}

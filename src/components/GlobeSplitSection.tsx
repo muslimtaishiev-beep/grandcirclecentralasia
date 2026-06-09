@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { APP_STUDENTS } from "../data/appStudents";
+import { APP_STUDENTS, mapServerSpeakersToAppStudents } from "../data/appStudents";
 import { StudentList } from "./StudentList";
 import { StudentGlobe } from "./StudentGlobe";
+import { UniversityMarquee } from "./UniversityMarquee";
 
 function useIsDesktopTooltip() {
   const [isDesktop, setIsDesktop] = useState(false);
@@ -18,9 +19,13 @@ function useIsDesktopTooltip() {
   return isDesktop;
 }
 
-export function GlobeSplitSection() {
+export function GlobeSplitSection({ speakers = [], universities = [] }: { speakers?: any[], universities?: any[] }) {
+  // If the server returns an empty array, we respect it and don't fallback to hardcoded.
+  // Fallback only if speakers is entirely undefined or missing.
+  const dynamicStudents = speakers ? mapServerSpeakersToAppStudents(speakers) : [];
+  
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
-    APP_STUDENTS[0]?.id ?? null,
+    dynamicStudents[0]?.id ?? null,
   );
   const [focusKey, setFocusKey] = useState(0);
   const isDesktopTooltip = useIsDesktopTooltip();
@@ -32,7 +37,7 @@ export function GlobeSplitSection() {
 
   return (
     <section
-      id="globe-students"
+      id="speakers"
       aria-label="Интерактивный глобус и список студентов"
       className="overflow-hidden"
     >
@@ -62,13 +67,15 @@ export function GlobeSplitSection() {
             с подсказкой. После этого можно свободно вращать глобус — нажми на
             студента ещё раз, чтобы вернуть вид на маршрут.
           </p>
+
+          <UniversityMarquee universities={universities} />
         </motion.div>
 
         <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[450px_1fr] xl:grid-cols-[550px_1fr] lg:items-start lg:gap-12">
           <div className="sticky top-24 z-10 w-full bg-transparent aspect-square md:aspect-auto md:h-[600px] lg:h-[700px]">
             <div className="relative h-full w-full bg-transparent">
               <StudentGlobe
-                students={APP_STUDENTS}
+                students={dynamicStudents}
                 activeId={selectedStudentId}
                 focusKey={focusKey}
                 showDesktopTooltip={isDesktopTooltip}
@@ -79,7 +86,7 @@ export function GlobeSplitSection() {
 
           <div className="w-full">
             <StudentList
-              students={APP_STUDENTS}
+              students={dynamicStudents}
               activeId={selectedStudentId}
               onSelect={handleSelect}
             />

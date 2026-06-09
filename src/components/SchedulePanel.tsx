@@ -2,65 +2,20 @@ import React, { useRef } from "react";
 import { motion, useScroll, useSpring, useTransform } from "motion/react";
 
 interface SchedulePanelProps {
+  program?: any[];
+  speakers?: any[];
+  universities?: any[];
   lang: "ru" | "en" | "kg";
 }
 
-const travelStops = [
-  {
-    id: "extracurriculars",
-    title_ru: "База & Внеучебка",
-    title_kg: "Мектептен тышкаркы",
-    title_en: "Extracurriculars",
-    time: "10:00 - 11:30",
-    desc_ru: "Старт маршрута. Плавание, проекты и спорт.",
-    desc_en: "Journey starts here. Swimming, projects, and sports.",
-    image: "/assets/map_region_start_v2_1780228834772.png",
-    image: "/assets/map_region_start_v2_1780228834772.png",
-    x: 25,
-    y: 10
-  },
-  {
-    id: "europe",
-    title_ru: "Европа",
-    title_kg: "Европа",
-    title_en: "Europe",
-    time: "12:00 - 13:30",
-    desc_ru: "Архитектура и культура Старого Света.",
-    desc_en: "Architecture and culture of the Old World.",
-    image: "/assets/map_region_europe_1780228519337.png",
-    image: "/assets/map_region_europe_1780228519337.png",
-    x: 75,
-    y: 35
-  },
-  {
-    id: "usa",
-    title_ru: "США",
-    title_kg: "АКШ",
-    title_en: "USA",
-    time: "14:30 - 16:00",
-    desc_ru: "Дух свободы и инноваций Нового Света.",
-    desc_en: "The spirit of freedom and innovation.",
-    image: "/assets/map_region_usa_1780228532055.png",
-    image: "/assets/map_region_usa_1780228532055.png",
-    x: 30,
-    y: 55
-  },
-  {
-    id: "asia",
-    title_ru: "Китай и Азия",
-    title_kg: "Кытай жана Азия",
-    title_en: "China & Asia",
-    time: "16:30 - 18:00",
-    desc_ru: "Завершение пути на Востоке. Традиции и sci-fi будущее.",
-    desc_en: "Ending the journey in the East. Tradition meets sci-fi.",
-    image: "/assets/map_region_asia_v2_1780228848350.png",
-    image: "/assets/map_region_asia_v2_1780228848350.png",
-    x: 70,
-    y: 75
-  }
+const FALLBACK_IMAGES = [
+  "/assets/map_region_start_v2_1780228834772.png",
+  "/assets/map_region_europe_1780228519337.png",
+  "/assets/map_region_usa_1780228532055.png",
+  "/assets/map_region_asia_v2_1780228848350.png"
 ];
 
-export default function SchedulePanel({ lang }: SchedulePanelProps) {
+export default function SchedulePanel({ program = [], speakers = [], universities = [], lang }: SchedulePanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
     target: containerRef,
@@ -70,8 +25,29 @@ export default function SchedulePanel({ lang }: SchedulePanelProps) {
   const smoothProgress = useSpring(scrollYProgress, { stiffness: 60, damping: 20 });
   const pathLength = useTransform(smoothProgress, [0, 1], [0, 1]);
 
+  // Generate node positions deterministically to avoid hydration / re-render jumps
+  const points = program.map((stop, i) => {
+    const isEven = i % 2 === 0;
+    const stepY = program.length > 1 ? 80 / (program.length - 1) : 0;
+    const x = isEven ? 25 + (i * 5) % 15 : 75 - (i * 5) % 15;
+    const y = 10 + stepY * i;
+    return { x, y, absX: x * 10, absY: y * 10 }; // Scale x and y to 0-1000 for SVG
+  });
+
+  // Generate a dynamic smooth bezier curve to connect all nodes
+  let pathD = "";
+  if (points.length > 0) {
+    pathD = `M ${points[0].absX} ${points[0].absY}`;
+    for (let i = 1; i < points.length; i++) {
+       const prev = points[i-1];
+       const curr = points[i];
+       const midY = (prev.absY + curr.absY) / 2;
+       pathD += ` C ${prev.absX} ${midY}, ${curr.absX} ${midY}, ${curr.absX} ${curr.absY}`;
+    }
+  }
+
   return (
-    <div className="mx-auto w-full py-8 px-4 sm:px-6 relative overflow-hidden" id="schedule">
+    <div className="mx-auto w-full py-8 px-4 sm:px-6 relative overflow-hidden">
       <div className="text-center mb-24 md:mb-32 relative z-10">
         <h2 className="text-4xl sm:text-5xl md:text-6xl font-black uppercase tracking-tighter">
           <span className="text-slate-900">
@@ -89,33 +65,44 @@ export default function SchedulePanel({ lang }: SchedulePanelProps) {
       {/* --- DESKTOP 2D MAP --- */}
       <div ref={containerRef} className="hidden md:block relative w-full max-w-[1200px] mx-auto aspect-[4/3] xl:aspect-[16/10]">
         
-        {/* Zigzag SVG Route */}
-        <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none drop-shadow-lg">
-          {/* Base dashed path */}
-          <path 
-            d="M 250 100 C 500 100, 500 350, 750 350 C 1000 350, 0 550, 300 550 C 550 550, 450 750, 700 750" 
-            fill="none" stroke="#E2E8F0" strokeWidth="8" strokeDasharray="16 16" strokeLinecap="round"
-          />
-          {/* Animated filling path */}
-          <motion.path 
-            d="M 250 100 C 500 100, 500 350, 750 350 C 1000 350, 0 550, 300 550 C 550 550, 450 750, 700 750" 
-            fill="none" stroke="#A259FF" strokeWidth="8" strokeDasharray="16 16" strokeLinecap="round"
-            style={{ pathLength }}
-          />
-        </svg>
+        {/* Dynamic SVG Route */}
+        {points.length > 1 && (
+          <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none drop-shadow-lg">
+            {/* Base dashed path */}
+            <path 
+              d={pathD} 
+              fill="none" stroke="#E2E8F0" strokeWidth="8" strokeDasharray="16 16" strokeLinecap="round"
+            />
+            {/* Animated filling path */}
+            <motion.path 
+              d={pathD} 
+              fill="none" stroke="#A259FF" strokeWidth="8" strokeDasharray="16 16" strokeLinecap="round"
+              style={{ pathLength }}
+            />
+          </svg>
+        )}
 
         {/* Scattered Cards */}
-        {travelStops.map((stop, i) => {
+        {program.map((stop, i) => {
           const title = lang === "ru" ? stop.title_ru : lang === "kg" ? stop.title_kg : stop.title_en;
-          const desc = lang === "ru" ? stop.desc_ru : lang === "en" ? stop.desc_en : stop.desc_ru;
+          const desc = lang === "ru" ? stop.description_ru : lang === "en" ? stop.description_en : stop.description_kg;
+
+          const point = points[i];
+          
+          const speaker = speakers.find(s => s.id === stop.speakerId);
+          const uni = universities.find(u => u.name === speaker?.university);
+          const logo = uni?.logoBase64;
+          const fallbackImg = FALLBACK_IMAGES[i % FALLBACK_IMAGES.length];
+          const finalImage = logo || fallbackImg;
+          const objectClass = logo ? "object-contain p-2" : "object-cover";
 
           return (
             <div 
-              key={stop.id}
+              key={stop.id || i}
               className="absolute z-10"
               style={{
-                left: `${stop.x}%`,
-                top: `${stop.y}%`,
+                left: `${point.x}%`,
+                top: `${point.y}%`,
               }}
             >
               <motion.div 
@@ -126,12 +113,12 @@ export default function SchedulePanel({ lang }: SchedulePanelProps) {
               >
                 {/* Watercolor Illustration */}
               <div className="w-full h-36 lg:h-40 p-2">
-                <div className="w-full h-full rounded-[2rem] overflow-hidden relative bg-white">
-                   <img src={stop.image} alt={title} className="w-full h-full object-cover object-center group-hover:scale-110 transition-transform duration-700" />
+                <div className="w-full h-full rounded-[2rem] overflow-hidden relative bg-white border border-slate-100 flex items-center justify-center">
+                   <img src={finalImage} alt={title} className={`w-full h-full group-hover:scale-110 transition-transform duration-700 ${objectClass}`} style={{ transform: logo ? `scale(${uni?.logoScale || 1})` : "none" }} />
                    
                    {/* Time Tag overlaid on image */}
                    <div className="absolute bottom-3 right-3 bg-white/90 backdrop-blur-sm text-slate-900 font-bold px-3 py-1 text-sm rounded-xl shadow-sm">
-                     {stop.time}
+                     {lang === "ru" ? stop.time_ru : lang === "kg" ? stop.time_kg : stop.time_en || stop.time}
                    </div>
                 </div>
               </div>
@@ -156,9 +143,16 @@ export default function SchedulePanel({ lang }: SchedulePanelProps) {
         <div className="absolute left-8 top-0 bottom-0 w-1 border-l-4 border-dashed border-slate-200" />
         
         <div className="flex flex-col gap-12 relative z-10">
-          {travelStops.map((stop) => {
+          {program.map((stop, index) => {
             const title = lang === "ru" ? stop.title_ru : lang === "kg" ? stop.title_kg : stop.title_en;
-            const desc = lang === "ru" ? stop.desc_ru : lang === "en" ? stop.desc_en : stop.desc_ru;
+            const desc = lang === "ru" ? stop.description_ru : lang === "kg" ? stop.description_kg : stop.description_en;
+            
+            const speaker = speakers.find(s => s.id === stop.speakerId);
+            const uni = universities.find(u => u.name === speaker?.university);
+            const logo = uni?.logoBase64;
+            const fallbackImg = FALLBACK_IMAGES[index % FALLBACK_IMAGES.length];
+            const finalImage = logo || fallbackImg;
+            const objectClass = logo ? "object-contain p-4" : "object-cover";
 
             return (
               <div key={stop.id} className="w-full pl-20 relative">
@@ -168,10 +162,10 @@ export default function SchedulePanel({ lang }: SchedulePanelProps) {
                 
                 {/* Mobile Card */}
                 <div className="w-full bg-white rounded-[2rem] shadow-xl border-2 border-slate-100 overflow-hidden p-2">
-                  <div className="w-full h-48 rounded-3xl overflow-hidden relative bg-slate-50">
-                    <img src={stop.image} alt={title} className="w-full h-full object-cover object-center" />
+                  <div className="w-full h-48 rounded-3xl overflow-hidden relative bg-white border-b border-slate-100 flex items-center justify-center">
+                    <img src={finalImage} alt={title} className={`w-full h-full ${objectClass}`} style={{ transform: logo ? `scale(${uni?.logoScale || 1})` : "none" }} />
                     <div className="absolute top-3 left-3 bg-white/95 text-slate-900 font-bold px-3 py-1 text-sm rounded-xl shadow-sm">
-                      {stop.time}
+                        {lang === "ru" ? stop.time_ru : lang === "kg" ? stop.time_kg : stop.time_en || stop.time}
                     </div>
                   </div>
                   <div className="px-4 py-4">

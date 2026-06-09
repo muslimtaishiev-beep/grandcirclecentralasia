@@ -67,19 +67,34 @@ const LOCATION_MAP: Record<string, { city: string; location: [number, number] }>
   "AUCA": { city: "Бишкек", location: [42.8746, 74.5698] },
 };
 
-const mappedSpeakers = staticDb.speakers.map((speaker, idx) => {
-  const loc = LOCATION_MAP[speaker.university] || { city: "Неизвестно", location: [0, 0] };
-  return {
-    id: speaker.id,
-    name: speaker.name_ru,
-    university: speaker.university,
-    city: loc.city,
-    location: loc.location,
-    message: speaker.story_ru,
-    tip: speaker.lectureTopic_ru,
-    avatarUrl: PORTRAITS[idx % PORTRAITS.length],
-  };
-});
+export function mapServerSpeakersToAppStudents(serverSpeakers: any[]): AppStudent[] {
+  return serverSpeakers.map((speaker, idx) => {
+    const loc = LOCATION_MAP[speaker.university] || { city: "Unknown", location: [42.8746, 74.5698] };
+    
+    // Check if the speaker has explicit coordinates set in CMS
+    let finalLocation = loc.location;
+    if (speaker.lat != null && speaker.lng != null && speaker.lat !== "" && speaker.lng !== "") {
+      const parsedLat = parseFloat(String(speaker.lat));
+      const parsedLng = parseFloat(String(speaker.lng));
+      if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+        finalLocation = [parsedLat, parsedLng];
+      }
+    }
+
+    return {
+      id: String(speaker.id),
+      name: speaker.name_ru || speaker.name_en,
+      university: speaker.university,
+      city: loc.city, // We keep the mapped city, or we can just use the university name
+      location: finalLocation as [number, number],
+      message: speaker.story_ru || speaker.story_en,
+      tip: speaker.lectureTopic_ru || speaker.lectureTopic_en,
+      avatarUrl: speaker.avatarBase64 || PORTRAITS[idx % PORTRAITS.length],
+    };
+  });
+}
+
+const mappedSpeakers = mapServerSpeakersToAppStudents(staticDb.speakers);
 
 export const APP_STUDENTS: AppStudent[] = [
   {

@@ -13,6 +13,7 @@ import SchedulePanel from "./components/SchedulePanel";
 import TicketsPanel from "./components/TicketsPanel";
 import PartnersPanel from "./components/PartnersPanel";
 import Newsletter from "./components/Newsletter";
+import FAQSection from "./components/FAQSection";
 import AdminCMS from "./components/AdminCMS";
 import { MetricsCarousel } from "./components/MetricsCarousel";
 import GlobalWatermarks from "./components/GlobalWatermarks";
@@ -83,7 +84,8 @@ export default function App() {
     program: publicData?.program || staticDb.program,
     partners: publicData?.partners || staticDb.partners,
     tickets: publicData?.tickets || staticDb.tickets,
-    metrics: publicData?.metrics && publicData.metrics.length > 0 ? publicData.metrics : staticDb.metrics
+    metrics: publicData?.metrics && publicData.metrics.length > 0 ? publicData.metrics : staticDb.metrics,
+    universities: publicData?.universities && publicData.universities.length > 0 ? publicData.universities : []
   } as unknown as PublicData;
 
   const isAdminPath = currentPath === "/admin";
@@ -135,7 +137,7 @@ export default function App() {
             </motion.section>
 
             {/* GLOBE & SPEAKERS SECTION */}
-            <GlobeSplitSection />
+            <GlobeSplitSection speakers={data.speakers} universities={data.universities} />
  
             {/* TIMELINE SECTION */}
             <motion.section 
@@ -145,7 +147,7 @@ export default function App() {
               transition={{ duration: 0.6, ease: "easeOut" }}
               className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8" id="schedule"
             >
-              <SchedulePanel program={data.program} speakers={data.speakers} lang={lang} />
+              <SchedulePanel program={data.program} speakers={data.speakers} universities={data.universities} lang={lang} />
             </motion.section>
  
             {/* PARTNERS SECTION */}
@@ -158,6 +160,9 @@ export default function App() {
             >
               <PartnersPanel partners={data.partners} lang={lang} />
             </motion.section>
+ 
+            {/* FAQ SECTION */}
+            <FAQSection lang={lang} />
  
             {/* NEWSLETTER CAPTURE */}
             <motion.section 

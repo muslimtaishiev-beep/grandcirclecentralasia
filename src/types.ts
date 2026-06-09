@@ -25,6 +25,9 @@ export interface Speaker {
   lectureTime: string;
   colorTheme: string; // e.g. 'blue', 'purple', 'rose', 'cyan', 'indigo', 'teal', 'amber', 'orange', 'slate', 'emerald'
   isFeatured: boolean;
+  lat?: string | number;
+  lng?: string | number;
+  avatarBase64?: string;
 }
 
 export interface ProgramSlot {
@@ -84,6 +87,14 @@ export interface Subscriber {
   timestamp: string;
 }
 
+export interface University {
+  id: string;
+  name: string;
+  domain: string;
+  logoBase64: string;
+  logoScale?: number;
+}
+
 export interface PublicData {
   settings: Settings;
   speakers: Speaker[];
@@ -91,4 +102,6 @@ export interface PublicData {
   partners: Partner[];
   tickets: Ticket[];
   metrics: Metric[];
+  universities: University[];
 }
+
