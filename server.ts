@@ -5,10 +5,26 @@ import { promises as fs, existsSync, readFileSync } from "fs";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import * as admin from "firebase-admin";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 
 dotenv.config();
 
 const app = express();
+
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
+
+const apiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 200, // Limit each IP to 200 requests per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use("/api/", apiLimiter);
+
 app.use(cors({
   origin: "*",
   credentials: true
