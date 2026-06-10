@@ -93,9 +93,9 @@ export default function Hero({ lang, settings, onNavigate }: HeroProps) {
             )}
           </h1>
 
-          <p className="text-xl text-slate-100 mb-12 max-w-xl leading-relaxed drop-shadow-sm font-medium">
+          <p className="text-lg sm:text-xl text-slate-100 mb-12 max-w-2xl leading-relaxed drop-shadow-sm font-medium">
             {lang === "ru" 
-              ? "Пошаговые инструкции поступления в Лигу Плюща и мировые университеты напрямую от тех, кто уже прошел этот путь."
+              ? "Пошаговые инструкции поступления в Лигу Плюща и мировые университеты напрямую от тех, кто уже прошел этот путь. Наши спикеры расскажут про бакалавриат и магистратуру за рубежом, рассмотрят как бесплатные и бюджетные low-варианты, так и топовые университеты мира."
               : lang === "kg"
               ? "Плющ Лигасына жана дүйнөлүк университеттерге тапшыруу боюнча кадам-кадам нускамалар."
               : "Step-by-step admission instructions for Ivy League and world-class universities from those who have already walked this path."}
