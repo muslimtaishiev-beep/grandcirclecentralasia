@@ -305,7 +305,7 @@ app.put("/api/admin/settings", requireAuth, async (req, res) => {
 
 // --- Speakers CRUD ---
 app.post("/api/admin/speakers", requireAuth, async (req, res) => {
-  const { name_ru, name_en, university, major_ru, major_en, admissionYear, story_ru, story_en, lectureTopic_ru, lectureTopic_en, lectureTime, colorTheme, isFeatured, avatarBase64 } = req.body;
+  const { name_ru, name_en, university, major_ru, major_en, admissionYear, story_ru, story_en, lectureTopic_ru, lectureTopic_en, lectureTime, colorTheme, isFeatured, avatarBase64, lat, lng } = req.body;
   
   if (!name_en || !university || !lectureTopic_en) {
     return res.status(400).json({ error: "Speaker name, university and topic are required." });
@@ -329,7 +329,9 @@ app.post("/api/admin/speakers", requireAuth, async (req, res) => {
     lectureTime: lectureTime || "To Be Determined",
     colorTheme: colorTheme || "blue",
     isFeatured: isFeatured === true || isFeatured === "true",
-    avatarBase64: avatarBase64 || ""
+    avatarBase64: avatarBase64 || "",
+    lat: lat,
+    lng: lng
   };
 
   db.speakers.push(newSpeaker);
@@ -347,7 +349,7 @@ app.put("/api/admin/speakers/:id", requireAuth, async (req, res) => {
     return res.status(404).json({ error: "Speaker not found." });
   }
 
-  const { name_ru, name_en, university, major_ru, major_en, admissionYear, story_ru, story_en, lectureTopic_ru, lectureTopic_en, lectureTime, colorTheme, isFeatured, avatarBase64 } = req.body;
+  const { name_ru, name_en, university, major_ru, major_en, admissionYear, story_ru, story_en, lectureTopic_ru, lectureTopic_en, lectureTime, colorTheme, isFeatured, avatarBase64, lat, lng } = req.body;
 
   db.speakers[index] = {
     ...db.speakers[index],
@@ -364,7 +366,9 @@ app.put("/api/admin/speakers/:id", requireAuth, async (req, res) => {
     lectureTime: lectureTime !== undefined ? lectureTime : db.speakers[index].lectureTime,
     colorTheme: colorTheme !== undefined ? colorTheme : db.speakers[index].colorTheme,
     isFeatured: isFeatured !== undefined ? (isFeatured === true || isFeatured === "true") : db.speakers[index].isFeatured,
-    avatarBase64: avatarBase64 !== undefined ? avatarBase64 : db.speakers[index].avatarBase64
+    avatarBase64: avatarBase64 !== undefined ? avatarBase64 : db.speakers[index].avatarBase64,
+    lat: lat !== undefined ? lat : db.speakers[index].lat,
+    lng: lng !== undefined ? lng : db.speakers[index].lng
   };
 
   await writeDb(db);
