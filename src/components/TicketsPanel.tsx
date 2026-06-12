@@ -102,10 +102,10 @@ export default function TicketsPanel({ tickets, lang }: TicketsPanelProps) {
         <span className="hidden sm:inline font-bold text-slate-300">|</span>
         <span>
           {lang === "ru" 
-            ? "Свяжитесь с организаторами: +995 222 140 709" 
+            ? "Свяжитесь с организаторами: +996 222 140 709" 
             : lang === "kg"
-            ? "Уюштуруучулар менен байланышыңыз: +995 222 140 709"
-            : "Contact: +995 222 140 709"}
+            ? "Уюштуруучулар менен байланышыңыз: +996 222 140 709"
+            : "Contact: +996 222 140 709"}
         </span>
       </div>
     </div>

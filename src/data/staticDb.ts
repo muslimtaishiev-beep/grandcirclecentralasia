@@ -5,7 +5,7 @@ export const staticDb =
     "eventVenue": "Кыргызстан, Бишкек, Технопарк",
     "adminPassword": "admin",
     "contactEmail": "",
-    "contactPhone": "+995 222 140 709"
+    "contactPhone": "+996 222 140 709"
   },
   "speakers": [
     {
