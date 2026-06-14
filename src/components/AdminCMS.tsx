@@ -256,6 +256,43 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
     }
   };
 
+  const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const csv = event.target?.result as string;
+      const lines = csv.split('\n');
+      if (lines.length <= 1) return;
+      const headers = lines[0].split(',').map(h => h.trim());
+      
+      const speakers = [];
+      for (let i = 1; i < lines.length; i++) {
+        const currentLine = lines[i];
+        if (!currentLine.trim()) continue;
+
+        // Splitting by comma ignoring commas inside quotes
+        const values = currentLine.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.replace(/^"|"$/g, '').trim());
+        
+        const speaker: any = {};
+        headers.forEach((header, index) => {
+          speaker[header] = values[index] || "";
+        });
+        speakers.push(speaker);
+      }
+
+      if (speakers.length > 0) {
+        const data = await makeRequest("/api/admin/speakers/bulk", "POST", { speakers });
+        if (data && data.success) {
+          alert(`Успешно загружено спикеров: ${data.count}.${data.newUniversitiesAdded?.length > 0 ? '\n\nВНИМАНИЕ: Были добавлены новые университеты: ' + data.newUniversitiesAdded.join(', ') + '.\nПожалуйста, загрузите для них картинки во вкладке Университеты.' : ''}`);
+        }
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
   // UNIVERSITIES HANDLERS
   const saveUniversity = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -694,18 +731,31 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
               </p>
             </div>
 
-            <button
-              onClick={() => setEditingSpeaker({
-                name_ru: "", name_en: "", university: "", major_ru: "", major_en: "",
-                admissionYear: "", story_ru: "", story_en: "", lectureTopic_ru: "", lectureTopic_en: "",
-                lectureTime: "", colorTheme: "blue", isFeatured: false, avatarBase64: "", lat: "", lng: ""
-              })}
-              className="flex items-center space-x-1.5 rounded-full bg-slate-900 border hover:bg-slate-800 text-white font-bold text-xs px-4 py-2 transition cursor-pointer"
-              id="btn_add_speaker"
-            >
-              <Plus className="h-4 w-4" />
-              <span>{lang === "ru" ? "Добавить спикера" : "Add Presenter"}</span>
-            </button>
+            <div className="flex space-x-2">
+              <a
+                href="/speakers_template.csv"
+                download
+                className="flex items-center space-x-1.5 rounded-full bg-slate-100 border hover:bg-slate-200 text-slate-700 font-bold text-xs px-4 py-2 transition cursor-pointer"
+              >
+                <span>{lang === "ru" ? "Скачать шаблон CSV" : "Download CSV Template"}</span>
+              </a>
+              <label className="flex items-center space-x-1.5 rounded-full bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 font-bold text-xs px-4 py-2 transition cursor-pointer">
+                <span>{lang === "ru" ? "Загрузить CSV" : "Upload CSV"}</span>
+                <input type="file" accept=".csv" className="hidden" onChange={handleCsvUpload} />
+              </label>
+              <button
+                onClick={() => setEditingSpeaker({
+                  name_ru: "", name_en: "", university: "", major_ru: "", major_en: "",
+                  admissionYear: "", story_ru: "", story_en: "", lectureTopic_ru: "", lectureTopic_en: "",
+                  lectureTime: "", colorTheme: "blue", isFeatured: false, avatarBase64: "", lat: "", lng: ""
+                })}
+                className="flex items-center space-x-1.5 rounded-full bg-slate-900 border hover:bg-slate-800 text-white font-bold text-xs px-4 py-2 transition cursor-pointer"
+                id="btn_add_speaker"
+              >
+                <Plus className="h-4 w-4" />
+                <span>{lang === "ru" ? "Добавить спикера" : "Add Presenter"}</span>
+              </button>
+            </div>
           </div>
 
           {/* Forms Drawer overlay for Adding/Editing Speaker */}

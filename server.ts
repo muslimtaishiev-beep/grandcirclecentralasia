@@ -340,6 +340,63 @@ app.post("/api/admin/speakers", requireAuth, async (req, res) => {
   res.status(201).json({ success: true, speaker: newSpeaker });
 });
 
+app.post("/api/admin/speakers/bulk", requireAuth, async (req, res) => {
+  const { speakers } = req.body;
+  if (!Array.isArray(speakers)) {
+    return res.status(400).json({ error: "Invalid data format. Expected an array of speakers." });
+  }
+
+  const db = await readDb();
+  let nextId = Number(db.speakers.reduce((max: number, s: any) => Math.max(max, Number(s.id) || 0), 0)) + 1;
+  const newUniversitiesAdded: string[] = [];
+
+  if (!db.universities) db.universities = [];
+
+  for (const speaker of speakers) {
+    if (!speaker.name_en || !speaker.university || !speaker.lectureTopic_en) {
+      continue; // skip invalid records
+    }
+    
+    // Check if university exists (case insensitive comparison)
+    const uniExists = db.universities.some((u: any) => u.name.toLowerCase() === speaker.university.trim().toLowerCase());
+    if (!uniExists && !newUniversitiesAdded.some(nu => nu.toLowerCase() === speaker.university.trim().toLowerCase())) {
+      const nextUniId = String(Number(db.universities.reduce((max: number, u: any) => Math.max(max, Number(u.id) || 0), 0)) + 1);
+      db.universities.push({
+        id: nextUniId,
+        name: speaker.university.trim(),
+        domain: "",
+        logoBase64: "",
+        logoScale: 1
+      });
+      newUniversitiesAdded.push(speaker.university.trim());
+    }
+
+    const newSpeaker = {
+      id: String(nextId++),
+      name_ru: speaker.name_ru || speaker.name_en,
+      name_en: speaker.name_en,
+      university: speaker.university.trim(),
+      major_ru: speaker.major_ru || "",
+      major_en: speaker.major_en || "",
+      admissionYear: speaker.admissionYear || "",
+      story_ru: speaker.story_ru || speaker.story_en || "",
+      story_en: speaker.story_en || "",
+      lectureTopic_ru: speaker.lectureTopic_ru || speaker.lectureTopic_en,
+      lectureTopic_en: speaker.lectureTopic_en,
+      lectureTime: speaker.lectureTime || "To Be Determined",
+      colorTheme: speaker.colorTheme || "blue",
+      isFeatured: speaker.isFeatured === true || speaker.isFeatured === "true" || speaker.isFeatured === "TRUE" || speaker.isFeatured === "1",
+      avatarBase64: "",
+      lat: speaker.lat || "",
+      lng: speaker.lng || ""
+    };
+    db.speakers.push(newSpeaker);
+  }
+
+  await writeDb(db);
+  res.status(201).json({ success: true, count: speakers.length, newUniversitiesAdded });
+});
+
 app.put("/api/admin/speakers/:id", requireAuth, async (req, res) => {
   const { id } = req.params;
   const db = await readDb();
