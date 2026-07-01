@@ -6,7 +6,11 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { motion } from 'framer-motion';
 
-const Decision: React.FC = () => {
+interface DecisionProps {
+  lang?: string;
+}
+
+const Decision: React.FC<DecisionProps> = ({ lang }) => {
   const { userData } = useAuth();
   const navigate = useNavigate();
   
