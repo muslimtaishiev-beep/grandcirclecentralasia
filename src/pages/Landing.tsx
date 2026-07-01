@@ -21,11 +21,11 @@ const Landing: React.FC = () => {
       </div>
 
       {/* Squiggly Lines Background */}
-      <div className="absolute inset-0 z-0 opacity-20 pointer-events-none flex items-center justify-center overflow-hidden">
+      <div className="absolute inset-0 z-0 opacity-60 pointer-events-none flex items-end justify-center overflow-hidden">
         <svg 
           viewBox="0 0 1600 800" 
           preserveAspectRatio="none" 
-          className="w-full h-full object-fill scale-125 md:scale-150 translate-y-1/4 md:translate-y-1/3"
+          className="w-full h-[80%] object-fill scale-125 md:scale-150 translate-y-1/4"
           xmlns="http://www.w3.org/2000/svg"
         >
           <motion.path 
