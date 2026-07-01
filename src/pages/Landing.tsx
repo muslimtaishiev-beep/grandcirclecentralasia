@@ -96,7 +96,7 @@ const Landing: React.FC<LandingProps> = ({ lang = "ru" }) => {
               onClick={() => navigate('/register')}
               className="w-full sm:w-auto px-8 py-4 bg-white text-black font-bold uppercase tracking-wider border-2 border-white hover:bg-transparent hover:text-white transition-colors"
             >
-              {lang === "ru" ? "Регистрация" : lang === "kg" ? "Катталуу" : "Register"}
+              {lang === "ru" ? "Узнать результаты" : lang === "kg" ? "Жыйынтыкты көрүү" : "Check Results"}
             </button>
             <button 
               onClick={() => navigate('/login')}
