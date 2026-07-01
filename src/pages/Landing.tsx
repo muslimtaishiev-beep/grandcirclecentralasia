@@ -25,7 +25,7 @@ const Landing: React.FC = () => {
         <svg 
           viewBox="0 0 1600 800" 
           preserveAspectRatio="none" 
-          className="w-full h-full object-fill scale-125 md:scale-150"
+          className="w-full h-full object-fill scale-125 md:scale-150 translate-y-1/4 md:translate-y-1/3"
           xmlns="http://www.w3.org/2000/svg"
         >
           <motion.path 
