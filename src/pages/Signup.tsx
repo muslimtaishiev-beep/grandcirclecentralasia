@@ -103,13 +103,26 @@ const Signup: React.FC = () => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       
+      const fullName = `${firstName.trim().toLowerCase()} ${lastName.trim().toLowerCase()}`;
+      
+      // Fetch pre-set decision if any
+      let preSetDecision = 'pending';
+      try {
+        const decisionDoc = await getDoc(doc(db, 'decisions', fullName));
+        if (decisionDoc.exists() && decisionDoc.data().decisionStatus) {
+          preSetDecision = decisionDoc.data().decisionStatus;
+        }
+      } catch (err) {
+        console.error("Failed to fetch pre-set decision", err);
+      }
+      
       // Save user to Firestore
       await setDoc(doc(db, 'users', userCredential.user.uid), {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim(),
         phone: phone.trim(),
-        decisionStatus: 'pending',
+        decisionStatus: preSetDecision,
         createdAt: new Date().toISOString()
       });
 

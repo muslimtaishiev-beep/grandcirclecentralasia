@@ -48,9 +48,36 @@ const Admin: React.FC = () => {
   const fetchUsers = async () => {
     setLoadingUsers(true);
     try {
-      const snapshot = await getDocs(collection(db, 'users'));
-      const usersData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      setUsers(usersData);
+      const decisionsSnap = await getDocs(collection(db, 'decisions'));
+      const decisionsData = decisionsSnap.docs.map(d => ({ 
+        id: d.id, // the full name
+        firstName: d.data().fullName?.split(' ')[0] || d.id,
+        lastName: d.data().fullName?.split(' ').slice(1).join(' ') || '',
+        email: 'Not registered yet',
+        decisionStatus: d.data().decisionStatus || 'pending'
+      }));
+
+      // Merge with registered users
+      const usersSnap = await getDocs(collection(db, 'users'));
+      const registeredUsers = usersSnap.docs.map(d => ({ ...d.data(), uid: d.id })) as any[];
+
+      const merged = decisionsData.map(dec => {
+        const match = registeredUsers.find((ru: any) => 
+          `${ru.firstName.trim().toLowerCase()} ${ru.lastName.trim().toLowerCase()}` === dec.id
+        );
+        if (match) {
+          return {
+            ...dec,
+            email: match.email,
+            uid: match.uid,
+            firstName: match.firstName, // Use exact casing from registration
+            lastName: match.lastName
+          };
+        }
+        return dec;
+      });
+
+      setUsers(merged);
     } catch (err) {
       console.error(err);
     } finally {
@@ -60,7 +87,14 @@ const Admin: React.FC = () => {
 
   const handleUserStatusChange = async (userId: string, newStatus: string) => {
     try {
-      await updateDoc(doc(db, 'users', userId), { decisionStatus: newStatus });
+      // userId is fullName (from decisions collection)
+      await setDoc(doc(db, 'decisions', userId), { decisionStatus: newStatus }, { merge: true });
+      
+      const user = users.find(u => u.id === userId);
+      if (user && user.uid) {
+        await updateDoc(doc(db, 'users', user.uid), { decisionStatus: newStatus });
+      }
+      
       setUsers(users.map(u => u.id === userId ? { ...u, decisionStatus: newStatus } : u));
     } catch (err) {
       console.error("Failed to update status", err);
@@ -84,14 +118,27 @@ const Admin: React.FC = () => {
         setUploadStatus(`Processing ${rows.length} rows...`);
 
         for (const row of rows) {
-          const { firstName, decision } = row;
+          const { firstName, lastName, decision } = row;
           if (!firstName || !decision) {
             failCount++;
             continue;
           }
 
           try {
-            // Find user by exact firstName (can be improved to match last name as well or email)
+            const validDecision = ['pending', 'accepted', 'rejected'].includes(decision.toLowerCase()) 
+              ? decision.toLowerCase() 
+              : 'pending';
+
+            const fullName = `${firstName.trim().toLowerCase()} ${lastName?.trim().toLowerCase() || ''}`.trim();
+            
+            // 1. Update decisions collection
+            await setDoc(doc(db, 'decisions', fullName), {
+              fullName: fullName,
+              decisionStatus: validDecision,
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+
+            // 2. Find and update registered user if exists
             const q = query(
               collection(db, 'users'), 
               where('firstName', '==', firstName.trim())
@@ -100,19 +147,12 @@ const Admin: React.FC = () => {
             const querySnapshot = await getDocs(q);
             
             if (!querySnapshot.empty) {
-              // Update the first matching user
-              const userDoc = querySnapshot.docs[0];
-              const validDecision = ['pending', 'accepted', 'rejected'].includes(decision.toLowerCase()) 
-                ? decision.toLowerCase() 
-                : 'pending';
-
+              const userDoc = querySnapshot.docs[0]; // simplistic match by first name
               await updateDoc(doc(db, 'users', userDoc.id), {
                 decisionStatus: validDecision
               });
-              successCount++;
-            } else {
-              failCount++;
             }
+            successCount++;
           } catch (err) {
             console.error(err);
             failCount++;
