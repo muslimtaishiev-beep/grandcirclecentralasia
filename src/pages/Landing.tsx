@@ -24,8 +24,8 @@ const Landing: React.FC = () => {
       <div className="absolute inset-0 z-0 opacity-20 pointer-events-none flex items-center justify-center overflow-hidden">
         <svg 
           viewBox="0 0 1600 800" 
-          preserveAspectRatio="xMidYMid slice" 
-          className="w-full h-full"
+          preserveAspectRatio="none" 
+          className="w-full h-full object-fill scale-125 md:scale-150"
           xmlns="http://www.w3.org/2000/svg"
         >
           <motion.path 
