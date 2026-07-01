@@ -97,7 +97,7 @@ export default function App() {
     <div className="min-h-screen bg-[#EDE9FE] text-slate-800 antialiased font-sans flex flex-col justify-between" id="main_app_wrapper">
       
       {/* Header is global */}
-      {!isAdminPath && currentPath !== "/" && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && (
+      {!isAdminPath && !currentPath.startsWith("/admission") && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && (
         <Header 
           lang={lang} 
           setLang={setLang} 
@@ -125,6 +125,7 @@ export default function App() {
           } />
 
           {/* Admission Portal Routes */}
+          <Route path="/admission" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Signup />} />
           <Route path="/dashboard" element={
@@ -138,11 +139,8 @@ export default function App() {
             </ProtectedRoute>
           } />
 
-          {/* Main Landing Route - Temporarily Admission Portal Landing */}
-          <Route path="/" element={<Landing />} />
-
-          {/* Old Main Forum Route - Moved to /forum temporarily */}
-          <Route path="/forum" element={
+          {/* Main Forum Route */}
+          <Route path="/" element={
             <div className="space-y-0 pb-10 relative">
               <GlobalWatermarks />
               
