@@ -48,8 +48,8 @@ const Decision: React.FC = () => {
     fetchTemplate();
   }, [status, userData, isAccepted, navigate]);
 
-  // If video is still playing, show video layer
-  if (!videoFinished) {
+  // If video is still playing and user is accepted, show video layer
+  if (isAccepted && !videoFinished) {
     return (
       <div className="fixed inset-0 bg-black z-50 flex items-center justify-center">
         {/* Make sure public/acceptance.mp4 exists, or it will just immediately fire onEnded if not found in a real app, 
