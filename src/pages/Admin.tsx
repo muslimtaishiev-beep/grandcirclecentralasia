@@ -62,9 +62,11 @@ const Admin: React.FC = () => {
       const registeredUsers = usersSnap.docs.map(d => ({ ...d.data(), uid: d.id })) as any[];
 
       const merged = decisionsData.map(dec => {
-        const match = registeredUsers.find((ru: any) => 
-          `${ru.firstName.trim().toLowerCase()} ${ru.lastName.trim().toLowerCase()}` === dec.id
-        );
+        const match = registeredUsers.find((ru: any) => {
+          const f = ru.firstName.trim().toLowerCase();
+          const l = ru.lastName.trim().toLowerCase();
+          return `${f} ${l}` === dec.id || `${l} ${f}` === dec.id;
+        });
         if (match) {
           return {
             ...dec,
