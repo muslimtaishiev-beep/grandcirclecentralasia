@@ -23,6 +23,7 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
 import Decision from "./pages/Decision";
+import Landing from "./pages/Landing";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 import { PublicData } from "./types";
@@ -95,7 +96,7 @@ export default function App() {
     <div className="min-h-screen bg-[#EDE9FE] text-slate-800 antialiased font-sans flex flex-col justify-between" id="main_app_wrapper">
       
       {/* Header is global */}
-      {!isAdminPath && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && (
+      {!isAdminPath && currentPath !== "/" && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && (
         <Header 
           lang={lang} 
           setLang={setLang} 
@@ -136,8 +137,11 @@ export default function App() {
             </ProtectedRoute>
           } />
 
-          {/* Main Landing Route */}
-          <Route path="/" element={
+          {/* Main Landing Route - Temporarily Admission Portal Landing */}
+          <Route path="/" element={<Landing />} />
+
+          {/* Old Main Forum Route - Moved to /forum temporarily */}
+          <Route path="/forum" element={
             <div className="space-y-0 pb-10 relative">
               <GlobalWatermarks />
               
@@ -178,21 +182,20 @@ export default function App() {
               >
                 <PartnersPanel partners={data.partners} lang={lang} />
               </motion.section>
-   
-              {/* FAQ SECTION */}
-              <FAQSection lang={lang} />
-   
-              {/* NEWSLETTER CAPTURE */}
+
+              {/* NEWSLETTER */}
               <motion.section 
                 initial={{ opacity: 0, y: 40 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-100px" }}
                 transition={{ duration: 0.6, ease: "easeOut" }}
-                className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pb-10" id="newsletter"
+                className="py-12 md:py-16"
               >
                 <Newsletter lang={lang} />
               </motion.section>
-   
+
+              {/* FAQ */}
+              <FAQSection lang={lang} />
             </div>
           } />
         </Routes>

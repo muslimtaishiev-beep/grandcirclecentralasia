@@ -6,7 +6,7 @@ import { Upload, Save, CheckCircle, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const Admin: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'csv' | 'templates'>('csv');
+  const [activeTab, setActiveTab] = useState<'csv' | 'templates' | 'users'>('csv');
   
   // CSV State
   const [file, setFile] = useState<File | null>(null);
@@ -18,6 +18,10 @@ const Admin: React.FC = () => {
   const [rejectionTemplate, setRejectionTemplate] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+
+  // Users State
+  const [users, setUsers] = useState<any[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
 
   useEffect(() => {
     // Load existing templates
@@ -34,6 +38,35 @@ const Admin: React.FC = () => {
     };
     loadTemplates();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'users') {
+      fetchUsers();
+    }
+  }, [activeTab]);
+
+  const fetchUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const snapshot = await getDocs(collection(db, 'users'));
+      const usersData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setUsers(usersData);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const handleUserStatusChange = async (userId: string, newStatus: string) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), { decisionStatus: newStatus });
+      setUsers(users.map(u => u.id === userId ? { ...u, decisionStatus: newStatus } : u));
+    } catch (err) {
+      console.error("Failed to update status", err);
+      alert("Failed to update status");
+    }
+  };
 
   const handleCsvUpload = async () => {
     if (!file) return;
@@ -140,6 +173,15 @@ const Admin: React.FC = () => {
               <motion.div layoutId="admin-tab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-slate-900" />
             )}
           </button>
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`pb-4 font-medium text-sm transition-colors relative ${activeTab === 'users' ? 'text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Manual Decisions
+            {activeTab === 'users' && (
+              <motion.div layoutId="admin-tab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-slate-900" />
+            )}
+          </button>
         </div>
 
         {activeTab === 'csv' && (
@@ -225,6 +267,63 @@ const Admin: React.FC = () => {
                 </span>
               )}
             </div>
+          </motion.div>
+        )}
+
+        {activeTab === 'users' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white border border-slate-200 p-8 shadow-sm overflow-x-auto"
+          >
+            <h2 className="text-xl font-bold mb-6">Manual User Decisions</h2>
+            {loadingUsers ? (
+              <p className="text-slate-500">Loading users...</p>
+            ) : (
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 text-sm uppercase tracking-wider text-slate-500">
+                    <th className="py-4 font-semibold">Name</th>
+                    <th className="py-4 font-semibold">Email</th>
+                    <th className="py-4 font-semibold">Current Status</th>
+                    <th className="py-4 font-semibold text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map(user => (
+                    <tr key={user.id} className="border-b border-slate-100 last:border-0">
+                      <td className="py-4 font-medium">{user.firstName} {user.lastName}</td>
+                      <td className="py-4 text-slate-600">{user.email}</td>
+                      <td className="py-4">
+                        <span className={`inline-flex px-2 py-1 text-xs font-bold uppercase ${
+                          user.decisionStatus === 'accepted' ? 'bg-green-100 text-green-800' :
+                          user.decisionStatus === 'rejected' ? 'bg-red-100 text-red-800' :
+                          'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {user.decisionStatus || 'pending'}
+                        </span>
+                      </td>
+                      <td className="py-4 text-right">
+                        <select 
+                          className="border border-slate-300 text-sm font-medium py-1 px-2 focus:outline-none"
+                          value={user.decisionStatus || 'pending'}
+                          onChange={(e) => handleUserStatusChange(user.id, e.target.value)}
+                        >
+                          <option value="pending">Pending</option>
+                          <option value="accepted">Accepted</option>
+                          <option value="rejected">Rejected</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                  {users.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="py-8 text-center text-slate-500">No users found.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
           </motion.div>
         )}
       </div>

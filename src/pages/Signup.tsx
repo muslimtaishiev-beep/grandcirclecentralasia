@@ -51,24 +51,38 @@ const Signup: React.FC = () => {
     setLoading(true);
     setError('');
 
+    const cleanEmail = email.trim();
+    if (!cleanEmail) {
+      setError('Email не может быть пустым.');
+      setLoading(false);
+      return;
+    }
+
     try {
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       setGeneratedCode(code);
 
+      const payload = {
+        to_email: cleanEmail,
+        email: cleanEmail,
+        user_email: cleanEmail,
+        verification_code: code,
+        message: code
+      };
+      
+      console.log("Отправляем в EmailJS:", payload);
+
       await emailjs.send(
         'service_60qlgjo',
         'template_805rchp',
-        {
-          to_email: email,
-          verification_code: code,
-        },
+        payload,
         'Dhb9rtN7cxRWsLZPg'
       );
 
       setStep(3);
-    } catch (err) {
-      console.error(err);
-      setError('Не удалось отправить письмо с кодом. Пожалуйста, проверьте Email и попробуйте еще раз.');
+    } catch (err: any) {
+      console.error("Ошибка EmailJS:", err);
+      setError(`Не удалось отправить письмо: ${err.text || err.message || 'неизвестная ошибка'}`);
     } finally {
       setLoading(false);
     }

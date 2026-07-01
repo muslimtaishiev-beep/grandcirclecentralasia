@@ -82,9 +82,13 @@ const Decision: React.FC = () => {
         transition={{ duration: 0.8, delay: 0.2 }}
         className="w-full max-w-3xl bg-white border border-slate-200 p-8 sm:p-16 shadow-lg relative z-10"
       >
-        <div className="flex justify-between items-start mb-12 border-b border-slate-200 pb-8">
-          <img src="/logo1.png" alt="University Logo" className="h-16 object-contain" onError={(e) => (e.currentTarget.style.display = 'none')} />
-          <div className="text-right">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-12 border-b border-slate-200 pb-8 space-y-6 sm:space-y-0">
+          <div className="flex items-center space-x-6">
+            <img src="/logo1.png" alt="Logo 1" className="h-12 sm:h-14 object-contain" onError={(e) => (e.currentTarget.style.display = 'none')} />
+            <img src="/logo2.png" alt="Logo 2" className="h-12 sm:h-14 object-contain" onError={(e) => (e.currentTarget.style.display = 'none')} />
+            <img src="/logo3.png" alt="Logo 3" className="h-12 sm:h-14 object-contain" onError={(e) => (e.currentTarget.style.display = 'none')} />
+          </div>
+          <div className="text-left sm:text-right">
             <h2 className="font-display uppercase tracking-tight text-xl mb-1">Office of Admissions</h2>
             <p className="text-sm text-slate-500">{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
           </div>
