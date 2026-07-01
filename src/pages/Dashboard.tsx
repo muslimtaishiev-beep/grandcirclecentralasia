@@ -68,7 +68,7 @@ const Dashboard: React.FC = () => {
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="grid gap-6"
+            className="flex flex-col gap-6"
           >
             <div className="bg-white p-6 border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-start space-x-4">
@@ -94,6 +94,31 @@ const Dashboard: React.FC = () => {
                   </span>
                 )}
               </div>
+            </div>
+
+            {/* Walking Dog Animation */}
+            <div className="mt-12 overflow-hidden relative h-32 w-full flex items-end">
+              <motion.img 
+                src="/bulldog_walking.png"
+                alt="Walking Mascot"
+                className="w-24 h-24 object-contain mix-blend-multiply absolute"
+                animate={{
+                  left: ["-20%", "120%"],
+                  y: [0, -8, 0, -8, 0]
+                }}
+                transition={{
+                  left: {
+                    duration: 12,
+                    repeat: Infinity,
+                    ease: "linear"
+                  },
+                  y: {
+                    duration: 0.6,
+                    repeat: Infinity,
+                    ease: "easeInOut"
+                  }
+                }}
+              />
             </div>
           </motion.div>
         )}
