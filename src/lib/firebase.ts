@@ -1,19 +1,18 @@
-import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 
-// TODO: Replace with your actual Firebase project config
-// In Vite, use import.meta.env for environment variables.
+// Replace these values with your actual Firebase project config
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "mock-api-key",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "mock-domain.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "mock-project",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "mock-project.appspot.com",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "123456",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:123456:web:abcd"
+  apiKey: "AIzaSyBefuNSd2j9CJJ92EWcg0am9s3zBSSHS4Y",
+  authDomain: "study-64ebf.firebaseapp.com",
+  projectId: "study-64ebf",
+  storageBucket: "study-64ebf.firebasestorage.app",
+  messagingSenderId: "53040624855",
+  appId: "1:53040624855:web:ec3ffb04513bc2237fac92",
+  measurementId: "G-L1SZKG6Y2J"
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+export const db = getFirestore(app);

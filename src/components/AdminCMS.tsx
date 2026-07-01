@@ -5,13 +5,14 @@ import {
   Landmark
 } from "lucide-react";
 import { Speaker, ProgramSlot, Partner, Ticket, Settings, Subscriber, Metric } from "../types";
+import Admin from "../pages/Admin";
 
 interface AdminCMSProps {
   lang: "ru" | "en";
   onDataChange: () => void; // Trigger a refresh on the parent public frame
 }
 
-type AdminTab = "metrics" | "subscribers" | "speakers" | "universities" | "program" | "tickets" | "partners" | "settings";
+type AdminTab = "metrics" | "subscribers" | "speakers" | "universities" | "program" | "tickets" | "partners" | "settings" | "admissions";
 
 export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
   const [token, setToken] = useState<string>(localStorage.getItem("admin_token") || "");
@@ -527,6 +528,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
           { id: "program", label_ru: "Программа дня", label_en: "Program slots", badge: dbData.program.length, icon: Calendar },
           { id: "tickets", label_ru: "Билеты / UTM", label_en: "Tickets Layout", badge: dbData.tickets.length, icon: DollarSign },
           { id: "partners", label_ru: "Спонсоры и Партнеры", label_en: "Sponsors & Partners", badge: dbData.partners.length, icon: Landmark },
+          { id: "admissions", label_ru: "Заявки (Admissions)", label_en: "Admissions", icon: Check },
           { id: "settings", label_ru: "Глобальные настройки", label_en: "HQ Settings", icon: SettingsIcon }
         ].map((tab) => {
           const IconComp = tab.icon;
@@ -565,6 +567,13 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
       )}
 
       {/* RENDER ACTIVE TAB VIEW */}
+
+      {/* TAB: ADMISSIONS */}
+      {currentTab === "admissions" && (
+        <div className="space-y-6" id="tab_admissions_view">
+          <Admin />
+        </div>
+      )}
 
       {/* TAB: METRICS CRUD */}
       {currentTab === "metrics" && (

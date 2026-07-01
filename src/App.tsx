@@ -16,7 +16,14 @@ import Newsletter from "./components/Newsletter";
 import FAQSection from "./components/FAQSection";
 import AdminCMS from "./components/AdminCMS";
 import { MetricsCarousel } from "./components/MetricsCarousel";
-import GlobalWatermarks from "./components/GlobalWatermarks";
+import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
+
+// New Pages
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
+import Dashboard from "./pages/Dashboard";
+import Decision from "./pages/Decision";
+import { ProtectedRoute } from "./components/ProtectedRoute";
 
 import { PublicData } from "./types";
 import { staticDb } from "./data/staticDb";
@@ -24,23 +31,16 @@ import { staticDb } from "./data/staticDb";
 export default function App() {
   const [lang, setLang] = useState<"ru" | "en" | "kg">("ru");
   
-  // Basic routing
-  const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  // Basic routing via react-router
+  const location = useLocation();
+  const navigateRouter = useNavigate();
+  const currentPath = location.pathname;
   const [loading, setLoading] = useState(true);
   const [dataTrigger, setDataTrigger] = useState(0);
   const [showAllSpeakers, setShowAllSpeakers] = useState(false);
 
-  useEffect(() => {
-    const handlePopState = () => {
-      setCurrentPath(window.location.pathname);
-    };
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
-
   const navigate = (path: string) => {
-    window.history.pushState({}, "", path);
-    setCurrentPath(path);
+    navigateRouter(path);
     window.scrollTo(0, 0);
   };
 
@@ -95,7 +95,7 @@ export default function App() {
     <div className="min-h-screen bg-[#EDE9FE] text-slate-800 antialiased font-sans flex flex-col justify-between" id="main_app_wrapper">
       
       {/* Header is global */}
-      {!isAdminPath && (
+      {!isAdminPath && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && (
         <Header 
           lang={lang} 
           setLang={setLang} 
@@ -104,79 +104,98 @@ export default function App() {
       )}
 
       <main className="flex-grow">
-        {isAdminPath ? (
-          <div className="bg-[#EDE9FE] min-h-[75vh]">
-            <AdminCMS lang={lang} onDataChange={forceRefetch} />
-          </div>
-        ) : isTicketsPath ? (
-          /* TICKETS PAGE */
-          <motion.div 
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: "easeOut" }}
-            className="pt-20 pb-32"
-          >
-            <TicketsPanel tickets={data.tickets} lang={lang} />
-          </motion.div>
-        ) : (
-          /* MAIN LANDING PAGE */
-          <div className="space-y-0 pb-10 relative">
-            <GlobalWatermarks />
-            
-            <Hero lang={lang} settings={data.settings} onNavigate={navigate} />
+        <Routes>
+          <Route path="/admin" element={
+            <div className="bg-[#EDE9FE] min-h-[75vh]">
+              <AdminCMS lang={lang} onDataChange={forceRefetch} />
+            </div>
+          } />
+          
+          <Route path="/tickets" element={
+            <motion.div 
+              initial={{ opacity: 0, y: 40 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              className="pt-20 pb-32"
+            >
+              <TicketsPanel tickets={data.tickets} lang={lang} />
+            </motion.div>
+          } />
 
-            {/* KEY METRICS BENTO GRID */}
-            <motion.section 
-              initial={{ opacity: 0, y: 40 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-100px" }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-              className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 relative z-20"
-            >
-              <MetricsCarousel lang={lang} metrics={data.metrics} />
-            </motion.section>
+          {/* Admission Portal Routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Signup />} />
+          <Route path="/dashboard" element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/decision" element={
+            <ProtectedRoute>
+              <Decision />
+            </ProtectedRoute>
+          } />
 
-            {/* GLOBE & SPEAKERS SECTION */}
-            <GlobeSplitSection speakers={data.speakers} universities={data.universities} />
- 
-            {/* TIMELINE SECTION */}
-            <motion.section 
-              initial={{ opacity: 0, y: 40 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-100px" }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-              className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8" id="schedule"
-            >
-              <SchedulePanel program={data.program} speakers={data.speakers} universities={data.universities} lang={lang} />
-            </motion.section>
- 
-            {/* PARTNERS SECTION */}
-            <motion.section 
-              initial={{ opacity: 0, y: 40 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-100px" }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-              className="py-8 md:py-10 border-y border-[#E9D5FF]/50" id="partners"
-            >
-              <PartnersPanel partners={data.partners} lang={lang} />
-            </motion.section>
- 
-            {/* FAQ SECTION */}
-            <FAQSection lang={lang} />
- 
-            {/* NEWSLETTER CAPTURE */}
-            <motion.section 
-              initial={{ opacity: 0, y: 40 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-100px" }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-              className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pb-10" id="newsletter"
-            >
-              <Newsletter lang={lang} />
-            </motion.section>
- 
-          </div>
-        )}
+          {/* Main Landing Route */}
+          <Route path="/" element={
+            <div className="space-y-0 pb-10 relative">
+              <GlobalWatermarks />
+              
+              <Hero lang={lang} settings={data.settings} onNavigate={navigate} />
+
+              {/* KEY METRICS BENTO GRID */}
+              <motion.section 
+                initial={{ opacity: 0, y: 40 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-100px" }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+                className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 relative z-20"
+              >
+                <MetricsCarousel lang={lang} metrics={data.metrics} />
+              </motion.section>
+
+              {/* GLOBE & SPEAKERS SECTION */}
+              <GlobeSplitSection speakers={data.speakers} universities={data.universities} />
+   
+              {/* TIMELINE SECTION */}
+              <motion.section 
+                initial={{ opacity: 0, y: 40 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-100px" }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+                className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8" id="schedule"
+              >
+                <SchedulePanel program={data.program} speakers={data.speakers} universities={data.universities} lang={lang} />
+              </motion.section>
+   
+              {/* PARTNERS SECTION */}
+              <motion.section 
+                initial={{ opacity: 0, y: 40 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-100px" }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+                className="py-8 md:py-10 border-y border-[#E9D5FF]/50" id="partners"
+              >
+                <PartnersPanel partners={data.partners} lang={lang} />
+              </motion.section>
+   
+              {/* FAQ SECTION */}
+              <FAQSection lang={lang} />
+   
+              {/* NEWSLETTER CAPTURE */}
+              <motion.section 
+                initial={{ opacity: 0, y: 40 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-100px" }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+                className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pb-10" id="newsletter"
+              >
+                <Newsletter lang={lang} />
+              </motion.section>
+   
+            </div>
+          } />
+        </Routes>
       </main>
  
       {/* Footer Branding Area */}
