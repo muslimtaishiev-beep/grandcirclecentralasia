@@ -25,12 +25,12 @@ const Landing: React.FC<LandingProps> = ({ lang = "ru" }) => {
       </div>
 
       {/* Squiggly Lines Background */}
-      <div className="absolute inset-0 z-0 opacity-30 pointer-events-none flex items-end justify-center">
+      <div className="absolute inset-0 z-0 opacity-40 pointer-events-none flex items-end justify-center">
         <svg 
           viewBox="0 -200 1600 1200" 
           preserveAspectRatio="none" 
           overflow="visible"
-          className="w-full h-[80%] object-fill scale-125 md:scale-150 translate-y-1/4"
+          className="w-full h-[100%] object-fill scale-[2] md:scale-[2.5] translate-y-1/3"
           xmlns="http://www.w3.org/2000/svg"
         >
           <motion.path 
@@ -79,9 +79,9 @@ const Landing: React.FC<LandingProps> = ({ lang = "ru" }) => {
           className="max-w-3xl"
         >
           <h1 className="text-4xl md:text-6xl font-display uppercase tracking-tighter mb-6 leading-tight">
-            {lang === "ru" ? "Добро пожаловать в портал" : lang === "kg" ? "Порталга кош келиңиз" : "Welcome to the LEAD+ Academy"}<br/>
+            Welcome to the LEAD+ Academy<br/>
             <span className="text-[#9F7AEA]">
-              {lang === "ru" ? "LEAD+ Academy Admissions" : lang === "kg" ? "LEAD+ Academy Admissions" : "Admissions portal"}
+              Admissions portal
             </span>
           </h1>
           <p className="text-lg md:text-xl text-slate-300 mb-10 max-w-2xl mx-auto">
