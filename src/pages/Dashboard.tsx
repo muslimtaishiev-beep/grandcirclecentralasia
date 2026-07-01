@@ -96,30 +96,7 @@ const Dashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* Walking Dog Animation */}
-            <div className="mt-12 overflow-hidden relative h-32 w-full flex items-end">
-              <motion.img 
-                src="/bulldog_walking.png"
-                alt="Walking Mascot"
-                className="w-24 h-24 object-contain mix-blend-multiply absolute"
-                animate={{
-                  left: ["-20%", "120%"],
-                  y: [0, -8, 0, -8, 0]
-                }}
-                transition={{
-                  left: {
-                    duration: 12,
-                    repeat: Infinity,
-                    ease: "linear"
-                  },
-                  y: {
-                    duration: 0.6,
-                    repeat: Infinity,
-                    ease: "easeInOut"
-                  }
-                }}
-              />
-            </div>
+
           </motion.div>
         )}
 
@@ -129,19 +106,6 @@ const Dashboard: React.FC = () => {
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col items-center justify-center py-20 text-center"
           >
-            <motion.img 
-              src="/totem_bulldog.png" 
-              alt="Mascot"
-              className="w-48 h-48 mb-6 object-contain mix-blend-multiply"
-              animate={{ 
-                y: [0, -15, 0],
-              }}
-              transition={{
-                duration: 4,
-                repeat: Infinity,
-                ease: "easeInOut"
-              }}
-            />
             <h3 className="text-xl font-bold text-slate-400 uppercase tracking-widest">
               no high school opportunities yet
             </h3>
