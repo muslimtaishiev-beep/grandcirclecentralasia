@@ -76,7 +76,7 @@ const Dashboard: React.FC = () => {
                   <FileText className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold">Fall Admission 2026</h3>
+                  <h3 className="text-lg font-bold">FUTURE LEADERS SCHOOL OLYMPIAD 2026</h3>
                   <p className="text-sm text-slate-500">Submitted on {userData?.createdAt ? new Date(userData.createdAt).toLocaleDateString() : 'N/A'}</p>
                 </div>
               </div>
@@ -102,25 +102,24 @@ const Dashboard: React.FC = () => {
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="grid gap-6"
+            className="flex flex-col items-center justify-center py-20 text-center"
           >
-            <div className="bg-white p-6 border border-slate-200 shadow-sm">
-              <div className="flex items-start space-x-4 mb-4">
-                <div className="p-3 bg-slate-100 text-slate-900">
-                  <Briefcase className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold">Scholarships & Grants</h3>
-                  <p className="text-sm text-slate-500">Explore financial aid opportunities</p>
-                </div>
-              </div>
-              <p className="text-sm text-slate-600 mb-4">
-                We offer several merit-based and need-based scholarships. The application for financial aid will open once admissions decisions are finalized.
-              </p>
-              <button disabled className="px-6 py-2 bg-slate-100 text-slate-400 font-bold text-sm uppercase tracking-wider cursor-not-allowed">
-                Not Available Yet
-              </button>
-            </div>
+            <motion.img 
+              src="/totem_bulldog.png" 
+              alt="Mascot"
+              className="w-48 h-48 mb-6 object-contain mix-blend-multiply"
+              animate={{ 
+                y: [0, -15, 0],
+              }}
+              transition={{
+                duration: 4,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+            />
+            <h3 className="text-xl font-bold text-slate-400 uppercase tracking-widest">
+              no high school opportunities yet
+            </h3>
           </motion.div>
         )}
 
