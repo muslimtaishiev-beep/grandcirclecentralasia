@@ -152,7 +152,7 @@ const Signup: React.FC<SignupProps> = ({ lang = "ru" }) => {
         className="w-full max-w-md bg-white border border-slate-200 shadow-sm p-8"
       >
         <h2 className="text-3xl font-display mb-2 text-slate-900 uppercase tracking-tight">
-          {lang === 'ru' ? 'Регистрация' : lang === 'kg' ? 'Катталуу' : 'Setup Account'}
+          {lang === 'ru' ? 'Регистрация на Олимпиаду' : lang === 'kg' ? 'Олимпиадага катталуу' : 'Olympiad Registration'}
         </h2>
         
         <div className="flex space-x-2 mb-6">

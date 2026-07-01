@@ -33,12 +33,12 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <h2 className="mt-6 text-center text-3xl font-display font-black text-slate-900 uppercase tracking-tight">
-          {lang === 'ru' ? 'Вход в аккаунт' : lang === 'kg' ? 'Аккаунтка кирүү' : 'Applicant Login'}
+          {lang === 'ru' ? 'Вход участника' : lang === 'kg' ? 'Катышуучунун кирүүсү' : 'Participant Login'}
         </h2>
         <p className="mt-2 text-center text-sm text-slate-600">
           {lang === 'ru' ? 'Или ' : lang === 'kg' ? 'Же ' : 'Or '}
           <button onClick={() => navigate('/register')} className="font-bold text-[#9F7AEA] hover:text-[#805AD5] transition-colors underline decoration-2 underline-offset-4">
-            {lang === 'ru' ? 'создайте новую заявку' : lang === 'kg' ? 'жаңы тиркеме түзүңүз' : 'start a new application'}
+            {lang === 'ru' ? 'зарегистрируйтесь на олимпиаду' : lang === 'kg' ? 'олимпиадага катталыңыз' : 'register for the Olympiad'}
           </button>
         </p>
       </div>

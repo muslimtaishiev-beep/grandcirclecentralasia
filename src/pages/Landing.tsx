@@ -79,26 +79,30 @@ const Landing: React.FC<LandingProps> = ({ lang = "ru" }) => {
           className="max-w-3xl"
         >
           <h1 className="text-4xl md:text-6xl font-display uppercase tracking-tighter mb-6 leading-tight">
-            Welcome to the LEAD+ Academy<br/>
+            Future Leaders School<br/>
             <span className="text-[#9F7AEA]">
-              Admissions portal
+              Olympiad 2026
             </span>
           </h1>
-          <p className="text-lg md:text-xl text-slate-300 mb-10 max-w-2xl mx-auto">
-            {lang === "ru" ? "Официальная платформа для поступления. Начните заявку или проверьте статус." : lang === "kg" ? "Расмий кабыл алуу платформасы. Тиркемени баштаңыз же статусуңузду текшериңиз." : "Welcome to the official admissions platform. Start your application or check your decision status."}
+          <p className="text-lg md:text-xl text-slate-300 mb-10 max-w-2xl mx-auto font-medium leading-relaxed">
+            {lang === "ru" 
+              ? "Официальный портал грандиозной олимпиады. Победители получают эксклюзивный шанс на бесплатное обучение в Школе Будущих Лидеров — ведущем проекте страны по подготовке к поступлению в топовые мировые вузы." 
+              : lang === "kg" 
+              ? "Грандиоздук олимпиаданын расмий порталы. Жеңүүчүлөр өлкөнүн алдыңкы долбоору болгон Келечектеги Лидерлер Мектебинде акысыз билим алууга эксклюзивдүү мүмкүнчүлүк алышат — алдыңкы дүйнөлүк университеттерге даярдоо." 
+              : "The official portal of the grand Olympiad. Winners gain an exclusive, fully-funded opportunity to join the Future Leaders School — the nation's premier program preparing students for top-tier global universities."}
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button 
               onClick={() => navigate('/register')}
               className="w-full sm:w-auto px-8 py-4 bg-white text-black font-bold uppercase tracking-wider border-2 border-white hover:bg-transparent hover:text-white transition-colors"
             >
-              {lang === "ru" ? "Подать заявку" : lang === "kg" ? "Тапшыруу" : "Apply Now"}
+              {lang === "ru" ? "Регистрация" : lang === "kg" ? "Катталуу" : "Register"}
             </button>
             <button 
               onClick={() => navigate('/login')}
               className="w-full sm:w-auto px-8 py-4 bg-transparent text-white font-bold uppercase tracking-wider border-2 border-white hover:bg-white hover:text-black transition-colors"
             >
-              {lang === "ru" ? "Вход для абитуриентов" : lang === "kg" ? "Абитуриенттер үчүн кирүү" : "Applicant Login"}
+              {lang === "ru" ? "Вход для участников" : lang === "kg" ? "Катышуучулар үчүн кирүү" : "Participant Login"}
             </button>
           </div>
         </motion.div>

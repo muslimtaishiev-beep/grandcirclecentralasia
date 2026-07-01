@@ -27,7 +27,7 @@ const Dashboard: React.FC<DashboardProps> = ({ lang = "ru" }) => {
           <div className="flex justify-between h-16">
             <div className="flex items-center">
               <h1 className="text-xl font-display uppercase tracking-tighter">
-                {lang === 'ru' ? 'Портал абитуриента' : lang === 'kg' ? 'Абитуриент порталы' : 'Admission Portal'}
+                {lang === 'ru' ? 'Портал Олимпиады' : lang === 'kg' ? 'Олимпиада Порталы' : 'Olympiad Portal'}
               </h1>
             </div>
             <div className="flex items-center space-x-4">
@@ -48,7 +48,7 @@ const Dashboard: React.FC<DashboardProps> = ({ lang = "ru" }) => {
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <h2 className="text-3xl font-display uppercase tracking-tight mb-8">
-          {lang === 'ru' ? 'Панель управления' : lang === 'kg' ? 'Башкаруу панели' : 'Applicant Dashboard'}
+          {lang === 'ru' ? 'Панель участника' : lang === 'kg' ? 'Катышуучу панели' : 'Participant Dashboard'}
         </h2>
         
         <div className="flex border-b border-slate-200 mb-8">
