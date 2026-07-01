@@ -15,6 +15,7 @@ import PartnersPanel from "./components/PartnersPanel";
 import Newsletter from "./components/Newsletter";
 import FAQSection from "./components/FAQSection";
 import AdminCMS from "./components/AdminCMS";
+import GlobalWatermarks from "./components/GlobalWatermarks";
 import { MetricsCarousel } from "./components/MetricsCarousel";
 import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
 
