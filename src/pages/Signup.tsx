@@ -104,13 +104,19 @@ const Signup: React.FC = () => {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       
       const fullName = `${firstName.trim().toLowerCase()} ${lastName.trim().toLowerCase()}`;
+      const reverseFullName = `${lastName.trim().toLowerCase()} ${firstName.trim().toLowerCase()}`;
       
       // Fetch pre-set decision if any
       let preSetDecision = 'pending';
       try {
         const decisionDoc = await getDoc(doc(db, 'decisions', fullName));
-        if (decisionDoc.exists() && decisionDoc.data().decisionStatus) {
+        if (decisionDoc.exists() && decisionDoc.data().decisionStatus && decisionDoc.data().decisionStatus !== 'pending') {
           preSetDecision = decisionDoc.data().decisionStatus;
+        } else {
+          const reverseDoc = await getDoc(doc(db, 'decisions', reverseFullName));
+          if (reverseDoc.exists() && reverseDoc.data().decisionStatus && reverseDoc.data().decisionStatus !== 'pending') {
+            preSetDecision = reverseDoc.data().decisionStatus;
+          }
         }
       } catch (err) {
         console.error("Failed to fetch pre-set decision", err);
