@@ -2,7 +2,11 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 
-const Landing: React.FC = () => {
+interface LandingProps {
+  lang?: "ru" | "en" | "kg";
+}
+
+const Landing: React.FC<LandingProps> = ({ lang = "ru" }) => {
   const navigate = useNavigate();
 
   return (
@@ -21,10 +25,11 @@ const Landing: React.FC = () => {
       </div>
 
       {/* Squiggly Lines Background */}
-      <div className="absolute inset-0 z-0 opacity-60 pointer-events-none flex items-end justify-center overflow-hidden">
+      <div className="absolute inset-0 z-0 opacity-30 pointer-events-none flex items-end justify-center">
         <svg 
-          viewBox="0 0 1600 800" 
+          viewBox="0 -200 1600 1200" 
           preserveAspectRatio="none" 
+          overflow="visible"
           className="w-full h-[80%] object-fill scale-125 md:scale-150 translate-y-1/4"
           xmlns="http://www.w3.org/2000/svg"
         >
@@ -73,24 +78,27 @@ const Landing: React.FC = () => {
           transition={{ duration: 0.8, ease: "easeOut" }}
           className="max-w-3xl"
         >
-          <h1 className="text-5xl md:text-7xl font-display uppercase tracking-tighter mb-6">
-            Admission Portal
+          <h1 className="text-4xl md:text-6xl font-display uppercase tracking-tighter mb-6 leading-tight">
+            {lang === "ru" ? "Добро пожаловать в портал" : lang === "kg" ? "Порталга кош келиңиз" : "Welcome to the LEAD+ Academy"}<br/>
+            <span className="text-[#9F7AEA]">
+              {lang === "ru" ? "LEAD+ Academy Admissions" : lang === "kg" ? "LEAD+ Academy Admissions" : "Admissions portal"}
+            </span>
           </h1>
           <p className="text-lg md:text-xl text-slate-300 mb-10 max-w-2xl mx-auto">
-            Welcome to the official admissions platform. Start your application or check your decision status.
+            {lang === "ru" ? "Официальная платформа для поступления. Начните заявку или проверьте статус." : lang === "kg" ? "Расмий кабыл алуу платформасы. Тиркемени баштаңыз же статусуңузду текшериңиз." : "Welcome to the official admissions platform. Start your application or check your decision status."}
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button 
               onClick={() => navigate('/register')}
               className="w-full sm:w-auto px-8 py-4 bg-white text-black font-bold uppercase tracking-wider border-2 border-white hover:bg-transparent hover:text-white transition-colors"
             >
-              Apply Now
+              {lang === "ru" ? "Подать заявку" : lang === "kg" ? "Тапшыруу" : "Apply Now"}
             </button>
             <button 
               onClick={() => navigate('/login')}
               className="w-full sm:w-auto px-8 py-4 bg-transparent text-white font-bold uppercase tracking-wider border-2 border-white hover:bg-white hover:text-black transition-colors"
             >
-              Applicant Login
+              {lang === "ru" ? "Вход для абитуриентов" : lang === "kg" ? "Абитуриенттер үчүн кирүү" : "Applicant Login"}
             </button>
           </div>
         </motion.div>

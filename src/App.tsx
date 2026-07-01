@@ -105,6 +105,19 @@ export default function App() {
         />
       )}
 
+      {/* Floating Language Switcher for Admission Portal Pages */}
+      {(!isAdminPath && (currentPath.startsWith("/admission") || currentPath.startsWith("/login") || currentPath.startsWith("/register") || currentPath.startsWith("/dashboard") || currentPath.startsWith("/decision"))) && (
+        <div className="absolute top-4 right-4 md:top-8 md:right-8 z-50">
+          <button 
+            onClick={() => setLang(lang === "ru" ? "en" : lang === "en" ? "kg" : "ru")}
+            className="px-4 py-2 bg-slate-900/50 backdrop-blur-md border border-white/20 text-white font-mono text-sm uppercase tracking-widest hover:bg-slate-800/80 transition-colors rounded-full shadow-lg flex items-center gap-2"
+          >
+            <Globe className="w-4 h-4" />
+            {lang === "ru" ? "RU" : lang === "en" ? "EN" : "KG"}
+          </button>
+        </div>
+      )}
+
       <main className="flex-grow">
         <Routes>
           <Route path="/admin" element={
@@ -125,17 +138,17 @@ export default function App() {
           } />
 
           {/* Admission Portal Routes */}
-          <Route path="/admission" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Signup />} />
+          <Route path="/admission" element={<Landing lang={lang} />} />
+          <Route path="/login" element={<Login lang={lang} />} />
+          <Route path="/register" element={<Signup lang={lang} />} />
           <Route path="/dashboard" element={
             <ProtectedRoute>
-              <Dashboard />
+              <Dashboard lang={lang} />
             </ProtectedRoute>
           } />
           <Route path="/decision" element={
             <ProtectedRoute>
-              <Decision />
+              <Decision lang={lang} />
             </ProtectedRoute>
           } />
 

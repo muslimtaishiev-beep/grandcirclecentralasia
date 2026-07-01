@@ -4,7 +4,11 @@ import { useNavigate } from 'react-router-dom';
 import { LogOut, FileText, Briefcase } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const Dashboard: React.FC = () => {
+interface DashboardProps {
+  lang?: "ru" | "en" | "kg";
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ lang = "ru" }) => {
   const { userData, logout } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'opportunities' | 'applications'>('applications');
@@ -22,7 +26,9 @@ const Dashboard: React.FC = () => {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center">
-              <h1 className="text-xl font-display uppercase tracking-tighter">Admission Portal</h1>
+              <h1 className="text-xl font-display uppercase tracking-tighter">
+                {lang === 'ru' ? 'Портал абитуриента' : lang === 'kg' ? 'Абитуриент порталы' : 'Admission Portal'}
+              </h1>
             </div>
             <div className="flex items-center space-x-4">
               <span className="text-sm font-medium text-slate-700 hidden sm:block">
@@ -41,14 +47,16 @@ const Dashboard: React.FC = () => {
       </nav>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <h2 className="text-3xl font-display uppercase tracking-tight mb-8">Applicant Dashboard</h2>
+        <h2 className="text-3xl font-display uppercase tracking-tight mb-8">
+          {lang === 'ru' ? 'Панель управления' : lang === 'kg' ? 'Башкаруу панели' : 'Applicant Dashboard'}
+        </h2>
         
         <div className="flex border-b border-slate-200 mb-8">
           <button
             onClick={() => setActiveTab('applications')}
             className={`pb-4 px-4 font-medium text-sm transition-colors relative ${activeTab === 'applications' ? 'text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
           >
-            Applications
+            {lang === 'ru' ? 'Мои заявки' : lang === 'kg' ? 'Менин тиркемелерим' : 'Applications'}
             {activeTab === 'applications' && (
               <motion.div layoutId="tab-indicator" className="absolute bottom-0 left-0 right-0 h-0.5 bg-slate-900" />
             )}
@@ -57,7 +65,7 @@ const Dashboard: React.FC = () => {
             onClick={() => setActiveTab('opportunities')}
             className={`pb-4 px-4 font-medium text-sm transition-colors relative ${activeTab === 'opportunities' ? 'text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
           >
-            Opportunities
+            {lang === 'ru' ? 'Возможности' : lang === 'kg' ? 'Мүмкүнчүлүктөр' : 'Opportunities'}
             {activeTab === 'opportunities' && (
               <motion.div layoutId="tab-indicator" className="absolute bottom-0 left-0 right-0 h-0.5 bg-slate-900" />
             )}

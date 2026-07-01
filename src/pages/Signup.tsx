@@ -7,7 +7,11 @@ import { allowedStudents } from '../data/allowedStudents';
 import emailjs from '@emailjs/browser';
 import { motion } from 'framer-motion';
 
-const Signup: React.FC = () => {
+interface SignupProps {
+  lang?: "ru" | "en" | "kg";
+}
+
+const Signup: React.FC<SignupProps> = ({ lang = "ru" }) => {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -30,7 +34,7 @@ const Signup: React.FC = () => {
     setError('');
     
     if (password.length < 6) {
-      setError('Пароль должен содержать минимум 6 символов.');
+      setError(lang === 'ru' ? 'Пароль должен содержать минимум 6 символов.' : lang === 'kg' ? 'Сырсөз кеминде 6 белгиден турушу керек.' : 'Password must be at least 6 characters.');
       return;
     }
 
@@ -38,7 +42,7 @@ const Signup: React.FC = () => {
     const isAllowed = allowedStudents.includes(fullName);
 
     if (!isAllowed) {
-      setError('К сожалению, ваше имя не найдено в списке подтвержденных участников. Пожалуйста, проверьте правильность написания или обратитесь в поддержку.');
+      setError(lang === 'ru' ? 'К сожалению, ваше имя не найдено в списке подтвержденных участников. Пожалуйста, проверьте правильность написания или обратитесь в поддержку.' : lang === 'kg' ? 'Кечиресиз, сиздин атыңыз тастыкталган катышуучулардын тизмесинен табылган жок. Сураныч, туура жазылганын текшериңиз же колдоо кызматына кайрылыңыз.' : 'Sorry, your name was not found in the approved list. Please check the spelling or contact support.');
       return;
     }
 
@@ -53,7 +57,7 @@ const Signup: React.FC = () => {
 
     const cleanEmail = email.trim();
     if (!cleanEmail) {
-      setError('Email не может быть пустым.');
+      setError(lang === 'ru' ? 'Email не может быть пустым.' : lang === 'kg' ? 'Email бош болуусу мүмкүн эмес.' : 'Email cannot be empty.');
       setLoading(false);
       return;
     }
@@ -147,7 +151,9 @@ const Signup: React.FC = () => {
         animate={{ y: 0, opacity: 1 }}
         className="w-full max-w-md bg-white border border-slate-200 shadow-sm p-8"
       >
-        <h2 className="text-3xl font-display mb-2 text-slate-900 uppercase tracking-tight">Setup Account</h2>
+        <h2 className="text-3xl font-display mb-2 text-slate-900 uppercase tracking-tight">
+          {lang === 'ru' ? 'Регистрация' : lang === 'kg' ? 'Катталуу' : 'Setup Account'}
+        </h2>
         
         <div className="flex space-x-2 mb-6">
           <div className={`h-1 flex-1 ${step >= 1 ? 'bg-red-600' : 'bg-slate-200'}`}></div>
