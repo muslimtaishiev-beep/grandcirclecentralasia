@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../lib/firebase';
 import { motion } from 'framer-motion';
 
 interface LoginProps {
@@ -13,14 +14,13 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { login } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       setError('');
       setLoading(true);
-      await login(email, password);
+      await signInWithEmailAndPassword(auth, email, password);
       navigate('/dashboard');
     } catch (err) {
       setError(lang === 'ru' ? 'Ошибка входа. Проверьте почту и пароль.' : lang === 'kg' ? 'Кирүү катасы. Электрондук почтаны жана сырсөздү текшериңиз.' : 'Failed to sign in. Please check your credentials.');

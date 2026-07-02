@@ -41,8 +41,8 @@ export default function Header({ lang, setLang, onNavigate }: HeaderProps) {
           <button onClick={() => handleNavigate("schedule")} className="hover:text-[#9F7AEA] transition-colors">
             {lang === "ru" ? "Программа" : lang === "kg" ? "Программа" : "Program"}
           </button>
-          <button onClick={() => onNavigate && onNavigate("/login")} className="hover:text-[#9F7AEA] transition-colors font-bold text-red-600">
-            {lang === "ru" ? "Личный кабинет" : lang === "kg" ? "Жеке кабинет" : "Dashboard"}
+          <button onClick={() => onNavigate && onNavigate("/admission")} className="hover:text-[#9F7AEA] transition-colors font-bold text-red-600">
+            {lang === "ru" ? "Портал Олимпиады" : lang === "kg" ? "Олимпиада Порталы" : "Admissions Portal"}
           </button>
         </nav>
 
