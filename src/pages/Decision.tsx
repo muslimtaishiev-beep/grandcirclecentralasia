@@ -88,7 +88,7 @@ const Decision: React.FC<DecisionProps> = ({ lang }) => {
       >
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-12 border-b border-slate-200 pb-8 space-y-6 sm:space-y-0">
           <div className="flex items-center space-x-6">
-            <img src="/logo1.png" alt="Logo 1" className="h-12 sm:h-14 object-contain" onError={(e) => (e.currentTarget.style.display = 'none')} />
+            <img src="/logo1.png" alt="Logo 1" className="h-16 sm:h-24 object-contain scale-125 origin-left" onError={(e) => (e.currentTarget.style.display = 'none')} />
             <img src="/logo2.png" alt="Logo 2" className="h-12 sm:h-14 object-contain" onError={(e) => (e.currentTarget.style.display = 'none')} />
             <img src="/logo3.png" alt="Logo 3" className="h-12 sm:h-14 object-contain" onError={(e) => (e.currentTarget.style.display = 'none')} />
           </div>
