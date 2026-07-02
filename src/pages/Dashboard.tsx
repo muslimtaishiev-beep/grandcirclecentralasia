@@ -166,7 +166,7 @@ const Dashboard: React.FC<DashboardProps> = ({ lang = "ru" }) => {
             <motion.img 
               src="/totem_bulldog.png" 
               alt="Mascot" 
-              className="w-48 h-48 object-contain mb-8 opacity-80"
+              className="w-48 h-48 object-contain mb-8 opacity-80 mix-blend-multiply"
               animate={{ y: [0, -15, 0] }}
               transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
             />
