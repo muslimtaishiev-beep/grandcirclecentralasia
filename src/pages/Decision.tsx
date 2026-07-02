@@ -16,6 +16,7 @@ const Decision: React.FC<DecisionProps> = ({ lang }) => {
   const navigate = useNavigate();
   
   const [videoFinished, setVideoFinished] = useState(false);
+  const [isVideoLoading, setIsVideoLoading] = useState(true);
   const [letterTemplate, setLetterTemplate] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -57,18 +58,28 @@ const Decision: React.FC<DecisionProps> = ({ lang }) => {
   if (isAccepted && !videoFinished) {
     return (
       <div className="fixed inset-0 bg-black z-50 flex items-center justify-center">
-        {/* Make sure public/acceptance.mp4 exists, or it will just immediately fire onEnded if not found in a real app, 
-            but for safety we add a fallback button. */}
+        {isVideoLoading && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center space-y-4">
+             <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
+             <p className="text-white/60 font-mono text-sm tracking-widest uppercase animate-pulse">
+                {lang === "ru" ? "Загрузка видео..." : "Loading Video..."}
+             </p>
+          </div>
+        )}
         <video 
           src="/acceptance.mp4" 
           autoPlay 
-          playsInline 
+          playsInline
+          preload="auto"
+          onCanPlay={() => setIsVideoLoading(false)}
+          onPlaying={() => setIsVideoLoading(false)}
+          onWaiting={() => setIsVideoLoading(true)}
           onEnded={() => setVideoFinished(true)}
-          className="w-full h-full object-cover"
+          className={`w-full h-full object-cover transition-opacity duration-1000 ${isVideoLoading ? 'opacity-0' : 'opacity-100'}`}
         />
         <button 
           onClick={() => setVideoFinished(true)}
-          className="absolute bottom-8 right-8 text-white/50 hover:text-white text-sm uppercase tracking-widest transition-colors"
+          className="absolute bottom-8 right-8 text-white/50 hover:text-white z-10 text-sm uppercase tracking-widest transition-colors"
         >
           Skip Video
         </button>

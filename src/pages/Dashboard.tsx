@@ -19,9 +19,14 @@ const Dashboard: React.FC<DashboardProps> = ({ lang = "ru" }) => {
   };
 
   const hasDecision = userData?.decisionStatus === 'accepted' || userData?.decisionStatus === 'rejected';
+  const isAccepted = userData?.decisionStatus === 'accepted';
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
+      {/* Preload the heavy acceptance video in the background as soon as they enter dashboard! */}
+      {isAccepted && (
+        <video src="/acceptance.mp4" preload="auto" style={{ display: 'none' }} />
+      )}
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
