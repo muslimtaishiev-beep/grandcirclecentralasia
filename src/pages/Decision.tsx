@@ -62,7 +62,7 @@ const Decision: React.FC<DecisionProps> = ({ lang }) => {
           <div className="absolute inset-0 flex flex-col items-center justify-center space-y-4">
              <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
              <p className="text-white/60 font-mono text-sm tracking-widest uppercase animate-pulse">
-                {lang === "ru" ? "Загрузка видео..." : "Loading Video..."}
+                {lang === "ru" ? "Загрузка..." : "Loading..."}
              </p>
           </div>
         )}
