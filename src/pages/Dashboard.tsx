@@ -163,6 +163,13 @@ const Dashboard: React.FC<DashboardProps> = ({ lang = "ru" }) => {
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col items-center justify-center py-20 text-center"
           >
+            <motion.img 
+              src="/totem_bulldog.png" 
+              alt="Mascot" 
+              className="w-48 h-48 object-contain mb-8 opacity-80"
+              animate={{ y: [0, -15, 0] }}
+              transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+            />
             <h3 className="text-xl font-bold text-slate-400 uppercase tracking-widest">
               no high school opportunities yet
             </h3>
