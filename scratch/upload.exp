@@ -1,0 +1,11 @@
+#!/usr/bin/expect -f
+set timeout -1
+set password [lindex $argv 0]
+spawn scp -o StrictHostKeyChecking=no dist.tar.gz ubuntu@91.147.105.197:/home/ubuntu/app/
+expect {
+    "*assword:*" {
+        send "$password\r"
+        exp_continue
+    }
+    eof
+}

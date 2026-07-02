@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import html2pdf from 'html2pdf.js';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Confetti from 'react-confetti';
@@ -75,12 +76,26 @@ const Decision: React.FC<DecisionProps> = ({ lang }) => {
     );
   }
 
+  const handleDownloadPdf = () => {
+    const element = document.getElementById('decision-letter-content');
+    if (!element) return;
+    const opt = {
+      margin:       [15, 15, 15, 15],
+      filename:     `Decision_Letter_${userData?.firstName}_${userData?.lastName}.pdf`,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2 },
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+    html2pdf().set(opt).from(element).save();
+  };
+
   // Letter Layer
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 py-12 relative overflow-hidden">
       {isAccepted && <Confetti recycle={false} numberOfPieces={800} gravity={0.15} />}
 
       <motion.div 
+        id="decision-letter-content"
         initial={{ y: 40, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.8, delay: 0.2 }}
@@ -109,13 +124,22 @@ const Decision: React.FC<DecisionProps> = ({ lang }) => {
           />
         )}
 
-        <div className="mt-16 pt-8 border-t border-slate-100 flex justify-center">
+        <div className="mt-16 pt-8 border-t border-slate-100 flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-6" data-html2canvas-ignore>
           <button 
             onClick={() => navigate('/dashboard')}
             className="px-8 py-3 bg-slate-900 text-white font-bold text-sm uppercase tracking-wider hover:bg-slate-800 transition-colors"
           >
             Return to Dashboard
           </button>
+          {!loading && (
+            <button 
+              onClick={handleDownloadPdf}
+              className="px-8 py-3 bg-white text-slate-900 border border-slate-300 font-bold text-sm uppercase tracking-wider hover:bg-slate-50 transition-colors flex items-center space-x-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span>Download PDF</span>
+            </button>
+          )}
         </div>
       </motion.div>
     </div>
