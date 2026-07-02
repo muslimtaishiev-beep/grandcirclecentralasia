@@ -69,16 +69,7 @@ export default function App() {
     setDataTrigger(prev => prev + 1);
   };
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#EDE9FE] space-y-4">
-        <Loader2 className="h-8 w-8 animate-spin text-[#9F7AEA]" />
-        <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
-          Loading Data...
-        </p>
-      </div>
-    );
-  }
+  // The app will now render immediately using staticDb while the backend wakes up in the background.
 
   const data = {
     settings: publicData?.settings || staticDb.settings,
