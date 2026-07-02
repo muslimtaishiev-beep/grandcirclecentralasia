@@ -70,12 +70,13 @@ const Decision: React.FC<DecisionProps> = ({ lang }) => {
           src="/acceptance.mp4" 
           autoPlay 
           playsInline
+          controls
           preload="auto"
           onCanPlay={() => setIsVideoLoading(false)}
           onPlaying={() => setIsVideoLoading(false)}
           onWaiting={() => setIsVideoLoading(true)}
           onEnded={() => setVideoFinished(true)}
-          className={`w-full h-full object-cover transition-opacity duration-1000 ${isVideoLoading ? 'opacity-0' : 'opacity-100'}`}
+          className="w-full h-full object-cover"
         />
         <button 
           onClick={() => setVideoFinished(true)}
