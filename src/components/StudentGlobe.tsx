@@ -128,7 +128,7 @@ function Continents() {
 }
 
 function ContinentsMesh() {
-  const specularMap = useLoader(THREE.TextureLoader, "https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_specular_2048.jpg");
+  const specularMap = useLoader(THREE.TextureLoader, "/earth_specular_2048.jpg");
   
   const uniforms = useMemo(
     () => ({
