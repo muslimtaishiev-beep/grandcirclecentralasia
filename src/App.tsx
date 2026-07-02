@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense, lazy } from "react";
 import { motion } from "motion/react";
 import { 
   Award, Globe, Landmark, Clock, ArrowRight, Phone, Mail, 
@@ -14,17 +14,17 @@ import TicketsPanel from "./components/TicketsPanel";
 import PartnersPanel from "./components/PartnersPanel";
 import Newsletter from "./components/Newsletter";
 import FAQSection from "./components/FAQSection";
-import AdminCMS from "./components/AdminCMS";
+const AdminCMS = lazy(() => import("./components/AdminCMS"));
 import GlobalWatermarks from "./components/GlobalWatermarks";
 import { MetricsCarousel } from "./components/MetricsCarousel";
 import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
 
 // New Pages
-import Login from "./pages/Login";
-import Signup from "./pages/Signup";
-import Dashboard from "./pages/Dashboard";
-import Decision from "./pages/Decision";
-import Landing from "./pages/Landing";
+const Login = lazy(() => import("./pages/Login"));
+const Signup = lazy(() => import("./pages/Signup"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Decision = lazy(() => import("./pages/Decision"));
+const Landing = lazy(() => import("./pages/Landing"));
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 import { PublicData } from "./types";
@@ -110,6 +110,7 @@ export default function App() {
       )}
 
       <main className="flex-grow">
+        <Suspense fallback={<div className="min-h-screen flex flex-col items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-slate-400 mb-4" /><div className="text-slate-500 text-sm font-medium uppercase tracking-widest">Loading...</div></div>}>
         <Routes>
           <Route path="/admin" element={
             <div className="bg-[#EDE9FE] min-h-[75vh]">
@@ -202,6 +203,7 @@ export default function App() {
             </div>
           } />
         </Routes>
+        </Suspense>
       </main>
  
       {/* Footer Branding Area */}
