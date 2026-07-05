@@ -24,8 +24,7 @@ const C_LINE = "#9F7AEA";       // Brand purple
 const C_LINE_SOFT = "#C4B5FD";  // Soft violet
 const C_HALO = "#EDE9FE";       // Light halo
 
-const COASTLINE_URL =
-  "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/110m/physical/ne_110m_coastline.json";
+const COASTLINE_URL = "/ne_110m_coastline.json";
 
 const CAM: [number, number, number] = [0, 0.35, 3.8];
 const FRONT_DIR = new THREE.Vector3(...CAM).normalize();

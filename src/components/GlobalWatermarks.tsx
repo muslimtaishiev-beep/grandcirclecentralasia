@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 
 const LEFT_TAGS = [
   "#DREAMBIG", "#HARVARD", "#FOCUS", "#SAT1550", "#IVYLEAGUE", 

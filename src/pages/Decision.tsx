@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import html2pdf from 'html2pdf.js';
+import DOMPurify from 'dompurify';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Confetti from 'react-confetti';
@@ -88,17 +88,24 @@ const Decision: React.FC<DecisionProps> = ({ lang }) => {
     );
   }
 
-  const handleDownloadPdf = () => {
+  const handleDownloadPDF = async () => {
     const element = document.getElementById('decision-letter-content');
     if (!element) return;
-    const opt = {
-      margin:       [15, 15, 15, 15],
-      filename:     `Decision_Letter_${userData?.firstName}_${userData?.lastName}.pdf`,
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2 },
-      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
-    html2pdf().set(opt).from(element).save();
+    
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      const opt = {
+        margin:       [0.5, 0.5, 0.5, 0.5],
+        filename:     `Decision_${userData?.firstName || 'Student'}.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true },
+        jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+      };
+      
+      html2pdf().set(opt).from(element).save();
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+    }
   };
 
   // Letter Layer
@@ -132,7 +139,7 @@ const Decision: React.FC<DecisionProps> = ({ lang }) => {
         ) : (
           <div 
             className="prose prose-slate max-w-none text-slate-800 leading-relaxed"
-            dangerouslySetInnerHTML={{ __html: letterTemplate || `<p>Dear ${userData?.firstName}, your status is: <strong>${status}</strong>.</p>` }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(letterTemplate || `<p>Dear ${userData?.firstName}, your status is: <strong>${status}</strong>.</p>`) }}
           />
         )}
 
@@ -145,7 +152,7 @@ const Decision: React.FC<DecisionProps> = ({ lang }) => {
           </button>
           {!loading && (
             <button 
-              onClick={handleDownloadPdf}
+              onClick={handleDownloadPDF}
               className="px-8 py-3 bg-white text-slate-900 border border-slate-300 font-bold text-sm uppercase tracking-wider hover:bg-slate-50 transition-colors flex items-center space-x-2"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>

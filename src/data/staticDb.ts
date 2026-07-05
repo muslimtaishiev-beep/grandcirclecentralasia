@@ -3,7 +3,7 @@ export const staticDb =
   "settings": {
     "eventDate": "TBD",
     "eventVenue": "Кыргызстан, Бишкек, Технопарк",
-    "adminPassword": "admin",
+
     "contactEmail": "",
     "contactPhone": "+996 222 140 709"
   },

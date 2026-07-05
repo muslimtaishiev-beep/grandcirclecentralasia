@@ -622,16 +622,7 @@ app.post("/api/admin/tickets", requireAuth, async (req, res) => {
   res.status(201).json({ success: true });
 });
 
-app.put("/api/admin/tickets/:id", requireAuth, async (req, res) => {
-  const { id } = req.params;
-  const db = await readDb();
-  const index = db.tickets.findIndex((t: any) => String(t.id) === String(id));
-  if (index === -1) return res.status(404).json({ error: "Ticket not found." });
 
-  db.tickets[index] = { ...db.tickets[index], ...req.body };
-  await writeDb(db);
-  res.json({ success: true });
-});
 
 app.delete("/api/admin/tickets/:id", requireAuth, async (req, res) => {
   const { id } = req.params;
@@ -785,4 +776,9 @@ async function startServer() {
   });
 }
 
-startServer();
+// Only start the server locally. Vercel will import the app and use it as a serverless function.
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;

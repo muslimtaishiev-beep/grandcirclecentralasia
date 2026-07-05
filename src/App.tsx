@@ -1,22 +1,19 @@
 import React, { useState, useEffect, Suspense, lazy } from "react";
-import { motion } from "motion/react";
-import { 
-  Award, Globe, Landmark, Clock, ArrowRight, Phone, Mail, 
-  MapPin, Loader2, ChevronRight, CheckCircle2
-} from "lucide-react";
+import { motion } from "framer-motion";
+import { Globe, Phone, Loader2 } from "lucide-react";
 
-// Components
-import Header from "./components/Header";
-import Hero from "./components/Hero";
-import { GlobeSplitSection } from "./components/GlobeSplitSection";
-import SchedulePanel from "./components/SchedulePanel";
-import TicketsPanel from "./components/TicketsPanel";
-import PartnersPanel from "./components/PartnersPanel";
-import Newsletter from "./components/Newsletter";
-import FAQSection from "./components/FAQSection";
+// Components — lazy-loaded to reduce initial bundle
+const Header = lazy(() => import("./components/Header"));
+const Hero = lazy(() => import("./components/Hero"));
+const GlobeSplitSection = lazy(() => import("./components/GlobeSplitSection").then(m => ({ default: m.GlobeSplitSection })));
+const SchedulePanel = lazy(() => import("./components/SchedulePanel"));
+const TicketsPanel = lazy(() => import("./components/TicketsPanel"));
+const PartnersPanel = lazy(() => import("./components/PartnersPanel"));
+const Newsletter = lazy(() => import("./components/Newsletter"));
+const FAQSection = lazy(() => import("./components/FAQSection"));
 const AdminCMS = lazy(() => import("./components/AdminCMS"));
-import GlobalWatermarks from "./components/GlobalWatermarks";
-import { MetricsCarousel } from "./components/MetricsCarousel";
+const GlobalWatermarks = lazy(() => import("./components/GlobalWatermarks"));
+const MetricsCarousel = lazy(() => import("./components/MetricsCarousel").then(m => ({ default: m.MetricsCarousel })));
 import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
 
 // New Pages
@@ -29,6 +26,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 
 import { PublicData } from "./types";
 import { staticDb } from "./data/staticDb";
+
 
 export default function App() {
   const [lang, setLang] = useState<"ru" | "en" | "kg">("ru");
