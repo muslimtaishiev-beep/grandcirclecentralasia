@@ -4,7 +4,7 @@ import path from "path";
 import { promises as fs, existsSync, readFileSync } from "fs";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
-import * as admin from "firebase-admin";
+import admin from "firebase-admin";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 
