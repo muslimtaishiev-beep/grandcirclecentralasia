@@ -252,7 +252,7 @@ export default function ManagerDashboard() {
                 })}
                 {students.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="text-center p-8 text-slate-500">Нет данных</td>
+                    <td colSpan={6} className="text-center p-8 text-slate-500">Нет данных</td>
                   </tr>
                 )}
               </tbody>

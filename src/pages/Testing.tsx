@@ -117,6 +117,7 @@ export default function Testing() {
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (!started || finished) return;
         if (!disqualified) {
           submitTest(true); // Cheating
         } else {
@@ -144,14 +145,12 @@ export default function Testing() {
   const startTest = async () => {
     if (!grade) return alert("Выберите класс");
     if (!studentName.trim()) return alert("Введите ФИО");
-    if (enteredPin !== getHourlyPIN() && !window.location.search.includes("tester=true")) {
+    if (enteredPin !== getHourlyPIN()) {
       return alert("Неверный PIN-код. Узнайте актуальный PIN у менеджера.");
     }
 
     // Check timer constraint
-    const isTester = window.location.search.includes("tester=true");
-    if (!isTester) {
-      const lastTestTime = localStorage.getItem("lastTestTime");
+    const lastTestTime = localStorage.getItem("lastTestTime");
       if (lastTestTime) {
         const timePassed = Date.now() - Number(lastTestTime);
         const oneHour = 60 * 60 * 1000;
@@ -268,11 +267,6 @@ export default function Testing() {
         <div className="mt-3 text-4xl font-mono font-bold text-red-600 tracking-widest bg-red-50 py-3 rounded-xl border border-red-100">
           {shortId}
         </div>
-        {window.location.search.includes("tester=true") && (
-          <button onClick={() => { sessionStorage.clear(); window.location.reload(); }} className="mt-6 text-sm text-red-600 underline">
-            [Режим тестера: Сбросить тест]
-          </button>
-        )}
         </div>
       </div>
     );
@@ -301,12 +295,6 @@ export default function Testing() {
           <div className="text-4xl font-mono font-bold text-blue-700 tracking-widest bg-blue-50 py-3 rounded-xl border border-blue-200">
             {shortId}
           </div>
-          
-          {window.location.search.includes("tester=true") && (
-            <button onClick={() => { sessionStorage.clear(); window.location.reload(); }} className="mt-6 text-sm text-blue-600 underline">
-              [Режим тестера: Сбросить тест]
-            </button>
-          )}
         </div>
       </div>
     );

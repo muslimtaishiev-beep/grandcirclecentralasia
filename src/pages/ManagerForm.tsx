@@ -4,7 +4,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 export default function ManagerForm() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const urlShortId = searchParams.get("shortId") || "";
+  const urlShortId = searchParams.get("shortId") || searchParams.get("testId") || "";
 
   const [password, setPassword] = useState("");
   const [auth, setAuth] = useState(() => localStorage.getItem("managerAuth") === "true");

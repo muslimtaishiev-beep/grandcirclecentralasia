@@ -112,7 +112,6 @@ export interface Question {
   text: string;
   type: "multiple_choice" | "free_text";
   options?: string[]; // Only for multiple_choice
-  correctAnswer: string;
   points: number;
 }
 
