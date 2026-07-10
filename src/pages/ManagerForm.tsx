@@ -1,5 +1,5 @@
 import { auth as firebaseAuth } from "../lib/firebase";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import React, { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 
@@ -10,7 +10,7 @@ export default function ManagerForm() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem("managerAuth") === "true");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [shortId, setShortId] = useState(urlShortId);
   const [student, setStudent] = useState<any>(null);
 
@@ -27,12 +27,26 @@ export default function ManagerForm() {
     e.preventDefault();
     if (password === "manager2024" || localStorage.getItem("managerAuth") === "true") {
       setIsAuthenticated(true);
-      localStorage.setItem("managerAuth", "true");
+      
       if (shortId) fetchStudent();
     } else {
       setError("Неверный пароль");
     }
   };
+
+  
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+      if (user) {
+        setIsAuthenticated(true);
+        if (typeof fetchStudents !== "undefined") fetchStudents();
+        else if (typeof fetchStudent !== "undefined") fetchStudent();
+      } else {
+        setIsAuthenticated(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (auth && shortId) {

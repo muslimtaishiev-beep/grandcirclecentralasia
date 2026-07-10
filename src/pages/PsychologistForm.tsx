@@ -1,5 +1,5 @@
 import { auth as firebaseAuth } from "../lib/firebase";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
@@ -9,7 +9,7 @@ export default function PsychologistForm() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem("psychAuth") === "true");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [student, setStudent] = useState<any>(null);
   
   const [verdict, setVerdict] = useState("БРАТЬ");
@@ -32,6 +32,20 @@ export default function PsychologistForm() {
       setLoading(false);
     }
   };
+
+  
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+      if (user) {
+        setIsAuthenticated(true);
+        if (typeof fetchStudents !== "undefined") fetchStudents();
+        else if (typeof fetchStudent !== "undefined") fetchStudent();
+      } else {
+        setIsAuthenticated(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (auth && shortId) {

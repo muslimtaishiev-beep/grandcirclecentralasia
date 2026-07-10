@@ -1,5 +1,5 @@
 import { auth as firebaseAuth } from "../lib/firebase";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { getHourlyPIN } from "../lib/utils";
@@ -9,7 +9,7 @@ export default function ManagerDashboard() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem("managerAuth") === "true");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -41,6 +41,20 @@ export default function ManagerDashboard() {
       setLoading(false);
     }
   };
+
+  
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+      if (user) {
+        setIsAuthenticated(true);
+        if (typeof fetchStudents !== "undefined") fetchStudents();
+        else if (typeof fetchStudent !== "undefined") fetchStudent();
+      } else {
+        setIsAuthenticated(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (isAuthenticated) {
