@@ -146,8 +146,8 @@ export default function Testing() {
     if (!grade) return alert("Выберите класс");
     if (!studentName.trim()) return alert("Введите ФИО");
     
-    const TESTER_PIN = import.meta.env.VITE_TESTER_PIN || "TESTER_2026_SECRET_PIN";
-    const isTester = enteredPin === TESTER_PIN;
+    const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
+    const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
     if (!isTester && enteredPin !== getHourlyPIN()) {
       return alert("Неверный PIN-код. Узнайте актуальный PIN у менеджера.");
     }
@@ -191,8 +191,8 @@ export default function Testing() {
     const tokenUrl = `https://studyfreeforum.com/manager/form?shortId=${shortId}`;
     setQrToken(tokenUrl);
 
-    const TESTER_PIN = import.meta.env.VITE_TESTER_PIN || "TESTER_2026_SECRET_PIN";
-    const isTester = enteredPin === TESTER_PIN;
+    const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
+    const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
 
     const payload = {
       action: "submitTest",
