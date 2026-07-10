@@ -11,6 +11,20 @@ export default function ManagerDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Modal states
+  const [modalType, setModalType] = useState<"ACCEPT" | "REJECT" | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
+
+  // Accept Form
+  const [paymentInfo, setPaymentInfo] = useState("");
+  const [initialFee, setInitialFee] = useState("");
+  const [totalCost, setTotalCost] = useState("");
+  const [firstMonthPayment, setFirstMonthPayment] = useState("Оплачено");
+
+  // Reject Form
+  const [rejectReason, setRejectReason] = useState("Низкий балл");
+  const [otherReason, setOtherReason] = useState("");
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password === "manager2024" || localStorage.getItem("managerAuth") === "true") {
@@ -51,20 +65,53 @@ export default function ManagerDashboard() {
     }
   };
 
-  const updateDecision = async (shortId: string, decision: string) => {
-    const confirm = window.confirm(`Вы уверены, что хотите установить статус "${decision}" для ученика ${shortId}?`);
-    if (!confirm) return;
+  const openAcceptModal = (shortId: string) => {
+    setSelectedStudent(shortId);
+    setPaymentInfo("");
+    setInitialFee("");
+    setTotalCost("");
+    setFirstMonthPayment("Оплачено");
+    setModalType("ACCEPT");
+  };
+
+  const openRejectModal = (shortId: string) => {
+    setSelectedStudent(shortId);
+    setRejectReason("Низкий балл");
+    setOtherReason("");
+    setModalType("REJECT");
+  };
+
+  const closeModals = () => {
+    setModalType(null);
+    setSelectedStudent(null);
+  };
+
+  const submitFinalDecision = async () => {
+    if (!selectedStudent || !modalType) return;
+    
+    const decision = modalType === "ACCEPT" ? "ПРИНЯТ" : "ОТКЛОНЕН";
+    const finalRejectReason = rejectReason === "Другое" ? otherReason : rejectReason;
 
     try {
       const gasUrl = import.meta.env.VITE_GAS_URL || "";
       const res = await fetch(gasUrl, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "updateFinalDecision", shortId, finalDecision: decision })
+        body: JSON.stringify({ 
+          action: "updateFinalDecision", 
+          shortId: selectedStudent, 
+          finalDecision: decision,
+          paymentInfo,
+          initialFee,
+          totalCost,
+          firstMonthPayment,
+          rejectReason: finalRejectReason
+        })
       });
       const data = await res.json();
       if (data.success) {
-        setStudents(prev => prev.map(s => s.shortId === shortId ? { ...s, finalDecision: decision } : s));
+        setStudents(prev => prev.map(s => s.shortId === selectedStudent ? { ...s, finalDecision: decision } : s));
+        closeModals();
       } else {
         alert("Ошибка: " + data.error);
       }
@@ -96,7 +143,7 @@ export default function ManagerDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8">
+    <div className="min-h-screen bg-slate-50 p-8 relative">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-6">
@@ -133,10 +180,6 @@ export default function ManagerDashboard() {
                   const maxScore = 22; 
                   const percentage = Math.min(100, Math.round((totalScore / maxScore) * 100));
                   
-                  const radius = 20;
-                  const circumference = 2 * Math.PI * radius;
-                  const strokeDashoffset = circumference - (percentage / 100) * circumference;
-
                   return (
                   <tr key={idx} className="border-b hover:bg-gray-50 transition">
                     <td className="p-4">
@@ -196,8 +239,8 @@ export default function ManagerDashboard() {
                     <td className="p-4">
                       {s.managerName !== "Не назначен" && s.finalDecision !== "ПРИНЯТ" && s.finalDecision !== "ОТКЛОНЕН" && (
                         <div className="flex gap-2">
-                          <button onClick={() => updateDecision(s.shortId, "ПРИНЯТ")} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200">Принять</button>
-                          <button onClick={() => updateDecision(s.shortId, "ОТКЛОНЕН")} className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200">Отклонить</button>
+                          <button onClick={() => openAcceptModal(s.shortId)} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200">Принять</button>
+                          <button onClick={() => openRejectModal(s.shortId)} className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200">Отклонить</button>
                         </div>
                       )}
                       {s.managerName === "Не назначен" && (
@@ -214,6 +257,68 @@ export default function ManagerDashboard() {
                 )}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Modals */}
+        {modalType && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 relative">
+              <button onClick={closeModals} className="absolute top-4 right-4 text-gray-400 hover:text-gray-800">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+              
+              <h3 className={`text-2xl font-bold mb-6 ${modalType === 'ACCEPT' ? 'text-green-600' : 'text-red-600'}`}>
+                {modalType === 'ACCEPT' ? 'Принять ученика' : 'Отклонить ученика'}
+              </h3>
+
+              {modalType === 'ACCEPT' ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Оплата доп. инфо</label>
+                    <input type="text" value={paymentInfo} onChange={e => setPaymentInfo(e.target.value)} className="w-full border border-gray-300 rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500" placeholder="Например: Оплата через банк" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Взнос</label>
+                      <input type="number" value={initialFee} onChange={e => setInitialFee(e.target.value)} className="w-full border border-gray-300 rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500" placeholder="0" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Общая стоимость (со скидкой)</label>
+                      <input type="number" value={totalCost} onChange={e => setTotalCost(e.target.value)} className="w-full border border-gray-300 rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500" placeholder="0" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Оплата 1-й месяц</label>
+                    <select value={firstMonthPayment} onChange={e => setFirstMonthPayment(e.target.value)} className="w-full border border-gray-300 rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500">
+                      <option value="Оплачено">Оплачено</option>
+                      <option value="Позже">Позже</option>
+                      <option value="Часть оплачена">Часть оплачена</option>
+                    </select>
+                  </div>
+                  <button onClick={submitFinalDecision} className="w-full bg-green-600 text-white rounded-xl py-3 font-bold mt-4 hover:bg-green-700">Подтвердить прием</button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Причина отказа</label>
+                    <select value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full border border-gray-300 rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-red-500">
+                      <option value="Низкий балл">Низкий балл</option>
+                      <option value="Не подходит по возрасту">Не подходит по возрасту</option>
+                      <option value="Отказ психолога">Отказ психолога</option>
+                      <option value="Другое">Другое</option>
+                    </select>
+                  </div>
+                  {rejectReason === "Другое" && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Укажите причину</label>
+                      <input type="text" value={otherReason} onChange={e => setOtherReason(e.target.value)} className="w-full border border-gray-300 rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-red-500" placeholder="Подробная причина..." />
+                    </div>
+                  )}
+                  <button onClick={submitFinalDecision} className="w-full bg-red-600 text-white rounded-xl py-3 font-bold mt-4 hover:bg-red-700">Подтвердить отказ</button>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

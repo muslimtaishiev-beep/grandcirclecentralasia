@@ -642,24 +642,30 @@ function getTestByShortId(testSheet, shortId) {
     const data = crmSheet.getDataRange().getValues();
     let crmStudent = null;
     for (let i = 1; i < data.length; i++) {
-      if (String(data[i][1]) === String(shortId)) {
+      if (String(data[i][4]) === String(shortId)) {
         crmStudent = {
           row: i + 1,
           date: data[i][0],
-          shortId: data[i][1],
-          childName: data[i][2],
-          parentName: data[i][3],
-          phone: data[i][4],
-          managerName: data[i][5],
-          managerComment: data[i][6],
-          ru: data[i][7],
-          ma: data[i][8],
-          lo: data[i][9],
+          managerName: data[i][1],
+          parentName: data[i][2],
+          phone: data[i][3],
+          shortId: data[i][4],
+          stage: data[i][5],
+          paymentInfo: data[i][6],
+          initialFee: data[i][7],
+          totalCost: data[i][8],
+          firstMonthPayment: data[i][9],
           sentToPsych: data[i][10],
           psychVerdict: data[i][11],
           psychComment: data[i][12],
           finalDecision: data[i][13],
-          cheated: false // default, will override below
+          rejectReason: data[i][14],
+          childName: data[i][15],
+          ru: data[i][16],
+          ma: data[i][17],
+          lo: data[i][18],
+          managerComment: data[i][19],
+          cheated: false
         };
         break;
       }
@@ -692,7 +698,7 @@ function doPost(e) {
       testSheet.appendRow(["Дата", "ФИО Ученика", "Класс", "Русский язык", "Математика", "Логика", "Общий балл", "Уникальный ID теста", "Timestamp", "Читерство", "Short ID"]);
     }
     if (crmSheet.getLastRow() === 0) {
-      crmSheet.appendRow(["Дата", "Short ID", "Имя ребенка", "ФИО Родителя", "Телефон", "Менеджер", "Комментарий менеджера", "Русский", "Математика", "Логика", "К психологу?", "Вердикт", "Комментарий психолога", "Финальное решение"]);
+      crmSheet.appendRow(["Дата", "Менеджер", "ФИО Родителя", "Номер телефона", "ID Теста (ученика)", "Стадия работы", "Оплата до.инфо", "Взнос", "Общая стоимость", "Оплата -1-месяц", "К психологу?", "Вердикт", "Комментарий психолога", "Финальное решение", "Причина отказа", "Имя ребенка", "Русский", "Математика", "Логика", "Комментарий менеджера"]);
     }
 
     if (action === "submitTest") {
@@ -743,22 +749,24 @@ function doPost(e) {
         return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Этот ученик уже в CRM" })).setMimeType(ContentService.MimeType.JSON);
       }
 
-      crmSheet.appendRow([
-        new Date().toLocaleString("ru-RU", { timeZone: "Asia/Almaty" }), 
-        shortId, 
-        sanitize(childName), 
-        sanitize(parentName), 
-        sanitize(phone), 
-        sanitize(managerName), 
-        sanitize(managerComment), 
-        student.russian, 
-        student.math, 
-        student.logic, 
-        sentToPsych ? "ДА" : "НЕТ", 
-        "", 
-        "", 
-        ""
-      ]);
+      // Appending to the new 20-column layout
+      // ["Дата", "Менеджер", "ФИО Родителя", "Номер телефона", "ID Теста (ученика)", "Стадия работы", "Оплата до.инфо", "Взнос", "Общая стоимость", "Оплата -1-месяц", "К психологу?", "Вердикт", "Комментарий психолога", "Финальное решение", "Причина отказа", "Имя ребенка", "Русский", "Математика", "Логика", "Комментарий менеджера"]
+      
+      let newRow = new Array(20).fill("");
+      newRow[0] = new Date().toLocaleString("ru-RU", { timeZone: "Asia/Almaty" });
+      newRow[1] = sanitize(managerName);
+      newRow[2] = sanitize(parentName);
+      newRow[3] = sanitize(phone);
+      newRow[4] = shortId;
+      newRow[5] = "В РАБОТЕ"; // Стадия работы
+      newRow[10] = sentToPsych ? "ДА" : "НЕТ";
+      newRow[15] = sanitize(childName);
+      newRow[16] = student.russian;
+      newRow[17] = student.math;
+      newRow[18] = student.logic;
+      newRow[19] = sanitize(managerComment);
+
+      crmSheet.appendRow(newRow);
       return ContentService.createTextOutput(JSON.stringify({ success: true, student })).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -780,8 +788,8 @@ function doPost(e) {
       if (!crmStudent) {
         return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Ученик не найден в CRM" })).setMimeType(ContentService.MimeType.JSON);
       }
-      crmSheet.getRange(crmStudent.row, 12).setValue(sanitize(verdict));
-      crmSheet.getRange(crmStudent.row, 13).setValue(sanitize(comment));
+      crmSheet.getRange(crmStudent.row, 12).setValue(sanitize(verdict)); // Вердикт
+      crmSheet.getRange(crmStudent.row, 13).setValue(sanitize(comment)); // Комментарий психолога
       return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -797,23 +805,31 @@ function doPost(e) {
       
       let students = [];
       for (let i = 1; i < crmData.length; i++) {
-        const sid = String(crmData[i][1]);
+        const sid = String(crmData[i][4]);
         students.push({
           date: crmData[i][0],
+          managerName: crmData[i][1],
+          parentName: crmData[i][2],
+          phone: crmData[i][3],
           shortId: sid,
-          childName: crmData[i][2],
-          parentName: crmData[i][3],
-          phone: crmData[i][4],
-          managerName: crmData[i][5],
-          ru: crmData[i][7],
-          ma: crmData[i][8],
-          lo: crmData[i][9],
+          stage: crmData[i][5],
+          paymentInfo: crmData[i][6],
+          initialFee: crmData[i][7],
+          totalCost: crmData[i][8],
+          firstMonthPayment: crmData[i][9],
           sentToPsych: crmData[i][10],
           psychVerdict: crmData[i][11],
+          psychComment: crmData[i][12],
           finalDecision: crmData[i][13],
+          rejectReason: crmData[i][14],
+          childName: crmData[i][15],
+          ru: crmData[i][16],
+          ma: crmData[i][17],
+          lo: crmData[i][18],
           cheated: !!testMap[sid]
         });
       }
+      
       // Also get students that took the test but are NOT in CRM yet
       let crmIds = new Set(students.map(s => String(s.shortId)));
       
@@ -822,17 +838,24 @@ function doPost(e) {
         if (!crmIds.has(shortId) && shortId && shortId !== "undefined") {
           students.push({
             date: testData[i][0],
-            shortId: shortId,
-            childName: testData[i][1],
+            managerName: "Не назначен",
             parentName: "",
             phone: "",
-            managerName: "Не назначен",
+            shortId: shortId,
+            stage: "",
+            paymentInfo: "",
+            initialFee: "",
+            totalCost: "",
+            firstMonthPayment: "",
+            sentToPsych: "НЕТ",
+            psychVerdict: "",
+            psychComment: "",
+            finalDecision: "НЕ ОБРАБОТАН",
+            rejectReason: "",
+            childName: testData[i][1],
             ru: testData[i][3],
             ma: testData[i][4],
             lo: testData[i][5],
-            sentToPsych: "НЕТ",
-            psychVerdict: "",
-            finalDecision: "НЕ ОБРАБОТАН",
             cheated: testData[i][9] === "ДА"
           });
         }
@@ -843,10 +866,22 @@ function doPost(e) {
     }
 
     if (action === "updateFinalDecision") {
-      const { shortId, finalDecision } = data;
+      const { shortId, finalDecision, paymentInfo, initialFee, totalCost, firstMonthPayment, rejectReason } = data;
       const crmStudent = getCrmByShortId(crmSheet, shortId, testSheet);
       if (crmStudent) {
         crmSheet.getRange(crmStudent.row, 14).setValue(sanitize(finalDecision));
+        
+        if (finalDecision === "ПРИНЯТ") {
+           crmSheet.getRange(crmStudent.row, 7).setValue(sanitize(paymentInfo)); // Оплата до.инфо
+           crmSheet.getRange(crmStudent.row, 8).setValue(sanitize(initialFee)); // Взнос
+           crmSheet.getRange(crmStudent.row, 9).setValue(sanitize(totalCost)); // Общая стоимость
+           crmSheet.getRange(crmStudent.row, 10).setValue(sanitize(firstMonthPayment)); // Оплата -1-месяц
+           crmSheet.getRange(crmStudent.row, 6).setValue("ПРИНЯТ"); // Стадия работы
+        } else if (finalDecision === "ОТКЛОНЕН") {
+           crmSheet.getRange(crmStudent.row, 15).setValue(sanitize(rejectReason)); // Причина отказа
+           crmSheet.getRange(crmStudent.row, 6).setValue("ОТКЛОНЕН"); // Стадия работы
+        }
+
         return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
       }
       return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Студент не найден в CRM" })).setMimeType(ContentService.MimeType.JSON);
