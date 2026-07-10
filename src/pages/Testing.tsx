@@ -128,6 +128,19 @@ export default function Testing() {
     return () => window.removeEventListener("keydown", handleEsc);
   }, [disqualified]);
 
+  // Reliable Audio Playback for Cheating
+  useEffect(() => {
+    if (disqualified && !stopAudio) {
+      const audio = new Audio("/meme.mp3");
+      audio.loop = true;
+      audio.play().catch(e => console.warn("Autoplay blocked by browser:", e));
+      
+      return () => {
+        audio.pause();
+      };
+    }
+  }, [disqualified, stopAudio]);
+
   const startTest = async () => {
     if (!grade) return alert("Выберите класс");
     if (!studentName.trim()) return alert("Введите ФИО");
@@ -246,19 +259,6 @@ export default function Testing() {
   if (disqualified) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        {/* Hidden YouTube iframe for "Directed by Robert B. Weide" meme song. 
-            Moved off-screen with positive dimensions so YouTube doesn't block autoplay. */}
-        {!stopAudio && (
-          <div className="absolute top-[-9999px] left-[-9999px] w-[300px] h-[300px] overflow-hidden">
-            <iframe 
-              width="300" 
-              height="300" 
-              src="https://www.youtube.com/embed/LEgA220d91o?autoplay=1&controls=0&mute=0" 
-              allow="autoplay; encrypted-media" 
-              title="Directed by"
-            />
-          </div>
-        )}
         <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500 to-red-700"></div>
           <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">!</div>
