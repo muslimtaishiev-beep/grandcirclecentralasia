@@ -638,32 +638,43 @@ function getTestByShortId(testSheet, shortId) {
   return null;
 }
 
-function getCrmByShortId(crmSheet, shortId) {
-  const data = crmSheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    // shortId is in column 1 (index 1)
-    if (String(data[i][1]) === String(shortId)) {
-      return {
-        row: i + 1,
-        date: data[i][0],
-        shortId: data[i][1],
-        childName: data[i][2],
-        parentName: data[i][3],
-        phone: data[i][4],
-        managerName: data[i][5],
-        managerComment: data[i][6],
-        ru: data[i][7],
-        ma: data[i][8],
-        lo: data[i][9],
-        sentToPsych: data[i][10],
-        psychVerdict: data[i][11],
-        psychComment: data[i][12],
-        finalDecision: data[i][13]
-      };
+  function getCrmByShortId(crmSheet, shortId, testSheet) {
+    const data = crmSheet.getDataRange().getValues();
+    let crmStudent = null;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][1]) === String(shortId)) {
+        crmStudent = {
+          row: i + 1,
+          date: data[i][0],
+          shortId: data[i][1],
+          childName: data[i][2],
+          parentName: data[i][3],
+          phone: data[i][4],
+          managerName: data[i][5],
+          managerComment: data[i][6],
+          ru: data[i][7],
+          ma: data[i][8],
+          lo: data[i][9],
+          sentToPsych: data[i][10],
+          psychVerdict: data[i][11],
+          psychComment: data[i][12],
+          finalDecision: data[i][13],
+          cheated: false // default, will override below
+        };
+        break;
+      }
     }
+    
+    // Cross-reference testSheet for cheated flag
+    if (crmStudent && testSheet) {
+      const testStudent = getTestByShortId(testSheet, shortId);
+      if (testStudent) {
+        crmStudent.cheated = testStudent.cheated;
+      }
+    }
+    
+    return crmStudent;
   }
-  return null;
-}
 
 function doPost(e) {
   const lock = LockService.getScriptLock();
@@ -714,7 +725,7 @@ function doPost(e) {
          return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Ученик не найден" })).setMimeType(ContentService.MimeType.JSON);
       }
       // Check if already in CRM
-      const crmStudent = getCrmByShortId(crmSheet, shortId);
+      const crmStudent = getCrmByShortId(crmSheet, shortId, testSheet);
       if (crmStudent) {
          return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Этот ученик уже обработан менеджером" })).setMimeType(ContentService.MimeType.JSON);
       }
@@ -728,7 +739,7 @@ function doPost(e) {
       if (!student) {
         return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Ученик не найден в базе тестов" })).setMimeType(ContentService.MimeType.JSON);
       }
-      if (getCrmByShortId(crmSheet, shortId)) {
+      if (getCrmByShortId(crmSheet, shortId, testSheet)) {
         return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Этот ученик уже в CRM" })).setMimeType(ContentService.MimeType.JSON);
       }
 
@@ -753,7 +764,7 @@ function doPost(e) {
 
     if (action === "getPsychologistStudent") {
       const { shortId } = data;
-      const crmStudent = getCrmByShortId(crmSheet, shortId);
+      const crmStudent = getCrmByShortId(crmSheet, shortId, testSheet);
       if (!crmStudent) {
          return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Ученик не найден в CRM" })).setMimeType(ContentService.MimeType.JSON);
       }
@@ -765,7 +776,7 @@ function doPost(e) {
 
     if (action === "submitPsychologistForm") {
       const { shortId, verdict, comment } = data;
-      const crmStudent = getCrmByShortId(crmSheet, shortId);
+      const crmStudent = getCrmByShortId(crmSheet, shortId, testSheet);
       if (!crmStudent) {
         return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Ученик не найден в CRM" })).setMimeType(ContentService.MimeType.JSON);
       }
@@ -776,11 +787,20 @@ function doPost(e) {
 
     if (action === "getAllStudents") {
       const crmData = crmSheet.getDataRange().getValues();
+      const testData = testSheet.getDataRange().getValues();
+      
+      // Build testData map for quick cheating check
+      let testMap = {};
+      for (let i = 1; i < testData.length; i++) {
+        testMap[String(testData[i][10])] = (testData[i][9] === "ДА");
+      }
+      
       let students = [];
       for (let i = 1; i < crmData.length; i++) {
+        const sid = String(crmData[i][1]);
         students.push({
           date: crmData[i][0],
-          shortId: crmData[i][1],
+          shortId: sid,
           childName: crmData[i][2],
           parentName: crmData[i][3],
           phone: crmData[i][4],
@@ -790,11 +810,11 @@ function doPost(e) {
           lo: crmData[i][9],
           sentToPsych: crmData[i][10],
           psychVerdict: crmData[i][11],
-          finalDecision: crmData[i][13]
+          finalDecision: crmData[i][13],
+          cheated: !!testMap[sid]
         });
       }
       // Also get students that took the test but are NOT in CRM yet
-      const testData = testSheet.getDataRange().getValues();
       let crmIds = new Set(students.map(s => String(s.shortId)));
       
       for (let i = 1; i < testData.length; i++) {
@@ -812,7 +832,8 @@ function doPost(e) {
             lo: testData[i][5],
             sentToPsych: "НЕТ",
             psychVerdict: "",
-            finalDecision: "НЕ ОБРАБОТАН"
+            finalDecision: "НЕ ОБРАБОТАН",
+            cheated: testData[i][9] === "ДА"
           });
         }
       }
@@ -823,7 +844,7 @@ function doPost(e) {
 
     if (action === "updateFinalDecision") {
       const { shortId, finalDecision } = data;
-      const crmStudent = getCrmByShortId(crmSheet, shortId);
+      const crmStudent = getCrmByShortId(crmSheet, shortId, testSheet);
       if (crmStudent) {
         crmSheet.getRange(crmStudent.row, 14).setValue(sanitize(finalDecision));
         return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
