@@ -1,3 +1,5 @@
+import { auth as firebaseAuth } from "../lib/firebase";
+import { signInWithEmailAndPassword } from "firebase/auth";
 import React, { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 
@@ -6,8 +8,9 @@ export default function ManagerForm() {
   const navigate = useNavigate();
   const urlShortId = searchParams.get("shortId") || searchParams.get("testId") || "";
 
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [auth, setAuth] = useState(() => localStorage.getItem("managerAuth") === "true");
+  const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem("managerAuth") === "true");
   const [shortId, setShortId] = useState(urlShortId);
   const [student, setStudent] = useState<any>(null);
 
@@ -23,7 +26,7 @@ export default function ManagerForm() {
   const handleAuth = (e: React.FormEvent) => {
     e.preventDefault();
     if (password === "manager2024" || localStorage.getItem("managerAuth") === "true") {
-      setAuth(true);
+      setIsAuthenticated(true);
       localStorage.setItem("managerAuth", "true");
       if (shortId) fetchStudent();
     } else {
@@ -42,7 +45,7 @@ export default function ManagerForm() {
     setLoading(true);
     setError("");
     try {
-      const gasUrl = import.meta.env.VITE_GAS_URL || "";
+      const gasUrl = "/api/gas" || "";
       const res = await fetch(gasUrl, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -73,7 +76,7 @@ export default function ManagerForm() {
     setError("");
 
     try {
-      const gasUrl = import.meta.env.VITE_GAS_URL || "";
+      const gasUrl = "/api/gas" || "";
       const res = await fetch(gasUrl, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },

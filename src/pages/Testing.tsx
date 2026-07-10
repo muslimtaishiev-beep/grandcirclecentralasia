@@ -151,13 +151,12 @@ export default function Testing() {
 
     // Check timer constraint
     const lastTestTime = localStorage.getItem("lastTestTime");
-      if (lastTestTime) {
-        const timePassed = Date.now() - Number(lastTestTime);
-        const oneHour = 60 * 60 * 1000;
-        if (timePassed < oneHour) {
-          const minutesLeft = Math.ceil((oneHour - timePassed) / 60000);
-          return alert(`Вы уже сдавали тест недавно. Попробуйте еще раз через ${minutesLeft} минут.`);
-        }
+    if (lastTestTime) {
+      const timePassed = Date.now() - Number(lastTestTime);
+      const oneHour = 60 * 60 * 1000;
+      if (timePassed < oneHour) {
+        const minutesLeft = Math.ceil((oneHour - timePassed) / 60000);
+        return alert(`Вы уже сдавали тест недавно. Попробуйте еще раз через ${minutesLeft} минут.`);
       }
     }
     
@@ -202,20 +201,25 @@ export default function Testing() {
 
     const sendData = async () => {
       try {
-        const gasUrl = import.meta.env.VITE_GAS_URL || "";
-        if (gasUrl) {
-          const res = await fetch(gasUrl, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify(payload)
-          });
-          const data = await res.json();
-          if (data.success) {
-            setPendingSubmission(false);
-            localStorage.removeItem(`offline_test_${payloadTestId}`);
-          } else {
-            throw new Error(data.error);
+        const gasUrl = "/api/gas";
+        const res = await fetch(gasUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) {
+          setPendingSubmission(false);
+          localStorage.removeItem(`offline_test_${payloadTestId}`);
+        } else {
+          // If server actively rejects (e.g. rate limit or duplicate)
+          if (data.error && data.error.includes("уже сдавали")) {
+             alert(data.error);
+             setPendingSubmission(false); // Don't retry
+             localStorage.removeItem(`offline_test_${payloadTestId}`);
+             return;
           }
+          throw new Error(data.error);
         }
       } catch (e) {
         console.error("Failed to submit to GAS", e);
@@ -237,7 +241,7 @@ export default function Testing() {
     const payloadStr = localStorage.getItem(`offline_test_${testId}`);
     if (payloadStr) {
       try {
-        const gasUrl = import.meta.env.VITE_GAS_URL || "";
+        const gasUrl = "/api/gas" || "";
         const res = await fetch(gasUrl, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },

@@ -1,3 +1,5 @@
+import { auth as firebaseAuth } from "../lib/firebase";
+import { signInWithEmailAndPassword } from "firebase/auth";
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
@@ -5,8 +7,9 @@ export default function PsychologistForm() {
   const { shortId } = useParams();
   const navigate = useNavigate();
 
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [auth, setAuth] = useState(() => localStorage.getItem("psychAuth") === "true");
+  const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem("psychAuth") === "true");
   const [student, setStudent] = useState<any>(null);
   
   const [verdict, setVerdict] = useState("БРАТЬ");
@@ -18,12 +21,15 @@ export default function PsychologistForm() {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === "psycho2024" || localStorage.getItem("psychAuth") === "true") {
-      setAuth(true);
-      localStorage.setItem("psychAuth", "true");
-      fetchStudent();
-    } else {
-      setError("Неверный пароль");
+    setLoading(true);
+    try {
+      await signInWithEmailAndPassword(firebaseAuth, email, password);
+      setIsAuthenticated(true);
+      if (typeof fetchStudents !== "undefined") fetchStudents(); else if (typeof fetchStudent !== "undefined") fetchStudent();
+    } catch(err) {
+      setError("Неверная почта или пароль / Invalid credentials");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -38,7 +44,7 @@ export default function PsychologistForm() {
     setLoading(true);
     setError("");
     try {
-      const gasUrl = import.meta.env.VITE_GAS_URL || "";
+      const gasUrl = "/api/gas" || "";
       const res = await fetch(gasUrl, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -63,7 +69,7 @@ export default function PsychologistForm() {
     setError("");
 
     try {
-      const gasUrl = import.meta.env.VITE_GAS_URL || "";
+      const gasUrl = "/api/gas" || "";
       const res = await fetch(gasUrl, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },

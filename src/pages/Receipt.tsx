@@ -11,7 +11,7 @@ export default function Receipt() {
   useEffect(() => {
     const fetchStudent = async () => {
       try {
-        const gasUrl = import.meta.env.VITE_GAS_URL || "";
+        const gasUrl = "/api/gas" || "";
         const res = await fetch(gasUrl, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },

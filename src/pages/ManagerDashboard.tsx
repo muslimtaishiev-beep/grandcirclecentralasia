@@ -1,3 +1,5 @@
+import { auth as firebaseAuth } from "../lib/firebase";
+import { signInWithEmailAndPassword } from "firebase/auth";
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { getHourlyPIN } from "../lib/utils";
@@ -5,8 +7,9 @@ import { getHourlyPIN } from "../lib/utils";
 export default function ManagerDashboard() {
   const navigate = useNavigate();
 
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [auth, setAuth] = useState(() => localStorage.getItem("managerAuth") === "true");
+  const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem("managerAuth") === "true");
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -27,17 +30,20 @@ export default function ManagerDashboard() {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === "manager2024" || localStorage.getItem("managerAuth") === "true") {
-      setAuth(true);
-      localStorage.setItem("managerAuth", "true");
-      fetchStudents();
-    } else {
-      setError("Неверный пароль");
+    setLoading(true);
+    try {
+      await signInWithEmailAndPassword(firebaseAuth, email, password);
+      setIsAuthenticated(true);
+      if (typeof fetchStudents !== "undefined") fetchStudents(); else if (typeof fetchStudent !== "undefined") fetchStudent();
+    } catch(err) {
+      setError("Неверная почта или пароль / Invalid credentials");
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (auth) {
+    if (isAuthenticated) {
       fetchStudents();
     }
   }, []);
@@ -46,7 +52,7 @@ export default function ManagerDashboard() {
     setLoading(true);
     setError("");
     try {
-      const gasUrl = import.meta.env.VITE_GAS_URL || "";
+      const gasUrl = "/api/gas" || "";
       const res = await fetch(gasUrl, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -93,7 +99,7 @@ export default function ManagerDashboard() {
     const finalRejectReason = rejectReason === "Другое" ? otherReason : rejectReason;
 
     try {
-      const gasUrl = import.meta.env.VITE_GAS_URL || "";
+      const gasUrl = "/api/gas" || "";
       const res = await fetch(gasUrl, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },

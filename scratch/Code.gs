@@ -705,9 +705,19 @@ function doPost(e) {
       const { testId, shortId, studentName, grade, answers, cheated } = data;
       
       const dataRange = testSheet.getDataRange().getValues();
+      const safeName = sanitize(studentName || "Без имени");
+      const now = new Date().getTime();
+      
       for (let i = 1; i < dataRange.length; i++) {
         if (dataRange[i][7] === testId || dataRange[i][10] === shortId) {
           return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Test already submitted" })).setMimeType(ContentService.MimeType.JSON);
+        }
+        
+        // Prevent same name from submitting within 1 hour
+        const rowName = dataRange[i][1];
+        const rowTime = dataRange[i][8];
+        if (rowName === safeName && (now - Number(rowTime)) < 60 * 60 * 1000) {
+           return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Вы уже сдавали тест в течение последнего часа." })).setMimeType(ContentService.MimeType.JSON);
         }
       }
 

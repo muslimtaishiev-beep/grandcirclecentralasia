@@ -76,11 +76,15 @@ const Signup: React.FC<SignupProps> = ({ lang = "ru" }) => {
       
       console.log("Отправляем в EmailJS:", payload);
 
+      const serviceId = import.meta.env.VITE_EMAILJS_SERVICE_ID || 'service_60qlgjo';
+      const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID || 'template_805rchp';
+      const publicKey = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || 'Dhb9rtN7cxRWsLZPg';
+
       await emailjs.send(
-        'service_60qlgjo',
-        'template_805rchp',
+        serviceId,
+        templateId,
         payload,
-        'Dhb9rtN7cxRWsLZPg'
+        publicKey
       );
 
       setStep(3);

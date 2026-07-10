@@ -199,7 +199,49 @@ app.post("/api/public/subscribe", async (req, res) => {
   res.status(201).json({ success: true });
 });
 
-// 2. Submit Newsletter / Subscriber Registration with validation
+// GAS Proxy
+app.post("/api/gas", async (req, res) => {
+  const gasUrl = process.env.VITE_GAS_URL;
+  const gasApiKey = process.env.VITE_GAS_API_KEY || "GRAND_CIRCLE_SECURE_API_KEY_2026";
+  
+  if (!gasUrl) {
+    return res.status(500).json({ error: "GAS URL is not configured on the server." });
+  }
+
+  try {
+    const payload = { ...req.body, apiKey: gasApiKey };
+    
+    // For protected actions, verify Firebase Auth token
+    const publicActions = ["submitTest", "getStudentByShortId"];
+    if (!publicActions.includes(payload.action)) {
+      const authHeader = req.headers["authorization"] || "";
+      const token = authHeader.replace("Bearer ", "").trim();
+      
+      if (!token) {
+         return res.status(401).json({ error: "Unauthorized: Missing Firebase ID Token" });
+      }
+      
+      try {
+        await admin.auth().verifyIdToken(token);
+      } catch(e) {
+        return res.status(401).json({ error: "Unauthorized: Invalid Firebase ID Token" });
+      }
+    }
+
+    const fetchRes = await fetch(gasUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload)
+    });
+    const data = await fetchRes.json();
+    res.json(data);
+  } catch (err: any) {
+    console.error("GAS Proxy error:", err);
+    res.status(500).json({ error: "Failed to communicate with GAS" });
+  }
+});
+
+// 3. Submit Newsletter / Subscriber Registration with validation
 app.post("/api/subscribe", async (req, res) => {
   try {
     const { name, email, phone } = req.body;
