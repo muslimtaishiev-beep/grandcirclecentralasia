@@ -22,6 +22,8 @@ const Signup = lazy(() => import("./pages/Signup"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Decision = lazy(() => import("./pages/Decision"));
 const Landing = lazy(() => import("./pages/Landing"));
+const Testing = lazy(() => import("./pages/Testing"));
+const ManagerForm = lazy(() => import("./pages/ManagerForm"));
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 import { PublicData } from "./types";
@@ -141,6 +143,9 @@ export default function App() {
               <Decision lang={lang} />
             </ProtectedRoute>
           } />
+          
+          <Route path="/test" element={<Testing />} />
+          <Route path="/manager/form" element={<ManagerForm />} />
 
           {/* Main Forum Route */}
           <Route path="/" element={

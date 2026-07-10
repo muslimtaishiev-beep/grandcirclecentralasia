@@ -105,3 +105,20 @@ export interface PublicData {
   universities: University[];
 }
 
+export type Subject = "russian" | "math" | "logic";
+
+export interface Question {
+  id: string;
+  text: string;
+  type: "multiple_choice" | "free_text";
+  options?: string[]; // Only for multiple_choice
+  correctAnswer: string;
+  points: number;
+}
+
+export interface TestData {
+  grade: number;
+  russian: Question[];
+  math: Question[];
+  logic: Question[];
+}
