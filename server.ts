@@ -212,8 +212,9 @@ app.post("/api/gas", async (req, res) => {
     const payload = { ...req.body, apiKey: gasApiKey };
     
     // Check if tester
+    const TESTER_PIN = process.env.VITE_TESTER_PIN || "TESTER_2026_SECRET_PIN";
     if (payload.action === "submitTest" && payload.testerPin) {
-      if (payload.testerPin === process.env.VITE_TESTER_PIN) {
+      if (payload.testerPin === TESTER_PIN) {
         payload.isTester = true;
       }
       delete payload.testerPin; // do not send pin to GAS
