@@ -232,6 +232,11 @@ export default function Testing() {
         <div className="mt-3 text-4xl font-mono font-bold text-red-600 tracking-widest bg-red-50 py-3 rounded-xl border border-red-100">
           {shortId}
         </div>
+        {window.location.search.includes("tester=true") && (
+          <button onClick={() => { sessionStorage.clear(); window.location.reload(); }} className="mt-6 text-sm text-red-600 underline">
+            [Режим тестера: Сбросить тест]
+          </button>
+        )}
       </div>
     );
   }
@@ -259,6 +264,12 @@ export default function Testing() {
           <div className="text-4xl font-mono font-bold text-blue-700 tracking-widest bg-blue-50 py-3 rounded-xl border border-blue-200">
             {shortId}
           </div>
+          
+          {window.location.search.includes("tester=true") && (
+            <button onClick={() => { sessionStorage.clear(); window.location.reload(); }} className="mt-6 text-sm text-blue-600 underline">
+              [Режим тестера: Сбросить тест]
+            </button>
+          )}
         </div>
       </div>
     );
