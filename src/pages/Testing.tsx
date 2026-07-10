@@ -150,7 +150,7 @@ export default function Testing() {
     const payloadTestId = testId || crypto.randomUUID();
     if (!testId) setTestId(payloadTestId);
 
-    const tokenUrl = `https://studyfreeforum.com/manager/form?testId=${payloadTestId}`;
+    const tokenUrl = `https://studyfreeforum.com/manager/form?shortId=${shortId}`;
     setQrToken(tokenUrl);
 
     const payload = {

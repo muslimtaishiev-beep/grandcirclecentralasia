@@ -4,11 +4,11 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 export default function ManagerForm() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const urlTestId = searchParams.get("testId") || "";
+  const urlShortId = searchParams.get("shortId") || "";
 
   const [password, setPassword] = useState("");
   const [auth, setAuth] = useState(false);
-  const [shortId, setShortId] = useState(urlTestId);
+  const [shortId, setShortId] = useState(urlShortId);
   const [student, setStudent] = useState<any>(null);
 
   const [managerName, setManagerName] = useState("");
