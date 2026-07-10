@@ -2,9 +2,11 @@ import React, { useState, useEffect, useRef } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import { testsData } from "../data/testsData";
 import { Question } from "../types";
+import { getHourlyPIN } from "../lib/utils";
 
 export default function Testing() {
   const [studentName, setStudentName] = useState(() => sessionStorage.getItem("studentName") || "");
+  const [enteredPin, setEnteredPin] = useState("");
   const [grade, setGrade] = useState<number | null>(() => {
     const saved = sessionStorage.getItem("grade");
     return saved ? Number(saved) : null;
@@ -12,6 +14,7 @@ export default function Testing() {
   const [started, setStarted] = useState(() => sessionStorage.getItem("started") === "true");
   const [finished, setFinished] = useState(() => sessionStorage.getItem("finished") === "true");
   const [disqualified, setDisqualified] = useState(() => sessionStorage.getItem("disqualified") === "true");
+  const [stopAudio, setStopAudio] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>(() => {
     const saved = sessionStorage.getItem("answers");
     return saved ? JSON.parse(saved) : {};
@@ -110,8 +113,25 @@ export default function Testing() {
     };
   }, [started, finished]);
 
+  // Audio stop listener for cheaters
+  useEffect(() => {
+    if (!disqualified || stopAudio) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setStopAudio(true);
+        submitTest(true); // Treat as cheating
+      }
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [disqualified, stopAudio]);
+
   const startTest = async () => {
     if (!grade) return alert("Выберите класс");
+    if (!studentName.trim()) return alert("Введите ФИО");
+    if (enteredPin !== getHourlyPIN() && !window.location.search.includes("tester=true")) {
+      return alert("Неверный PIN-код. Узнайте актуальный PIN у менеджера.");
+    }
 
     // Check timer constraint
     const isTester = window.location.search.includes("tester=true");
@@ -223,10 +243,22 @@ export default function Testing() {
 
   if (disqualified) {
     return (
-      <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500 to-red-700"></div>
-        <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">!</div>
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">Тест аннулирован</h2>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        {/* Hidden YouTube iframe for "Directed by Robert B. Weide" meme song */}
+        {!stopAudio && (
+          <iframe 
+            width="1" 
+            height="1" 
+            src="https://www.youtube.com/embed/LEgA220d91o?autoplay=1&controls=0" 
+            allow="autoplay" 
+            title="Directed by"
+            className="absolute opacity-0 pointer-events-none"
+          />
+        )}
+        <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500 to-red-700"></div>
+          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">!</div>
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Тест аннулирован</h2>
         <p className="text-slate-600 mb-6">Вы покинули страницу во время тестирования. Результат аннулирован в соответствии с правилами.</p>
         <p className="text-sm text-slate-500 font-medium border-t pt-4">Покажите этот код менеджеру:</p>
         <div className="mt-3 text-4xl font-mono font-bold text-red-600 tracking-widest bg-red-50 py-3 rounded-xl border border-red-100">
@@ -237,6 +269,7 @@ export default function Testing() {
             [Режим тестера: Сбросить тест]
           </button>
         )}
+        </div>
       </div>
     );
   }
@@ -304,6 +337,17 @@ export default function Testing() {
                 {[7,8,9,10,11].map(g => <option key={g} value={g}>{g} класс</option>)}
               </select>
             </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">PIN-код аудитории (спросите у менеджера):</label>
+              <input 
+                type="text" 
+                placeholder="Например: 4812"
+                value={enteredPin}
+                onChange={(e) => setEnteredPin(e.target.value)}
+                className="w-full border rounded-xl p-3 bg-slate-50 font-mono tracking-widest text-lg"
+              />
+            </div>
           </div>
           
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 text-amber-800 text-sm">
@@ -318,7 +362,7 @@ export default function Testing() {
 
           <button 
             onClick={startTest}
-            disabled={!grade || !studentName.trim()}
+            disabled={!grade || !studentName.trim() || !enteredPin.trim()}
             className="w-full py-3 bg-blue-600 text-white rounded-xl font-medium disabled:opacity-50 hover:bg-blue-700 transition"
           >
             Начать тест
