@@ -131,6 +131,14 @@ export default function ManagerForm() {
           <h2 className="text-2xl font-bold mb-4">Вход менеджера</h2>
           {error && <div className="text-red-500 mb-4 text-sm">{error}</div>}
           <form onSubmit={handleAuth}>
+            
+            <input 
+              type="email" 
+              placeholder="Email" 
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="w-full border p-3 rounded-xl mb-4 bg-slate-50 text-center"
+            />
             <input 
               type="password" 
               placeholder="Пароль" 
