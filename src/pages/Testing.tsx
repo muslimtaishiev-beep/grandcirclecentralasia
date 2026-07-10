@@ -249,11 +249,15 @@ export default function Testing() {
               <button onClick={retrySubmission} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium">Повторить отправку</button>
             </div>
           ) : (
-            <p className="text-slate-500 mb-6">Покажите этот QR-код менеджеру</p>
+            <p className="text-slate-500 mb-6">Покажите этот QR-код менеджеру<br/>или продиктуйте код ниже:</p>
           )}
 
-          <div className="bg-slate-100 p-4 rounded-xl inline-block select-none pointer-events-none">
+          <div className="bg-slate-100 p-4 rounded-xl inline-block select-none pointer-events-none mb-6">
             <QRCodeCanvas value={qrToken} size={250} level="H" />
+          </div>
+
+          <div className="text-4xl font-mono font-bold text-blue-700 tracking-widest bg-blue-50 py-3 rounded-xl border border-blue-200">
+            {shortId}
           </div>
         </div>
       </div>
