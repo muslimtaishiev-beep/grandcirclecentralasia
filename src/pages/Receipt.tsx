@@ -36,9 +36,34 @@ export default function Receipt() {
   const psychUrl = `https://studyfreeforum.com/psychologist/${shortId}`;
 
   return (
-    <div className="min-h-screen bg-gray-200 py-10 px-4 print:bg-white print:p-0 flex flex-col items-center">
-      {/* Document Container */}
-      <div className="bg-white shadow-2xl p-10 max-w-2xl w-full border border-gray-400 print:shadow-none print:border-none print:w-full print:max-w-none text-black font-serif relative">
+    <>
+      <style>
+        {`
+          @media print {
+            body * {
+              visibility: hidden;
+            }
+            #printable-receipt, #printable-receipt * {
+              visibility: visible;
+            }
+            #printable-receipt {
+              position: absolute;
+              left: 0;
+              top: 0;
+              width: 100%;
+              margin: 0;
+              padding: 0;
+            }
+            @page {
+              size: A4 portrait;
+              margin: 1cm;
+            }
+          }
+        `}
+      </style>
+      <div className="min-h-screen bg-gray-200 py-10 px-4 print:bg-white print:p-0 flex flex-col items-center">
+        {/* Document Container */}
+        <div id="printable-receipt" className="bg-white shadow-2xl p-10 max-w-2xl w-full border border-gray-400 print:shadow-none print:border-none print:w-full print:max-w-none text-black font-serif relative">
         
         {/* Header - Official State Look */}
         <div className="text-center border-b-2 border-black pb-4 mb-6">
@@ -141,7 +166,8 @@ export default function Receipt() {
         <button onClick={() => window.print()} className="bg-black text-white px-8 py-3 rounded uppercase font-bold tracking-wider hover:bg-gray-800 transition shadow-lg">
           Распечатать документ
         </button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
