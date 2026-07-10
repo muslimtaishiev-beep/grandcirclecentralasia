@@ -24,6 +24,9 @@ const Decision = lazy(() => import("./pages/Decision"));
 const Landing = lazy(() => import("./pages/Landing"));
 const Testing = lazy(() => import("./pages/Testing"));
 const ManagerForm = lazy(() => import("./pages/ManagerForm"));
+const ManagerDashboard = lazy(() => import("./pages/ManagerDashboard"));
+const Receipt = lazy(() => import("./pages/Receipt"));
+const PsychologistForm = lazy(() => import("./pages/PsychologistForm"));
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 import { PublicData } from "./types";
@@ -146,6 +149,9 @@ export default function App() {
           
           <Route path="/test" element={<Testing />} />
           <Route path="/manager/form" element={<ManagerForm />} />
+          <Route path="/manager-dashboard" element={<ManagerDashboard />} />
+          <Route path="/receipt/:shortId" element={<Receipt />} />
+          <Route path="/psychologist/:shortId" element={<PsychologistForm />} />
 
           {/* Main Forum Route */}
           <Route path="/" element={

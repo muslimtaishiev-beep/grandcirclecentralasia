@@ -17,6 +17,13 @@ export default function Testing() {
     return saved ? JSON.parse(saved) : {};
   });
   const [testId, setTestId] = useState(() => sessionStorage.getItem("testId") || "");
+  const [shortId, setShortId] = useState(() => {
+    const saved = sessionStorage.getItem("shortId");
+    if (saved) return saved;
+    const newId = Math.floor(100000 + Math.random() * 900000).toString();
+    sessionStorage.setItem("shortId", newId);
+    return newId;
+  });
   const [qrToken, setQrToken] = useState(() => sessionStorage.getItem("qrToken") || "");
   const [pendingSubmission, setPendingSubmission] = useState(() => sessionStorage.getItem("pendingSubmission") === "true");
   
@@ -31,9 +38,10 @@ export default function Testing() {
     sessionStorage.setItem("disqualified", String(disqualified));
     sessionStorage.setItem("answers", JSON.stringify(answers));
     sessionStorage.setItem("testId", testId);
+    sessionStorage.setItem("shortId", shortId);
     sessionStorage.setItem("qrToken", qrToken);
     sessionStorage.setItem("pendingSubmission", String(pendingSubmission));
-  }, [studentName, grade, started, finished, disqualified, answers, testId, qrToken, pendingSubmission]);
+  }, [studentName, grade, started, finished, disqualified, answers, testId, shortId, qrToken, pendingSubmission]);
 
   // Prevent accidental F5/Closing
   useEffect(() => {
@@ -104,6 +112,20 @@ export default function Testing() {
 
   const startTest = async () => {
     if (!grade) return alert("Выберите класс");
+
+    // Check timer constraint
+    const isTester = window.location.search.includes("tester=true");
+    if (!isTester) {
+      const lastTestTime = localStorage.getItem("lastTestTime");
+      if (lastTestTime) {
+        const timePassed = Date.now() - Number(lastTestTime);
+        const oneHour = 60 * 60 * 1000;
+        if (timePassed < oneHour) {
+          const minutesLeft = Math.ceil((oneHour - timePassed) / 60000);
+          return alert(`Вы уже сдавали тест недавно. Попробуйте еще раз через ${minutesLeft} минут.`);
+        }
+      }
+    }
     
     try {
       if (document.documentElement.requestFullscreen) {
@@ -134,11 +156,15 @@ export default function Testing() {
     const payload = {
       action: "submitTest",
       testId: payloadTestId,
+      shortId: shortId,
       studentName,
       grade,
       answers,
       cheated: isDisqualified
     };
+
+    // Save timer for anti-spam
+    localStorage.setItem("lastTestTime", Date.now().toString());
 
     const sendData = async () => {
       try {
@@ -197,18 +223,14 @@ export default function Testing() {
 
   if (disqualified) {
     return (
-      <div className="min-h-screen bg-red-600 flex flex-col items-center justify-center p-4">
-        <div className="bg-white rounded-2xl p-8 max-w-md text-center">
-          <h1 className="text-3xl font-bold text-red-600 mb-4">Нарушение правил!</h1>
-          <p className="text-slate-800 mb-6">
-            Вы покинули окно тестирования, свернули браузер или открыли другую вкладку. Тест принудительно завершен с результатом 0 баллов и отметкой читерства.
-          </p>
-          <div className="bg-slate-100 p-4 rounded-xl inline-block select-none pointer-events-none mb-6">
-            <QRCodeCanvas value={qrToken} size={250} level="H" />
-          </div>
-          <p className="text-sm text-slate-500">
-            Покажите этот QR-код менеджеру.
-          </p>
+      <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500 to-red-700"></div>
+        <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">!</div>
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">Тест аннулирован</h2>
+        <p className="text-slate-600 mb-6">Вы покинули страницу во время тестирования. Результат аннулирован в соответствии с правилами.</p>
+        <p className="text-sm text-slate-500 font-medium border-t pt-4">Покажите этот код менеджеру:</p>
+        <div className="mt-3 text-4xl font-mono font-bold text-red-600 tracking-widest bg-red-50 py-3 rounded-xl border border-red-100">
+          {shortId}
         </div>
       </div>
     );
