@@ -690,6 +690,15 @@ function doPost(e) {
     const data = JSON.parse(e.postData.contents);
     const action = data.action;
     
+    // Вставьте сюда тот же ключ, что и в VITE_GAS_API_KEY на Vercel
+    const VALID_API_KEY = "GRAND_CIRCLE_SECURE_API_KEY_2026";
+    
+    // Validate API Key for all actions except maybe some strictly public ones, 
+    // but since we proxy EVERYTHING through Vercel, everything must have the API key!
+    if (data.apiKey !== VALID_API_KEY) {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Unauthorized: Invalid API Key" })).setMimeType(ContentService.MimeType.JSON);
+    }
+    
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let testSheet = ss.getSheetByName(SHEET_TESTS);
     let crmSheet = ss.getSheetByName(SHEET_CRM);
@@ -726,7 +735,6 @@ function doPost(e) {
         scores = calculateScores(grade, answers);
       }
       const totalScore = scores.russian + scores.math + scores.logic;
-      const safeName = sanitize(studentName || "Без имени");
       
       const ts = new Date().getTime();
       testSheet.appendRow([new Date(ts).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" }), safeName, grade, scores.russian, scores.math, scores.logic, totalScore, testId, ts, cheated ? "ДА" : "НЕТ", shortId]);
