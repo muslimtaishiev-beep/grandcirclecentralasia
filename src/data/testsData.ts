@@ -205,12 +205,12 @@ export const testsData: Record<number, TestData> = {
         "type": "multiple_choice",
         "points": 1,
         "text": "Задание №9. Найдите площадь квадрата, если его периметр равен периметру прямоугольника со сторонами 16 см и 4 см.",
-        "correctAnswer": "100 см2",
+        "correctAnswer": "100 см²",
         "options": [
-          "300 см2",
-          "100 см2",
-          "200 см2",
-          "400 см2"
+          "300 см²",
+          "100 см²",
+          "200 см²",
+          "400 см²"
         ]
       },
       {
@@ -425,7 +425,7 @@ export const testsData: Record<number, TestData> = {
         "id": "math_1",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание №1. Вычислите: 3^3 \\cdot 3^4",
+        "text": "Задание №1. Вычислите: 3³ · 3⁴",
         "correctAnswer": "Другой ответ",
         "options": [
           "10287",
@@ -450,12 +450,12 @@ export const testsData: Record<number, TestData> = {
         "id": "math_3",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание №3. Вычислите: 18а^3+6а^2",
-        "correctAnswer": "6а2(3а+1)",
+        "text": "Задание №3. Вычислите: 18а³+6а²",
+        "correctAnswer": "6а²(3а+1)",
         "options": [
           "а2(18а+6)",
           "6(а3+а2)",
-          "6а2(3а+1)",
+          "6а²(3а+1)",
           "6(3а3+а2)"
         ]
       },
@@ -502,13 +502,13 @@ export const testsData: Record<number, TestData> = {
         "id": "math_7",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание №7. Упростите выражение (с + 5)^2 - с(10 - 3с)",
-        "correctAnswer": "4с2+25",
+        "text": "Задание №7. Упростите выражение (с + 5)² - с(10 - 3с)",
+        "correctAnswer": "4с²+25",
         "options": [
-          "2с2+25",
-          "4с2-10с+25",
-          "4с2-5с+25",
-          "4с2+25"
+          "2с²+25",
+          "4с²-10с+25",
+          "4с²-5с+25",
+          "4с²+25"
         ]
       },
       {
@@ -541,13 +541,13 @@ export const testsData: Record<number, TestData> = {
         "id": "math_10",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание №10. Упростите выражение (t - 5)^2 + 4(10 - t)",
-        "correctAnswer": "t2 - 14t + 65",
+        "text": "Задание №10. Упростите выражение (t - 5)² + 4(10 - t)",
+        "correctAnswer": "t² - 14t + 65",
         "options": [
-          "t2 - 14t + 65",
-          "4t2 + 6t + 25",
-          "t2 + 15 - 4t",
-          "t2 + 14t + 65"
+          "t² - 14t + 65",
+          "4t² + 6t + 25",
+          "t² + 15 - 4t",
+          "t² + 14t + 65"
         ]
       },
       {
@@ -768,7 +768,7 @@ export const testsData: Record<number, TestData> = {
         "id": "math_1",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание №1. Укажите корни квадратного уравнения: -x^2+3x+4=0.",
+        "text": "Задание №1. Укажите корни квадратного уравнения: -x²+3x+4=0.",
         "correctAnswer": "x_1=4; x_2=-1",
         "options": [
           "x_1=-4; x_2=1",
@@ -780,7 +780,7 @@ export const testsData: Record<number, TestData> = {
         "id": "math_2",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание №2. Найдите абсциссы точек пересечения графиков функций y=(x-1)^2 и y=2x-2x^2.",
+        "text": "Задание №2. Найдите абсциссы точек пересечения графиков функций y=(x-1)² и y=2x-2x².",
         "correctAnswer": "x_1=1; x_2=1/3",
         "options": [
           "x_1=1; x_2=1/3",
@@ -804,7 +804,7 @@ export const testsData: Record<number, TestData> = {
         "id": "math_4",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание №4. Чему равно произведение корней квадратного уравнения -x^2-78564x+24661=0.",
+        "text": "Задание №4. Чему равно произведение корней квадратного уравнения -x²-78564x+24661=0.",
         "correctAnswer": "24661",
         "options": [
           "24661",
@@ -817,7 +817,7 @@ export const testsData: Record<number, TestData> = {
         "id": "math_5",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание №5. Укажите множество корней уравнения (1-4x^2)/(6x-3)=0.",
+        "text": "Задание №5. Укажите множество корней уравнения (1-4x²)/(6x-3)=0.",
         "correctAnswer": "0,5",
         "options": [
           "0,5",
@@ -830,7 +830,7 @@ export const testsData: Record<number, TestData> = {
         "id": "math_6",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание №6. Решите уравнение x/(x-2) - 7/(x+2) = 8/(x^2-4).",
+        "text": "Задание №6. Решите уравнение x/(x-2) - 7/(x+2) = 8/(x²-4).",
         "correctAnswer": "X=6",
         "options": [
           "X=-2",
@@ -863,21 +863,21 @@ export const testsData: Record<number, TestData> = {
         "id": "math_9",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание №9. Известно, что 2 \\le a \\le 3. Оцените -2a+1 (в условии опечатка x, подразумевается a).",
-        "correctAnswer": "-5 \\le -2x+1 \\le -3",
+        "text": "Задание №9. Известно, что 2 ≤ a ≤ 3. Оцените -2a+1 (в условии опечатка x, подразумевается a).",
+        "correctAnswer": "-5 ≤ -2x+1 ≤ -3",
         "options": [
-          "5 \\le -2x+1 \\le -6",
-          "-5 \\le -2x+1 \\le -3",
-          "-4 \\le -2x+1 \\le 2",
-          "-7 \\le -2x+1 \\le -5"
+          "5 ≤ -2x+1 ≤ -6",
+          "-5 ≤ -2x+1 ≤ -3",
+          "-4 ≤ -2x+1 ≤ 2",
+          "-7 ≤ -2x+1 ≤ -5"
         ]
       },
       {
         "id": "math_10",
         "type": "free_text",
         "points": 1,
-        "text": "Задание №10. Известно, что -2 \\le a \\le 3 и 1 \\le b \\le 4. Оцените a - b.",
-        "correctAnswer": "-6 \\le a - b \\le 6"
+        "text": "Задание №10. Известно, что -2 ≤ a ≤ 3 и 1 ≤ b ≤ 4. Оцените a - b.",
+        "correctAnswer": "-6 ≤ a - b ≤ 6"
       },
       {
         "id": "math_11",
@@ -889,7 +889,7 @@ export const testsData: Record<number, TestData> = {
           "[-3; 0)",
           "[-3; 0]",
           "(-3; 0)",
-          "(-3; +\\infty]"
+          "(-3; +∞]"
         ]
       },
       {
@@ -909,13 +909,13 @@ export const testsData: Record<number, TestData> = {
         "id": "math_13",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание №13. Упростите выражение (3a^4/b^5)^{-2} \\cdot (a^{-2}b)^{-4}.",
-        "correctAnswer": "b^6/9",
+        "text": "Задание №13. Упростите выражение (3a⁴/b⁵)^⁻² · (a^⁻²b)^⁻⁴.",
+        "correctAnswer": "b⁶/9",
         "options": [
-          "9/b^6",
-          "b^6/3",
-          "b^6/9",
-          "b^{14}/9a^{16}"
+          "9/b⁶",
+          "b⁶/3",
+          "b⁶/9",
+          "b^¹⁴/9a^¹⁶"
         ]
       }
     ],
@@ -1116,20 +1116,20 @@ export const testsData: Record<number, TestData> = {
         "id": "math_1",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание 1 (Часть 2). Упростите выражение: -4\\sin^2(\\alpha)+5-4\\cos^2(\\alpha).",
+        "text": "Задание 1 (Часть 2). Упростите выражение: -4sin²(α)+5-4cos²(α).",
         "correctAnswer": "1",
         "options": [
           "1",
           "9",
-          "1+8\\sin^2(\\alpha)",
-          "1+8\\cos^2(\\alpha)"
+          "1+8sin²(α)",
+          "1+8cos²(α)"
         ]
       },
       {
         "id": "math_2",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание 2 (Часть 2). Вычислить: 4\\sin(x/7)\\cos(x/7) при x = 7/4\\pi.",
+        "text": "Задание 2 (Часть 2). Вычислить: 4sin(x/7)cos(x/7) при x = 7/4π.",
         "correctAnswer": "2",
         "options": [
           "0",
@@ -1142,19 +1142,19 @@ export const testsData: Record<number, TestData> = {
         "id": "math_3",
         "type": "free_text",
         "points": 1,
-        "text": "Задание 3 (Часть 2). Решите уравнение: \\cos^2(x) - \\sin^2(x) = 0.5.",
-        "correctAnswer": "\\pm \\pi/6 + \\pi n, n \\in Z"
+        "text": "Задание 3 (Часть 2). Решите уравнение: cos²(x) - sin²(x) = 0.5.",
+        "correctAnswer": "± π/6 + π n, n ∈ Z"
       },
       {
         "id": "math_4",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание 4 (Часть 2). Найдите множество значений функции: y=11\\cos(x).",
+        "text": "Задание 4 (Часть 2). Найдите множество значений функции: y=11cos(x).",
         "correctAnswer": "[-11; 11]",
         "options": [
           "[0; 11]",
           "[-1; 1]",
-          "(-\\infty; +\\infty)",
+          "(-∞; +∞)",
           "[-11; 11]"
         ]
       },
@@ -1162,29 +1162,29 @@ export const testsData: Record<number, TestData> = {
         "id": "math_5",
         "type": "free_text",
         "points": 1,
-        "text": "Задание 5 (Часть 2). Найдите производную функции y=3x^2\\cos(x).",
-        "correctAnswer": "6x\\cos(x) - 3x^2\\sin(x)"
+        "text": "Задание 5 (Часть 2). Найдите производную функции y=3x²cos(x).",
+        "correctAnswer": "6xcos(x) - 3x²sin(x)"
       },
       {
         "id": "math_6",
         "type": "free_text",
         "points": 1,
-        "text": "Задание 6 (Часть 2). Точка движется по закону X(t)=3+2t+t^2. В какой момент времени скорость равна 5?",
+        "text": "Задание 6 (Часть 2). Точка движется по закону X(t)=3+2t+t². В какой момент времени скорость равна 5?",
         "correctAnswer": "1,5"
       },
       {
         "id": "math_7",
         "type": "free_text",
         "points": 1,
-        "text": "Задание 7 (Часть 2). Решите уравнение: 7\\text{tg}(x) + \\cos^2(x) + 3\\sin(2x) = 1.",
-        "correctAnswer": "\\pi n"
+        "text": "Задание 7 (Часть 2). Решите уравнение: 7tg(x) + cos²(x) + 3sin(2x) = 1.",
+        "correctAnswer": "π n"
       },
       {
         "id": "math_8",
         "type": "free_text",
         "points": 1,
         "text": "Задание 8 (Часть 2). Сторона основания и высота правильной треугольной пирамиды равны 6 и 12. Найдите тангенс угла.",
-        "correctAnswer": "2\\sqrt{3}"
+        "correctAnswer": "2√3"
       },
       {
         "id": "math_9",
@@ -1340,25 +1340,25 @@ export const testsData: Record<number, TestData> = {
         "type": "multiple_choice",
         "points": 1,
         "text": "Задание №1. Выберите верные равенства.",
-        "correctAnswer": "корень 5-й степени из (-3)^5 = -3",
+        "correctAnswer": "корень 5-й степени из (-3)⁵ = -3",
         "options": [
-          "корень 6-й степени из (-7)^6 = -7",
-          "корень 5-й степени из (-3)^5 = -3",
-          "корень 6-й степени из (-7)^6 = 7",
-          "корень 5-й степени из (-3)^5 = 3"
+          "корень 6-й степени из (-7)⁶ = -7",
+          "корень 5-й степени из (-3)⁵ = -3",
+          "корень 6-й степени из (-7)⁶ = 7",
+          "корень 5-й степени из (-3)⁵ = 3"
         ]
       },
       {
         "id": "math_2",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание №2. Областью определения функции y=\\log_2(x-1) является промежуток:",
-        "correctAnswer": "(1; +\\infty)",
+        "text": "Задание №2. Областью определения функции y=log₂(x-1) является промежуток:",
+        "correctAnswer": "(1; +∞)",
         "options": [
-          "(-\\infty; 1)",
-          "(-\\infty; +\\infty)",
-          "(1; +\\infty)",
-          "(0; +\\infty)"
+          "(-∞; 1)",
+          "(-∞; +∞)",
+          "(1; +∞)",
+          "(0; +∞)"
         ]
       },
       {
@@ -1366,12 +1366,12 @@ export const testsData: Record<number, TestData> = {
         "type": "multiple_choice",
         "points": 1,
         "text": "Задание №3. Определите верное равенство:",
-        "correctAnswer": "\\text{arcctg}(-\\alpha) = \\pi - \\text{arcctg}(\\alpha)",
+        "correctAnswer": "arcctg(-α) = π - arcctg(α)",
         "options": [
-          "\\text{arcctg}(-\\alpha) = \\pi - \\text{arcctg}(\\alpha)",
-          "\\text{arcctg}(-\\alpha) = -\\text{arcctg}(\\alpha)",
-          "\\text{arcctg}(-\\alpha) = \\pi/2 - \\text{arcctg}(\\alpha)",
-          "\\text{arcctg}(-\\alpha) = \\text{arcctg}(\\alpha)"
+          "arcctg(-α) = π - arcctg(α)",
+          "arcctg(-α) = -arcctg(α)",
+          "arcctg(-α) = π/2 - arcctg(α)",
+          "arcctg(-α) = arcctg(α)"
         ]
       },
       {
@@ -1391,20 +1391,20 @@ export const testsData: Record<number, TestData> = {
         "id": "math_5",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание №5. Производная функции Y=x^6 равна:",
-        "correctAnswer": "6x^5",
+        "text": "Задание №5. Производная функции Y=x⁶ равна:",
+        "correctAnswer": "6x⁵",
         "options": [
-          "6x^6",
-          "6x^5",
-          "x^5",
-          "5x^5"
+          "6x⁶",
+          "6x⁵",
+          "x⁵",
+          "5x⁵"
         ]
       },
       {
         "id": "math_6",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание №6. Если \\sin(\\alpha) = 0, то угол \\alpha может быть равен:",
+        "text": "Задание №6. Если sin(α) = 0, то угол α может быть равен:",
         "correctAnswer": "-180 градусов",
         "options": [
           "90 градусов",
@@ -1430,12 +1430,12 @@ export const testsData: Record<number, TestData> = {
         "id": "math_8",
         "type": "multiple_choice",
         "points": 1,
-        "text": "Задание №8. Диаметр сферы равен 6\\sqrt{3}, тогда радиус ограниченного этой сферой шара равен:",
-        "correctAnswer": "3\\sqrt{3}",
+        "text": "Задание №8. Диаметр сферы равен 6√3, тогда радиус ограниченного этой сферой шара равен:",
+        "correctAnswer": "3√3",
         "options": [
-          "3\\sqrt{3}",
-          "6\\sqrt{3}",
-          "12\\sqrt{3}",
+          "3√3",
+          "6√3",
+          "12√3",
           "3"
         ]
       },
@@ -1444,12 +1444,12 @@ export const testsData: Record<number, TestData> = {
         "type": "multiple_choice",
         "points": 1,
         "text": "Задание №9. Корнем уравнения 3^x = 5 является число:",
-        "correctAnswer": "\\log_3(5)",
+        "correctAnswer": "log₃(5)",
         "options": [
-          "\\log_5(3)",
+          "log₅(3)",
           "1 целая 2/3",
-          "\\sqrt[5]{3}",
-          "\\log_3(5)"
+          "⁵√3",
+          "log₃(5)"
         ]
       },
       {
@@ -1457,12 +1457,12 @@ export const testsData: Record<number, TestData> = {
         "type": "multiple_choice",
         "points": 1,
         "text": "Задание №10. Выразите в радианах угол 45 градусов.",
-        "correctAnswer": "\\pi/4",
+        "correctAnswer": "π/4",
         "options": [
-          "\\pi/2",
-          "\\pi/3",
-          "\\pi/4",
-          "\\pi/6"
+          "π/2",
+          "π/3",
+          "π/4",
+          "π/6"
         ]
       }
     ],
