@@ -7,7 +7,7 @@ export default function ManagerForm() {
   const urlShortId = searchParams.get("shortId") || "";
 
   const [password, setPassword] = useState("");
-  const [auth, setAuth] = useState(false);
+  const [auth, setAuth] = useState(() => localStorage.getItem("managerAuth") === "true");
   const [shortId, setShortId] = useState(urlShortId);
   const [student, setStudent] = useState<any>(null);
 
@@ -22,13 +22,20 @@ export default function ManagerForm() {
   
   const handleAuth = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === "manager2024") {
+    if (password === "manager2024" || localStorage.getItem("managerAuth") === "true") {
       setAuth(true);
+      localStorage.setItem("managerAuth", "true");
       if (shortId) fetchStudent();
     } else {
       setError("Неверный пароль");
     }
   };
+
+  useEffect(() => {
+    if (auth && shortId) {
+      fetchStudent();
+    }
+  }, []);
 
   const fetchStudent = async () => {
     if (!shortId) return;

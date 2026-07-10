@@ -6,7 +6,7 @@ export default function PsychologistForm() {
   const navigate = useNavigate();
 
   const [password, setPassword] = useState("");
-  const [auth, setAuth] = useState(false);
+  const [auth, setAuth] = useState(() => localStorage.getItem("psychAuth") === "true");
   const [student, setStudent] = useState<any>(null);
   
   const [verdict, setVerdict] = useState("БРАТЬ");
@@ -18,13 +18,20 @@ export default function PsychologistForm() {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === "psycho2024") {
+    if (password === "psycho2024" || localStorage.getItem("psychAuth") === "true") {
       setAuth(true);
+      localStorage.setItem("psychAuth", "true");
       fetchStudent();
     } else {
       setError("Неверный пароль");
     }
   };
+
+  useEffect(() => {
+    if (auth && shortId) {
+      fetchStudent();
+    }
+  }, []);
 
   const fetchStudent = async () => {
     if (!shortId) return;

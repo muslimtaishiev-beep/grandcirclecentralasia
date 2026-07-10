@@ -5,20 +5,27 @@ export default function ManagerDashboard() {
   const navigate = useNavigate();
 
   const [password, setPassword] = useState("");
-  const [auth, setAuth] = useState(false);
+  const [auth, setAuth] = useState(() => localStorage.getItem("managerAuth") === "true");
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === "manager2024") {
+    if (password === "manager2024" || localStorage.getItem("managerAuth") === "true") {
       setAuth(true);
+      localStorage.setItem("managerAuth", "true");
       fetchStudents();
     } else {
       setError("Неверный пароль");
     }
   };
+
+  useEffect(() => {
+    if (auth) {
+      fetchStudents();
+    }
+  }, []);
 
   const fetchStudents = async () => {
     setLoading(true);
