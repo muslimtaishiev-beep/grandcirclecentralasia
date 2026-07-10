@@ -115,16 +115,18 @@ export default function Testing() {
 
   // Audio stop listener for cheaters
   useEffect(() => {
-    if (!disqualified || stopAudio) return;
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setStopAudio(true);
-        submitTest(true); // Treat as cheating
+        if (!disqualified) {
+          submitTest(true); // Cheating
+        } else {
+          setStopAudio(true); // Silence the song
+        }
       }
     };
     window.addEventListener("keydown", handleEsc);
     return () => window.removeEventListener("keydown", handleEsc);
-  }, [disqualified, stopAudio]);
+  }, [disqualified]);
 
   const startTest = async () => {
     if (!grade) return alert("Выберите класс");
@@ -244,16 +246,18 @@ export default function Testing() {
   if (disqualified) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        {/* Hidden YouTube iframe for "Directed by Robert B. Weide" meme song */}
+        {/* Hidden YouTube iframe for "Directed by Robert B. Weide" meme song. 
+            Moved off-screen with positive dimensions so YouTube doesn't block autoplay. */}
         {!stopAudio && (
-          <iframe 
-            width="1" 
-            height="1" 
-            src="https://www.youtube.com/embed/LEgA220d91o?autoplay=1&controls=0" 
-            allow="autoplay" 
-            title="Directed by"
-            className="absolute opacity-0 pointer-events-none"
-          />
+          <div className="absolute top-[-9999px] left-[-9999px] w-[300px] h-[300px] overflow-hidden">
+            <iframe 
+              width="300" 
+              height="300" 
+              src="https://www.youtube.com/embed/LEgA220d91o?autoplay=1&controls=0&mute=0" 
+              allow="autoplay; encrypted-media" 
+              title="Directed by"
+            />
+          </div>
         )}
         <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500 to-red-700"></div>
