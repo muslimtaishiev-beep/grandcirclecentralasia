@@ -711,10 +711,11 @@ function doPost(e) {
     }
 
     if (action === "submitTest") {
-      const { testId, shortId, studentName, grade, answers, cheated } = data;
+      const { testId, shortId, studentName, grade, answers, cheated, isTester } = data;
       
       const dataRange = testSheet.getDataRange().getValues();
       const safeName = sanitize(studentName || "Без имени");
+      const finalName = isTester ? `[ТЕСТ] ${safeName}` : safeName;
       const now = new Date().getTime();
       
       for (let i = 1; i < dataRange.length; i++) {
@@ -723,10 +724,12 @@ function doPost(e) {
         }
         
         // Prevent same name from submitting within 1 hour
-        const rowName = dataRange[i][1];
-        const rowTime = dataRange[i][8];
-        if (rowName === safeName && (now - Number(rowTime)) < 60 * 60 * 1000) {
-           return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Вы уже сдавали тест в течение последнего часа." })).setMimeType(ContentService.MimeType.JSON);
+        if (!isTester) {
+          const rowName = dataRange[i][1];
+          const rowTime = dataRange[i][8];
+          if (rowName === safeName && (now - Number(rowTime)) < 60 * 60 * 1000) {
+             return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Вы уже сдавали тест в течение последнего часа." })).setMimeType(ContentService.MimeType.JSON);
+          }
         }
       }
 
@@ -737,7 +740,7 @@ function doPost(e) {
       const totalScore = scores.russian + scores.math + scores.logic;
       
       const ts = new Date().getTime();
-      testSheet.appendRow([new Date(ts).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" }), safeName, grade, scores.russian, scores.math, scores.logic, totalScore, testId, ts, cheated ? "ДА" : "НЕТ", shortId]);
+      testSheet.appendRow([new Date(ts).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" }), finalName, grade, scores.russian, scores.math, scores.logic, totalScore, testId, ts, cheated ? "ДА" : "НЕТ", shortId]);
       
       return ContentService.createTextOutput(JSON.stringify({ success: true, totalScore, cheated: !!cheated })).setMimeType(ContentService.MimeType.JSON);
     }

@@ -145,18 +145,22 @@ export default function Testing() {
   const startTest = async () => {
     if (!grade) return alert("Выберите класс");
     if (!studentName.trim()) return alert("Введите ФИО");
-    if (enteredPin !== getHourlyPIN()) {
+    
+    const isTester = enteredPin === import.meta.env.VITE_TESTER_PIN;
+    if (!isTester && enteredPin !== getHourlyPIN()) {
       return alert("Неверный PIN-код. Узнайте актуальный PIN у менеджера.");
     }
 
-    // Check timer constraint
-    const lastTestTime = localStorage.getItem("lastTestTime");
-    if (lastTestTime) {
-      const timePassed = Date.now() - Number(lastTestTime);
-      const oneHour = 60 * 60 * 1000;
-      if (timePassed < oneHour) {
-        const minutesLeft = Math.ceil((oneHour - timePassed) / 60000);
-        return alert(`Вы уже сдавали тест недавно. Попробуйте еще раз через ${minutesLeft} минут.`);
+    // Check timer constraint only if not tester
+    if (!isTester) {
+      const lastTestTime = localStorage.getItem("lastTestTime");
+      if (lastTestTime) {
+        const timePassed = Date.now() - Number(lastTestTime);
+        const oneHour = 60 * 60 * 1000;
+        if (timePassed < oneHour) {
+          const minutesLeft = Math.ceil((oneHour - timePassed) / 60000);
+          return alert(`Вы уже сдавали тест недавно. Попробуйте еще раз через ${minutesLeft} минут.`);
+        }
       }
     }
     
@@ -186,6 +190,8 @@ export default function Testing() {
     const tokenUrl = `https://studyfreeforum.com/manager/form?shortId=${shortId}`;
     setQrToken(tokenUrl);
 
+    const isTester = enteredPin === import.meta.env.VITE_TESTER_PIN;
+
     const payload = {
       action: "submitTest",
       testId: payloadTestId,
@@ -193,11 +199,14 @@ export default function Testing() {
       studentName,
       grade,
       answers,
-      cheated: isDisqualified
+      cheated: isDisqualified,
+      testerPin: isTester ? enteredPin : undefined
     };
 
-    // Save timer for anti-spam
-    localStorage.setItem("lastTestTime", Date.now().toString());
+    // Save timer for anti-spam only if not tester
+    if (!isTester) {
+      localStorage.setItem("lastTestTime", Date.now().toString());
+    }
 
     const sendData = async () => {
       try {

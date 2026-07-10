@@ -211,6 +211,14 @@ app.post("/api/gas", async (req, res) => {
   try {
     const payload = { ...req.body, apiKey: gasApiKey };
     
+    // Check if tester
+    if (payload.action === "submitTest" && payload.testerPin) {
+      if (payload.testerPin === process.env.VITE_TESTER_PIN) {
+        payload.isTester = true;
+      }
+      delete payload.testerPin; // do not send pin to GAS
+    }
+    
     // For protected actions, verify Firebase Auth token
     const publicActions = ["submitTest", "getStudentByShortId"];
     if (!publicActions.includes(payload.action)) {
