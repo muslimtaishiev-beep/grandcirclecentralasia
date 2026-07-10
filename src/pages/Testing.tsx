@@ -2,20 +2,50 @@ import React, { useState, useEffect, useRef } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import { testsData } from "../data/testsData";
 import { Question } from "../types";
-import { motion } from "framer-motion";
 
 export default function Testing() {
-  const [studentName, setStudentName] = useState("");
-  const [grade, setGrade] = useState<number | null>(null);
-  const [started, setStarted] = useState(false);
-  const [finished, setFinished] = useState(false);
-  const [disqualified, setDisqualified] = useState(false);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [scores, setScores] = useState({ russian: 0, math: 0, logic: 0 });
-  const [testId, setTestId] = useState("");
-  const [qrToken, setQrToken] = useState("");
+  const [studentName, setStudentName] = useState(() => sessionStorage.getItem("studentName") || "");
+  const [grade, setGrade] = useState<number | null>(() => {
+    const saved = sessionStorage.getItem("grade");
+    return saved ? Number(saved) : null;
+  });
+  const [started, setStarted] = useState(() => sessionStorage.getItem("started") === "true");
+  const [finished, setFinished] = useState(() => sessionStorage.getItem("finished") === "true");
+  const [disqualified, setDisqualified] = useState(() => sessionStorage.getItem("disqualified") === "true");
+  const [answers, setAnswers] = useState<Record<string, string>>(() => {
+    const saved = sessionStorage.getItem("answers");
+    return saved ? JSON.parse(saved) : {};
+  });
+  const [testId, setTestId] = useState(() => sessionStorage.getItem("testId") || "");
+  const [qrToken, setQrToken] = useState(() => sessionStorage.getItem("qrToken") || "");
+  const [pendingSubmission, setPendingSubmission] = useState(() => sessionStorage.getItem("pendingSubmission") === "true");
   
   const blurTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  // Sync state to sessionStorage for F5 protection
+  useEffect(() => {
+    sessionStorage.setItem("studentName", studentName);
+    if (grade) sessionStorage.setItem("grade", String(grade));
+    sessionStorage.setItem("started", String(started));
+    sessionStorage.setItem("finished", String(finished));
+    sessionStorage.setItem("disqualified", String(disqualified));
+    sessionStorage.setItem("answers", JSON.stringify(answers));
+    sessionStorage.setItem("testId", testId);
+    sessionStorage.setItem("qrToken", qrToken);
+    sessionStorage.setItem("pendingSubmission", String(pendingSubmission));
+  }, [studentName, grade, started, finished, disqualified, answers, testId, qrToken, pendingSubmission]);
+
+  // Prevent accidental F5/Closing
+  useEffect(() => {
+    if (!started || finished || disqualified) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "Вы уверены? Ваш результат может быть аннулирован!";
+      return "Вы уверены? Ваш результат может быть аннулирован!";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [started, finished, disqualified]);
 
   // --- ANTI-CHEAT LOGIC ---
   useEffect(() => {
@@ -24,8 +54,7 @@ export default function Testing() {
     const handleCheating = () => {
       // 2 seconds grace period
       blurTimeout.current = setTimeout(() => {
-        setDisqualified(true);
-        submitTest(true); // submit with 0 points
+        submitTest(true); // submit immediately as cheating
       }, 2000);
     };
 
@@ -54,12 +83,11 @@ export default function Testing() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (blurTimeout.current) clearTimeout(blurTimeout.current);
     };
-  }, [started, finished, disqualified]);
+  }, [started, finished, disqualified, answers]); // Add answers to dependencies so submitTest gets latest
 
   // Block copy/paste/context menu globally when test is active
   useEffect(() => {
     if (!started || finished) return;
-    
     const preventAction = (e: Event) => e.preventDefault();
     document.addEventListener("contextmenu", preventAction);
     document.addEventListener("copy", preventAction);
@@ -85,59 +113,59 @@ export default function Testing() {
       console.warn("Fullscreen API failed", err);
     }
 
-    setTestId(crypto.randomUUID());
+    if (!testId) {
+      setTestId(crypto.randomUUID());
+    }
     setStarted(true);
-  };
-
-  const calculateScores = () => {
-    if (!grade) return { russian: 0, math: 0, logic: 0 };
-    const test = testsData[grade];
-    let ru = 0, ma = 0, lo = 0;
-
-    test.russian.forEach(q => {
-      if (answers[q.id]?.trim().toLowerCase() === q.correctAnswer.trim().toLowerCase()) ru += q.points;
-    });
-    test.math.forEach(q => {
-      if (answers[q.id]?.trim().toLowerCase() === q.correctAnswer.trim().toLowerCase()) ma += q.points;
-    });
-    test.logic.forEach(q => {
-      if (answers[q.id]?.trim().toLowerCase() === q.correctAnswer.trim().toLowerCase()) lo += q.points;
-    });
-
-    return { russian: ru, math: ma, logic: lo };
   };
 
   const submitTest = async (isDisqualified = false) => {
     setFinished(true);
-    const calculatedScores = isDisqualified ? { russian: 0, math: 0, logic: 0 } : calculateScores();
-    setScores(calculatedScores);
-
-    // Generate secure token for QR
-    const ts = Date.now();
-    // In a real app, hash this with a secret. For now, simple base64 to deter simple URL copy.
-    const token = btoa(`${testId}:${ts}:studyfree-secret`);
-    setQrToken(`https://studyfreeforum.com/manager/form?testId=${testId}&ts=${ts}&token=${token}`);
-
-    // Call Google Apps Script (Placeholder URL, user needs to provide it)
-    try {
-      const gasUrl = import.meta.env.VITE_GAS_URL || "";
-      if (gasUrl) {
-        await fetch(gasUrl, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({
-            action: "submitTest",
-            testId,
-            studentName,
-            grade,
-            scores: calculatedScores
-          })
-        });
-      }
-    } catch (e) {
-      console.error("Failed to submit to GAS", e);
+    if (isDisqualified) {
+      setDisqualified(true);
     }
+
+    const payloadTestId = testId || crypto.randomUUID();
+    if (!testId) setTestId(payloadTestId);
+
+    const tokenUrl = `https://studyfreeforum.com/manager/form?testId=${payloadTestId}`;
+    setQrToken(tokenUrl);
+
+    const payload = {
+      action: "submitTest",
+      testId: payloadTestId,
+      studentName,
+      grade,
+      answers,
+      cheated: isDisqualified
+    };
+
+    const sendData = async () => {
+      try {
+        const gasUrl = import.meta.env.VITE_GAS_URL || "";
+        if (gasUrl) {
+          const res = await fetch(gasUrl, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (data.success) {
+            setPendingSubmission(false);
+            localStorage.removeItem(`offline_test_${payloadTestId}`);
+          } else {
+            throw new Error(data.error);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to submit to GAS", e);
+        setPendingSubmission(true);
+        localStorage.setItem(`offline_test_${payloadTestId}`, JSON.stringify(payload));
+      }
+    };
     
+    await sendData();
+
     try {
       if (document.exitFullscreen) {
         await document.exitFullscreen();
@@ -145,13 +173,41 @@ export default function Testing() {
     } catch (e) {}
   };
 
+  const retrySubmission = async () => {
+    const payloadStr = localStorage.getItem(`offline_test_${testId}`);
+    if (payloadStr) {
+      try {
+        const gasUrl = import.meta.env.VITE_GAS_URL || "";
+        const res = await fetch(gasUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: payloadStr
+        });
+        const data = await res.json();
+        if (data.success) {
+          setPendingSubmission(false);
+          localStorage.removeItem(`offline_test_${testId}`);
+          alert("Данные успешно отправлены!");
+        }
+      } catch(e) {
+        alert("Ошибка сети. Попробуйте еще раз.");
+      }
+    }
+  };
+
   if (disqualified) {
     return (
-      <div className="min-h-screen bg-red-600 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-red-600 flex flex-col items-center justify-center p-4">
         <div className="bg-white rounded-2xl p-8 max-w-md text-center">
           <h1 className="text-3xl font-bold text-red-600 mb-4">Нарушение правил!</h1>
-          <p className="text-slate-800">
-            Вы покинули окно тестирования, свернули браузер или открыли другую вкладку. Тест принудительно завершен с результатом 0 баллов.
+          <p className="text-slate-800 mb-6">
+            Вы покинули окно тестирования, свернули браузер или открыли другую вкладку. Тест принудительно завершен с результатом 0 баллов и отметкой читерства.
+          </p>
+          <div className="bg-slate-100 p-4 rounded-xl inline-block select-none pointer-events-none mb-6">
+            <QRCodeCanvas value={qrToken} size={250} level="H" />
+          </div>
+          <p className="text-sm text-slate-500">
+            Покажите этот QR-код менеджеру.
           </p>
         </div>
       </div>
@@ -163,14 +219,19 @@ export default function Testing() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
           <h2 className="text-2xl font-bold mb-2">Тест завершён</h2>
-          <p className="text-slate-500 mb-6">Покажите этот QR-код менеджеру</p>
-          <div className="bg-slate-100 p-4 rounded-xl inline-block select-none pointer-events-none mb-6">
+          
+          {pendingSubmission ? (
+            <div className="bg-red-50 text-red-600 p-4 rounded-xl mb-6">
+              <strong>Ошибка сети!</strong>
+              <p className="text-sm mt-1 mb-3">Ваши ответы сохранены на устройстве. Пожалуйста, не закрывайте вкладку и дождитесь появления интернета.</p>
+              <button onClick={retrySubmission} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium">Повторить отправку</button>
+            </div>
+          ) : (
+            <p className="text-slate-500 mb-6">Покажите этот QR-код менеджеру</p>
+          )}
+
+          <div className="bg-slate-100 p-4 rounded-xl inline-block select-none pointer-events-none">
             <QRCodeCanvas value={qrToken} size={250} level="H" />
-          </div>
-          <div className="grid grid-cols-3 gap-4 border-t pt-6">
-            <div><div className="text-sm text-slate-500">Русский</div><div className="font-bold">{scores.russian}</div></div>
-            <div><div className="text-sm text-slate-500">Математика</div><div className="font-bold">{scores.math}</div></div>
-            <div><div className="text-sm text-slate-500">Логика</div><div className="font-bold">{scores.logic}</div></div>
           </div>
         </div>
       </div>
@@ -199,6 +260,7 @@ export default function Testing() {
               <label className="block text-sm font-medium mb-2">Выберите ваш класс:</label>
               <select 
                 className="w-full border rounded-xl p-3 bg-slate-50"
+                value={grade || ""}
                 onChange={(e) => setGrade(Number(e.target.value))}
               >
                 <option value="">Не выбран</option>
@@ -212,6 +274,7 @@ export default function Testing() {
             <ul className="list-disc pl-5 mt-2 space-y-1">
               <li>Тест откроется на весь экран.</li>
               <li>Если вы закроете тест, свернете окно или переключитесь на другую вкладку более чем на 2 секунды — тест автоматически аннулируется с нулем баллов.</li>
+              <li>Не пытайтесь обновить страницу во время прохождения теста.</li>
               <li>Копирование и вставка отключены.</li>
             </ul>
           </div>
