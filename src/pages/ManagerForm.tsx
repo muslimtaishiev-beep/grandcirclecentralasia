@@ -55,7 +55,7 @@ export default function ManagerForm() {
       const gasUrl = "/api/gas" || "";
       const res = await fetch(gasUrl, {
         method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "getStudentByShortId", shortId })
       });
       const data = await res.json();
@@ -86,7 +86,7 @@ export default function ManagerForm() {
       const gasUrl = "/api/gas" || "";
       const res = await fetch(gasUrl, {
         method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "submitManagerForm",
           shortId,
