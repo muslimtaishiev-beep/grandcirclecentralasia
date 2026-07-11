@@ -201,7 +201,7 @@ app.post("/api/public/subscribe", async (req, res) => {
 // GAS Proxy
 app.post("/api/gas", async (req, res) => {
   const gasUrl = process.env.VITE_GAS_URL;
-  const gasApiKey = process.env.VITE_GAS_API_KEY || "GRAND_CIRCLE_SECURE_API_KEY_2026";
+  const gasApiKey = "GRAND_CIRCLE_SECURE_API_KEY_2026";
   
   if (!gasUrl) {
     return res.status(500).json({ error: "GAS URL is not configured on the server." });
