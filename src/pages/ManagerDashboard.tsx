@@ -34,6 +34,8 @@ export default function ManagerDashboard() {
     try {
       await signInWithEmailAndPassword(firebaseAuth, email, password);
       setIsAuthenticated(true);
+      const SESSION_DURATION = 12 * 60 * 60 * 1000;
+      localStorage.setItem("managerSessionExpiry", (Date.now() + SESSION_DURATION).toString());
       if (typeof fetchStudents !== "undefined") fetchStudents(); else if (typeof fetchStudent !== "undefined") fetchStudent();
     } catch(err) {
       setError("Неверная почта или пароль / Invalid credentials");
@@ -45,10 +47,19 @@ export default function ManagerDashboard() {
 
 
   useEffect(() => {
+    const expiry = localStorage.getItem("managerSessionExpiry");
+    if (expiry && Date.now() < parseInt(expiry, 10)) {
+      setIsAuthenticated(true);
+    } else {
+      localStorage.removeItem("managerSessionExpiry");
+    }
+  }, []);
+
+  useEffect(() => {
     if (isAuthenticated) {
       fetchStudents();
     }
-  }, []);
+  }, [isAuthenticated]);
 
   const fetchStudents = async () => {
     setLoading(true);

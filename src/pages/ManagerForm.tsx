@@ -25,9 +25,10 @@ export default function ManagerForm() {
   
   const handleAuth = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === "manager2024" || localStorage.getItem("managerAuth") === "true") {
+    if (password === "manager2024") {
       setIsAuthenticated(true);
-      
+      const SESSION_DURATION = 12 * 60 * 60 * 1000;
+      localStorage.setItem("managerSessionExpiry", (Date.now() + SESSION_DURATION).toString());
       if (shortId) fetchStudent();
     } else {
       setError("Неверный пароль");
@@ -36,7 +37,15 @@ export default function ManagerForm() {
 
 
 
-
+  useEffect(() => {
+    const expiry = localStorage.getItem("managerSessionExpiry");
+    if (expiry && Date.now() < parseInt(expiry, 10)) {
+      setIsAuthenticated(true);
+      if (shortId) fetchStudent();
+    } else {
+      localStorage.removeItem("managerSessionExpiry");
+    }
+  }, []);
 
   const fetchStudent = async () => {
     if (!shortId) return;
