@@ -48,11 +48,7 @@ export default function ManagerForm() {
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (auth && shortId) {
-      fetchStudent();
-    }
-  }, []);
+
 
   const fetchStudent = async () => {
     if (!shortId) return;
