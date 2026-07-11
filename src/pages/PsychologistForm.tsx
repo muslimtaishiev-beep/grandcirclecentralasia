@@ -25,7 +25,7 @@ export default function PsychologistForm() {
     try {
       await signInWithEmailAndPassword(firebaseAuth, email, password);
       setIsAuthenticated(true);
-      if (typeof fetchStudents !== "undefined") fetchStudents(); else if (typeof fetchStudent !== "undefined") fetchStudent();
+      if (typeof fetchStudent !== "undefined") fetchStudent();
     } catch(err) {
       setError("Неверная почта или пароль / Invalid credentials");
     } finally {
@@ -38,8 +38,7 @@ export default function PsychologistForm() {
     const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
       if (user) {
         setIsAuthenticated(true);
-        if (typeof fetchStudents !== "undefined") fetchStudents();
-        else if (typeof fetchStudent !== "undefined") fetchStudent();
+        if (typeof fetchStudent !== "undefined") fetchStudent();
       } else {
         setIsAuthenticated(false);
       }
@@ -47,11 +46,7 @@ export default function PsychologistForm() {
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (auth && shortId) {
-      fetchStudent();
-    }
-  }, []);
+
 
   const fetchStudent = async () => {
     if (!shortId) return;

@@ -120,7 +120,7 @@ export default function Receipt() {
               <td className="border border-black p-2">{student.ru}</td>
               <td className="border border-black p-2">{student.ma}</td>
               <td className="border border-black p-2">{student.lo}</td>
-              <td className="border border-black p-2 font-bold">{student.ru + student.ma + student.lo}</td>
+              <td className="border border-black p-2 font-bold">{(Number(student.ru) || 0) + (Number(student.ma) || 0) + (Number(student.lo) || 0)}</td>
             </tr>
           </tbody>
         </table>

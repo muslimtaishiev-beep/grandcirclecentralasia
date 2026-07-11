@@ -17,7 +17,7 @@ export default function Testing() {
   const [stopAudio, setStopAudio] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>(() => {
     const saved = sessionStorage.getItem("answers");
-    return saved ? JSON.parse(saved) : {};
+    return saved ? (JSON.parse(saved) || {}) : {};
   });
   const [testId, setTestId] = useState(() => sessionStorage.getItem("testId") || "");
   const [shortId, setShortId] = useState(() => {
@@ -420,6 +420,9 @@ export default function Testing() {
   }
 
   const test = testsData[grade!];
+  if (!test) {
+    return <div className="min-h-screen flex items-center justify-center p-4">Ошибка загрузки теста. Обновите страницу.</div>;
+  }
 
   return (
     <div className="min-h-screen bg-white text-slate-900 pb-20 select-none">
