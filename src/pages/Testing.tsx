@@ -232,9 +232,10 @@ export default function Testing() {
           }
           throw new Error(data.error);
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error("Failed to submit to GAS", e);
         setPendingSubmission(true);
+        setSubmitError(e.message || "Unknown error");
         localStorage.setItem(`offline_test_${payloadTestId}`, JSON.stringify(payload));
       }
     };
@@ -248,6 +249,8 @@ export default function Testing() {
     } catch (e) {}
   };
 
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   const retrySubmission = async () => {
     const payloadStr = localStorage.getItem(`offline_test_${testId}`);
     if (payloadStr) {
@@ -258,14 +261,27 @@ export default function Testing() {
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: payloadStr
         });
-        const data = await res.json();
+        
+        // Handle non-JSON responses (like Google HTML error pages)
+        const text = await res.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch(e) {
+          throw new Error("Invalid response from server. Check GAS URL and deployment.");
+        }
+
         if (data.success) {
           setPendingSubmission(false);
+          setSubmitError(null);
           localStorage.removeItem(`offline_test_${testId}`);
           alert("Данные успешно отправлены!");
+        } else {
+          throw new Error(data.error || "Unknown GAS error");
         }
-      } catch(e) {
-        alert("Ошибка сети. Попробуйте еще раз.");
+      } catch(e: any) {
+        setSubmitError(e.message);
+        alert(`Ошибка сети: ${e.message}`);
       }
     }
   };
@@ -305,8 +321,8 @@ export default function Testing() {
           
           {pendingSubmission ? (
             <div className="bg-red-50 text-red-600 p-4 rounded-xl mb-6">
-              <strong>Ошибка сети!</strong>
-              <p className="text-sm mt-1 mb-3">Ваши ответы сохранены на устройстве. Пожалуйста, не закрывайте вкладку и дождитесь появления интернета.</p>
+              <strong>Ошибка: {submitError || "Сеть недоступна"}</strong>
+              <p className="text-sm mt-1 mb-3">Ваши ответы сохранены на устройстве. Пожалуйста, не закрывайте вкладку.</p>
               <button onClick={retrySubmission} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium">Повторить отправку</button>
             </div>
           ) : (
