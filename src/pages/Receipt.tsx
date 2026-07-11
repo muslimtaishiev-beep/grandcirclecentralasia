@@ -14,7 +14,7 @@ export default function Receipt() {
         const gasUrl = "/api/gas" || "";
         const res = await fetch(gasUrl, {
           method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "getPsychologistStudent", shortId })
         });
         const data = await res.json();
