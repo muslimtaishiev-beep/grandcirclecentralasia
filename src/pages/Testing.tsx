@@ -152,18 +152,8 @@ export default function Testing() {
       return alert("Неверный PIN-код. Узнайте актуальный PIN у менеджера.");
     }
 
-    // Check timer constraint only if not tester
-    if (!isTester) {
-      const lastTestTime = localStorage.getItem("lastTestTime");
-      if (lastTestTime) {
-        const timePassed = Date.now() - Number(lastTestTime);
-        const oneHour = 60 * 60 * 1000;
-        if (timePassed < oneHour) {
-          const minutesLeft = Math.ceil((oneHour - timePassed) / 60000);
-          return alert(`Вы уже сдавали тест недавно. Попробуйте еще раз через ${minutesLeft} минут.`);
-        }
-      }
-    }
+    // We rely entirely on the Server for the 1-hour block.
+    // This allows the server to bypass the block if the manager has already made a decision.
     
     try {
       if (document.documentElement.requestFullscreen) {

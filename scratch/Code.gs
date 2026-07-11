@@ -723,12 +723,19 @@ function doPost(e) {
           return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Test already submitted" })).setMimeType(ContentService.MimeType.JSON);
         }
         
-        // Prevent same name from submitting within 1 hour
+        // Prevent same name from submitting within 1 hour, UNLESS manager already processed them
         if (!isTester) {
           const rowName = dataRange[i][1];
           const rowTime = dataRange[i][8];
+          const rowShortId = dataRange[i][10];
+          
           if (rowName === safeName && (now - Number(rowTime)) < 60 * 60 * 1000) {
-             return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Вы уже сдавали тест в течение последнего часа." })).setMimeType(ContentService.MimeType.JSON);
+             const crmStudent = getCrmByShortId(crmSheet, rowShortId, null);
+             const isProcessed = crmStudent && (crmStudent.finalDecision === "ПРИНЯТ" || crmStudent.finalDecision === "ОТКЛОНЕН");
+             
+             if (!isProcessed) {
+               return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Вы уже сдавали тест в течение последнего часа." })).setMimeType(ContentService.MimeType.JSON);
+             }
           }
         }
       }
