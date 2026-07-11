@@ -279,9 +279,19 @@ export default function Testing() {
           <h2 className="text-2xl font-bold text-slate-800 mb-2">Тест аннулирован</h2>
         <p className="text-slate-600 mb-6">Вы покинули страницу во время тестирования. Результат аннулирован в соответствии с правилами.</p>
         <p className="text-sm text-slate-500 font-medium border-t pt-4">Покажите этот код менеджеру:</p>
-        <div className="mt-3 text-4xl font-mono font-bold text-red-600 tracking-widest bg-red-50 py-3 rounded-xl border border-red-100">
+        <div className="mt-3 text-4xl font-mono font-bold text-red-600 tracking-widest bg-red-50 py-3 rounded-xl border border-red-100 mb-6">
           {shortId}
         </div>
+        
+        <button 
+          onClick={() => {
+            sessionStorage.clear();
+            window.location.reload();
+          }}
+          className="text-sm text-slate-500 hover:text-slate-800 underline transition-colors"
+        >
+          Закрыть и вернуться на главную
+        </button>
         </div>
       </div>
     );
