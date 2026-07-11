@@ -252,38 +252,50 @@ export default function Testing() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const retrySubmission = async () => {
-    const payloadStr = localStorage.getItem(`offline_test_${testId}`);
-    if (payloadStr) {
-      try {
-        const gasUrl = "/api/gas" || "";
-        const res = await fetch(gasUrl, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: payloadStr
-        });
-        
-        // Handle non-JSON responses (like Google HTML error pages)
-        const text = await res.text();
-        let data;
-        try {
-          data = JSON.parse(text);
-        } catch(e) {
-          throw new Error("Invalid response from server. Check GAS URL and deployment.");
-        }
+    // Find all offline tests in localStorage
+    const offlineKeys = Object.keys(localStorage).filter(key => key.startsWith("offline_test_"));
+    
+    if (offlineKeys.length === 0) {
+      setPendingSubmission(false);
+      return;
+    }
 
-        if (data.success) {
-          setPendingSubmission(false);
-          setSubmitError(null);
-          localStorage.removeItem(`offline_test_${testId}`);
-          alert("Данные успешно отправлены!");
-        } else {
-          throw new Error(data.error || "Unknown GAS error");
+    for (const key of offlineKeys) {
+      const payloadStr = localStorage.getItem(key);
+      if (payloadStr) {
+        try {
+          const gasUrl = "/api/gas" || "";
+          const res = await fetch(gasUrl, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: payloadStr
+          });
+          
+          const text = await res.text();
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch(e) {
+            throw new Error("Invalid response from server. Check GAS URL.");
+          }
+
+          if (data.success) {
+            localStorage.removeItem(key);
+          } else {
+            throw new Error(data.error || "Unknown GAS error");
+          }
+        } catch(e: any) {
+          setSubmitError(e.message);
+          alert(`Ошибка сети: ${e.message}`);
+          return; // Stop on first error
         }
-      } catch(e: any) {
-        setSubmitError(e.message);
-        alert(`Ошибка сети: ${e.message}`);
       }
     }
+    
+    // If all succeeded
+    setPendingSubmission(false);
+    setSubmitError(null);
+    alert("Данные успешно отправлены!");
   };
 
   if (disqualified) {
