@@ -90,6 +90,7 @@ export default function ManagerForm() {
         body: JSON.stringify({
           action: "submitManagerForm",
           shortId,
+          testId: student?.testId, // Added for backward compatibility with old Code.gs
           childName,
           parentName,
           phone,
