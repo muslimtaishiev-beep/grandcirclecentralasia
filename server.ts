@@ -2,7 +2,6 @@ import express from "express";
 import cors from "cors";
 import path from "path";
 import { promises as fs, existsSync, readFileSync } from "fs";
-import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import admin from "firebase-admin";
 import helmet from "helmet";
@@ -809,7 +808,8 @@ app.get("/api/admin/subscribers/export", requireAuth, async (req, res) => {
 // Dev vs Production Setup for Vite Frontend Assets
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
+    const { createServer } = await import("vite");
+    const vite = await createServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
