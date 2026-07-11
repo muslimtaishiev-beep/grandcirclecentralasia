@@ -34,19 +34,7 @@ export default function ManagerForm() {
     }
   };
 
-  
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
-      if (user) {
-        setIsAuthenticated(true);
-        if (typeof fetchStudents !== "undefined") fetchStudents();
-        else if (typeof fetchStudent !== "undefined") fetchStudent();
-      } else {
-        setIsAuthenticated(false);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+
 
 
 
