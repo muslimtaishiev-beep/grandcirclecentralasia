@@ -307,9 +307,21 @@ export default function Testing() {
             <QRCodeCanvas value={qrToken} size={250} level="H" />
           </div>
 
-          <div className="text-4xl font-mono font-bold text-blue-700 tracking-widest bg-blue-50 py-3 rounded-xl border border-blue-200">
+          <div className="text-4xl font-mono font-bold text-blue-700 tracking-widest bg-blue-50 py-3 rounded-xl border border-blue-200 mb-6">
             {shortId}
           </div>
+
+          <button 
+            onClick={() => {
+              if (window.confirm("Убедитесь, что менеджер зафиксировал ваш результат. QR-код будет удален. Продолжить?")) {
+                sessionStorage.clear();
+                window.location.reload();
+              }
+            }}
+            className="text-sm text-slate-500 hover:text-slate-800 underline transition-colors"
+          >
+            Закрыть и вернуться на главную
+          </button>
         </div>
       </div>
     );
