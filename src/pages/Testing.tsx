@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import { testsData } from "../data/testsData";
 import { Question } from "../types";
-import { getHourlyPIN } from "../lib/utils";
+import { getHourlyPIN, formatMathText } from "../lib/utils";
 
 export default function Testing() {
   const [studentName, setStudentName] = useState(() => sessionStorage.getItem("studentName") || "");
@@ -412,7 +412,9 @@ export default function Testing() {
             <div className="space-y-8">
               {section.q.map((q: Question, i: number) => (
                 <div key={q.id} className="bg-slate-50 p-6 rounded-2xl border">
-                  <p className="font-medium mb-4">{i + 1}. {q.text}</p>
+                  <div className="font-medium text-lg text-slate-800 whitespace-pre-wrap mb-4">
+                    {i + 1}. {formatMathText(q.text)}
+                  </div>
                   
                   {q.type === "multiple_choice" ? (
                     <div className="space-y-3">
@@ -426,7 +428,7 @@ export default function Testing() {
                             onChange={(e) => setAnswers({...answers, [q.id]: e.target.value})}
                             className="w-4 h-4 text-blue-600 border-slate-300"
                           />
-                          <span>{opt}</span>
+                          <span className="text-slate-700">{formatMathText(opt)}</span>
                         </label>
                       ))}
                     </div>
