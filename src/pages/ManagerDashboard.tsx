@@ -66,20 +66,28 @@ export default function ManagerDashboard() {
     setLoading(true);
     setError("");
     try {
+      const user = firebaseAuth.currentUser;
+      const token = user ? await user.getIdToken() : "";
+      
       const gasUrl = "/api/gas" || "";
       const res = await fetch(gasUrl, {
         method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({ action: "getAllStudents" })
       });
       const data = await res.json();
       if (data.success) {
-        setStudents(data.students);
+        setStudents(data.students || data.data || []);
       } else {
         setError(data.error);
+        setStudents([]);
       }
     } catch (err: any) {
       setError("Ошибка сети");
+      setStudents([]);
     } finally {
       setLoading(false);
     }
@@ -113,10 +121,16 @@ export default function ManagerDashboard() {
     const finalRejectReason = rejectReason === "Другое" ? otherReason : rejectReason;
 
     try {
+      const user = firebaseAuth.currentUser;
+      const token = user ? await user.getIdToken() : "";
+
       const gasUrl = "/api/gas" || "";
       const res = await fetch(gasUrl, {
         method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({ 
           action: "updateFinalDecision", 
           shortId: selectedStudent, 
@@ -130,7 +144,7 @@ export default function ManagerDashboard() {
       });
       const data = await res.json();
       if (data.success) {
-        setStudents(prev => prev.map(s => s.shortId === selectedStudent ? { ...s, finalDecision: decision } : s));
+        setStudents(prev => (prev || []).map(s => s.shortId === selectedStudent ? { ...s, finalDecision: decision } : s));
         closeModals();
       } else {
         alert("Ошибка: " + data.error);
