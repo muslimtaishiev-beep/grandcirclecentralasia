@@ -217,17 +217,17 @@ export default function ManagerDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {students.map((s, idx) => {
+                {Array.isArray(students) && students.filter(s => s && typeof s === 'object').map((s, idx) => {
                   const totalScore = Number(s.ru || 0) + Number(s.ma || 0) + Number(s.lo || 0);
                   const maxScore = 22; 
-                  const percentage = Math.min(100, Math.round((totalScore / maxScore) * 100));
+                  const percentage = Math.min(100, Math.max(0, isNaN(Math.round((totalScore / maxScore) * 100)) ? 0 : Math.round((totalScore / maxScore) * 100)));
                   
                   return (
                   <tr key={idx} className="border-b hover:bg-gray-50 transition">
                     <td className="p-4">
-                      <div className="font-mono text-sm text-gray-500 mb-1">{s.shortId}</div>
+                      <div className="font-mono text-sm text-gray-500 mb-1">{s.shortId || "-"}</div>
                       <div className="font-bold text-gray-800 flex items-center gap-2">
-                        {s.childName}
+                        {s.childName || "Без имени"}
                         {s.cheated && <span className="bg-red-600 text-white text-[10px] uppercase px-2 py-0.5 rounded font-bold animate-pulse">Читерил</span>}
                       </div>
                       <div className="text-xs text-gray-400 mt-1">{s.date ? new Date(s.date).toLocaleString() : ""}</div>
