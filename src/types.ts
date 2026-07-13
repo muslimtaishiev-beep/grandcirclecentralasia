@@ -112,6 +112,7 @@ export interface Question {
   text: string;
   type: "multiple_choice" | "free_text" | "two_step";
   options?: string[]; // Only for multiple_choice
+  step2Text?: string; // Instructions for step 2 in two_step questions
   points: number;
 }
 

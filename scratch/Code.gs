@@ -614,6 +614,15 @@ function calculateScores(grade, answers) {
         if (optChoice === "2" && (wordChoice === "наличие" || wordChoice === "наличии")) {
           ru += keys.russian[qId].pts; // Strict Variant A: 1 point only if both are correct
         }
+      } else if (String(grade) === "11" && qId === "russian_8") {
+        let parts = userAns.split("|");
+        let optChoice = parts[0] ? parts[0].trim() : "";
+        // Remove spaces for checking
+        let wordChoice = parts[1] ? parts[1].replace(/\s+/g, '').trim() : "";
+        
+        if (optChoice === "4" && (wordChoice === "кверхутотчас" || wordChoice === "тотчаскверху")) {
+          ru += keys.russian[qId].pts;
+        }
       } else {
         if (userAns === keys.russian[qId].ans) ru += keys.russian[qId].pts;
       }

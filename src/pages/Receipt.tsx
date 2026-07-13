@@ -168,16 +168,37 @@ export default function Receipt() {
         </button>
         
         {String(student.grade) === "11" && (
-          <div className="mt-8 p-6 bg-white rounded-2xl shadow-sm border border-slate-200 text-left">
-            <h3 className="text-lg font-bold mb-3 text-slate-800 flex items-center">
-              <span className="mr-2">📝</span> Разбор задания №2 по русскому языку
-            </h3>
-            <div className="text-sm text-slate-700 space-y-3">
-              <p><strong>Правильный ответ:</strong> 2 — наличие (или наличии)</p>
-              <div>
-                <strong>Почему здесь ошибка?</strong>
-                <p className="mt-1">Слово <em>наличность</em> означает имеющиеся в наличии деньги (преимущественно бумажные или монеты), например: «проверить наличность в кассе».</p>
-                <p className="mt-1">Если речь идет о присутствии, существовании чего-либо (в данном случае — книг в фонде), необходимо использовать пароним <em>наличие</em>: «сведения о наличии новых поступлений».</p>
+          <div className="mt-8 space-y-6">
+            <div className="p-6 bg-white rounded-2xl shadow-sm border border-slate-200 text-left">
+              <h3 className="text-lg font-bold mb-3 text-slate-800 flex items-center">
+                <span className="mr-2">📝</span> Разбор задания №2 по русскому языку
+              </h3>
+              <div className="text-sm text-slate-700 space-y-3">
+                <p><strong>Правильный ответ:</strong> 2 — наличие (или наличии)</p>
+                <div>
+                  <strong>Почему здесь ошибка?</strong>
+                  <p className="mt-1">Слово <em>наличность</em> означает имеющиеся в наличии деньги (преимущественно бумажные или монеты), например: «проверить наличность в кассе».</p>
+                  <p className="mt-1">Если речь идет о присутствии, существовании чего-либо (в данном случае — книг в фонде), необходимо использовать пароним <em>наличие</em>: «сведения о наличии новых поступлений».</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 bg-white rounded-2xl shadow-sm border border-slate-200 text-left">
+              <h3 className="text-lg font-bold mb-3 text-slate-800 flex items-center">
+                <span className="mr-2">📝</span> Разбор задания №8 по русскому языку
+              </h3>
+              <div className="text-sm text-slate-700 space-y-3">
+                <p><strong>Правильный ответ:</strong> 4 — КВЕРХУ ТОТЧАС</p>
+                <div>
+                  <strong>Подробный разбор по предложениям:</strong>
+                  <ul className="mt-2 space-y-2 list-disc pl-5">
+                    <li><strong>Несмотря</strong> (слитно, так как это производный предлог со значением уступки) — <strong>всё-таки</strong> (через дефис, частица -таки пишется через дефис).</li>
+                    <li><strong>Насчёт</strong> (слитно, производный предлог) — <strong>в связи</strong> (всегда раздельно).</li>
+                    <li><strong>Чтобы</strong> (слитно, союз цели) — <strong>в течение</strong> (всегда раздельно, значение времени).</li>
+                    <li><strong>Кверху</strong> (слитно, наречие) + <strong>Тотчас</strong> (слитно, наречие). <strong>Оба слова пишутся СЛИТНО!</strong></li>
+                    <li><strong>За тем</strong> (раздельно, предлог с местоимением) — <strong>почему</strong> (слитно, местоимение-союз).</li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>

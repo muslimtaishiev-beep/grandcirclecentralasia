@@ -489,8 +489,8 @@ export default function Testing() {
                       </div>
                       {(answers[q.id] || "").split("|")[0] && (
                         <div className="mt-4 p-4 bg-blue-50 border border-blue-100 rounded-xl">
-                          <div className="font-bold text-blue-800 mb-2">Шаг 2: Исправьте ошибку</div>
-                          <div className="text-sm text-blue-700 mb-3">Запишите верный пароним в поле ниже.</div>
+                          <div className="font-bold text-blue-800 mb-2">Шаг 2</div>
+                          <div className="text-sm text-blue-700 mb-3">{q.step2Text || "Запишите ваш ответ в поле ниже."}</div>
                           <input 
                             type="text" 
                             placeholder="Ваш ответ..."
