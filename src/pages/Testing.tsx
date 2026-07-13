@@ -15,6 +15,7 @@ export default function Testing() {
   const [started, setStarted] = useState(() => sessionStorage.getItem("started") === "true");
   const [finished, setFinished] = useState(() => sessionStorage.getItem("finished") === "true");
   const [disqualified, setDisqualified] = useState(() => sessionStorage.getItem("disqualified") === "true");
+  const [consentGiven, setConsentGiven] = useState(() => sessionStorage.getItem("consentGiven") === "true");
   const [stopAudio, setStopAudio] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>(() => {
     const saved = sessionStorage.getItem("answers");
@@ -44,13 +45,14 @@ export default function Testing() {
     sessionStorage.setItem("started", String(started));
     sessionStorage.setItem("finished", String(finished));
     sessionStorage.setItem("disqualified", String(disqualified));
+    sessionStorage.setItem("consentGiven", String(consentGiven));
     sessionStorage.setItem("answers", JSON.stringify(answers));
     sessionStorage.setItem("testId", testId);
     sessionStorage.setItem("shortId", shortId);
     sessionStorage.setItem("qrToken", qrToken);
     sessionStorage.setItem("pendingSubmission", String(pendingSubmission));
     if (resultData) sessionStorage.setItem("resultData", JSON.stringify(resultData));
-  }, [studentName, grade, started, finished, disqualified, answers, testId, shortId, qrToken, pendingSubmission, resultData]);
+  }, [studentName, grade, started, finished, disqualified, consentGiven, answers, testId, shortId, qrToken, pendingSubmission, resultData]);
 
   // Prevent accidental F5/Closing
   useEffect(() => {
@@ -341,27 +343,41 @@ export default function Testing() {
             </div>
           ) : (
             <>
-              {resultData && resultData.scores && (
-                <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-left">
-                  <h3 className="font-bold text-green-800 text-lg mb-3 text-center">Ваш результат:</h3>
-                  <div className="flex justify-between items-center mb-1 text-green-700">
-                    <span>Русский язык:</span>
-                    <span className="font-bold">{resultData.scores.russian}</span>
+              {resultData && resultData.scores && (() => {
+                let maxRu = 0, maxMa = 0, maxLo = 0;
+                if (grade && testsData[grade]) {
+                  maxRu = testsData[grade].russian.reduce((sum, q) => sum + (q.points || 1), 0);
+                  maxMa = testsData[grade].math.reduce((sum, q) => sum + (q.points || 1), 0);
+                  if (testsData[grade].logic) {
+                    maxLo = testsData[grade].logic.reduce((sum, q) => sum + (q.points || 1), 0);
+                  }
+                }
+                const totalMax = maxRu + maxMa + maxLo;
+                const percent = totalMax > 0 ? Math.round((resultData.totalScore / totalMax) * 100) : 0;
+                
+                return (
+                  <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-left">
+                    <h3 className="font-bold text-green-800 text-lg mb-3 text-center">Ваш результат:</h3>
+                    <div className="flex justify-between items-center mb-1 text-green-700">
+                      <span>Русский язык:</span>
+                      <span className="font-bold">{resultData.scores.russian} из {maxRu}</span>
+                    </div>
+                    <div className="flex justify-between items-center mb-1 text-green-700">
+                      <span>Математика:</span>
+                      <span className="font-bold">{resultData.scores.math} из {maxMa}</span>
+                    </div>
+                    <div className="flex justify-between items-center mb-1 text-green-700">
+                      <span>Логика:</span>
+                      <span className="font-bold">{resultData.scores.logic} из {maxLo}</span>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-green-200 flex flex-col items-end font-bold text-green-900 text-lg relative">
+                      <span className="absolute left-0 top-3">Общий балл:</span>
+                      <div>{resultData.totalScore} из {totalMax}</div>
+                      <div className="text-sm text-green-700 font-medium">({percent}% верных)</div>
+                    </div>
                   </div>
-                  <div className="flex justify-between items-center mb-1 text-green-700">
-                    <span>Математика:</span>
-                    <span className="font-bold">{resultData.scores.math}</span>
-                  </div>
-                  <div className="flex justify-between items-center mb-1 text-green-700">
-                    <span>Логика:</span>
-                    <span className="font-bold">{resultData.scores.logic}</span>
-                  </div>
-                  <div className="mt-3 pt-3 border-t border-green-200 flex justify-between items-center font-bold text-green-900 text-lg">
-                    <span>Общий балл:</span>
-                    <span>{resultData.totalScore}</span>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
               <p className="text-slate-500 mb-6 font-medium">Покажите этот экран с QR-кодом менеджеру для проверки:</p>
             </>
           )}
@@ -450,9 +466,27 @@ export default function Testing() {
             </ul>
           </div>
 
+          <div className="mb-6 flex items-start gap-3 bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+            <input 
+              type="checkbox" 
+              id="consent"
+              checked={consentGiven}
+              onChange={(e) => setConsentGiven(e.target.checked)}
+              className="mt-1 w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 flex-shrink-0 cursor-pointer"
+            />
+            <div className="text-sm text-slate-600 leading-relaxed">
+              <label htmlFor="consent" className="cursor-pointer block mb-2 select-none">
+                Я, являясь родителем (законным представителем) несовершеннолетнего кандидата на обучение, даю <a href="/privacy" target="_blank" className="text-blue-600 hover:underline">согласие</a> ОсОО «Академия будущих лидеров» (ИНН 03004202510435) и ОсОО «ЛС Центр» на сбор, обработку и трансграничную передачу персональных данных (ФИО, телефон, класс, результаты тестирования и психологического анкетирования, данные античит-системы) в соответствии с Цифровым кодексом Кыргызской Республики для целей проведения вступительных испытаний, а также принимаю условия <a href="/terms" target="_blank" className="text-blue-600 hover:underline">Пользовательского соглашения</a>.
+              </label>
+              <p className="text-xs text-slate-400 mt-2 border-t pt-2">
+                Нажимая кнопку "Начать тест" и отмечая настоящее согласие, вы подтверждаете, что являетесь законным родителем или опекуном несовершеннолетнего кандидата и обладаете всеми законными правами на предоставление его персональных данных.
+              </p>
+            </div>
+          </div>
+
           <button 
             onClick={startTest}
-            disabled={!grade || !studentName.trim() || !enteredPin.trim()}
+            disabled={!grade || !studentName.trim() || !enteredPin.trim() || !consentGiven}
             className="w-full py-3 bg-blue-600 text-white rounded-xl font-medium disabled:opacity-50 hover:bg-blue-700 transition"
           >
             Начать тест

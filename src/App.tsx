@@ -27,6 +27,8 @@ const ManagerForm = lazy(() => import("./pages/ManagerForm"));
 const ManagerDashboard = lazy(() => import("./pages/ManagerDashboard"));
 const Receipt = lazy(() => import("./pages/Receipt"));
 const PsychologistForm = lazy(() => import("./pages/PsychologistForm"));
+const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
+const TermsOfUse = lazy(() => import("./pages/TermsOfUse"));
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 import { PublicData } from "./types";
@@ -152,6 +154,8 @@ export default function App() {
           <Route path="/manager-dashboard" element={<ManagerDashboard />} />
           <Route path="/receipt/:shortId" element={<Receipt />} />
           <Route path="/psychologist/:shortId" element={<PsychologistForm />} />
+          <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/terms" element={<TermsOfUse />} />
 
           {/* Main Forum Route */}
           <Route path="/" element={
@@ -241,10 +245,18 @@ export default function App() {
             </div>
           </div>
  
-          <div className="flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 mt-8">
+          <div className="flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 mt-8 gap-4">
             <p>
               © {new Date().getFullYear()} {lang === "ru" ? "Главное Образовательное Событие Года." : lang === "kg" ? "Жылдын башкы билим берүү окуясы." : "The Main Educational Event of the Year."} All Rights Reserved.
             </p>
+            <div className="flex gap-4">
+              <Link to="/privacy" className="hover:text-[#9F7AEA] hover:underline transition">
+                {lang === "ru" ? "Политика конфиденциальности" : lang === "kg" ? "Купуялык саясаты" : "Privacy Policy"}
+              </Link>
+              <Link to="/terms" className="hover:text-[#9F7AEA] hover:underline transition">
+                {lang === "ru" ? "Пользовательское соглашение" : lang === "kg" ? "Колдонуучу келишими" : "Terms of Use"}
+              </Link>
+            </div>
           </div>
  
         </div>

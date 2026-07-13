@@ -236,7 +236,15 @@ export default function ManagerDashboard() {
               <tbody>
                 {Array.isArray(students) && students.filter(s => s && typeof s === 'object').map((s, idx) => {
                   const totalScore = Number(s.ru || 0) + Number(s.ma || 0) + Number(s.lo || 0);
-                  const maxScore = 22; 
+                  let maxScore = 0;
+                  if (s.grade && testsData[s.grade as any]) {
+                    const gradeData = testsData[s.grade as any];
+                    const maxRu = gradeData.russian.reduce((sum, q) => sum + (q.points || 1), 0);
+                    const maxMa = gradeData.math.reduce((sum, q) => sum + (q.points || 1), 0);
+                    const maxLo = gradeData.logic ? gradeData.logic.reduce((sum, q) => sum + (q.points || 1), 0) : 0;
+                    maxScore = maxRu + maxMa + maxLo;
+                  }
+                  if (maxScore === 0) maxScore = 22; // Fallback
                   const percentage = Math.min(100, Math.max(0, isNaN(Math.round((totalScore / maxScore) * 100)) ? 0 : Math.round((totalScore / maxScore) * 100)));
                   
                   return (

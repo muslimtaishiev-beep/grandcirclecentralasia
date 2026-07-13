@@ -2,6 +2,7 @@ import { auth as firebaseAuth } from "../lib/firebase";
 import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import React, { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
+import { testsData } from "../data/testsData";
 
 export default function ManagerForm() {
   const [searchParams] = useSearchParams();
@@ -18,42 +19,35 @@ export default function ManagerForm() {
   const [childName, setChildName] = useState("");
   const [parentName, setParentName] = useState("");
   const [phone, setPhone] = useState("");
+  const [sentToPsych, setSentToPsych] = useState(false);
   const [managerComment, setManagerComment] = useState("");
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  
-  const handleAuth = (e: React.FormEvent) => {
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(firebaseAuth, (user) => {
+      if (user) {
+        setIsAuthenticated(true);
+      }
+    });
+    return unsub;
+  }, []);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === "manager2024") {
-      setIsAuthenticated(true);
-      const SESSION_DURATION = 12 * 60 * 60 * 1000;
-      localStorage.setItem("managerSessionExpiry", (Date.now() + SESSION_DURATION).toString());
-      if (shortId) fetchStudent();
-    } else {
-      setError("Неверный пароль");
+    try {
+      await signInWithEmailAndPassword(firebaseAuth, email, password);
+    } catch (err: any) {
+      setError("Ошибка входа: " + err.message);
     }
   };
 
-
-
-  useEffect(() => {
-    const expiry = localStorage.getItem("managerSessionExpiry");
-    if (expiry && Date.now() < parseInt(expiry, 10)) {
-      setIsAuthenticated(true);
-      if (shortId) fetchStudent();
-    } else {
-      localStorage.removeItem("managerSessionExpiry");
-    }
-  }, []);
-
   const fetchStudent = async () => {
-    if (!shortId) return;
     setLoading(true);
     setError("");
     try {
-      const gasUrl = "/api/gas" || "";
-      const res = await fetch(gasUrl, {
+      const res = await fetch("https://grand-circle-secure-proxy.vercel.app/api/gas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "getStudentByShortId", shortId })
@@ -64,33 +58,26 @@ export default function ManagerForm() {
         setChildName(data.student.studentName);
       } else {
         setError(data.error);
-        setStudent(null);
       }
     } catch (err: any) {
-      setError("Ошибка сети");
-    } finally {
-      setLoading(false);
+      setError(err.message);
     }
+    setLoading(false);
   };
 
-  const handleSubmit = async (sentToPsych: boolean) => {
+  const submitForm = async () => {
     if (!managerName || !childName || !parentName || !phone) {
-      setError("Заполните все обязательные поля!");
+      setError("Заполните все обязательные поля");
       return;
     }
-
     setLoading(true);
-    setError("");
-
     try {
-      const gasUrl = "/api/gas" || "";
-      const res = await fetch(gasUrl, {
+      const res = await fetch("https://grand-circle-secure-proxy.vercel.app/api/gas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "submitManagerForm",
           shortId,
-          testId: student?.testId, // Added for backward compatibility with old Code.gs
           childName,
           parentName,
           phone,
@@ -99,48 +86,44 @@ export default function ManagerForm() {
           sentToPsych
         })
       });
-
       const data = await res.json();
       if (data.success) {
-        if (sentToPsych) {
-          navigate(`/receipt/${shortId}`);
-        } else {
-          alert("Данные успешно сохранены в CRM!");
-          navigate("/manager-dashboard");
-        }
+        navigate("/manager-dashboard");
       } else {
-        setError(data.error || "Ошибка сервера");
+        setError(data.error);
       }
     } catch (err: any) {
-      setError("Ошибка подключения");
-    } finally {
-      setLoading(false);
+      setError(err.message);
     }
+    setLoading(false);
   };
 
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center">
-          <h2 className="text-2xl font-bold mb-4">Вход менеджера</h2>
-          {error && <div className="text-red-500 mb-4 text-sm">{error}</div>}
-          <form onSubmit={handleAuth}>
-            
+        <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-sm">
+          <h2 className="text-2xl font-bold mb-6 text-center text-slate-800">Вход для менеджеров</h2>
+          <form onSubmit={handleLogin} className="space-y-4">
             <input 
               type="email" 
               placeholder="Email" 
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              className="w-full border p-3 rounded-xl mb-4 bg-slate-50 text-center"
+              value={email} 
+              onChange={e=>setEmail(e.target.value)}
+              className="w-full border p-3 rounded-xl bg-slate-50"
+              required
             />
             <input 
               type="password" 
               placeholder="Пароль" 
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full border p-3 rounded-xl mb-4 bg-slate-50"
+              value={password} 
+              onChange={e=>setPassword(e.target.value)}
+              className="w-full border p-3 rounded-xl bg-slate-50"
+              required
             />
-            <button type="submit" className="w-full bg-blue-600 text-white p-3 rounded-xl font-medium">Войти</button>
+            {error && <div className="text-red-500 text-sm">{error}</div>}
+            <button type="submit" className="w-full bg-blue-600 text-white font-medium py-3 rounded-xl hover:bg-blue-700 transition">
+              Войти
+            </button>
           </form>
         </div>
       </div>
@@ -180,16 +163,33 @@ export default function ManagerForm() {
             </div>
           ) : (
             <div className="space-y-6">
-              <div className="bg-green-50 border border-green-100 p-4 rounded-xl mb-6">
-                <h3 className="font-bold text-green-800 text-lg mb-2">Ученик найден</h3>
-                <div className="grid grid-cols-2 gap-2 text-sm text-green-700">
-                  <div>Класс: <b>{student.grade}</b></div>
-                  <div>Общий балл: <b>{student.totalScore}</b></div>
-                  <div>Русский: <b>{student.russian}</b></div>
-                  <div>Математика: <b>{student.math}</b></div>
-                  <div>Логика: <b>{student.logic}</b></div>
-                </div>
-              </div>
+              {(() => {
+                let maxRu = 0, maxMa = 0, maxLo = 0;
+                if (student.grade && testsData[student.grade as any]) {
+                  const gradeData = testsData[student.grade as any];
+                  maxRu = gradeData.russian.reduce((sum, q) => sum + (q.points || 1), 0);
+                  maxMa = gradeData.math.reduce((sum, q) => sum + (q.points || 1), 0);
+                  if (gradeData.logic) {
+                    maxLo = gradeData.logic.reduce((sum, q) => sum + (q.points || 1), 0);
+                  }
+                }
+                const totalMax = maxRu + maxMa + maxLo;
+                const percent = totalMax > 0 ? Math.round((student.totalScore / totalMax) * 100) : 0;
+                
+                return (
+                  <div className="bg-green-50 border border-green-100 p-4 rounded-xl mb-6">
+                    <h3 className="font-bold text-green-800 text-lg mb-2">Ученик найден</h3>
+                    <div className="grid grid-cols-2 gap-2 text-sm text-green-700">
+                      <div>Класс: <b>{student.grade}</b></div>
+                      <div>Общий балл: <b>{student.totalScore} из {totalMax} <span className="text-xs">({percent}%)</span></b></div>
+                      <div>Русский: <b>{student.russian} из {maxRu}</b></div>
+                      <div>Математика: <b>{student.math} из {maxMa}</b></div>
+                      <div>Логика: <b>{student.logic} из {maxLo}</b></div>
+                      {student.cheated && <div className="col-span-2 text-red-600 font-bold bg-red-100 px-2 py-1 rounded inline-block w-max mt-2">! Заподозрен в списывании</div>}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>

@@ -80,7 +80,7 @@ const ANSWER_KEYS = {
         "pts": 1
       },
       "math_9": {
-        "ans": "100 см2",
+        "ans": "100 см²",
         "pts": 1
       },
       "math_10": {
@@ -258,7 +258,7 @@ const ANSWER_KEYS = {
   "9": {
     "russian": {
 
-      "ru_5_new": { ans: JSON.stringify({"input1":"Е","input2":"Я","input3":"Н","input4":"Е","input5":"И"}), pts: 1 },
+      "ru_5_new": { ans: JSON.stringify({"input1":"НН","input2":"Н"}), pts: 1 },
       "ru_7_new": { ans: JSON.stringify(["1", "4"]), pts: 1 },
       "ru_13_new": { ans: "Безличное предложение", pts: 1 },
       "ru_14_new": { ans: "1) Вторая часть раскрывает содержание первой (можно вставить «а именно»).", pts: 1 },
