@@ -990,10 +990,13 @@ function doPost(e) {
     }
 
     if (action === "updateFinalDecision") {
-      const { shortId, finalDecision, paymentInfo, initialFee, totalCost, firstMonthPayment, rejectReason } = data;
+      const { shortId, finalDecision, paymentInfo, initialFee, totalCost, firstMonthPayment, rejectReason, feedback } = data;
       const crmStudent = getCrmByShortId(crmSheet, shortId, testSheet);
       if (crmStudent) {
         crmSheet.getRange(crmStudent.row, 14).setValue(sanitize(finalDecision));
+        if (feedback) {
+          crmSheet.getRange(crmStudent.row, 16).setValue(sanitize(feedback)); // Обратная связь (для ученика)
+        }
         
         if (finalDecision === "ПРИНЯТ") {
            crmSheet.getRange(crmStudent.row, 7).setValue(sanitize(paymentInfo)); // Оплата до.инфо
