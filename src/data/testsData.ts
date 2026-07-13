@@ -400,20 +400,17 @@ export const testsData: Record<number, TestData> = {
         points: 1,
         text: "Задание №9. Нажмите на цифры, на месте которых должны стоять запятые:",
         clickableSegments: [
-          { text: "Фонарь " },
-          { text: "[1]", id: "1", isTarget: true },
-          { text: " одиноко стоявший " },
-          { text: "[2]", id: "2", isTarget: true },
-          { text: " на земле " },
-          { text: "[3]", id: "3", isTarget: true },
-          { text: " осветил " },
-          { text: "[4]", id: "4", isTarget: true },
-          { text: " издающее " },
-          { text: "[5]", id: "5", isTarget: true },
-          { text: " непонятные звуки " },
-          { text: "[6]", id: "6", isTarget: true },
-          { text: " создание." }
-        ]
+  { "text": "Фонарь" }, { "text": " [,] ", "id": "1", "isTarget": true },
+  { "text": "одиноко" }, { "text": " [,] ", "id": "2", "isTarget": true },
+  { "text": "стоявший" }, { "text": " [,] ", "id": "3", "isTarget": true },
+  { "text": "на" }, { "text": " [,] ", "id": "4", "isTarget": true },
+  { "text": "земле" }, { "text": " [,] ", "id": "5", "isTarget": true },
+  { "text": "осветил" }, { "text": " [,] ", "id": "6", "isTarget": true },
+  { "text": "издающее" }, { "text": " [,] ", "id": "7", "isTarget": true },
+  { "text": "непонятные" }, { "text": " [,] ", "id": "8", "isTarget": true },
+  { "text": "звуки" }, { "text": " [,] ", "id": "9", "isTarget": true },
+  { "text": "создание." }
+]
       },
 {
         id: "ru_10",
@@ -421,18 +418,22 @@ export const testsData: Record<number, TestData> = {
         points: 1,
         text: "Задание №10. Укажите все цифры, на месте которых ставятся запятые:",
         clickableSegments: [
-          { text: "Проходя " },
-          { text: "[1]", id: "1", isTarget: true },
-          { text: " по залам музеев " },
-          { text: "[2]", id: "2", isTarget: true },
-          { text: " люди " },
-          { text: "[3]", id: "3", isTarget: true },
-          { text: " останавливаются у прекрасных картин художника И. Репина " },
-          { text: "[4]", id: "4", isTarget: true },
-          { text: " восхищаясь " },
-          { text: "[5]", id: "5", isTarget: true },
-          { text: " совершенством живописи." }
-        ]
+  { "text": "Проходя" }, { "text": " [,] ", "id": "1", "isTarget": true },
+  { "text": "по" }, { "text": " [,] ", "id": "2", "isTarget": true },
+  { "text": "залам" }, { "text": " [,] ", "id": "3", "isTarget": true },
+  { "text": "музеев" }, { "text": " [,] ", "id": "4", "isTarget": true },
+  { "text": "люди" }, { "text": " [,] ", "id": "5", "isTarget": true },
+  { "text": "останавливаются" }, { "text": " [,] ", "id": "6", "isTarget": true },
+  { "text": "у" }, { "text": " [,] ", "id": "7", "isTarget": true },
+  { "text": "прекрасных" }, { "text": " [,] ", "id": "8", "isTarget": true },
+  { "text": "картин" }, { "text": " [,] ", "id": "9", "isTarget": true },
+  { "text": "художника" }, { "text": " [,] ", "id": "10", "isTarget": true },
+  { "text": "И." }, { "text": " [,] ", "id": "11", "isTarget": true },
+  { "text": "Репина" }, { "text": " [,] ", "id": "12", "isTarget": true },
+  { "text": "восхищаясь" }, { "text": " [,] ", "id": "13", "isTarget": true },
+  { "text": "совершенством" }, { "text": " [,] ", "id": "14", "isTarget": true },
+  { "text": "живописи." }
+]
       },
 {
         id: "russian_10",
@@ -576,13 +577,12 @@ export const testsData: Record<number, TestData> = {
         id: "ru_5_new",
         type: "inline_inputs",
         points: 1,
-        text: "Задание №5. Вставьте пропущенные буквы и раскройте скобки:\nНе [ ] дерзость.\nЗадача [ ].",
+        text: "Задание №5. Впишите пропущенные буквы, раскрывая скобки (например: слыханная, решена):",
         inlineSegments: [
-          { type: "text", text: "Не " },
+          { type: "text", text: "не(слыха..ая) дерзость — не" },
           { type: "input", id: "input1" },
-          { type: "text", text: " дерзость.\nЗадача " },
-          { type: "input", id: "input2" },
-          { type: "text", text: "." }
+          { type: "text", text: " дерзость\nзадача (реше..а) — задача " },
+          { type: "input", id: "input2" }
         ]
       },
 {
@@ -601,12 +601,13 @@ export const testsData: Record<number, TestData> = {
         points: 1,
         text: "Задание №7. Расставьте знаки препинания в предложении (кликните в места, где нужны запятые):",
         clickableSegments: [
-          { text: "Ветер" },
-          { text: " [,] ", id: "1", isTarget: true },
-          { text: "дующий с моря" },
-          { text: " [,] ", id: "2", isTarget: true },
-          { text: "принес прохладу." }
-        ]
+  { "text": "Ветер" }, { "text": " [,] ", "id": "1", "isTarget": true },
+  { "text": "дующий" }, { "text": " [,] ", "id": "2", "isTarget": true },
+  { "text": "с" }, { "text": " [,] ", "id": "3", "isTarget": true },
+  { "text": "моря" }, { "text": " [,] ", "id": "4", "isTarget": true },
+  { "text": "принес" }, { "text": " [,] ", "id": "5", "isTarget": true },
+  { "text": "прохладу." }
+]
       },
 {
         id: "russian_8",

@@ -6,8 +6,8 @@ const ANSWER_KEYS = {
     "russian": {
 
       "ru_7_new": { ans: JSON.stringify({"Прилагательное":"Часть речи","Сказуемое":"Член предложения","Союз":"Часть речи","Определение":"Член предложения","Существительное":"Часть речи"}), pts: 1 },
-      "ru_9": { ans: JSON.stringify(["1", "2"]), pts: 1 },
-      "ru_10": { ans: JSON.stringify(["1", "2", "3", "4", "5"]), pts: 1 },
+      "ru_9": { ans: JSON.stringify(["1", "5"]), pts: 1 },
+      "ru_10": { ans: JSON.stringify(["4", "12"]), pts: 1 },
       "ru_11": { ans: "ПРЕКРАСНАЯ", pts: 1 },
       "ru_12": { ans: "125", pts: 1 },
       "ru_13": { ans: "ОБГОРЕВШИЙ", pts: 1 },
@@ -247,7 +247,7 @@ const ANSWER_KEYS = {
     "russian": {
 
       "ru_5_new": { ans: JSON.stringify({"input1":"Е","input2":"Я","input3":"Н","input4":"Е","input5":"И"}), pts: 1 },
-      "ru_7_new": { ans: JSON.stringify(["1", "2"]), pts: 1 },
+      "ru_7_new": { ans: JSON.stringify(["1", "4"]), pts: 1 },
       "ru_13": { ans: "ПРИСУТСТВОВАТЬ", pts: 1 },
       "ru_14": { ans: "ЗАГОРОДНЫЙ", pts: 1 },
       "russian_1": {
