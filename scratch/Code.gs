@@ -604,27 +604,51 @@ function calculateScores(grade, answers) {
   
   if (answers && typeof answers === 'object') {
     Object.keys(keys.russian).forEach(qId => {
-      let userAns = answers[qId] ? String(answers[qId]).trim().toLowerCase() : "";
+      let userAnsStr = answers[qId] ? String(answers[qId]).trim() : "";
+      let userAnsLower = userAnsStr.toLowerCase();
       
       if (String(grade) === "11" && qId === "russian_2") {
-        let parts = userAns.split("|");
+        let parts = userAnsLower.split("|");
         let optChoice = parts[0] ? parts[0].trim() : "";
         let wordChoice = parts[1] ? parts[1].trim() : "";
-        
-        if (optChoice === "2" && (wordChoice === "наличие" || wordChoice === "наличии")) {
-          ru += keys.russian[qId].pts; // Strict Variant A: 1 point only if both are correct
-        }
+        if (optChoice === "2" && (wordChoice === "наличие" || wordChoice === "наличии")) ru += keys.russian[qId].pts;
       } else if (String(grade) === "11" && qId === "russian_8") {
-        let parts = userAns.split("|");
+        let parts = userAnsLower.split("|");
         let optChoice = parts[0] ? parts[0].trim() : "";
-        // Remove spaces for checking
         let wordChoice = parts[1] ? parts[1].replace(/\s+/g, '').trim() : "";
-        
-        if (optChoice === "4" && (wordChoice === "кверхутотчас" || wordChoice === "тотчаскверху")) {
-          ru += keys.russian[qId].pts;
-        }
+        if (optChoice === "4" && (wordChoice === "кверхутотчас" || wordChoice === "тотчаскверху")) ru += keys.russian[qId].pts;
+      } else if (qId === "ru_5_new") {
+        try {
+          let userObj = JSON.parse(userAnsStr);
+          let val1 = String(userObj["input1"] || "").trim().toLowerCase();
+          let val2 = String(userObj["input2"] || "").trim().toLowerCase();
+          if (val1 === "слыханная" && (val2 === "решенная" || val2 === "решена")) ru += keys.russian[qId].pts;
+        } catch(e) {}
+      } else if (qId === "ru_8_new" && String(grade) === "10") {
+        let val = userAnsLower.replace(/\s+/g, "");
+        if (val === "такжепоэтому" || val === "поэтомутакже") ru += keys.russian[qId].pts;
+      } else if (qId === "ru_7_new" && String(grade) === "7") {
+        try {
+          let userObj = JSON.parse(userAnsStr);
+          let correctObj = JSON.parse(keys.russian[qId].ans);
+          let isCorrect = true;
+          for (let k in correctObj) { if (userObj[k] !== correctObj[k]) isCorrect = false; }
+          for (let k in userObj) { if (userObj[k] !== correctObj[k]) isCorrect = false; }
+          if (isCorrect && Object.keys(correctObj).length > 0) ru += keys.russian[qId].pts;
+        } catch(e) {}
+      } else if (qId === "ru_9" || qId === "ru_10" || qId === "ru_7_new") {
+        // These are clickable arrays (ru_9/ru_10 in grade 8, ru_7_new in grade 9)
+        try {
+          let userArr = JSON.parse(userAnsStr);
+          let correctArr = JSON.parse(keys.russian[qId].ans);
+          if (Array.isArray(userArr) && Array.isArray(correctArr)) {
+            userArr.sort();
+            correctArr.sort();
+            if (userArr.join(",") === correctArr.join(",")) ru += keys.russian[qId].pts;
+          }
+        } catch(e) {}
       } else {
-        if (userAns === keys.russian[qId].ans) ru += keys.russian[qId].pts;
+        if (userAnsLower === keys.russian[qId].ans) ru += keys.russian[qId].pts;
       }
     });
     Object.keys(keys.math).forEach(qId => {

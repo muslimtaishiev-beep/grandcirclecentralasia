@@ -445,7 +445,11 @@ export default function Testing() {
               {section.q.map((q: Question, i: number) => (
                 <div key={q.id} className="bg-slate-50 p-6 rounded-2xl border">
                   <div className="font-medium text-lg text-slate-800 whitespace-pre-wrap mb-4">
-                    {i + 1}. {formatMathText(q.text)}
+                    {q.html ? (
+                      <div dangerouslySetInnerHTML={{ __html: `${i + 1}. ${q.html}` }} />
+                    ) : (
+                      <>{i + 1}. {formatMathText(q.text)}</>
+                    )}
                   </div>
                   
                   {q.type === "multiple_choice" ? (
@@ -601,6 +605,63 @@ export default function Testing() {
                       onChange={(e) => setAnswers({...answers, [q.id]: e.target.value})}
                       className="w-full border rounded-xl p-3 bg-white mt-2"
                     />
+                  ) : q.type === "clickable_text" ? (
+                    <div className="leading-relaxed mt-2 text-slate-800">
+                      {(() => {
+                        let selectedIds: string[] = [];
+                        try { selectedIds = JSON.parse(answers[q.id] || "[]"); } catch(e) {}
+                        
+                        const toggleId = (id: string) => {
+                          let newIds = selectedIds.includes(id) 
+                            ? selectedIds.filter(x => x !== id) 
+                            : [...selectedIds, id];
+                          setAnswers({...answers, [q.id]: JSON.stringify(newIds)});
+                        };
+
+                        return q.clickableSegments?.map((seg, sIdx) => {
+                          if (seg.isTarget && seg.id) {
+                            const isSelected = selectedIds.includes(seg.id);
+                            return (
+                              <button 
+                                key={sIdx}
+                                onClick={() => toggleId(seg.id!)}
+                                className={`mx-1 inline-flex items-center justify-center min-w-[28px] h-7 px-2 rounded font-bold transition-colors ${isSelected ? 'bg-blue-600 text-white shadow-md' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
+                              >
+                                {seg.text}
+                              </button>
+                            )
+                          }
+                          return <span key={sIdx}>{seg.text}</span>;
+                        })
+                      })()}
+                    </div>
+                  ) : q.type === "inline_inputs" ? (
+                    <div className="leading-relaxed mt-2 text-slate-800 text-lg">
+                      {(() => {
+                        let vals: Record<string, string> = {};
+                        try { vals = JSON.parse(answers[q.id] || "{}"); } catch(e) {}
+                        
+                        const updateVal = (id: string, val: string) => {
+                          const newVals = { ...vals, [id]: val };
+                          setAnswers({...answers, [q.id]: JSON.stringify(newVals)});
+                        };
+
+                        return q.inlineSegments?.map((seg, sIdx) => {
+                          if (seg.type === "input" && seg.id) {
+                            return (
+                              <input 
+                                key={sIdx}
+                                type="text"
+                                value={vals[seg.id] || ""}
+                                onChange={(e) => updateVal(seg.id!, e.target.value)}
+                                className="mx-1 inline-block border-b-2 border-slate-300 focus:border-blue-600 bg-blue-50/30 px-2 py-1 text-center w-32 outline-none transition-colors"
+                              />
+                            )
+                          }
+                          return <span key={sIdx}>{seg.text}</span>;
+                        })
+                      })()}
+                    </div>
                   ) : (
                     <input 
                       type="text" 

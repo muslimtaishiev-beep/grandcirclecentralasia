@@ -112,10 +112,23 @@ export interface DropdownItem {
   options: string[];
 }
 
+export interface ClickableSegment {
+  text: string;
+  isTarget?: boolean;
+  id?: string;
+}
+
+export interface InlineSegment {
+  type: "text" | "input";
+  text?: string;
+  id?: string;
+}
+
 export interface Question {
   id: string;
   text: string;
-  type: "multiple_choice" | "free_text" | "two_step" | "logic_matrix" | "dropdown_multiple" | "drag_and_drop" | "number_input";
+  html?: string; // Optional HTML override for the text (e.g., LaTeX formulas)
+  type: "multiple_choice" | "free_text" | "two_step" | "logic_matrix" | "dropdown_multiple" | "drag_and_drop" | "number_input" | "clickable_text" | "inline_inputs";
   options?: string[]; // Only for multiple_choice and two_step
   step2Text?: string; // Instructions for step 2 in two_step questions
   points: number;
@@ -123,6 +136,8 @@ export interface Question {
   matrixCols?: string[]; // For logic_matrix
   dropdownItems?: DropdownItem[]; // For dropdown_multiple
   dragItems?: string[]; // For drag_and_drop
+  clickableSegments?: ClickableSegment[]; // For clickable_text
+  inlineSegments?: InlineSegment[]; // For inline_inputs
 }
 
 export interface TestData {
