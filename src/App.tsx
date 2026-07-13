@@ -14,7 +14,7 @@ const FAQSection = lazy(() => import("./components/FAQSection"));
 const AdminCMS = lazy(() => import("./components/AdminCMS"));
 const GlobalWatermarks = lazy(() => import("./components/GlobalWatermarks"));
 const MetricsCarousel = lazy(() => import("./components/MetricsCarousel").then(m => ({ default: m.MetricsCarousel })));
-import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import { Routes, Route, useLocation, useNavigate, Link } from "react-router-dom";
 
 // New Pages
 const Login = lazy(() => import("./pages/Login"));
