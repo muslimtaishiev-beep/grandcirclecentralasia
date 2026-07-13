@@ -438,19 +438,6 @@ export const testsData: Record<number, TestData> = {
         ],
       },
       {
-        id: "russian_8",
-        type: "free_text",
-        points: 1,
-        text: "Задание №8. Укажите номер предложения, в котором правильно расставлены знаки препинания:\n2) Комната, с утра прибранная сестрой сверкала чистотой.\n3) Посетитель кафе, зевая, заказал на обед рыбу жаренную в тесте.\n4) Убранное с лугов сено, крестьяне сложили в большие стога, укрыв от дождя.",
-      },
-      {
-        id: "russian_9",
-        type: "multiple_choice",
-        points: 1,
-        text: "Задание №9. Укажите вариант ответа...\nФонарь (1) одиноко стоявший (2) на земле (3) осветил (4) издающее (5) непонятные звуки (6) создание.",
-        options: ["1, 2, 3", "1, 3", "4, 6", "1, 3, 4, 6"],
-      },
-      {
         id: "russian_10",
         type: "multiple_choice",
         points: 1,
@@ -634,12 +621,6 @@ export const testsData: Record<number, TestData> = {
         options: ["три", "урок", "три ученика"],
       },
       {
-        id: "russian_5",
-        type: "free_text",
-        points: 1,
-        text: "Задание №5. Вставьте пропущенные буквы:",
-      },
-      {
         id: "russian_6",
         type: "multiple_choice",
         points: 1,
@@ -648,12 +629,6 @@ export const testsData: Record<number, TestData> = {
           "Утомленные долгим путем туристы отдыхали.",
           "Туристы утомленные долгим путем отдыхали",
         ],
-      },
-      {
-        id: "russian_7",
-        type: "free_text",
-        points: 1,
-        text: "Задание №7. Расставьте знаки препинания:",
       },
       {
         id: "russian_8",
@@ -712,18 +687,7 @@ export const testsData: Record<number, TestData> = {
           "Составное глагольное.",
         ],
       },
-      {
-        id: "russian_13",
-        type: "free_text",
-        points: 1,
-        text: "Задание №13. Сделайте синтаксический разбор предложения: На улице похолодало, и мы вернулись домой.",
-      },
-      {
-        id: "russian_14",
-        type: "free_text",
-        points: 1,
-        text: "Задание №14. Пунктуация в сложном предложении:",
-      },
+
     ],
     math: [
       {
@@ -849,12 +813,6 @@ export const testsData: Record<number, TestData> = {
         points: 1,
         text: "Задание №1. Выпишите слово, в котором НЕВЕРНО выделен ударный гласный звук.",
         options: ["цепОчка", "газопрОвод", "прозорлИва", "донЕльзя"],
-      },
-      {
-        id: "russian_2",
-        type: "free_text",
-        points: 1,
-        text: "Задание №2. Исправьте лексическую ошибку...",
       },
       {
         id: "russian_3",
