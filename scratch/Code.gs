@@ -6,11 +6,11 @@ const ANSWER_KEYS = {
     "russian": {
 
       "ru_7_new": { ans: JSON.stringify({"Прилагательное":"Часть речи","Сказуемое":"Член предложения","Союз":"Часть речи","Определение":"Член предложения","Существительное":"Часть речи"}), pts: 1 },
-      "ru_9": { ans: JSON.stringify(["1", "5"]), pts: 1 },
-      "ru_10": { ans: JSON.stringify(["4", "12"]), pts: 1 },
-      "ru_11": { ans: "ПРЕКРАСНАЯ", pts: 1 },
-      "ru_12": { ans: "125", pts: 1 },
-      "ru_13": { ans: "ОБГОРЕВШИЙ", pts: 1 },
+      "ru_9": { ans: "Гвоздем программы было выступление известного актера.", pts: 1 },
+      "ru_10": { ans: "Аккуратный, точный", pts: 1 },
+      "ru_11": { ans: "К четырехстам прибавить пятьдесят.", pts: 1 },
+      "ru_12": { ans: "какой(либо), (шахматно)шашечный, ярко(красный)", pts: 1 },
+      "ru_13": { ans: "Из-под этой тучи вырвались яркие лучи, и мокрые леса и поля засверкали.", pts: 1 },
       "russian_1": {
         "ans": "гвоздем программы было выступление известного актера.",
         "pts": 1
@@ -92,33 +92,37 @@ const ANSWER_KEYS = {
         "pts": 1
       }
     },
-    "logic": {
+        "logic": {
       "logic_1": {
-        "ans": "в 60 раз.",
+        "ans": JSON.stringify({ "Белов": "Чёрная рубашка", "Серов": "Белая рубашка", "Чернов": "Серая рубашка" }),
         "pts": 1
       },
       "logic_2": {
-        "ans": "6",
+        "ans": JSON.stringify({ "Ящик 1 (надпись «крупа»)": "Сахар", "Ящик 2 (надпись «вермишель»)": "Крупа", "Ящик 3 (надпись «крупа или сахар»)": "Вермишель" }),
         "pts": 1
       },
       "logic_3": {
-        "ans": "30",
+        "ans": "",
         "pts": 1
       },
       "logic_4": {
-        "ans": "петру — 30 рублей, василию — 12 рублей.",
+        "ans": JSON.stringify({ "Олег": "Скрипач", "Коля": "Пианист", "Ваня": "Певец" }),
         "pts": 1
       },
       "logic_5": {
-        "ans": "21",
+        "ans": "Уменьшилась в 2 раза",
         "pts": 1
       },
       "logic_6": {
-        "ans": "301",
+        "ans": "60",
         "pts": 1
       },
       "logic_7": {
-        "ans": "199",
+        "ans": "8",
+        "pts": 1
+      },
+      "logic_8": {
+        "ans": "240",
         "pts": 1
       }
     }
@@ -126,9 +130,9 @@ const ANSWER_KEYS = {
   "8": {
     "russian": {
 
-      "ru_8_new": { ans: "НАВЕРХ ЗАЧАСТУЮ", pts: 1 },
-      "ru_9": { ans: JSON.stringify(["2", "3"]), pts: 1 },
-      "ru_10": { ans: JSON.stringify(["1", "3", "4"]), pts: 1 },
+      "ru_8_new": { ans: "3) Посетитель кафе, зевая, заказал на обед рыбу жаренную в тесте.", pts: 1 },
+      "ru_9": { ans: JSON.stringify(["1", "5"]), pts: 1 },
+      "ru_10": { ans: JSON.stringify(["4", "12"]), pts: 1 },
       "russian_1": {
         "ans": "расколотый орех",
         "pts": 1
@@ -180,7 +184,7 @@ const ANSWER_KEYS = {
         "pts": 1
       },
       "math_3": {
-        "ans": "6а2(3а+1)",
+        "ans": "6а²(3а+1)",
         "pts": 1
       },
       "math_4": {
@@ -188,7 +192,7 @@ const ANSWER_KEYS = {
         "pts": 1
       },
       "math_5": {
-        "ans": "0,5",
+        "ans": "-0,5",
         "pts": 1
       },
       "math_6": {
@@ -196,11 +200,11 @@ const ANSWER_KEYS = {
         "pts": 1
       },
       "math_7": {
-        "ans": "4с2+25",
+        "ans": "4с²+25",
         "pts": 1
       },
       "math_8": {
-        "ans": "1",
+        "ans": "-1",
         "pts": 1
       },
       "math_9": {
@@ -208,7 +212,7 @@ const ANSWER_KEYS = {
         "pts": 1
       },
       "math_10": {
-        "ans": "t2 - 14t + 65",
+        "ans": "t² - 14t + 65",
         "pts": 1
       },
       "math_11": {
@@ -216,29 +220,37 @@ const ANSWER_KEYS = {
         "pts": 1
       }
     },
-    "logic": {
+        "logic": {
       "logic_1": {
-        "ans": "6 собак и 4 кошки",
+        "ans": JSON.stringify({ "Белов": "Чёрная рубашка", "Серов": "Белая рубашка", "Чернов": "Серая рубашка" }),
         "pts": 1
       },
       "logic_2": {
-        "ans": "в первой комнате",
+        "ans": JSON.stringify({ "Ящик 1 (надпись «крупа»)": "Сахар", "Ящик 2 (надпись «вермишель»)": "Крупа", "Ящик 3 (надпись «крупа или сахар»)": "Вермишель" }),
         "pts": 1
       },
       "logic_3": {
-        "ans": "он принадлежит к ночному племени и бодрствует",
+        "ans": "",
         "pts": 1
       },
       "logic_4": {
-        "ans": "по 140 монет",
+        "ans": JSON.stringify({ "Олег": "Скрипач", "Коля": "Пианист", "Ваня": "Певец" }),
         "pts": 1
       },
       "logic_5": {
-        "ans": "одно — да, два — нет, все — нет",
+        "ans": "Уменьшилась в 2 раза",
         "pts": 1
       },
       "logic_6": {
-        "ans": "11",
+        "ans": "60",
+        "pts": 1
+      },
+      "logic_7": {
+        "ans": "8",
+        "pts": 1
+      },
+      "logic_8": {
+        "ans": "240",
         "pts": 1
       }
     }
@@ -248,8 +260,8 @@ const ANSWER_KEYS = {
 
       "ru_5_new": { ans: JSON.stringify({"input1":"Е","input2":"Я","input3":"Н","input4":"Е","input5":"И"}), pts: 1 },
       "ru_7_new": { ans: JSON.stringify(["1", "4"]), pts: 1 },
-      "ru_13": { ans: "ПРИСУТСТВОВАТЬ", pts: 1 },
-      "ru_14": { ans: "ЗАГОРОДНЫЙ", pts: 1 },
+      "ru_13_new": { ans: "Безличное предложение", pts: 1 },
+      "ru_14_new": { ans: "1) Вторая часть раскрывает содержание первой (можно вставить «а именно»).", pts: 1 },
       "russian_1": {
         "ans": "быстро бежать",
         "pts": 1
@@ -361,29 +373,29 @@ const ANSWER_KEYS = {
         "pts": 1
       }
     },
-    "logic": {
+        "logic": {
       "logic_1": {
-        "ans": "белов в черной. серов в белой. чернов в серой.",
+        "ans": JSON.stringify({ "Белов": "Чёрная рубашка", "Серов": "Белая рубашка", "Чернов": "Серая рубашка" }),
         "pts": 1
       },
       "logic_2": {
-        "ans": "1 - сахар, 2 - крупа, 3 - вермишель",
+        "ans": JSON.stringify({ "Ящик 1 (надпись «крупа»)": "Сахар", "Ящик 2 (надпись «вермишель»)": "Крупа", "Ящик 3 (надпись «крупа или сахар»)": "Вермишель" }),
         "pts": 1
       },
       "logic_3": {
-        "ans": "митя, толя, сеня/костя, костя/сеня, юра",
+        "ans": "",
         "pts": 1
       },
       "logic_4": {
-        "ans": "ваня — певец, олег — скрипач, коля — пианист",
+        "ans": JSON.stringify({ "Олег": "Скрипач", "Коля": "Пианист", "Ваня": "Певец" }),
         "pts": 1
       },
       "logic_5": {
-        "ans": "в 2 раза меньше",
+        "ans": "Уменьшилась в 2 раза",
         "pts": 1
       },
       "logic_6": {
-        "ans": "60 минут",
+        "ans": "60",
         "pts": 1
       },
       "logic_7": {
@@ -391,7 +403,7 @@ const ANSWER_KEYS = {
         "pts": 1
       },
       "logic_8": {
-        "ans": "240 скачков",
+        "ans": "240",
         "pts": 1
       }
     }
@@ -484,7 +496,40 @@ const ANSWER_KEYS = {
         "pts": 1
       }
     },
-    "logic": {}
+        "logic": {
+      "logic_1": {
+        "ans": JSON.stringify({ "Белов": "Чёрная рубашка", "Серов": "Белая рубашка", "Чернов": "Серая рубашка" }),
+        "pts": 1
+      },
+      "logic_2": {
+        "ans": JSON.stringify({ "Ящик 1 (надпись «крупа»)": "Сахар", "Ящик 2 (надпись «вермишель»)": "Крупа", "Ящик 3 (надпись «крупа или сахар»)": "Вермишель" }),
+        "pts": 1
+      },
+      "logic_3": {
+        "ans": "",
+        "pts": 1
+      },
+      "logic_4": {
+        "ans": JSON.stringify({ "Олег": "Скрипач", "Коля": "Пианист", "Ваня": "Певец" }),
+        "pts": 1
+      },
+      "logic_5": {
+        "ans": "Уменьшилась в 2 раза",
+        "pts": 1
+      },
+      "logic_6": {
+        "ans": "60",
+        "pts": 1
+      },
+      "logic_7": {
+        "ans": "8",
+        "pts": 1
+      },
+      "logic_8": {
+        "ans": "240",
+        "pts": 1
+      }
+    }
   },
   "11": {
     "russian": {
@@ -497,7 +542,7 @@ const ANSWER_KEYS = {
         "pts": 1
       },
       "russian_3": {
-        "ans": "бессоюзное",
+        "ans": "сложноподчиненное",
         "pts": 1
       },
       "russian_4": {
@@ -571,29 +616,29 @@ const ANSWER_KEYS = {
         "pts": 1
       }
     },
-    "logic": {
+        "logic": {
       "logic_1": {
-        "ans": "белов-черная, серов-белая, чернов-серая",
+        "ans": JSON.stringify({ "Белов": "Чёрная рубашка", "Серов": "Белая рубашка", "Чернов": "Серая рубашка" }),
         "pts": 1
       },
       "logic_2": {
-        "ans": "1 - сахар, 2 - крупа, 3 - вермишель",
+        "ans": JSON.stringify({ "Ящик 1 (надпись «крупа»)": "Сахар", "Ящик 2 (надпись «вермишель»)": "Крупа", "Ящик 3 (надпись «крупа или сахар»)": "Вермишель" }),
         "pts": 1
       },
       "logic_3": {
-        "ans": "толя",
+        "ans": "",
         "pts": 1
       },
       "logic_4": {
-        "ans": "ваня — певец, олег — скрипач, коля — пианист",
+        "ans": JSON.stringify({ "Олег": "Скрипач", "Коля": "Пианист", "Ваня": "Певец" }),
         "pts": 1
       },
       "logic_5": {
-        "ans": "в 2 раза меньше",
+        "ans": "Уменьшилась в 2 раза",
         "pts": 1
       },
       "logic_6": {
-        "ans": "60 минут",
+        "ans": "60",
         "pts": 1
       },
       "logic_7": {
@@ -601,7 +646,7 @@ const ANSWER_KEYS = {
         "pts": 1
       },
       "logic_8": {
-        "ans": "240 скачков",
+        "ans": "240",
         "pts": 1
       }
     }
@@ -615,6 +660,11 @@ function sanitize(input) {
     sanitized = "'" + sanitized;
   }
   return sanitized;
+}
+
+function normalizeString(str) {
+  if (typeof str !== 'string') return "";
+  return str.toLowerCase().replace(/\s+/g, "").replace(/²/g, "2").replace(/³/g, "3").replace(/ё/g, "е").replace(/…/g, ".");
 }
 
 function calculateScores(grade, answers) {
@@ -657,8 +707,8 @@ function calculateScores(grade, answers) {
           for (let k in userObj) { if (userObj[k] !== correctObj[k]) isCorrect = false; }
           if (isCorrect && Object.keys(correctObj).length > 0) ru += keys.russian[qId].pts;
         } catch(e) {}
-      } else if (qId === "ru_9" || qId === "ru_10" || qId === "ru_7_new") {
-        // These are clickable arrays (ru_9/ru_10 in grade 8, ru_7_new in grade 9)
+      } else if ((qId === "ru_9" || qId === "ru_10" || qId === "ru_7_new") && keys.russian[qId].ans.startsWith("[")) {
+        // These are clickable arrays — only parse as JSON if the key is a JSON array
         try {
           let userArr = JSON.parse(userAnsStr);
           let correctArr = JSON.parse(keys.russian[qId].ans);
@@ -669,11 +719,12 @@ function calculateScores(grade, answers) {
           }
         } catch(e) {}
       } else {
-        if (userAnsLower === keys.russian[qId].ans) ru += keys.russian[qId].pts;
+        if (normalizeString(userAnsStr) === normalizeString(keys.russian[qId].ans)) ru += keys.russian[qId].pts;
       }
     });
     Object.keys(keys.math).forEach(qId => {
-      if (answers[qId] && answers[qId].trim().toLowerCase() === keys.math[qId].ans) ma += keys.math[qId].pts;
+      let userAns = answers[qId] ? String(answers[qId]) : "";
+      if (normalizeString(userAns) === normalizeString(keys.math[qId].ans)) ma += keys.math[qId].pts;
     });
     Object.keys(keys.logic).forEach(qId => {
       let userAns = answers[qId] ? String(answers[qId]).trim() : "";
@@ -682,7 +733,7 @@ function calculateScores(grade, answers) {
         let ansArray;
         try { ansArray = JSON.parse(userAns); } catch(e) { ansArray = []; }
         let ansStr = ansArray.join(",");
-        if (ansStr === "Митя,Сеня,Толя,Юра,Костя" || ansStr === "Митя,Костя,Толя,Юра,Сеня") {
+        if (ansStr === "Митя,Толя,Сеня,Юра,Костя" || ansStr === "Митя,Толя,Костя,Юра,Сеня") {
           lo += keys.logic[qId].pts;
         }
       } else if (qId === "logic_1" || qId === "logic_2" || qId === "logic_4") {
@@ -700,7 +751,7 @@ function calculateScores(grade, answers) {
           if (isCorrect && Object.keys(correctObj).length > 0) lo += keys.logic[qId].pts;
         } catch(e) {}
       } else {
-        if (userAns.toLowerCase() === keys.logic[qId].ans.toLowerCase()) lo += keys.logic[qId].pts;
+        if (normalizeString(userAns) === normalizeString(keys.logic[qId].ans)) lo += keys.logic[qId].pts;
       }
     });
   }
@@ -795,7 +846,7 @@ function doPost(e) {
     let crmSheet = ss.getSheetByName(SHEET_CRM);
     
     if (testSheet.getLastRow() === 0) {
-      testSheet.appendRow(["Дата", "ФИО Ученика", "Класс", "Русский язык", "Математика", "Логика", "Общий балл", "Уникальный ID теста", "Timestamp", "Читерство", "Short ID"]);
+      testSheet.appendRow(["Дата", "ФИО Ученика", "Класс", "Русский язык", "Математика", "Логика", "Общий балл", "Уникальный ID теста", "Timestamp", "Читерство", "Short ID", "Ответы ученика (JSON)"]);
     }
     if (crmSheet.getLastRow() === 0) {
       crmSheet.appendRow(["Дата", "Менеджер", "ФИО Родителя", "Номер телефона", "ID Теста (ученика)", "Стадия работы", "Оплата до.инфо", "Взнос", "Общая стоимость", "Оплата -1-месяц", "К психологу?", "Вердикт", "Комментарий психолога", "Финальное решение", "Причина отказа", "Имя ребенка", "Русский", "Математика", "Логика", "Комментарий менеджера"]);
@@ -838,7 +889,8 @@ function doPost(e) {
       const totalScore = scores.russian + scores.math + scores.logic;
       
       const ts = new Date().getTime();
-      testSheet.appendRow([new Date(ts).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" }), finalName, grade, scores.russian, scores.math, scores.logic, totalScore, testId, ts, cheated ? "ДА" : "НЕТ", shortId]);
+      const answersStr = JSON.stringify(answers || {});
+      testSheet.appendRow([new Date(ts).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" }), finalName, grade, scores.russian, scores.math, scores.logic, totalScore, testId, ts, cheated ? "ДА" : "НЕТ", shortId, answersStr]);
       
       return ContentService.createTextOutput(JSON.stringify({ success: true, totalScore, scores, cheated: !!cheated })).setMimeType(ContentService.MimeType.JSON);
     }
