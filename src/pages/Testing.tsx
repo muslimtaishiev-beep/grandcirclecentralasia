@@ -463,6 +463,47 @@ export default function Testing() {
                         </label>
                       ))}
                     </div>
+                  ) : q.type === "two_step" ? (
+                    <div className="space-y-4">
+                      <div className="space-y-3">
+                        {q.options?.map((opt, optIndex) => {
+                          const currentAns = answers[q.id] || "|";
+                          const optPart = currentAns.split("|")[0];
+                          const optionNumber = String(optIndex + 1);
+                          return (
+                            <label key={opt} className="flex items-center space-x-3 cursor-pointer">
+                              <input 
+                                type="radio" 
+                                name={q.id} 
+                                checked={optPart === optionNumber}
+                                onChange={() => {
+                                  const textPart = (answers[q.id] || "|").split("|")[1] || "";
+                                  setAnswers({...answers, [q.id]: `${optionNumber}|${textPart}`});
+                                }}
+                                className="w-4 h-4 text-blue-600 border-slate-300"
+                              />
+                              <span className="text-slate-700">{formatMathText(opt)}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {(answers[q.id] || "").split("|")[0] && (
+                        <div className="mt-4 p-4 bg-blue-50 border border-blue-100 rounded-xl">
+                          <div className="font-bold text-blue-800 mb-2">Шаг 2: Исправьте ошибку</div>
+                          <div className="text-sm text-blue-700 mb-3">Запишите верный пароним в поле ниже.</div>
+                          <input 
+                            type="text" 
+                            placeholder="Ваш ответ..."
+                            value={(answers[q.id] || "|").split("|")[1] || ""}
+                            onChange={(e) => {
+                              const optPart = (answers[q.id] || "|").split("|")[0];
+                              setAnswers({...answers, [q.id]: `${optPart}|${e.target.value}`});
+                            }}
+                            className="w-full border-blue-200 focus:border-blue-500 rounded-xl p-3 bg-white"
+                          />
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <input 
                       type="text" 

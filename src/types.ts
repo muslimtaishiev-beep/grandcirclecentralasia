@@ -110,7 +110,7 @@ export type Subject = "russian" | "math" | "logic";
 export interface Question {
   id: string;
   text: string;
-  type: "multiple_choice" | "free_text";
+  type: "multiple_choice" | "free_text" | "two_step";
   options?: string[]; // Only for multiple_choice
   points: number;
 }

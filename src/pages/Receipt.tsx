@@ -161,13 +161,29 @@ export default function Receipt() {
         </div>
       </div>
       
-      {/* Print Button (hidden when printing) */}
+      {/* Print Button and Explanations (hidden when printing) */}
       <div className="mt-8 print:hidden">
-        <button onClick={() => window.print()} className="bg-black text-white px-8 py-3 rounded uppercase font-bold tracking-wider hover:bg-gray-800 transition shadow-lg">
+        <button onClick={() => window.print()} className="bg-black text-white px-8 py-3 rounded uppercase font-bold tracking-wider hover:bg-gray-800 transition shadow-lg mb-8">
           Распечатать документ
         </button>
-        </div>
+        
+        {String(student.grade) === "11" && (
+          <div className="mt-8 p-6 bg-white rounded-2xl shadow-sm border border-slate-200 text-left">
+            <h3 className="text-lg font-bold mb-3 text-slate-800 flex items-center">
+              <span className="mr-2">📝</span> Разбор задания №2 по русскому языку
+            </h3>
+            <div className="text-sm text-slate-700 space-y-3">
+              <p><strong>Правильный ответ:</strong> 2 — наличие (или наличии)</p>
+              <div>
+                <strong>Почему здесь ошибка?</strong>
+                <p className="mt-1">Слово <em>наличность</em> означает имеющиеся в наличии деньги (преимущественно бумажные или монеты), например: «проверить наличность в кассе».</p>
+                <p className="mt-1">Если речь идет о присутствии, существовании чего-либо (в данном случае — книг в фонде), необходимо использовать пароним <em>наличие</em>: «сведения о наличии новых поступлений».</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+    </div>
     </>
   );
 }

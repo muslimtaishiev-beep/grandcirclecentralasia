@@ -604,7 +604,19 @@ function calculateScores(grade, answers) {
   
   if (answers && typeof answers === 'object') {
     Object.keys(keys.russian).forEach(qId => {
-      if (answers[qId] && answers[qId].trim().toLowerCase() === keys.russian[qId].ans) ru += keys.russian[qId].pts;
+      let userAns = answers[qId] ? String(answers[qId]).trim().toLowerCase() : "";
+      
+      if (String(grade) === "11" && qId === "russian_2") {
+        let parts = userAns.split("|");
+        let optChoice = parts[0] ? parts[0].trim() : "";
+        let wordChoice = parts[1] ? parts[1].trim() : "";
+        
+        if (optChoice === "2" && (wordChoice === "наличие" || wordChoice === "наличии")) {
+          ru += keys.russian[qId].pts; // Strict Variant A: 1 point only if both are correct
+        }
+      } else {
+        if (userAns === keys.russian[qId].ans) ru += keys.russian[qId].pts;
+      }
     });
     Object.keys(keys.math).forEach(qId => {
       if (answers[qId] && answers[qId].trim().toLowerCase() === keys.math[qId].ans) ma += keys.math[qId].pts;
