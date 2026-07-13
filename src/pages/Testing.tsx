@@ -305,8 +305,9 @@ export default function Testing() {
         <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500 to-red-700"></div>
           <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">!</div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Тест аннулирован</h2>
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Вы пойманы на списывании</h2>
         <p className="text-slate-600 mb-6">Вы покинули страницу во время тестирования. Результат аннулирован в соответствии с правилами.</p>
+        <audio autoPlay src="https://www.myinstants.com/media/sounds/directed-by-robert-b_voI2Z4T.mp3" />
         <p className="text-sm text-slate-500 font-medium border-t pt-4">Покажите этот код менеджеру:</p>
         <div className="mt-3 text-4xl font-mono font-bold text-red-600 tracking-widest bg-red-50 py-3 rounded-xl border border-red-100 mb-6">
           {shortId}
@@ -398,8 +399,12 @@ export default function Testing() {
           <div className="space-y-4 mb-6">
             <div>
               <label className="block text-sm font-medium mb-2">ФИО Ученика:</label>
-              <input 
-                type="text" 
+              <input
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      type="text" 
                 placeholder="Иванов Иван Иванович"
                 value={studentName}
                 onChange={(e) => setStudentName(e.target.value)}
@@ -421,8 +426,12 @@ export default function Testing() {
 
             <div>
               <label className="block text-sm font-medium mb-2">PIN-код аудитории (спросите у менеджера):</label>
-              <input 
-                type="text" 
+              <input
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      type="text" 
                 placeholder="Например: 4812"
                 value={enteredPin}
                 onChange={(e) => setEnteredPin(e.target.value)}
@@ -529,8 +538,12 @@ export default function Testing() {
                         <div className="mt-4 p-4 bg-blue-50 border border-blue-100 rounded-xl">
                           <div className="font-bold text-blue-800 mb-2">Шаг 2</div>
                           <div className="text-sm text-blue-700 mb-3">{q.step2Text || "Запишите ваш ответ в поле ниже."}</div>
-                          <input 
-                            type="text" 
+                          <input
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      type="text" 
                             placeholder="Ваш ответ..."
                             value={(answers[q.id] || "|").split("|")[1] || ""}
                             onChange={(e) => {
@@ -631,7 +644,11 @@ export default function Testing() {
                       })()}
                     </div>
                   ) : q.type === "number_input" ? (
-                    <input 
+                    <input
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
                       type="number" 
                       placeholder="Ваш ответ (только число)..."
                       value={answers[q.id] || ""}
@@ -696,7 +713,11 @@ export default function Testing() {
                       })()}
                     </div>
                   ) : (
-                    <input 
+                    <input
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
                       type="text" 
                       placeholder="Ваш ответ..."
                       value={answers[q.id] || ""}
