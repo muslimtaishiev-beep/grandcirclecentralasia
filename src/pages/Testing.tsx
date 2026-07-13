@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { QRCodeCanvas } from "qrcode.react";
+import { Reorder } from "framer-motion";
 import { testsData } from "../data/testsData";
 import { Question } from "../types";
 import { getHourlyPIN, formatMathText } from "../lib/utils";
@@ -504,13 +505,109 @@ export default function Testing() {
                         </div>
                       )}
                     </div>
+                  ) : q.type === "logic_matrix" ? (
+                    <div className="overflow-x-auto mt-4">
+                      <table className="min-w-full bg-white border border-slate-200 rounded-lg">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200">
+                            <th className="p-3 text-left"></th>
+                            {q.matrixCols?.map(col => <th key={col} className="p-3 text-center text-sm font-semibold text-slate-600">{col}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {q.matrixRows?.map((row, rIdx) => {
+                            const valStr = answers[q.id] || "{}";
+                            let valObj: Record<string, string> = {};
+                            try { valObj = JSON.parse(valStr); } catch (e) {}
+                            
+                            return (
+                              <tr key={row} className="border-b border-slate-100">
+                                <td className="p-3 font-medium text-slate-700">{row}</td>
+                                {q.matrixCols?.map(col => (
+                                  <td key={col} className="p-3 text-center">
+                                    <input 
+                                      type="radio" 
+                                      name={`${q.id}_${rIdx}`}
+                                      checked={valObj[row] === col}
+                                      onChange={() => {
+                                        const newVal = { ...valObj, [row]: col };
+                                        setAnswers({...answers, [q.id]: JSON.stringify(newVal)});
+                                      }}
+                                      className="w-4 h-4 text-blue-600 cursor-pointer"
+                                    />
+                                  </td>
+                                ))}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : q.type === "dropdown_multiple" ? (
+                    <div className="space-y-4 mt-4">
+                      {q.dropdownItems?.map(item => {
+                        const valStr = answers[q.id] || "{}";
+                        let valObj: Record<string, string> = {};
+                        try { valObj = JSON.parse(valStr); } catch (e) {}
+                        return (
+                          <div key={item.label} className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
+                            <span className="font-medium text-slate-700">{item.label}:</span>
+                            <select 
+                              value={valObj[item.label] || ""}
+                              onChange={(e) => {
+                                const newVal = { ...valObj, [item.label]: e.target.value };
+                                setAnswers({...answers, [q.id]: JSON.stringify(newVal)});
+                              }}
+                              className="border border-slate-300 rounded p-2 bg-white flex-1 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                            >
+                              <option value="" disabled>Выберите из списка ▼</option>
+                              {item.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : q.type === "drag_and_drop" ? (
+                    <div className="mt-4">
+                      <div className="text-sm text-slate-500 mb-2">Перетащите плашки, чтобы расставить их по порядку (с 1 по {q.dragItems?.length} место)</div>
+                      {(() => {
+                        let items = q.dragItems || [];
+                        if (answers[q.id]) {
+                          try { items = JSON.parse(answers[q.id]); } catch(e) {}
+                        }
+                        return (
+                          <Reorder.Group 
+                            axis="y" 
+                            values={items} 
+                            onReorder={(newOrder) => setAnswers({...answers, [q.id]: JSON.stringify(newOrder)})}
+                            className="space-y-2"
+                          >
+                            {items.map((item, index) => (
+                              <Reorder.Item key={item} value={item} className="flex items-center space-x-4 bg-white p-3 rounded shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing select-none hover:border-blue-300 transition-colors">
+                                <div className="font-bold text-slate-400 w-6 text-center">{index + 1}</div>
+                                <div className="flex-1 font-medium text-slate-800">{item}</div>
+                                <div className="text-slate-300">≡</div>
+                              </Reorder.Item>
+                            ))}
+                          </Reorder.Group>
+                        )
+                      })()}
+                    </div>
+                  ) : q.type === "number_input" ? (
+                    <input 
+                      type="number" 
+                      placeholder="Ваш ответ (только число)..."
+                      value={answers[q.id] || ""}
+                      onChange={(e) => setAnswers({...answers, [q.id]: e.target.value})}
+                      className="w-full border rounded-xl p-3 bg-white mt-2"
+                    />
                   ) : (
                     <input 
                       type="text" 
                       placeholder="Ваш ответ..."
                       value={answers[q.id] || ""}
                       onChange={(e) => setAnswers({...answers, [q.id]: e.target.value})}
-                      className="w-full border rounded-xl p-3 bg-white"
+                      className="w-full border rounded-xl p-3 bg-white mt-2"
                     />
                   )}
                 </div>

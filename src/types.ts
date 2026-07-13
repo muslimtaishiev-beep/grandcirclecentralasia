@@ -107,13 +107,22 @@ export interface PublicData {
 
 export type Subject = "russian" | "math" | "logic";
 
+export interface DropdownItem {
+  label: string;
+  options: string[];
+}
+
 export interface Question {
   id: string;
   text: string;
-  type: "multiple_choice" | "free_text" | "two_step";
-  options?: string[]; // Only for multiple_choice
+  type: "multiple_choice" | "free_text" | "two_step" | "logic_matrix" | "dropdown_multiple" | "drag_and_drop" | "number_input";
+  options?: string[]; // Only for multiple_choice and two_step
   step2Text?: string; // Instructions for step 2 in two_step questions
   points: number;
+  matrixRows?: string[]; // For logic_matrix
+  matrixCols?: string[]; // For logic_matrix
+  dropdownItems?: DropdownItem[]; // For dropdown_multiple
+  dragItems?: string[]; // For drag_and_drop
 }
 
 export interface TestData {

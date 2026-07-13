@@ -631,7 +631,32 @@ function calculateScores(grade, answers) {
       if (answers[qId] && answers[qId].trim().toLowerCase() === keys.math[qId].ans) ma += keys.math[qId].pts;
     });
     Object.keys(keys.logic).forEach(qId => {
-      if (answers[qId] && answers[qId].trim().toLowerCase() === keys.logic[qId].ans) lo += keys.logic[qId].pts;
+      let userAns = answers[qId] ? String(answers[qId]).trim() : "";
+      
+      if (qId === "logic_3") {
+        let ansArray;
+        try { ansArray = JSON.parse(userAns); } catch(e) { ansArray = []; }
+        let ansStr = ansArray.join(",");
+        if (ansStr === "Митя,Сеня,Толя,Юра,Костя" || ansStr === "Митя,Костя,Толя,Юра,Сеня") {
+          lo += keys.logic[qId].pts;
+        }
+      } else if (qId === "logic_1" || qId === "logic_2" || qId === "logic_4") {
+        let userObj, correctObj;
+        try { 
+          userObj = JSON.parse(userAns); 
+          correctObj = JSON.parse(keys.logic[qId].ans);
+          let isCorrect = true;
+          for (let k in correctObj) {
+            if (userObj[k] !== correctObj[k]) isCorrect = false;
+          }
+          for (let k in userObj) {
+            if (userObj[k] !== correctObj[k]) isCorrect = false;
+          }
+          if (isCorrect && Object.keys(correctObj).length > 0) lo += keys.logic[qId].pts;
+        } catch(e) {}
+      } else {
+        if (userAns.toLowerCase() === keys.logic[qId].ans.toLowerCase()) lo += keys.logic[qId].pts;
+      }
     });
   }
   return { russian: ru, math: ma, logic: lo };
