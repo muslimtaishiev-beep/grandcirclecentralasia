@@ -664,7 +664,27 @@ function sanitize(input) {
 
 function normalizeString(str) {
   if (typeof str !== 'string') return "";
-  return str.toLowerCase().replace(/\s+/g, "").replace(/²/g, "2").replace(/³/g, "3").replace(/ё/g, "е").replace(/…/g, ".");
+  let s = str.toLowerCase().replace(/\s+/g, "");
+  // Replace Cyrillic / Text issues
+  s = s.replace(/ё/g, "е").replace(/…/g, ".");
+  // Map exponents
+  s = s.replace(/²/g, "^2").replace(/³/g, "^3").replace(/⁴/g, "^4").replace(/⁵/g, "^5").replace(/⁶/g, "^6");
+  // Normalize Math Symbols / LaTeX
+  s = s.replace(/≤/g, "<=").replace(/\\le/g, "<=");
+  s = s.replace(/≥/g, ">=").replace(/\\ge/g, ">=");
+  s = s.replace(/±/g, "+-").replace(/\\pm/g, "+-");
+  s = s.replace(/π/g, "pi").replace(/\\pi/g, "pi");
+  s = s.replace(/√/g, "sqrt").replace(/\\sqrt/g, "sqrt");
+  s = s.replace(/∈/g, "in").replace(/\\in/g, "in");
+  s = s.replace(/∞/g, "infty").replace(/\\infty/g, "infty");
+  // Specific Logs
+  s = s.replace(/log₃/g, "log_3").replace(/\\log_3/g, "log_3");
+  s = s.replace(/log₅/g, "log_5").replace(/\\log_5/g, "log_5");
+  // Remove formatting braces and text
+  s = s.replace(/\\text/g, "").replace(/[{}]/g, "");
+  // Greek letters
+  s = s.replace(/α/g, "alpha").replace(/\\alpha/g, "alpha");
+  return s;
 }
 
 function calculateScores(grade, answers) {
