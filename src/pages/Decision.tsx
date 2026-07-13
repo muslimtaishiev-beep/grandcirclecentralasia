@@ -137,10 +137,20 @@ const Decision: React.FC<DecisionProps> = ({ lang }) => {
             <div className="animate-pulse w-8 h-8 bg-slate-200"></div>
           </div>
         ) : (
-          <div 
-            className="prose prose-slate max-w-none text-slate-800 leading-relaxed"
-            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(letterTemplate || `<p>Dear ${userData?.firstName}, your status is: <strong>${status}</strong>.</p>`) }}
-          />
+          <>
+            <div 
+              className="prose prose-slate max-w-none text-slate-800 leading-relaxed"
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(letterTemplate || `<p>Dear ${userData?.firstName}, your status is: <strong>${status}</strong>.</p>`) }}
+            />
+            {userData?.feedback && (
+              <div className="mt-8 p-6 bg-slate-50 border-l-4 border-slate-900">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  {lang === "ru" ? "Комментарий приемной комиссии" : "Admissions Committee Feedback"}
+                </h3>
+                <p className="text-slate-800 whitespace-pre-wrap font-medium">{userData.feedback}</p>
+              </div>
+            )}
+          </>
         )}
 
         <div className="mt-16 pt-8 border-t border-slate-100 flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-6" data-html2canvas-ignore>

@@ -4,6 +4,13 @@ const SHEET_CRM = "CRM Менеджеров";
 const ANSWER_KEYS = {
   "7": {
     "russian": {
+
+      "ru_7_new": { ans: JSON.stringify({"Прилагательное":"Часть речи","Сказуемое":"Член предложения","Союз":"Часть речи","Определение":"Член предложения","Существительное":"Часть речи"}), pts: 1 },
+      "ru_9": { ans: JSON.stringify(["1", "2"]), pts: 1 },
+      "ru_10": { ans: JSON.stringify(["1", "2", "3", "4", "5"]), pts: 1 },
+      "ru_11": { ans: "ПРЕКРАСНАЯ", pts: 1 },
+      "ru_12": { ans: "125", pts: 1 },
+      "ru_13": { ans: "ОБГОРЕВШИЙ", pts: 1 },
       "russian_1": {
         "ans": "гвоздем программы было выступление известного актера.",
         "pts": 1
@@ -38,6 +45,8 @@ const ANSWER_KEYS = {
       }
     },
     "math": {
+
+      "ma_3_new": { ans: "60/19", pts: 1 },
       "math_1": {
         "ans": "2∙3∙7",
         "pts": 1
@@ -116,6 +125,10 @@ const ANSWER_KEYS = {
   },
   "8": {
     "russian": {
+
+      "ru_8_new": { ans: "НАВЕРХ ЗАЧАСТУЮ", pts: 1 },
+      "ru_9": { ans: JSON.stringify(["2", "3"]), pts: 1 },
+      "ru_10": { ans: JSON.stringify(["1", "3", "4"]), pts: 1 },
       "russian_1": {
         "ans": "расколотый орех",
         "pts": 1
@@ -232,6 +245,11 @@ const ANSWER_KEYS = {
   },
   "9": {
     "russian": {
+
+      "ru_5_new": { ans: JSON.stringify({"input1":"Е","input2":"Я","input3":"Н","input4":"Е","input5":"И"}), pts: 1 },
+      "ru_7_new": { ans: JSON.stringify(["1", "2"]), pts: 1 },
+      "ru_13": { ans: "ПРИСУТСТВОВАТЬ", pts: 1 },
+      "ru_14": { ans: "ЗАГОРОДНЫЙ", pts: 1 },
       "russian_1": {
         "ans": "быстро бежать",
         "pts": 1
@@ -380,6 +398,9 @@ const ANSWER_KEYS = {
   },
   "10": {
     "russian": {
+
+      "ru_2_new": { ans: "ПРОСВЕТИТЕЛЬСКИЙ", pts: 1 },
+      "ru_8_new": { ans: "ПОЭТОМУ ТАКЖЕ", pts: 1 },
       "russian_1": {
         "ans": "газопровод",
         "pts": 1
@@ -895,10 +916,13 @@ function doPost(e) {
       const crmData = crmSheet.getDataRange().getValues();
       const testData = testSheet.getDataRange().getValues();
       
-      // Build testData map for quick cheating check
+      // Build testData map for quick cheating check and grade retrieval
       let testMap = {};
       for (let i = 1; i < testData.length; i++) {
-        testMap[String(testData[i][10])] = (testData[i][9] === "ДА");
+        testMap[String(testData[i][10])] = {
+          cheated: (testData[i][9] === "ДА"),
+          grade: testData[i][2]
+        };
       }
       
       let students = [];
@@ -924,7 +948,8 @@ function doPost(e) {
           ru: crmData[i][16],
           ma: crmData[i][17],
           lo: crmData[i][18],
-          cheated: !!testMap[sid]
+          cheated: testMap[sid] ? testMap[sid].cheated : false,
+          grade: testMap[sid] ? String(testMap[sid].grade) : ""
         });
       }
       
@@ -954,7 +979,8 @@ function doPost(e) {
             ru: testData[i][3],
             ma: testData[i][4],
             lo: testData[i][5],
-            cheated: testData[i][9] === "ДА"
+            cheated: testData[i][9] === "ДА",
+            grade: String(testData[i][2])
           });
         }
       }

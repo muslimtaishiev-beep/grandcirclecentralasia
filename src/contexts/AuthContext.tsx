@@ -9,6 +9,7 @@ interface UserData {
   email: string;
   phone: string;
   decisionStatus: 'pending' | 'accepted' | 'rejected';
+  feedback?: string;
   createdAt: any;
 }
 

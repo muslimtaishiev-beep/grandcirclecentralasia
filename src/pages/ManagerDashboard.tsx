@@ -3,6 +3,7 @@ import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { getHourlyPIN } from "../lib/utils";
+import { testsData } from "../data/testsData";
 
 export default function ManagerDashboard() {
   const navigate = useNavigate();
@@ -27,6 +28,7 @@ export default function ManagerDashboard() {
   // Reject Form
   const [rejectReason, setRejectReason] = useState("Низкий балл");
   const [otherReason, setOtherReason] = useState("");
+  const [feedback, setFeedback] = useState("");
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,6 +100,7 @@ export default function ManagerDashboard() {
     setInitialFee("");
     setTotalCost("");
     setFirstMonthPayment("Оплачено");
+    setFeedback("");
     setModalType("ACCEPT");
   };
 
@@ -105,12 +108,25 @@ export default function ManagerDashboard() {
     setSelectedStudent(shortId);
     setRejectReason("Низкий балл");
     setOtherReason("");
+    setFeedback("");
     setModalType("REJECT");
   };
 
   const closeModals = () => {
     setModalType(null);
     setSelectedStudent(null);
+  };
+
+  
+  const getMaxScore = (gradeStr: string | undefined, subject: "russian" | "math" | "logic") => {
+    if (!gradeStr) return "?";
+    const grade = parseInt(gradeStr, 10);
+    const d = testsData[grade];
+    if (!d) return "?";
+    if (subject === "logic") return d.logic?.reduce((acc, curr) => acc + (curr.points || 1), 0) || "?";
+    if (subject === "math") return d.math?.reduce((acc, curr) => acc + (curr.points || 1), 0) || "?";
+    if (subject === "russian") return d.russian?.reduce((acc, curr) => acc + (curr.points || 1), 0) || "?";
+    return "?";
   };
 
   const submitFinalDecision = async () => {
@@ -133,12 +149,14 @@ export default function ManagerDashboard() {
         body: JSON.stringify({ 
           action: "updateFinalDecision", 
           shortId: selectedStudent, 
+          childName: students.find(s => s.shortId === selectedStudent)?.childName,
           finalDecision: decision,
           paymentInfo,
           initialFee,
           totalCost,
           firstMonthPayment,
-          rejectReason: finalRejectReason
+          rejectReason: finalRejectReason,
+          feedback
         })
       });
       const data = await res.json();

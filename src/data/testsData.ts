@@ -201,19 +201,7 @@ export const testsData: Record<number, TestData> = {
           "К четырехстам прибавить пятьдесят.",
         ],
       },
-      {
-        id: "russian_7",
-        type: "multiple_choice",
-        points: 1,
-        text: "Задание №7. Соотнесите термины с их функцией: прилагательное —",
-        options: [
-          "часть речи сказуемое —",
-          "член предложения союз —",
-          "часть речи определение —",
-          "член предложения существительное —",
-          "часть речи",
-        ],
-      },
+      
       {
         id: "russian_8",
         type: "multiple_choice",
@@ -233,7 +221,7 @@ export const testsData: Record<number, TestData> = {
         type: "multiple_choice",
         points: 1,
         text: "Задание №3. Чему равна разность чисел 15/7 и 20/3?",
-        html: "Задание №3. Чему равна разность чисел <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 4px;'><span style='border-bottom:1px solid currentColor;'>15</span><span>7</span></span> и <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 4px;'><span style='border-bottom:1px solid currentColor;'>20</span><span>3</span></span> ?",
+        html: "Чему равна разность чисел <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 4px;'><span style='border-bottom:1px solid currentColor;'>15</span><span>7</span></span> и <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 4px;'><span style='border-bottom:1px solid currentColor;'>20</span><span>3</span></span> ?",
         options: ["35/10", "60/19", "5/4", "60/37"]
       },
       {
@@ -938,25 +926,8 @@ export const testsData: Record<number, TestData> = {
         points: 1,
         text: "Задание №8. В каком предложении оба выделенных слова пишутся СЛИТНО.",
       },
-      {
-        id: "russian_9",
-        type: "multiple_choice",
-        points: 1,
-        text: "Задание №9. Укажите все цифры, на месте которых пишется НН. За око(1)ым стеклом жила своей утре(2)ей жизнью обыкнове(3)ая городская асфальтирова(4)ая улица, по которой мчались переполне(5)ые маршрутные такси и гружё(6)ые самосвалы.",
-        options: [
-          "1, 2, 3, 4, 5",
-          "1, 2, 3, 4, 6",
-          "2, 3, 4, 5, 6",
-          "1, 3, 4, 5",
-        ],
-      },
-      {
-        id: "russian_10",
-        type: "multiple_choice",
-        points: 1,
-        text: "Задание №10. Укажите все цифры, на месте которых в предложении должны стоять запятые. Привлечённые запахом (1) цветущей в парке (2) акации (3) мы остановились (4) наслаждаясь ароматом.",
-        options: ["1, 2", "3, 4", "1, 3", "1, 2, 3, 4"],
-      },
+      
+      
     ],
     math: [
       {
@@ -1069,18 +1040,7 @@ export const testsData: Record<number, TestData> = {
           "прик..сновение",
         ],
       },
-      {
-        id: "russian_5",
-        type: "multiple_choice",
-        points: 1,
-        text: "Задание №5. Выпишите ряд, в котором в обоих словах пропущена одна и та же буква. пр..мета, пр…красный",
-        options: [
-          "под..брать, поз..вчерашний",
-          "и.. пользовать, во..рождение",
-          "о..дача, пре..теча",
-          "под..грать, из..мать",
-        ],
-      },
+      
       {
         id: "russian_6",
         type: "multiple_choice",
@@ -1088,13 +1048,7 @@ export const testsData: Record<number, TestData> = {
         text: "Задание №6. Выпишите слово, в котором на месте пропуска пишется буква Е. подстра…ваться",
         options: ["эмал…вый", "проста…вать", "изменч..вый"],
       },
-      {
-        id: "russian_7",
-        type: "multiple_choice",
-        points: 1,
-        text: "Задание №7. Выделите слово, в котором НЕ со словом пишется СЛИТНО. (не)способен",
-        options: ["(не)имеет", "(Не)каждый", "(Не)лестный", "(не) дерзал"],
-      },
+      
       {
         id: "russian_8",
         type: "two_step",
@@ -1109,13 +1063,7 @@ export const testsData: Record<number, TestData> = {
           "5. А вечером он сидел опять ЗА (ТЕМ) же столом и, положив голову на руку, слушал Настасью Петровну и пытался понять, ПО (ЧЕМУ) ему так хорошо в этом доме."
         ]
       },
-      {
-        id: "russian_9",
-        type: "multiple_choice",
-        points: 1,
-        text: "Задание №9. Укажите все цифры, на месте которых пишется НН. Точная дата... не установле(1)а. Первые письме(2)ые упоминания... датирова(3)ы V веком. Армянский историк упоминает разруше(4)ую хазарами крепость...",
-        options: ["1, 3", "2, 4", "1, 2, 4", "1, 2, 3, 4"],
-      },
+      
       {
         id: "russian_10",
         type: "multiple_choice",

@@ -242,6 +242,49 @@ app.post("/api/gas", async (req, res) => {
       body: JSON.stringify(payload)
     });
     const data = await fetchRes.json();
+    
+    // Sync with Firestore if final decision updated
+    if (payload.action === "updateFinalDecision" && data.success && payload.childName) {
+      try {
+        const decisionStatus = payload.finalDecision === "ПРИНЯТ" ? "accepted" : "rejected";
+        const childName = payload.childName.trim().toLowerCase();
+        
+        // Find user by matching first/last name
+        const snapshot = await admin.firestore().collection('users').get();
+        let matchedUserId = null;
+        
+        snapshot.forEach(doc => {
+           const d = doc.data();
+           const f = (d.firstName || "").toLowerCase().trim();
+           const l = (d.lastName || "").toLowerCase().trim();
+           const fullName1 = `${f} ${l}`.trim();
+           const fullName2 = `${l} ${f}`.trim();
+           if (childName === fullName1 || childName === fullName2 || childName === f || childName.includes(f) || fullName1.includes(childName)) {
+              matchedUserId = doc.id;
+           }
+        });
+        
+        if (matchedUserId) {
+          await admin.firestore().collection('users').doc(matchedUserId).update({
+            decisionStatus,
+            feedback: payload.feedback || ""
+          });
+        }
+        
+        // Also update decisions collection for redundancy/Signup.tsx logic
+        const docId = childName.replace(/\s+/g, '_');
+        await admin.firestore().collection('decisions').doc(docId).set({
+           fullName: childName,
+           decisionStatus,
+           feedback: payload.feedback || "",
+           updatedAt: new Date().toISOString()
+        }, { merge: true });
+        
+      } catch (syncErr) {
+        console.error("Firestore sync error:", syncErr);
+      }
+    }
+    
     res.json(data);
   } catch (err: any) {
     console.error("GAS Proxy error:", err);
