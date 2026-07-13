@@ -577,12 +577,13 @@ export const testsData: Record<number, TestData> = {
         id: "ru_5_new",
         type: "inline_inputs",
         points: 1,
-        text: "Задание №5. Впишите пропущенные буквы, раскрывая скобки (например: слыханная, решена):",
+        text: "Задание №5. Вставьте пропущенные буквы (н или нн):",
         inlineSegments: [
-          { type: "text", text: "не(слыха..ая) дерзость — не" },
+          { type: "text", text: "неслыха" },
           { type: "input", id: "input1" },
-          { type: "text", text: " дерзость\nзадача (реше..а) — задача " },
-          { type: "input", id: "input2" }
+          { type: "text", text: "ая дерзость\nзадача реше" },
+          { type: "input", id: "input2" },
+          { type: "text", text: "а." }
         ]
       },
 {

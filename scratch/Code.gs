@@ -643,7 +643,7 @@ function calculateScores(grade, answers) {
           let userObj = JSON.parse(userAnsStr);
           let val1 = String(userObj["input1"] || "").trim().toLowerCase();
           let val2 = String(userObj["input2"] || "").trim().toLowerCase();
-          if (val1 === "слыханная" && (val2 === "решенная" || val2 === "решена")) ru += keys.russian[qId].pts;
+          if (val1 === "нн" && val2 === "н") ru += keys.russian[qId].pts;
         } catch(e) {}
       } else if (qId === "ru_8_new" && String(grade) === "10") {
         let val = userAnsLower.replace(/\s+/g, "");
