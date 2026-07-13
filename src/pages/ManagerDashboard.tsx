@@ -269,7 +269,7 @@ export default function ManagerDashboard() {
                             {totalScore}
                           </div>
                         </div>
-                        <div className="text-[10px] text-gray-400 mt-1">Р:{s.ru} М:{s.ma} Л:{s.lo}</div>
+                        <div className="text-[10px] text-gray-400 mt-1">Р:{s.ru}/{getMaxScore(s.grade, "russian")} М:{s.ma}/{getMaxScore(s.grade, "math")} Л:{s.lo}/{getMaxScore(s.grade, "logic")}</div>
                       </div>
                     </td>
                     <td className="p-4">
@@ -355,6 +355,10 @@ export default function ManagerDashboard() {
                       <option value="Часть оплачена">Часть оплачена</option>
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Комментарий для ученика</label>
+                    <textarea value={feedback} onChange={e => setFeedback(e.target.value)} className="w-full border border-gray-300 rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500" placeholder="Например: Отличный результат!" rows={2}></textarea>
+                  </div>
                   <button onClick={submitFinalDecision} className="w-full bg-green-600 text-white rounded-xl py-3 font-bold mt-4 hover:bg-green-700">Подтвердить прием</button>
                 </div>
               ) : (
@@ -374,6 +378,10 @@ export default function ManagerDashboard() {
                       <input type="text" value={otherReason} onChange={e => setOtherReason(e.target.value)} className="w-full border border-gray-300 rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-red-500" placeholder="Подробная причина..." />
                     </div>
                   )}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Обратная связь для ученика</label>
+                    <textarea value={feedback} onChange={e => setFeedback(e.target.value)} className="w-full border border-gray-300 rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-red-500" placeholder="Например: Не хватило баллов по математике" rows={2}></textarea>
+                  </div>
                   <button onClick={submitFinalDecision} className="w-full bg-red-600 text-white rounded-xl py-3 font-bold mt-4 hover:bg-red-700">Подтвердить отказ</button>
                 </div>
               )}
