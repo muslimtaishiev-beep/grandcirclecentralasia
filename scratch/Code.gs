@@ -495,9 +495,9 @@ const ANSWER_KEYS = {
       "ma_1_11": { ans: "1", pts: 1 },
       "ma_2_11": { ans: "2", pts: 1 },
       "ma_3_11": { ans: "±π/6 + πn, n ∈ Z", pts: 1 },
-      "ma_4_11": { ans: "[-2; -1,5] ∪ (1,75; +∞)", pts: 1 },
+      "ma_4_11": { ans: "[-2;-1,5]u(1,75;+infty)", pts: 1 },
       "ma_5_11": { ans: "[-11; 11]", pts: 1 },
-      "ma_6_11": { ans: "6xcos x - 3x^2sin x", pts: 1 },
+      "ma_6_11": { ans: "6xcosx-3x^2sinx", pts: 1 },
       "ma_7_11": { ans: "1.5", pts: 1 },
       "ma_8_11": { ans: "6", pts: 1 },
     },
@@ -567,6 +567,7 @@ function normalizeString(str) {
   s = s.replace(/log₅/g, "log_5").replace(/\\log_5/g, "log_5");
   // Remove formatting braces and text
   s = s.replace(/\\text/g, "").replace(/[{}]/g, "");
+  s = s.replace(/∪/g, "u");
   // Greek letters
   s = s.replace(/α/g, "alpha").replace(/\\alpha/g, "alpha");
   return s;
