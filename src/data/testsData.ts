@@ -443,7 +443,7 @@ export const testsData: Record<number, TestData> = {
         options: ["1, 2", "1, 4", "2, 4", "2, 3, 4, 5"],
       }
     ],
-        math: [
+            math: [
       {
         id: "ma_1_8",
         type: "multiple_choice",
@@ -759,14 +759,14 @@ export const testsData: Record<number, TestData> = {
         ]
       }
     ],
-        math: [
+            math: [
       {
         id: "ma_1_9",
         type: "multiple_choice",
         points: 1,
         text: "Задание №1. Выполните деление: (6x + 6y)/x : (x^2 - y^2)/x^2",
         html: "Задание №1. Выполните деление: <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>6x + 6y</span><span>x</span></span> : <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>x<sup>2</sup> - y<sup>2</sup></span><span>x<sup>2</sup></span></span>",
-        options: ["<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>6</span><span>x - y</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>6x</span><span>x + y</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>x + y</span><span>6x</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>6x</span><span>x - y</span></span>"]
+        options: ["6/(x - y)", "6x/(x + y)", "(x + y)/6x", "6x/(x - y)"]
       },      {
         id: "ma_2_9",
         type: "multiple_choice",
@@ -780,14 +780,14 @@ export const testsData: Record<number, TestData> = {
         points: 1,
         text: "Задание №3. Найдите значение выражения: √(0,04 · 81) - 7 · √(1/49)",
         html: "Задание №3. Найдите значение выражения: &radic;(0,04 &middot; 81) - 7 &middot; &radic;<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>1</span><span>49</span></span>",
-        options: ["17", "0,8", "17 <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>1</span><span>6</span></span>", "4"]
+        options: ["17", "0,8", "17 1/6", "4"]
       },      {
         id: "ma_4_9",
         type: "multiple_choice",
         points: 1,
         text: "Задание №4. Выберите неверное равенство:",
         html: "Задание №4. Выберите неверное равенство:",
-        options: ["&radic;16 = 4", "&radic;0,4 = 0,2", "7 - &radic;25 = 2", "&radic;((-15)<sup>2</sup>) = 15"]
+        options: ["√16 = 4", "√0,4 = 0,2", "7 - √25 = 2", "√((-15)^2) = 15"]
       },      {
         id: "ma_5_9",
         type: "multiple_choice",
@@ -801,35 +801,35 @@ export const testsData: Record<number, TestData> = {
         points: 1,
         text: "Задание №6. Графиком какой из функций является гипербола?",
         html: "Задание №6. Графиком какой из функций является гипербола?",
-        options: ["y = <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>x</span><span>4</span></span>", "y = -<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>x</span><span>4</span></span>", "y = <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>4</span><span>x</span></span>", "y = 4x<sup>2</sup>"]
+        options: ["y = x/4", "y = -x/4", "y = 4/x", "y = 4x^2"]
       },      {
         id: "ma_7_9",
         type: "multiple_choice",
         points: 1,
         text: "Задание №7. В прямоугольном треугольнике ABC угол B равен 90 градусов, AB = 5 см, AC = 7 см. Найдите BC.",
         html: "Задание №7. В прямоугольном треугольнике ABC угол B равен 90 градусов, AB = 5 см, AC = 7 см. Найдите BC.",
-        options: ["24 см", "12 см", "2 см", "&radic;24 см"]
+        options: ["24 см", "12 см", "2 см", "√24 см"]
       },      {
         id: "ma_8_9",
         type: "multiple_choice",
         points: 1,
         text: "Задание №8. Хорды AB и CD пересекаются в точке E. Найдите ED, если AE = 5, BE = 2, CE = ED.",
         html: "Задание №8. Хорды AB и CD пересекаются в точке E. Найдите ED, если AE = 5, BE = 2, CE = ED.",
-        options: ["10", "&radic;10", "7", "&radic;7"]
+        options: ["10", "√10", "7", "√7"]
       },      {
         id: "ma_9_9",
         type: "multiple_choice",
         points: 1,
         text: "Задание №9. Сумма двух противоположных сторон описанного четырехугольника равна 12 см, а радиус вписанной в него окружности равен 5 см. Найдите площадь четырехугольника.",
         html: "Задание №9. Сумма двух противоположных сторон описанного четырехугольника равна 12 см, а радиус вписанной в него окружности равен 5 см. Найдите площадь четырехугольника.",
-        options: ["120 см<sup>2</sup>", "60 см<sup>2</sup>", "30 см<sup>2</sup>", "17 см"]
+        options: ["120 см^2", "60 см^2", "30 см^2", "17 см"]
       },      {
         id: "ma_10_9",
         type: "multiple_choice",
         points: 1,
         text: "Задание №10. Мотоциклист проехал 40 км от дома до реки. Возвращаясь обратно со скоростью на 10 км/ч меньшей первоначальной, он затратил на этот путь на 20 мин больше. Найдите первоначальную скорость мотоциклиста. Если эту скорость обозначить за х км/ч, то задача может быть решена с помощью уравнения:",
         html: "Задание №10. Мотоциклист проехал 40 км от дома до реки. Возвращаясь обратно со скоростью на 10 км/ч меньшей первоначальной, он затратил на этот путь на 20 мин больше. Найдите первоначальную скорость мотоциклиста. Если эту скорость обозначить за х км/ч, то задача может быть решена с помощью уравнения:",
-        options: ["<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x</span></span> + <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x - 10</span></span> = 20 + 3(x - 10) = 40", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x - 10</span></span> - <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x</span></span> = <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>1</span><span>3</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x - 10</span></span> + <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x</span></span> = <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>1</span><span>3</span></span>", "х"]
+        options: ["40/x + 40/(x-10) = 20 + 3(x-10) = 40", "40/(x-10) - 40/x = 1/3", "40/(x-10) + 40/x = 1/3", "х"]
       },
     ],
     logic: commonLogicQuestions,
@@ -1171,14 +1171,14 @@ export const testsData: Record<number, TestData> = {
         options: ["1, 2, 3", "3, 5", "3, 4, 5", "1, 2, 3, 4, 5"],
       }
     ],
-        math: [
+            math: [
       {
         id: "ma_1_11",
         type: "multiple_choice",
         points: 1,
         text: "Задание А1. Упростите выражение: -4sin^2 α + 5 - 4cos^2 α",
         html: "Задание А1. Упростите выражение: -4sin<sup>2</sup> &alpha; + 5 - 4cos<sup>2</sup> &alpha;",
-        options: ["1", "9", "1 + 8sin<sup>2</sup> &alpha;", "1 + 8cos<sup>2</sup> &alpha;"]
+        options: ["1", "9", "1 + 8sin^2 α", "1 + 8cos^2 α"]
       },      {
         id: "ma_2_11",
         type: "multiple_choice",
@@ -1213,7 +1213,7 @@ export const testsData: Record<number, TestData> = {
         points: 1,
         text: "Задание А6. Найдите производную функции: y = 3x^2 cos x",
         html: "Задание А6. Найдите производную функции: y = 3x<sup>2</sup> cos x",
-        options: ["-6xsin x", "6xcos x - 3x<sup>2</sup>sin x", "x<sup>3</sup>cos x + 3x<sup>2</sup>sin x", "6xcos x + 3x<sup>2</sup>sin x"]
+        options: ["-6xsin x", "6xcos x - 3x^2sin x", "x^3cos x + 3x^2sin x", "6xcos x + 3x^2sin x"]
       },      {
         id: "ma_7_11",
         type: "free_text",
