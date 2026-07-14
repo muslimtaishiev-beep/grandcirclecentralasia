@@ -130,6 +130,8 @@ export interface Question {
   html?: string; // Optional HTML override for the text (e.g., LaTeX formulas)
   type: "multiple_choice" | "free_text" | "two_step" | "logic_matrix" | "dropdown_multiple" | "drag_and_drop" | "number_input" | "clickable_text" | "inline_inputs";
   options?: string[]; // Only for multiple_choice and two_step
+  optionsHtml?: string[]; // Optional HTML override for the options
+
   step2Text?: string; // Instructions for step 2 in two_step questions
   points: number;
   matrixRows?: string[]; // For logic_matrix

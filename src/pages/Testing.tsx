@@ -530,7 +530,7 @@ export default function Testing() {
                   
                   {q.type === "multiple_choice" ? (
                     <div className="space-y-3">
-                      {q.options?.map(opt => (
+                      {q.options?.map((opt, i) => (
                         <label key={opt} className="flex items-center space-x-3 cursor-pointer">
                           <input 
                             type="radio" 
@@ -540,7 +540,11 @@ export default function Testing() {
                             onChange={(e) => setAnswers({...answers, [q.id]: e.target.value})}
                             className="w-4 h-4 text-blue-600 border-slate-300"
                           />
-                          <span className="text-slate-700">{formatMathText(opt)}</span>
+                          {q.optionsHtml && q.optionsHtml[i] ? (
+                            <span className="text-slate-700" dangerouslySetInnerHTML={{__html: q.optionsHtml[i]}} />
+                          ) : (
+                            <span className="text-slate-700">{formatMathText(opt)}</span>
+                          )}
                         </label>
                       ))}
                     </div>

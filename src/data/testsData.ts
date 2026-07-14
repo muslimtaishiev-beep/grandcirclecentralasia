@@ -443,7 +443,7 @@ export const testsData: Record<number, TestData> = {
         options: ["1, 2", "1, 4", "2, 4", "2, 3, 4, 5"],
       }
     ],
-            math: [
+                math: [
       {
         id: "ma_1_8",
         type: "multiple_choice",
@@ -759,14 +759,15 @@ export const testsData: Record<number, TestData> = {
         ]
       }
     ],
-            math: [
+                math: [
       {
         id: "ma_1_9",
         type: "multiple_choice",
         points: 1,
         text: "Задание №1. Выполните деление: (6x + 6y)/x : (x^2 - y^2)/x^2",
         html: "Задание №1. Выполните деление: <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>6x + 6y</span><span>x</span></span> : <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>x<sup>2</sup> - y<sup>2</sup></span><span>x<sup>2</sup></span></span>",
-        options: ["6/(x - y)", "6x/(x + y)", "(x + y)/6x", "6x/(x - y)"]
+        options: ["6/(x - y)", "6x/(x + y)", "(x + y)/6x", "6x/(x - y)"],
+        optionsHtml: ["<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>6</span><span>x - y</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>6x</span><span>x + y</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>x + y</span><span>6x</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>6x</span><span>x - y</span></span>"]
       },      {
         id: "ma_2_9",
         type: "multiple_choice",
@@ -780,14 +781,16 @@ export const testsData: Record<number, TestData> = {
         points: 1,
         text: "Задание №3. Найдите значение выражения: √(0,04 · 81) - 7 · √(1/49)",
         html: "Задание №3. Найдите значение выражения: &radic;(0,04 &middot; 81) - 7 &middot; &radic;<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>1</span><span>49</span></span>",
-        options: ["17", "0,8", "17 1/6", "4"]
+        options: ["17", "0,8", "17 1/6", "4"],
+        optionsHtml: ["17", "0,8", "17 <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>1</span><span>6</span></span>", "4"]
       },      {
         id: "ma_4_9",
         type: "multiple_choice",
         points: 1,
         text: "Задание №4. Выберите неверное равенство:",
         html: "Задание №4. Выберите неверное равенство:",
-        options: ["√16 = 4", "√0,4 = 0,2", "7 - √25 = 2", "√((-15)^2) = 15"]
+        options: ["√16 = 4", "√0,4 = 0,2", "7 - √25 = 2", "√((-15)^2) = 15"],
+        optionsHtml: ["&radic;16 = 4", "&radic;0,4 = 0,2", "7 - &radic;25 = 2", "&radic;((-15)<sup>2</sup>) = 15"]
       },      {
         id: "ma_5_9",
         type: "multiple_choice",
@@ -801,35 +804,40 @@ export const testsData: Record<number, TestData> = {
         points: 1,
         text: "Задание №6. Графиком какой из функций является гипербола?",
         html: "Задание №6. Графиком какой из функций является гипербола?",
-        options: ["y = x/4", "y = -x/4", "y = 4/x", "y = 4x^2"]
+        options: ["y = x/4", "y = -x/4", "y = 4/x", "y = 4x^2"],
+        optionsHtml: ["y = <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>x</span><span>4</span></span>", "y = -<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>x</span><span>4</span></span>", "y = <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>4</span><span>x</span></span>", "y = 4x<sup>2</sup>"]
       },      {
         id: "ma_7_9",
         type: "multiple_choice",
         points: 1,
         text: "Задание №7. В прямоугольном треугольнике ABC угол B равен 90 градусов, AB = 5 см, AC = 7 см. Найдите BC.",
         html: "Задание №7. В прямоугольном треугольнике ABC угол B равен 90 градусов, AB = 5 см, AC = 7 см. Найдите BC.",
-        options: ["24 см", "12 см", "2 см", "√24 см"]
+        options: ["24 см", "12 см", "2 см", "√24 см"],
+        optionsHtml: ["24 см", "12 см", "2 см", "&radic;24 см"]
       },      {
         id: "ma_8_9",
         type: "multiple_choice",
         points: 1,
         text: "Задание №8. Хорды AB и CD пересекаются в точке E. Найдите ED, если AE = 5, BE = 2, CE = ED.",
         html: "Задание №8. Хорды AB и CD пересекаются в точке E. Найдите ED, если AE = 5, BE = 2, CE = ED.",
-        options: ["10", "√10", "7", "√7"]
+        options: ["10", "√10", "7", "√7"],
+        optionsHtml: ["10", "&radic;10", "7", "&radic;7"]
       },      {
         id: "ma_9_9",
         type: "multiple_choice",
         points: 1,
         text: "Задание №9. Сумма двух противоположных сторон описанного четырехугольника равна 12 см, а радиус вписанной в него окружности равен 5 см. Найдите площадь четырехугольника.",
         html: "Задание №9. Сумма двух противоположных сторон описанного четырехугольника равна 12 см, а радиус вписанной в него окружности равен 5 см. Найдите площадь четырехугольника.",
-        options: ["120 см^2", "60 см^2", "30 см^2", "17 см"]
+        options: ["120 см^2", "60 см^2", "30 см^2", "17 см"],
+        optionsHtml: ["120 см<sup>2</sup>", "60 см<sup>2</sup>", "30 см<sup>2</sup>", "17 см"]
       },      {
         id: "ma_10_9",
         type: "multiple_choice",
         points: 1,
         text: "Задание №10. Мотоциклист проехал 40 км от дома до реки. Возвращаясь обратно со скоростью на 10 км/ч меньшей первоначальной, он затратил на этот путь на 20 мин больше. Найдите первоначальную скорость мотоциклиста. Если эту скорость обозначить за х км/ч, то задача может быть решена с помощью уравнения:",
         html: "Задание №10. Мотоциклист проехал 40 км от дома до реки. Возвращаясь обратно со скоростью на 10 км/ч меньшей первоначальной, он затратил на этот путь на 20 мин больше. Найдите первоначальную скорость мотоциклиста. Если эту скорость обозначить за х км/ч, то задача может быть решена с помощью уравнения:",
-        options: ["40/x + 40/(x-10) = 20 + 3(x-10) = 40", "40/(x-10) - 40/x = 1/3", "40/(x-10) + 40/x = 1/3", "х"]
+        options: ["40/x + 40/(x-10) = 20 + 3(x-10) = 40", "40/(x-10) - 40/x = 1/3", "40/(x-10) + 40/x = 1/3", "х"],
+        optionsHtml: ["<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x</span></span> + <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x - 10</span></span> = 20 + 3(x - 10) = 40", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x - 10</span></span> - <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x</span></span> = <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>1</span><span>3</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x - 10</span></span> + <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x</span></span> = <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>1</span><span>3</span></span>", "х"]
       },
     ],
     logic: commonLogicQuestions,
@@ -927,7 +935,7 @@ export const testsData: Record<number, TestData> = {
         text: "Задание №8. В каком предложении оба выделенных слова пишутся СЛИТНО.",
       }
     ],
-        math: [
+            math: [
       {
         id: "ma_1_10",
         type: "multiple_choice",
@@ -935,160 +943,145 @@ export const testsData: Record<number, TestData> = {
         text: "Задание №1. Найдите значение выражения: (5/12 + 3/8) · 12/19",
         html: "Задание №1. Найдите значение выражения: ( <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>5</span><span>12</span></span> + <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>3</span><span>8</span></span> ) &middot; <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>12</span><span>19</span></span>",
         options: ["1/3", "1/19", "1/2", "5/19"]
-      },
-      {
+      },      {
         id: "ma_2_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №2. Найдите значение выражения: 39,156 : 7,8 + 1,18",
         html: "Задание №2. Найдите значение выражения: 39,156 : 7,8 + 1,18",
         options: ["5,28", "6,28", "5,02", "6,2"]
-      },
-      {
+      },      {
         id: "ma_3_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №3. Решите уравнение: 15,3 : 1,5 = 2x : 8,2",
         html: "Задание №3. Решите уравнение: 15,3 : 1,5 = 2x : 8,2",
         options: ["41,82", "41,62", "83,61", "83,64"]
-      },
-      {
+      },      {
         id: "ma_4_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №4. Из 2,5 кг ржаной муки получается 3,5 кг хлеба. Сколько хлеба можно испечь из 70 т ржаной муки?",
         html: "Задание №4. Из 2,5 кг ржаной муки получается 3,5 кг хлеба. Сколько хлеба можно испечь из 70 т ржаной муки?",
         options: ["98т", "50 т", "108т", "86т"]
-      },
-      {
+      },      {
         id: "ma_5_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №5. Найдите значение выражения: 3,8 · (-1,5) + (-35,2) : (-5)",
         html: "Задание №5. Найдите значение выражения: 3,8 &middot; (-1,5) + (-35,2) : (-5)",
         options: ["- 7,4", "1,34", "– 1,34", "12,04"]
-      },
-      {
+      },      {
         id: "ma_6_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №6. Вычислите 2x / √(x - 12) при x = 12,5 (25/2)",
         html: "Задание №6. Вычислите <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 4px;'><span style='border-bottom:1px solid currentColor;'>2x</span><span>&radic;(x - 12)</span></span> при x = 12,5 (25/2)",
         options: ["12,5√2", "√2", "25√2", "2√2"]
-      },
-      {
+      },      {
         id: "ma_7_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №7. Найдите наибольшее из чисел, если известно, что 0 < x < 1",
         html: "Задание №7. Найдите наибольшее из чисел, если известно, что 0 &lt; x &lt; 1",
-        options: ["x<sup>15</sup>", "x<sup>13</sup>", "x<sup>5</sup>", "x<sup>16</sup>"]
-      },
-      {
+        options: ["x^15", "x^13", "x^5", "x^16"],
+        optionsHtml: ["x<sup>15</sup>", "x<sup>13</sup>", "x<sup>5</sup>", "x<sup>16</sup>"]
+      },      {
         id: "ma_8_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №8. Упростите выражение (2a - 3)^2 - 5a(6a - 7)",
         html: "Задание №8. Упростите выражение (2a - 3)<sup>2</sup> - 5a(6a - 7)",
-        options: ["-26a<sup>2</sup> - 23a + 9", "26a<sup>2</sup> + 23a + 9", "-26a<sup>2</sup> - 23a - 9", "-26a<sup>2</sup> + 23a + 9"]
-      },
-      {
+        options: ["-26a^2 - 23a + 9", "26a^2 + 23a + 9", "-26a^2 - 23a - 9", "-26a^2 + 23a + 9"],
+        optionsHtml: ["-26a<sup>2</sup> - 23a + 9", "26a<sup>2</sup> + 23a + 9", "-26a<sup>2</sup> - 23a - 9", "-26a<sup>2</sup> + 23a + 9"]
+      },      {
         id: "ma_9_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №9. Упростите выражение b / (a^2 - ab) : b^2 / (a^2 - b^2)",
         html: "Задание №9. Упростите выражение <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>b</span><span>a<sup>2</sup> - ab</span></span> : <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>b<sup>2</sup></span><span>a<sup>2</sup> - b<sup>2</sup></span></span>",
-        options: ["<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>a+b</span><span>a</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>a+b</span><span>ab</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>a+b</span><span>b</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>ab</span><span>a+b</span></span>"]
-      },
-      {
+        options: ["(a+b)/a", "(a+b)/ab", "(a+b)/b", "ab/(a+b)"],
+        optionsHtml: ["<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>a+b</span><span>a</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>a+b</span><span>ab</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>a+b</span><span>b</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>ab</span><span>a+b</span></span>"]
+      },      {
         id: "ma_10_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №10. Упростите выражение ((a^7 · a^-3) / a)^3",
         html: "Задание №10. Упростите выражение ( <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>a<sup>7</sup> &middot; a<sup>-3</sup></span><span>a</span></span> )<sup>3</sup>",
-        options: ["a<sup>11</sup>", "a<sup>6</sup>", "a<sup>9</sup>", "a<sup>-1</sup>"]
-      },
-      {
+        options: ["a^11", "a^6", "a^9", "a^-1"],
+        optionsHtml: ["a<sup>11</sup>", "a<sup>6</sup>", "a<sup>9</sup>", "a<sup>-1</sup>"]
+      },      {
         id: "ma_11_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №11. Последовательность a_n задана следующим образом: a_1 = 2, a_n = a_(n-1) - 3. Чему равно a_5 - a_4?",
         html: "Задание №11. Последовательность a<sub>n</sub> задана следующим образом: a<sub>1</sub> = 2, a<sub>n</sub> = a<sub>n-1</sub> - 3. Чему равно a<sub>5</sub> - a<sub>4</sub>?",
         options: ["-10", "3", "-7", "-3"]
-      },
-      {
+      },      {
         id: "ma_12_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №12. В каком промежутке находится корень уравнения (2x + 20) / 24 = (x + 12) / 15",
         html: "Задание №12. В каком промежутке находится корень уравнения <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>2x + 20</span><span>24</span></span> = <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>x + 12</span><span>15</span></span>",
         options: ["(-∞; -3)", "(0; 3)", "(-3; 0)", "(3; +∞)"]
-      },
-      {
+      },      {
         id: "ma_13_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №13. Найдите сумму корней уравнения: 2x^2 + 3x - 5 = 0",
         html: "Задание №13. Найдите сумму корней уравнения: 2x<sup>2</sup> + 3x - 5 = 0",
         options: ["-1,5", "3", "1,5", "-3"]
-      },
-      {
+      },      {
         id: "ma_14_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №14. Сколько корней имеет уравнение: x^4 + 4x^2 + 4 = 0",
         html: "Задание №14. Сколько корней имеет уравнение: x<sup>4</sup> + 4x<sup>2</sup> + 4 = 0",
         options: ["2", "ни одного", "4", "1"]
-      },
-      {
+      },      {
         id: "ma_15_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №15. Найдите решение (x_0; y_0) системы уравнений |x - 3| - y = 3 и x - 2y = 6 и вычислите значение произведения x_0 · y_0",
         html: "Задание №15. Найдите решение (x<sub>0</sub>; y<sub>0</sub>) системы уравнений:<br><div style='display:inline-block;border-left:1px solid;padding-left:5px;'>|x - 3| - y = 3<br>x - 2y = 6</div><br>и вычислите значение произведения x<sub>0</sub> &middot; y<sub>0</sub>",
         options: ["-1", "0", "-2", "-4"]
-      },
-      {
+      },      {
         id: "ma_16_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №16. Решите неравенство 7 - 2x < -23 - 5(x - 3). В ответе укажите наибольшее число.",
         html: "Задание №16. Решите неравенство 7 - 2x &lt; -23 - 5(x - 3). В ответе укажите наибольшее число.",
         options: ["0", "-6", "-5", "-4"]
-      },
-      {
+      },      {
         id: "ma_17_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №17. Решите систему неравенств (x - 1)/2 > (x - 2)/3 и 2x - 5 < 3x - 8",
         html: "Задание №17. Решите систему неравенств:<br><div style='display:inline-block;border-left:1px solid;padding-left:5px;'><span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>x - 1</span><span>2</span></span> &gt; <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>x - 2</span><span>3</span></span><br><br>2x - 5 &lt; 3x - 8</div>",
         options: ["(-∞; -1) ∪ (3; +∞)", "(-1; -3)", "(3; +∞)", "нет решений"]
-      },
-      {
+      },      {
         id: "ma_18_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №18. Найдите количество целых решений неравенства 2x^2 + 6x - 8 ≤ 0",
         html: "Задание №18. Найдите количество целых решений неравенства 2x<sup>2</sup> + 6x - 8 &le; 0",
         options: ["3", "6", "5", "4"]
-      },
-      {
+      },      {
         id: "ma_19_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №19. Найдите область определения функции y = √(30 - 2x)",
         html: "Задание №19. Найдите область определения функции y = &radic;(30 - 2x)",
         options: ["(-∞; 15]", "(-∞; +∞)", "(-∞; 15)", "[15; +∞)"]
-      },
-      {
+      },      {
         id: "ma_20_10",
         type: "multiple_choice",
         points: 1,
         text: "Задание №20. График какой функции изображен на рисунке?",
         html: "Задание №20. График какой функции изображен на рисунке?<br><br><img src='/math10_20.png' alt='График функции' style='max-width:300px;display:block;margin:10px 0;' />",
-        options: ["y = -x<sup>2</sup> + 1", "y = -x<sup>2</sup> + 4x + 3", "y = -x<sup>2</sup> - 4x - 3", "y = -x<sup>2</sup> + 4x - 3"]
-      },
-      {
+        options: ["y = -x^2 + 1", "y = -x^2 + 4x + 3", "y = -x^2 - 4x - 3", "y = -x^2 + 4x - 3"],
+        optionsHtml: ["y = -x<sup>2</sup> + 1", "y = -x<sup>2</sup> + 4x + 3", "y = -x<sup>2</sup> - 4x - 3", "y = -x<sup>2</sup> + 4x - 3"]
+      },      {
         id: "ma_21_10",
         type: "multiple_choice",
         points: 1,
@@ -1097,7 +1090,6 @@ export const testsData: Record<number, TestData> = {
         options: ["2", "3", "1", "4"]
       },
     ],
-
     logic: commonLogicQuestions,
   },
   "11": {
@@ -1171,14 +1163,15 @@ export const testsData: Record<number, TestData> = {
         options: ["1, 2, 3", "3, 5", "3, 4, 5", "1, 2, 3, 4, 5"],
       }
     ],
-            math: [
+                math: [
       {
         id: "ma_1_11",
         type: "multiple_choice",
         points: 1,
         text: "Задание А1. Упростите выражение: -4sin^2 α + 5 - 4cos^2 α",
         html: "Задание А1. Упростите выражение: -4sin<sup>2</sup> &alpha; + 5 - 4cos<sup>2</sup> &alpha;",
-        options: ["1", "9", "1 + 8sin^2 α", "1 + 8cos^2 α"]
+        options: ["1", "9", "1 + 8sin^2 α", "1 + 8cos^2 α"],
+        optionsHtml: ["1", "9", "1 + 8sin<sup>2</sup> &alpha;", "1 + 8cos<sup>2</sup> &alpha;"]
       },      {
         id: "ma_2_11",
         type: "multiple_choice",
@@ -1213,19 +1206,20 @@ export const testsData: Record<number, TestData> = {
         points: 1,
         text: "Задание А6. Найдите производную функции: y = 3x^2 cos x",
         html: "Задание А6. Найдите производную функции: y = 3x<sup>2</sup> cos x",
-        options: ["-6xsin x", "6xcos x - 3x^2sin x", "x^3cos x + 3x^2sin x", "6xcos x + 3x^2sin x"]
+        options: ["-6xsin x", "6xcos x - 3x^2sin x", "x^3cos x + 3x^2sin x", "6xcos x + 3x^2sin x"],
+        optionsHtml: ["-6xsin x", "6xcos x - 3x<sup>2</sup>sin x", "x<sup>3</sup>cos x + 3x<sup>2</sup>sin x", "6xcos x + 3x<sup>2</sup>sin x"]
       },      {
         id: "ma_7_11",
         type: "free_text",
         points: 1,
         text: "Задание В1. Точка движется по координатной прямой согласно закону X(t) = 3 + 2t + t^2, где X(t) — координата точки в момент времени t. В какой момент времени скорость точки будет равна 5?",
-        html: "Задание В1. Точка движется по координатной прямой согласно закону X(t) = 3 + 2t + t<sup>2</sup>, где X(t) — координата точки в момент времени t. В какой момент времени скорость точки будет равна 5?",
+        html: "Задание В1. Точка движется по координатной прямой согласно закону X(t) = 3 + 2t + t<sup>2</sup>, где X(t) — координата точки в момент времени t. В какой момент времени скорость точки будет равна 5?"
       },      {
         id: "ma_8_11",
         type: "free_text",
         points: 1,
         text: "Задание В2. Определите абсциссы точек, в которых угловой коэффициент касательной к графику функции h(x) = 1 - 2sin^2 x равен 2.",
-        html: "Задание В2. Определите абсциссы точек, в которых угловой коэффициент касательной к графику функции h(x) = 1 - 2sin<sup>2</sup> x равен 2.",
+        html: "Задание В2. Определите абсциссы точек, в которых угловой коэффициент касательной к графику функции h(x) = 1 - 2sin<sup>2</sup> x равен 2."
       },
     ],
     logic: commonLogicQuestions,
