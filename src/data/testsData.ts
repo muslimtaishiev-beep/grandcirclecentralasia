@@ -881,73 +881,177 @@ export const testsData: Record<number, TestData> = {
         text: "Задание №8. В каком предложении оба выделенных слова пишутся СЛИТНО.",
       }
     ],
-    math: [
+        math: [
       {
-        id: "math_1",
+        id: "ma_1_10",
         type: "multiple_choice",
         points: 1,
-        text: "Задание 1 (Часть 2). Упростите выражение: -4sin²(α)+5-4cos²(α).",
-        options: ["1", "9", "1+8sin²(α)", "1+8cos²(α)"],
+        text: "Задание №1. Найдите значение выражения: (5/12 + 3/8) · 12/19",
+        html: "Задание №1. Найдите значение выражения: ( <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>5</span><span>12</span></span> + <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>3</span><span>8</span></span> ) &middot; <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>12</span><span>19</span></span>",
+        options: ["1/3", "1/19", "1/2", "5/19"]
       },
       {
-        id: "math_2",
+        id: "ma_2_10",
         type: "multiple_choice",
         points: 1,
-        text: "Задание 2 (Часть 2). Вычислить: 4sin(x/7)cos(x/7) при x = 7/4π.",
-        options: ["0", "2", "-1", "-2"],
+        text: "Задание №2. Найдите значение выражения: 39,156 : 7,8 + 1,18",
+        html: "Задание №2. Найдите значение выражения: 39,156 : 7,8 + 1,18",
+        options: ["5,28", "6,28", "5,02", "6,2"]
       },
       {
-        id: "math_3",
-        type: "free_text",
-        points: 1,
-        text: "Задание 3 (Часть 2). Решите уравнение: cos²(x) - sin²(x) = 0.5.",
-      },
-      {
-        id: "math_4",
+        id: "ma_3_10",
         type: "multiple_choice",
         points: 1,
-        text: "Задание 4 (Часть 2). Найдите множество значений функции: y=11cos(x).",
-        options: ["[0; 11]", "[-1; 1]", "(-∞; +∞)", "[-11; 11]"],
+        text: "Задание №3. Решите уравнение: 15,3 : 1,5 = 2x : 8,2",
+        html: "Задание №3. Решите уравнение: 15,3 : 1,5 = 2x : 8,2",
+        options: ["41,82", "41,62", "83,61", "83,64"]
       },
       {
-        id: "math_5",
-        type: "free_text",
-        points: 1,
-        text: "Задание 5 (Часть 2). Найдите производную функции y=3x²cos(x).",
-      },
-      {
-        id: "math_6",
-        type: "free_text",
-        points: 1,
-        text: "Задание 6 (Часть 2). Точка движется по закону X(t)=3+2t+t². В какой момент времени скорость равна 5?",
-      },
-      {
-        id: "math_7",
-        type: "free_text",
-        points: 1,
-        text: "Задание 7 (Часть 2). Решите уравнение: 7tg(x) + cos²(x) + 3sin(2x) = 1.",
-      },
-      {
-        id: "math_8",
-        type: "free_text",
-        points: 1,
-        text: "Задание 8 (Часть 2). Сторона основания и высота правильной треугольной пирамиды равны 6 и 12. Найдите тангенс угла.",
-      },
-      {
-        id: "math_9",
+        id: "ma_4_10",
         type: "multiple_choice",
         points: 1,
-        text: "Задание 9 (Часть 2). Основание прямой призмы — трапеция (а=12, b=20, c=d=5). Боковое ребро h=3. Найдите площадь поверхности.",
-        options: ["222", "240", "264", "286"],
+        text: "Задание №4. Из 2,5 кг ржаной муки получается 3,5 кг хлеба. Сколько хлеба можно испечь из 70 т ржаной муки?",
+        html: "Задание №4. Из 2,5 кг ржаной муки получается 3,5 кг хлеба. Сколько хлеба можно испечь из 70 т ржаной муки?",
+        options: ["98т", "50 т", "108т", "86т"]
       },
       {
-        id: "math_10",
+        id: "ma_5_10",
         type: "multiple_choice",
         points: 1,
-        text: "Задание 10 (Часть 2). Прямые FC и FD пересекают альфа... FC:CA=4:5, AB=45. Найдите CD.",
-        options: ["16", "18", "20", "36"],
+        text: "Задание №5. Найдите значение выражения: 3,8 · (-1,5) + (-35,2) : (-5)",
+        html: "Задание №5. Найдите значение выражения: 3,8 &middot; (-1,5) + (-35,2) : (-5)",
+        options: ["- 7,4", "1,34", "– 1,34", "12,04"]
+      },
+      {
+        id: "ma_6_10",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №6. Вычислите 2x / √(x - 12) при x = 12,5 (25/2)",
+        html: "Задание №6. Вычислите <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 4px;'><span style='border-bottom:1px solid currentColor;'>2x</span><span>&radic;(x - 12)</span></span> при x = 12,5 (25/2)",
+        options: ["12,5√2", "√2", "25√2", "2√2"]
+      },
+      {
+        id: "ma_7_10",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №7. Найдите наибольшее из чисел, если известно, что 0 < x < 1",
+        html: "Задание №7. Найдите наибольшее из чисел, если известно, что 0 &lt; x &lt; 1",
+        options: ["x<sup>15</sup>", "x<sup>13</sup>", "x<sup>5</sup>", "x<sup>16</sup>"]
+      },
+      {
+        id: "ma_8_10",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №8. Упростите выражение (2a - 3)^2 - 5a(6a - 7)",
+        html: "Задание №8. Упростите выражение (2a - 3)<sup>2</sup> - 5a(6a - 7)",
+        options: ["-26a<sup>2</sup> - 23a + 9", "26a<sup>2</sup> + 23a + 9", "-26a<sup>2</sup> - 23a - 9", "-26a<sup>2</sup> + 23a + 9"]
+      },
+      {
+        id: "ma_9_10",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №9. Упростите выражение b / (a^2 - ab) : b^2 / (a^2 - b^2)",
+        html: "Задание №9. Упростите выражение <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>b</span><span>a<sup>2</sup> - ab</span></span> : <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>b<sup>2</sup></span><span>a<sup>2</sup> - b<sup>2</sup></span></span>",
+        options: ["<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>a+b</span><span>a</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>a+b</span><span>ab</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>a+b</span><span>b</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>ab</span><span>a+b</span></span>"]
+      },
+      {
+        id: "ma_10_10",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №10. Упростите выражение ((a^7 · a^-3) / a)^3",
+        html: "Задание №10. Упростите выражение ( <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>a<sup>7</sup> &middot; a<sup>-3</sup></span><span>a</span></span> )<sup>3</sup>",
+        options: ["a<sup>11</sup>", "a<sup>6</sup>", "a<sup>9</sup>", "a<sup>-1</sup>"]
+      },
+      {
+        id: "ma_11_10",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №11. Последовательность a_n задана следующим образом: a_1 = 2, a_n = a_(n-1) - 3. Чему равно a_5 - a_4?",
+        html: "Задание №11. Последовательность a<sub>n</sub> задана следующим образом: a<sub>1</sub> = 2, a<sub>n</sub> = a<sub>n-1</sub> - 3. Чему равно a<sub>5</sub> - a<sub>4</sub>?",
+        options: ["-10", "3", "-7", "-3"]
+      },
+      {
+        id: "ma_12_10",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №12. В каком промежутке находится корень уравнения (2x + 20) / 24 = (x + 12) / 15",
+        html: "Задание №12. В каком промежутке находится корень уравнения <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>2x + 20</span><span>24</span></span> = <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>x + 12</span><span>15</span></span>",
+        options: ["(-∞; -3)", "(0; 3)", "(-3; 0)", "(3; +∞)"]
+      },
+      {
+        id: "ma_13_10",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №13. Найдите сумму корней уравнения: 2x^2 + 3x - 5 = 0",
+        html: "Задание №13. Найдите сумму корней уравнения: 2x<sup>2</sup> + 3x - 5 = 0",
+        options: ["-1,5", "3", "1,5", "-3"]
+      },
+      {
+        id: "ma_14_10",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №14. Сколько корней имеет уравнение: x^4 + 4x^2 + 4 = 0",
+        html: "Задание №14. Сколько корней имеет уравнение: x<sup>4</sup> + 4x<sup>2</sup> + 4 = 0",
+        options: ["2", "ни одного", "4", "1"]
+      },
+      {
+        id: "ma_15_10",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №15. Найдите решение (x_0; y_0) системы уравнений |x - 3| - y = 3 и x - 2y = 6 и вычислите значение произведения x_0 · y_0",
+        html: "Задание №15. Найдите решение (x<sub>0</sub>; y<sub>0</sub>) системы уравнений:<br><div style='display:inline-block;border-left:1px solid;padding-left:5px;'>|x - 3| - y = 3<br>x - 2y = 6</div><br>и вычислите значение произведения x<sub>0</sub> &middot; y<sub>0</sub>",
+        options: ["-1", "0", "-2", "-4"]
+      },
+      {
+        id: "ma_16_10",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №16. Решите неравенство 7 - 2x < -23 - 5(x - 3). В ответе укажите наибольшее число.",
+        html: "Задание №16. Решите неравенство 7 - 2x &lt; -23 - 5(x - 3). В ответе укажите наибольшее число.",
+        options: ["0", "-6", "-5", "-4"]
+      },
+      {
+        id: "ma_17_10",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №17. Решите систему неравенств (x - 1)/2 > (x - 2)/3 и 2x - 5 < 3x - 8",
+        html: "Задание №17. Решите систему неравенств:<br><div style='display:inline-block;border-left:1px solid;padding-left:5px;'><span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>x - 1</span><span>2</span></span> &gt; <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>x - 2</span><span>3</span></span><br><br>2x - 5 &lt; 3x - 8</div>",
+        options: ["(-∞; -1) ∪ (3; +∞)", "(-1; -3)", "(3; +∞)", "нет решений"]
+      },
+      {
+        id: "ma_18_10",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №18. Найдите количество целых решений неравенства 2x^2 + 6x - 8 ≤ 0",
+        html: "Задание №18. Найдите количество целых решений неравенства 2x<sup>2</sup> + 6x - 8 &le; 0",
+        options: ["3", "6", "5", "4"]
+      },
+      {
+        id: "ma_19_10",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №19. Найдите область определения функции y = √(30 - 2x)",
+        html: "Задание №19. Найдите область определения функции y = &radic;(30 - 2x)",
+        options: ["(-∞; 15]", "(-∞; +∞)", "(-∞; 15)", "[15; +∞)"]
+      },
+      {
+        id: "ma_20_10",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №20. График какой функции изображен на рисунке?",
+        html: "Задание №20. График какой функции изображен на рисунке?<br><br><img src='/math10_20.png' alt='График функции' style='max-width:300px;display:block;margin:10px 0;' />",
+        options: ["y = -x<sup>2</sup> + 1", "y = -x<sup>2</sup> + 4x + 3", "y = -x<sup>2</sup> - 4x - 3", "y = -x<sup>2</sup> + 4x - 3"]
+      },
+      {
+        id: "ma_21_10",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №21. На рисунке изображена зависимость температуры вещества Т от времени t. Укажите, в течение какого времени температура вещества была постоянна.",
+        html: "Задание №21. На рисунке изображена зависимость температуры вещества Т от времени t. Укажите, в течение какого времени температура вещества была постоянна.<br><br><img src='/math10_21.png' alt='График температуры' style='max-width:300px;display:block;margin:10px 0;' />",
+        options: ["2", "3", "1", "4"]
       },
     ],
+
     logic: commonLogicQuestions,
   },
   "11": {
