@@ -239,7 +239,7 @@ const ANSWER_KEYS = {
       "ru_5_new": { ans: JSON.stringify({"input1":"НН","input2":"Н"}), pts: 1 },
       "ru_7_new": { ans: JSON.stringify(["1", "4"]), pts: 1 },
       "ru_13_new": { ans: "Безличное предложение", pts: 1 },
-      "ru_14_new": { ans: "1) Вторая часть раскрывает содержание первой (можно вставить «а именно»).", pts: 1 },
+      "ru_14_new": { ans: "2) Вторая часть указывает на причину того, о чём говорится в первой (можно вставить «потому что»).", pts: 1 },
       "russian_1": {
         "ans": "быстро бежать",
         "pts": 1
@@ -638,7 +638,7 @@ function calculateScores(grade, answers) {
         let ansArray;
         try { ansArray = JSON.parse(userAns); } catch(e) { ansArray = []; }
         let ansStr = ansArray.join(",");
-        if (ansStr === "Митя,Толя,Сеня,Юра,Костя" || ansStr === "Митя,Толя,Костя,Юра,Сеня") {
+        if (ansStr === "Митя,Толя,Сеня,Костя,Юра" || ansStr === "Митя,Толя,Костя,Сеня,Юра") {
           lo += keys.logic[qId].pts;
         }
       } else if (qId === "logic_1" || qId === "logic_2" || qId === "logic_4") {
