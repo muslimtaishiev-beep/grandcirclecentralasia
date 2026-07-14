@@ -443,88 +443,161 @@ export const testsData: Record<number, TestData> = {
         options: ["1, 2", "1, 4", "2, 4", "2, 3, 4, 5"],
       }
     ],
-    math: [
+        math: [
       {
-        id: "math_1",
+        id: "ma_1_8",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №1. Вычислите: 3³ · 3⁴",
-        options: ["10287", "1", "3", "Другой ответ"],
-      },
-      {
-        id: "math_2",
+        text: "Задание №1. Упростите выражение: 12x - 5(1 - x) + 7",
+        html: "Задание №1. Упростите выражение: 12x - 5(1 - x) + 7",
+        options: ["17x - 12", "17x + 2", "7(x - 1)", "17x + 12", "7x + 2"]
+      },      {
+        id: "ma_2_8",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №2. Упростите: 5(2а+1) - 3",
-        options: ["10а+5-3", "10а-2", "10а+2"],
-      },
-      {
-        id: "math_3",
+        text: "Задание №2. Запишите в виде многочлена: (4n^2 - 1)(n^2 + 5)",
+        html: "Задание №2. Запишите в виде многочлена: (4n<sup>2</sup> - 1)(n<sup>2</sup> + 5)",
+        options: ["-4n^2 + 5 - 20n^4", "20n^4 + 4n^2 - 5", "4n^4 + 19n^2 - 5", "n^4 + n^2 + 5", "2n + 20n^2 - 5"]
+      },      {
+        id: "ma_3_8",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №3. Вычислите: 18а³+6а²",
-        options: ["а2(18а+6)", "6(а3+а2)", "6а²(3а+1)", "6(3а3+а2)"],
-      },
-      {
-        id: "math_4",
+        text: "Задание №3. В треугольнике MKE угол K равен 42°, угол M на 57° больше. Вычислите градусную меру угла E.",
+        html: "Задание №3. В треугольнике MKE угол K равен 42&deg;, угол M на 57&deg; больше. Вычислите градусную меру угла E.",
+        options: ["101°", "82°", "39°", "27°", "49°"]
+      },      {
+        id: "ma_4_8",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №4. Через какую точку проходит график линейной функции у = 3х – 5?",
-        options: ["А(3; 3)", "N(0; - 5)", "В(2; -1)", "С(4; 8)"],
-      },
-      {
-        id: "math_5",
+        text: "Задание №4. Один из смежных углов на 54° больше другого. Найдите больший угол.",
+        html: "Задание №4. Один из смежных углов на 54&deg; больше другого. Найдите больший угол.",
+        options: ["117°", "108°", "84°", "78°", "107°"]
+      },      {
+        id: "ma_5_8",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №5. Решите уравнение: 3х – 1 = 7х + 1",
-        options: ["0,5", "-2", "2", "-0,5"],
-      },
-      {
-        id: "math_6",
+        text: "Задание №5. Разложите на множители: 64a^6 - c^12",
+        html: "Задание №5. Разложите на множители: 64a<sup>6</sup> - c<sup>12</sup>",
+        options: ["(8a^3 + c^6)(8a^3 - c^6)", "(2a + c^2)(2a - c^2)(4a^2 - 2ac^2 + c^4)", "(2a + c^2)(2a - c^2)(4a^2 + 2ac^2 + c^4)", "(4a^2 + c^4)(4a^2 - c^4)", "(2a + c^2)(2a - c^2)(4a^2 - 2ac^2 + c^4)(4a^2 + 2ac^2 + c^4)"]
+      },      {
+        id: "ma_6_8",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №6. Товар стоил 3200 р. Сколько стал стоить этот товар после снижения цены на 5%.",
-        options: ["3040", "304", "1600", "3100"],
-      },
-      {
-        id: "math_7",
+        text: "Задание №6. Найдите корни уравнения: 7 + 2x^2 = 2(x + 1)(x + 3)",
+        html: "Задание №6. Найдите корни уравнения: 7 + 2x<sup>2</sup> = 2(x + 1)(x + 3)",
+        options: ["1/8", "1/6", "1/9", "2/5", "1/7"]
+      },      {
+        id: "ma_7_8",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №7. Упростите выражение (с + 5)² - с(10 - 3с)",
-        options: ["2с²+25", "4с²-10с+25", "4с²-5с+25", "4с²+25"],
-      },
-      {
-        id: "math_8",
+        text: "Задание №7. 5 кондитеров выполнят заказ за 12 часов. За сколько часов выполнят этот заказ 6 кондитеров?",
+        html: "Задание №7. 5 кондитеров выполнят заказ за 12 часов. За сколько часов выполнят этот заказ 6 кондитеров?",
+        options: ["14 ч", "10 ч", "12 ч", "13 ч", "11 ч"]
+      },      {
+        id: "ma_8_8",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №8. Найдите значение выражения a/(a-1), если a = 0,5 (Исправлено по дополнению)",
-        options: ["1", "-1", "0.5", "-0.5"],
-      },
-      {
-        id: "math_9",
+        text: "Задание №8. Укажите число, имеющее наименьший модуль.",
+        html: "Задание №8. Укажите число, имеющее наименьший модуль.",
+        options: ["4,7", "-135", "0", "-0,28", "14,3"]
+      },      {
+        id: "ma_9_8",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №9. Вместо * подставьте такое число, чтобы графики у = 7х - 3 и у = х + 0,5 были параллельны",
-        options: ["0,5", "-1", "-4", "7"],
-      },
-      {
-        id: "math_10",
+        text: "Задание №9. Треугольник, с какими сторонами можно изобразить?",
+        html: "Задание №9. Треугольник, с какими сторонами можно изобразить?",
+        options: ["2; 2; 4", "8; 11; 2", "11; 6; 6", "18; 9; 8", "3; 2; 6"]
+      },      {
+        id: "ma_10_8",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №10. Упростите выражение (t - 5)² + 4(10 - t)",
-        options: [
-          "t² - 14t + 65",
-          "4t² + 6t + 25",
-          "t² + 15 - 4t",
-          "t² + 14t + 65",
-        ],
-      },
-      {
-        id: "math_11",
+        text: "Задание №10. Углы треугольника ABC относятся как 5:3:1. Вычислите самый большой угол этого треугольника.",
+        html: "Задание №10. Углы треугольника ABC относятся как 5:3:1. Вычислите самый большой угол этого треугольника.",
+        options: ["140°", "130°", "100°", "80°", "90°"]
+      },      {
+        id: "ma_11_8",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №11. Величины смежных углов пропорциональны числам 5 и 7. Чему равна разность этих углов?",
-        options: ["24°", "30°", "36°", "40°"],
+        text: "Задание №11. Решите уравнение: |x - 7| = 2",
+        html: "Задание №11. Решите уравнение: |x - 7| = 2",
+        options: ["5; 9", "9; 6", "10; 1", "-5; 6", "6 1/7; 8"]
+      },      {
+        id: "ma_12_8",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №12. Решите неравенство: 4y + 4 < y - 5",
+        html: "Задание №12. Решите неравенство: 4y + 4 &lt; y - 5",
+        options: ["(-∞; -3)", "(-∞; 3)", "(-∞; -9)", "(3; +∞)", "(-3; +∞)"]
+      },      {
+        id: "ma_13_8",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №13. Сумма вертикальных углов равна 136°. Вычислите один из вертикальных углов.",
+        html: "Задание №13. Сумма вертикальных углов равна 136&deg;. Вычислите один из вертикальных углов.",
+        options: ["56°", "102°", "284°", "68°", "86°"]
+      },      {
+        id: "ma_14_8",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №14. Выберите верное утверждение. Если две параллельные прямые пересечены секущей, то",
+        html: "Задание №14. Выберите верное утверждение. Если две параллельные прямые пересечены секущей, то",
+        options: ["накрест лежащие углы в сумме дают 180°", "смежные углы равны", "соответственные углы равны", "односторонние углы равны", "сумма соответственных углов равна 180°"]
+      },      {
+        id: "ma_15_8",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №15. Представьте в виде произведения: x(a - b) + y(b - a)",
+        html: "Задание №15. Представьте в виде произведения: x(a - b) + y(b - a)",
+        options: ["(a - b)(x - y)", "(b - a)(x - y)", "-(x + y)(a + b)", "(x + y)(b - a)", "(a - b)(x + y)"]
+      },      {
+        id: "ma_16_8",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №16. Найдите сумму углов 1 + 2 + 3, изображенных на рисунке.",
+        html: "Задание №16. Найдите сумму углов 1 + 2 + 3, изображенных на рисунке.<br><br><img src='/math8_16.png' alt='Углы на рисунке' style='max-width:300px;display:block;margin:10px 0;' />",
+        options: ["90°", "150°", "180°", "360°", "200°"]
+      },      {
+        id: "ma_17_8",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №17. В прямоугольном треугольнике ABC угол B равен 90°, угол C равен 45°. Сравните стороны треугольника.",
+        html: "Задание №17. В прямоугольном треугольнике ABC угол B равен 90&deg;, угол C равен 45&deg;. Сравните стороны треугольника.",
+        options: ["AB < AC < BC", "AB > AC > BC", "AB = BC < AC", "CA = AB = BC", "AB > BC = AC"]
+      },      {
+        id: "ma_18_8",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №18. Айман купила для братика упаковку воздушных шариков. Оказалось, что из 20 шариков 12 красные, а остальные - зеленые. Какова вероятность того, что брат наугад достанет из упаковки зеленый шарик?",
+        html: "Задание №18. Айман купила для братика упаковку воздушных шариков. Оказалось, что из 20 шариков 12 красные, а остальные - зеленые. Какова вероятность того, что брат наугад достанет из упаковки зеленый шарик?",
+        options: ["3/5", "1/20", "1/12", "2/5", "1/8"]
+      },      {
+        id: "ma_19_8",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №19. Выполните действия: (2a^2 b)^3",
+        html: "Задание №19. Выполните действия: (2a<sup>2</sup> b)<sup>3</sup>",
+        options: ["2a^6 b^3", "8a^6 b^3", "2 b", "8 b^3", "16a^4 b^3"]
+      },      {
+        id: "ma_20_8",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №20. При каких значениях m графики функций y = mx + 12 и y = -4x + 3 параллельны?",
+        html: "Задание №20. При каких значениях m графики функций y = mx + 12 и y = -4x + 3 параллельны?",
+        options: ["-4", "4", "3", "-3", "12"]
+      },      {
+        id: "ma_21_8",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №21. Решите систему уравнений: -2x + 5y = 12 и 3x - y = 8",
+        html: "Задание №21. Решите систему уравнений:<br><div style='display:inline-block;border-left:1px solid;padding-left:5px;'>-2x + 5y = 12<br>3x - y = 8</div>",
+        options: ["(4; -4)", "(2; 2)", "(4; 4)", "(-4; 4)", "(1; 3)"]
+      },      {
+        id: "ma_22_8",
+        type: "multiple_choice",
+        points: 1,
+        text: "Задание №22. Самир положил в банк 12000 сом под 10% годовых. Какая общая сумма денег будет на его счету через 3 года?",
+        html: "Задание №22. Самир положил в банк 12000 сом под 10% годовых. Какая общая сумма денег будет на его счету через 3 года?",
+        options: ["120360", "123600", "156000", "120120", "123060"]
       },
     ],
     logic: commonLogicQuestions,
@@ -686,104 +759,77 @@ export const testsData: Record<number, TestData> = {
         ]
       }
     ],
-    math: [
+        math: [
       {
-        id: "math_1",
+        id: "ma_1_9",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №1. Укажите корни квадратного уравнения: -x²+3x+4=0.",
-        options: ["x_1=-4; x_2=1", "x_1=4; x_2=-1", "x_1=-4; x_2=-1"],
-      },
-      {
-        id: "math_2",
+        text: "Задание №1. Выполните деление: (6x + 6y)/x : (x^2 - y^2)/x^2",
+        html: "Задание №1. Выполните деление: <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>6x + 6y</span><span>x</span></span> : <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>x<sup>2</sup> - y<sup>2</sup></span><span>x<sup>2</sup></span></span>",
+        options: ["<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>6</span><span>x - y</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>6x</span><span>x + y</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>x + y</span><span>6x</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>6x</span><span>x - y</span></span>"]
+      },      {
+        id: "ma_2_9",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №2. Найдите абсциссы точек пересечения графиков функций y=(x-1)² и y=2x-2x².",
-        options: ["x_1=1; x_2=1/3", "x_1=-1; x_2=1/2", "x_1=1; x_2=3"],
-      },
-      {
-        id: "math_3",
+        text: "Задание №2. Подберите два последовательных целых числа, между которыми заключено число √37.",
+        html: "Задание №2. Подберите два последовательных целых числа, между которыми заключено число &radic;37.",
+        options: ["36 и 38", "6 и 7", "7 и 8", "нет таких значений"]
+      },      {
+        id: "ma_3_9",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №3. Если дискриминант квадратного уравнения отрицательный, то уравнение...",
-        options: [
-          "Не имеет корней",
-          "Имеет 1 корень",
-          "Имеет более двух корней",
-        ],
-      },
-      {
-        id: "math_4",
+        text: "Задание №3. Найдите значение выражения: √(0,04 · 81) - 7 · √(1/49)",
+        html: "Задание №3. Найдите значение выражения: &radic;(0,04 &middot; 81) - 7 &middot; &radic;<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>1</span><span>49</span></span>",
+        options: ["17", "0,8", "17 <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>1</span><span>6</span></span>", "4"]
+      },      {
+        id: "ma_4_9",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №4. Чему равно произведение корней квадратного уравнения -x²-78564x+24661=0.",
-        options: ["24661", "78564", "-24661", "-78564"],
-      },
-      {
-        id: "math_5",
+        text: "Задание №4. Выберите неверное равенство:",
+        html: "Задание №4. Выберите неверное равенство:",
+        options: ["&radic;16 = 4", "&radic;0,4 = 0,2", "7 - &radic;25 = 2", "&radic;((-15)<sup>2</sup>) = 15"]
+      },      {
+        id: "ma_5_9",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №5. Укажите множество корней уравнения (1-4x²)/(6x-3)=0.",
-        options: ["0,5", "-0,5", "-0,2", "1,5"],
-      },
-      {
-        id: "math_6",
+        text: "Задание №5. Найдите корни уравнения: x^2 + 7x - 18 = 0.",
+        html: "Задание №5. Найдите корни уравнения: x<sup>2</sup> + 7x - 18 = 0.",
+        options: ["-2 и 9", "-9 и 2", "корней нет", "2 и 9"]
+      },      {
+        id: "ma_6_9",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №6. Решите уравнение x/(x-2) - 7/(x+2) = 8/(x²-4).",
-        options: ["X=-2", "X=6", "Нет корней", "X=3"],
-      },
-      {
-        id: "math_7",
+        text: "Задание №6. Графиком какой из функций является гипербола?",
+        html: "Задание №6. Графиком какой из функций является гипербола?",
+        options: ["y = <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>x</span><span>4</span></span>", "y = -<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>x</span><span>4</span></span>", "y = <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>4</span><span>x</span></span>", "y = 4x<sup>2</sup>"]
+      },      {
+        id: "ma_7_9",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №7. Длина прямоугольника на 5 дм больше его ширины, а его площадь равна 36 кв.дм. Найдите периметр.",
-        options: ["28", "23", "26", "64"],
-      },
-      {
-        id: "math_8",
-        type: "free_text",
-        points: 1,
-        text: "Задание №8. Из А в В (120 км)... Скорость первого на 3 км/ч больше... прибыл на 2 часа раньше. Скорость второго?",
-      },
-      {
-        id: "math_9",
+        text: "Задание №7. В прямоугольном треугольнике ABC угол B равен 90 градусов, AB = 5 см, AC = 7 см. Найдите BC.",
+        html: "Задание №7. В прямоугольном треугольнике ABC угол B равен 90 градусов, AB = 5 см, AC = 7 см. Найдите BC.",
+        options: ["24 см", "12 см", "2 см", "&radic;24 см"]
+      },      {
+        id: "ma_8_9",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №9. Известно, что 2 ≤ a ≤ 3. Оцените -2a+1 (в условии опечатка x, подразумевается a).",
-        options: [
-          "5 ≤ -2x+1 ≤ -6",
-          "-5 ≤ -2x+1 ≤ -3",
-          "-4 ≤ -2x+1 ≤ 2",
-          "-7 ≤ -2x+1 ≤ -5",
-        ],
-      },
-      {
-        id: "math_10",
-        type: "free_text",
-        points: 1,
-        text: "Задание №10. Известно, что -2 ≤ a ≤ 3 и 1 ≤ b ≤ 4. Оцените a - b.",
-      },
-      {
-        id: "math_11",
+        text: "Задание №8. Хорды AB и CD пересекаются в точке E. Найдите ED, если AE = 5, BE = 2, CE = ED.",
+        html: "Задание №8. Хорды AB и CD пересекаются в точке E. Найдите ED, если AE = 5, BE = 2, CE = ED.",
+        options: ["10", "&radic;10", "7", "&radic;7"]
+      },      {
+        id: "ma_9_9",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №11. Запишите в виде промежутка часть оси Ox, показанную на рисунке (по контексту штриховка).",
-        options: ["[-3; 0)", "[-3; 0]", "(-3; 0)", "(-3; +∞]"],
-      },
-      {
-        id: "math_12",
+        text: "Задание №9. Сумма двух противоположных сторон описанного четырехугольника равна 12 см, а радиус вписанной в него окружности равен 5 см. Найдите площадь четырехугольника.",
+        html: "Задание №9. Сумма двух противоположных сторон описанного четырехугольника равна 12 см, а радиус вписанной в него окружности равен 5 см. Найдите площадь четырехугольника.",
+        options: ["120 см<sup>2</sup>", "60 см<sup>2</sup>", "30 см<sup>2</sup>", "17 см"]
+      },      {
+        id: "ma_10_9",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №12. Решите систему неравенств 6 - 2x < 3(x - 1) и 6 - x/2 \\ge x.",
-        options: ["(1,5; 2]", "(1,8; 4]", "[1,8; 4)", "(-1,8; 4]"],
-      },
-      {
-        id: "math_13",
-        type: "multiple_choice",
-        points: 1,
-        text: "Задание №13. Упростите выражение (3a⁴/b⁵)^⁻² · (a^⁻²b)^⁻⁴.",
-        options: ["9/b⁶", "b⁶/3", "b⁶/9", "b^¹⁴/9a^¹⁶"],
+        text: "Задание №10. Мотоциклист проехал 40 км от дома до реки. Возвращаясь обратно со скоростью на 10 км/ч меньшей первоначальной, он затратил на этот путь на 20 мин больше. Найдите первоначальную скорость мотоциклиста. Если эту скорость обозначить за х км/ч, то задача может быть решена с помощью уравнения:",
+        html: "Задание №10. Мотоциклист проехал 40 км от дома до реки. Возвращаясь обратно со скоростью на 10 км/ч меньшей первоначальной, он затратил на этот путь на 20 мин больше. Найдите первоначальную скорость мотоциклиста. Если эту скорость обозначить за х км/ч, то задача может быть решена с помощью уравнения:",
+        options: ["<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x</span></span> + <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x - 10</span></span> = 20 + 3(x - 10) = 40", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x - 10</span></span> - <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x</span></span> = <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>1</span><span>3</span></span>", "<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x - 10</span></span> + <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>40</span><span>x</span></span> = <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;'><span style='border-bottom:1px solid currentColor;'>1</span><span>3</span></span>", "х"]
       },
     ],
     logic: commonLogicQuestions,
@@ -1125,91 +1171,61 @@ export const testsData: Record<number, TestData> = {
         options: ["1, 2, 3", "3, 5", "3, 4, 5", "1, 2, 3, 4, 5"],
       }
     ],
-    math: [
+        math: [
       {
-        id: "math_1",
+        id: "ma_1_11",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №1. Выберите верные равенства.",
-        options: [
-          "корень 6-й степени из (-7)⁶ = -7",
-          "корень 5-й степени из (-3)⁵ = -3",
-          "корень 6-й степени из (-7)⁶ = 7",
-          "корень 5-й степени из (-3)⁵ = 3",
-        ],
-      },
-      {
-        id: "math_2",
+        text: "Задание А1. Упростите выражение: -4sin^2 α + 5 - 4cos^2 α",
+        html: "Задание А1. Упростите выражение: -4sin<sup>2</sup> &alpha; + 5 - 4cos<sup>2</sup> &alpha;",
+        options: ["1", "9", "1 + 8sin<sup>2</sup> &alpha;", "1 + 8cos<sup>2</sup> &alpha;"]
+      },      {
+        id: "ma_2_11",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №2. Областью определения функции y=log₂(x-1) является промежуток:",
-        options: ["(-∞; 1)", "(-∞; +∞)", "(1; +∞)", "(0; +∞)"],
-      },
-      {
-        id: "math_3",
+        text: "Задание А2. Вычислить: 4sin(x/7)cos(x/7) при x = 7/4π",
+        html: "Задание А2. Вычислить: 4sin<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>x</span><span>7</span></span>cos<span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>x</span><span>7</span></span> при x = <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>7</span><span>4</span></span>&pi;",
+        options: ["0", "2", "-1", "-2"]
+      },      {
+        id: "ma_3_11",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №3. Определите верное равенство:",
-        options: [
-          "arcctg(-α) = π - arcctg(α)",
-          "arcctg(-α) = -arcctg(α)",
-          "arcctg(-α) = π/2 - arcctg(α)",
-          "arcctg(-α) = arcctg(α)",
-        ],
-      },
-      {
-        id: "math_4",
+        text: "Задание А3. Решите уравнение: cos^2 x - sin^2 x = 0,5",
+        html: "Задание А3. Решите уравнение: cos<sup>2</sup> x - sin<sup>2</sup> x = 0,5",
+        options: ["±π/3 + πn, n ∈ Z", "±π/3 + 2πn, n ∈ Z", "±π/6 + πn, n ∈ Z", "±π/6 + 2πn, n ∈ Z"]
+      },      {
+        id: "ma_4_11",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №4. Выберите точку, через которую проходит график функции Y = \\sqrt[3]{x}.",
-        options: ["A(27; 3)", "B(-1; 1)", "C(3; 1)", "D(-5; -125)"],
-      },
-      {
-        id: "math_5",
+        text: "Задание А4. Решите неравенство: ((2x - 3)(6 + 3x)) / (7 - 4x) ≥ 0",
+        html: "Задание А4. Решите неравенство: <span style='display:inline-flex;flex-direction:column;vertical-align:middle;text-align:center;font-size:0.9em;margin:0 2px;'><span style='border-bottom:1px solid currentColor;'>(2x - 3)(6 + 3x)</span><span>7 - 4x</span></span> &ge; 0",
+        options: ["(-∞; -2] ∪ [1,5; 0)", "[-2; -1,5] ∪ (1,75; +∞)", "(-2; -1,5) ∪ [1,75; +∞)", "(-∞; -2] ∪ [1,5; 1,75)"]
+      },      {
+        id: "ma_5_11",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №5. Производная функции Y=x⁶ равна:",
-        options: ["6x⁶", "6x⁵", "x⁵", "5x⁵"],
-      },
-      {
-        id: "math_6",
+        text: "Задание А5. Найдите множество значений функции: y = 11cos x",
+        html: "Задание А5. Найдите множество значений функции: y = 11cos x",
+        options: ["[0; 11]", "[-1; 1]", "(-∞; +∞)", "[-11; 11]"]
+      },      {
+        id: "ma_6_11",
         type: "multiple_choice",
         points: 1,
-        text: "Задание №6. Если sin(α) = 0, то угол α может быть равен:",
-        options: [
-          "90 градусов",
-          "270 градусов",
-          "-180 градусов",
-          "-270 градусов",
-        ],
-      },
-      {
-        id: "math_7",
-        type: "multiple_choice",
+        text: "Задание А6. Найдите производную функции: y = 3x^2 cos x",
+        html: "Задание А6. Найдите производную функции: y = 3x<sup>2</sup> cos x",
+        options: ["-6xsin x", "6xcos x - 3x<sup>2</sup>sin x", "x<sup>3</sup>cos x + 3x<sup>2</sup>sin x", "6xcos x + 3x<sup>2</sup>sin x"]
+      },      {
+        id: "ma_7_11",
+        type: "free_text",
         points: 1,
-        text: "Задание №7. У призмы 12 вершин. Сколько у нее граней?",
-        options: ["6", "8", "12", "10"],
-      },
-      {
-        id: "math_8",
-        type: "multiple_choice",
+        text: "Задание В1. Точка движется по координатной прямой согласно закону X(t) = 3 + 2t + t^2, где X(t) — координата точки в момент времени t. В какой момент времени скорость точки будет равна 5?",
+        html: "Задание В1. Точка движется по координатной прямой согласно закону X(t) = 3 + 2t + t<sup>2</sup>, где X(t) — координата точки в момент времени t. В какой момент времени скорость точки будет равна 5?",
+      },      {
+        id: "ma_8_11",
+        type: "free_text",
         points: 1,
-        text: "Задание №8. Диаметр сферы равен 6√3, тогда радиус ограниченного этой сферой шара равен:",
-        options: ["3√3", "6√3", "12√3", "3"],
-      },
-      {
-        id: "math_9",
-        type: "multiple_choice",
-        points: 1,
-        text: "Задание №9. Корнем уравнения 3^x = 5 является число:",
-        options: ["log₅(3)", "1 целая 2/3", "⁵√3", "log₃(5)"],
-      },
-      {
-        id: "math_10",
-        type: "multiple_choice",
-        points: 1,
-        text: "Задание №10. Выразите в радианах угол 45 градусов.",
-        options: ["π/2", "π/3", "π/4", "π/6"],
+        text: "Задание В2. Определите абсциссы точек, в которых угловой коэффициент касательной к графику функции h(x) = 1 - 2sin^2 x равен 2.",
+        html: "Задание В2. Определите абсциссы точек, в которых угловой коэффициент касательной к графику функции h(x) = 1 - 2sin<sup>2</sup> x равен 2.",
       },
     ],
     logic: commonLogicQuestions,
