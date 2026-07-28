@@ -65,7 +65,7 @@ export default function ManagerForm() {
     setLoading(false);
   };
 
-  const submitForm = async () => {
+  const submitForm = async (isPsych: boolean) => {
     if (!managerName || !childName || !parentName || !phone) {
       setError("Заполните все обязательные поля");
       return;
@@ -83,7 +83,7 @@ export default function ManagerForm() {
           phone,
           managerName,
           managerComment,
-          sentToPsych
+          sentToPsych: isPsych
         })
       });
       const data = await res.json();
@@ -220,14 +220,14 @@ export default function ManagerForm() {
 
               <div className="pt-4 flex gap-4">
                 <button 
-                  onClick={() => handleSubmit(false)}
+                  onClick={() => submitForm(false)}
                   disabled={loading}
                   className="flex-1 py-4 bg-slate-200 text-slate-700 rounded-xl font-medium disabled:opacity-50 hover:bg-slate-300 transition"
                 >
                   Принять (без психолога)
                 </button>
                 <button 
-                  onClick={() => handleSubmit(true)}
+                  onClick={() => submitForm(true)}
                   disabled={loading}
                   className="flex-1 py-4 bg-blue-600 text-white rounded-xl font-medium disabled:opacity-50 hover:bg-blue-700 transition"
                 >

@@ -241,7 +241,15 @@ app.post("/api/gas", async (req, res) => {
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(payload)
     });
-    const data = await fetchRes.json();
+    
+    const rawText = await fetchRes.text();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch(e) {
+      console.error("GAS Proxy parse error. Raw HTML:", rawText.substring(0, 500));
+      return res.status(500).json({ error: "GAS returned an invalid response (likely an HTML error page). This usually means the Google Apps Script crashed, hit a quota, or requires re-deployment." });
+    }
     
     // Sync with Firestore if final decision updated
     if (payload.action === "updateFinalDecision" && data.success && payload.childName) {
