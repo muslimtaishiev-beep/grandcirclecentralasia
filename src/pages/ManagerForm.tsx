@@ -88,7 +88,11 @@ export default function ManagerForm() {
       });
       const data = await res.json();
       if (data.success) {
-        navigate("/manager-dashboard");
+        if (isPsych) {
+          navigate(`/receipt/${shortId}`);
+        } else {
+          navigate("/manager-dashboard");
+        }
       } else {
         setError(data.error);
       }
