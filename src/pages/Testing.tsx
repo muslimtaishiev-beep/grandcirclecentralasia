@@ -521,6 +521,11 @@ export default function Testing() {
               {section.q.map((q: Question, i: number) => (
                 <div key={q.id} className="bg-slate-50 p-6 rounded-2xl border">
                   <div className="font-medium text-lg text-slate-800 whitespace-pre-wrap mb-4">
+                    {q.instruction && (
+                      <div className="text-sm font-bold text-blue-600 uppercase tracking-widest mb-3 bg-blue-50 inline-block px-3 py-1 rounded">
+                        {q.instruction}
+                      </div>
+                    )}
                     {q.html ? (
                       <div dangerouslySetInnerHTML={{ __html: `${i + 1}. ${q.html}` }} />
                     ) : (
@@ -592,6 +597,26 @@ export default function Testing() {
                           />
                         </div>
                       )}
+                    </div>
+                  ) : q.type === "inline_dropdown" ? (
+                    <div className="mt-4 text-slate-800 text-lg leading-relaxed">
+                      {q.text.split("[gap]").map((part, pIdx, arr) => (
+                        <React.Fragment key={pIdx}>
+                          <span dangerouslySetInnerHTML={{ __html: part }} />
+                          {pIdx < arr.length - 1 && (
+                            <select
+                              value={answers[q.id] || ""}
+                              onChange={e => setAnswers({ ...answers, [q.id]: e.target.value })}
+                              className="mx-2 p-1 border-b-2 border-blue-400 bg-blue-50/50 outline-none focus:border-blue-600 focus:bg-blue-100 rounded-t transition-colors text-blue-800 font-medium cursor-pointer"
+                            >
+                              <option value="" disabled>---</option>
+                              {q.inlineOptions?.map(opt => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          )}
+                        </React.Fragment>
+                      ))}
                     </div>
                   ) : q.type === "logic_matrix" ? (
                     <div className="overflow-x-auto mt-4">

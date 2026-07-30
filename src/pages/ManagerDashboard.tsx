@@ -118,7 +118,7 @@ export default function ManagerDashboard() {
   };
 
   
-  const getMaxScore = (gradeStr: string | undefined, subject: "russian" | "math" | "logic") => {
+  const getMaxScore = (gradeStr: string | undefined, subject: "russian" | "math" | "logic" | "english") => {
     if (!gradeStr) return "?";
     const grade = parseInt(gradeStr, 10);
     const d = testsData[grade];
@@ -126,6 +126,7 @@ export default function ManagerDashboard() {
     if (subject === "logic") return d.logic?.reduce((acc, curr) => acc + (curr.points || 1), 0) || "?";
     if (subject === "math") return d.math?.reduce((acc, curr) => acc + (curr.points || 1), 0) || "?";
     if (subject === "russian") return d.russian?.reduce((acc, curr) => acc + (curr.points || 1), 0) || "?";
+    if (subject === "english") return d.english?.reduce((acc, curr) => acc + (curr.points || 1), 0) || "?";
     return "?";
   };
 
@@ -277,7 +278,7 @@ export default function ManagerDashboard() {
                             {totalScore}
                           </div>
                         </div>
-                        <div className="text-[10px] text-gray-400 mt-1">Р:{s.ru}/{getMaxScore(s.grade, "russian")} М:{s.ma}/{getMaxScore(s.grade, "math")} Л:{s.lo}/{getMaxScore(s.grade, "logic")}</div>
+                        <div className="text-[10px] text-gray-400 mt-1">Р:{s.ru}/{getMaxScore(s.grade, "russian")} М:{s.ma}/{getMaxScore(s.grade, "math")} Л:{s.lo}/{getMaxScore(s.grade, "logic")} А:{s.en}/{getMaxScore(s.grade, "english")}</div>
                       </div>
                     </td>
                     <td className="p-4">

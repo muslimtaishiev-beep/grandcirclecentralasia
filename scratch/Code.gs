@@ -198,6 +198,48 @@ const ANSWER_KEYS = {
       "ma_21_8": { ans: "(4; 4)", pts: 1 },
       "ma_22_8": { ans: "156000", pts: 1 },
     },
+    "english": {
+      "en_8_q1": { ans: "goes", pts: 1 },
+      "en_8_q2": { ans: "were watching", pts: 1 },
+      "en_8_q3": { ans: "have / eaten", pts: 1 },
+      "en_8_q4": { ans: "have lived", pts: 1 },
+      "en_8_q5": { ans: "isn’t", pts: 1 },
+      "en_8_q6": { ans: "taller", pts: 1 },
+      "en_8_q7": { ans: "mustn’t", pts: 1 },
+      "en_8_q8": { ans: "might", pts: 1 },
+      "en_8_q9": { ans: "didn’t do", pts: 1 },
+      "en_8_q10": { ans: "the best", pts: 1 },
+      "en_8_q11": { ans: "wake up", pts: 1 },
+      "en_8_q12": { ans: "doesn’t like", pts: 1 },
+      "en_8_q13": { ans: "visited", pts: 1 },
+      "en_8_q14": { ans: "are playing", pts: 1 },
+      "en_8_q15": { ans: "has already finished", pts: 1 },
+      "en_8_q16": { ans: "have never been", pts: 1 },
+      "en_8_q17": { ans: "was studying", pts: 1 },
+      "en_8_q18": { ans: "are going", pts: 1 },
+      "en_8_q19": { ans: "doesn’t understand", pts: 1 },
+      "en_8_q20": { ans: "have lived", pts: 1 },
+      "en_8_q21": { ans: "of", pts: 1 },
+      "en_8_q22": { ans: "in", pts: 1 },
+      "en_8_q23": { ans: "at", pts: 1 },
+      "en_8_q24": { ans: "at", pts: 1 },
+      "en_8_q25": { ans: "at", pts: 1 },
+      "en_8_q26": { ans: "any", pts: 1 },
+      "en_8_q27": { ans: "much", pts: 1 },
+      "en_8_q28": { ans: "too", pts: 1 },
+      "en_8_q29": { ans: "many", pts: 1 },
+      "en_8_q30": { ans: "most", pts: 1 },
+      "en_8_q31": { ans: "easier", pts: 1 },
+      "en_8_q32": { ans: "the tallest", pts: 1 },
+      "en_8_q33": { ans: "smaller", pts: 1 },
+      "en_8_q34": { ans: "the worst", pts: 1 },
+      "en_8_q35": { ans: "more interesting", pts: 1 },
+      "en_8_q36": { ans: "They didn't go to the party.", pts: 1 },
+      "en_8_q37": { ans: "There are many people in the room.", pts: 1 },
+      "en_8_q38": { ans: "I saw him yesterday.", pts: 1 },
+      "en_8_q39": { ans: "She can drive a car.", pts: 1 },
+      "en_8_q40": { ans: "We agree with you.", pts: 1 },
+    },
         "logic": {
       "logic_1": {
         "ans": JSON.stringify({ "Белов": "Чёрная рубашка", "Серов": "Белая рубашка", "Чернов": "Серая рубашка" }),
@@ -309,6 +351,53 @@ const ANSWER_KEYS = {
       "ma_9_9": { ans: "120 см^2", pts: 1 },
       "ma_10_9": { ans: "40/(x-10) - 40/x = 1/3", pts: 1 },
     },
+    "english": {
+      "en_9_q1": { ans: "had", pts: 1 },
+      "en_9_q2": { ans: "had been", pts: 1 },
+      "en_9_q3": { ans: "would call", pts: 1 },
+      "en_9_q4": { ans: "was built", pts: 1 },
+      "en_9_q5": { ans: "is going", pts: 1 },
+      "en_9_q6": { ans: "have lost", pts: 1 },
+      "en_9_q7": { ans: "whose", pts: 1 },
+      "en_9_q8": { ans: "rains", pts: 1 },
+      "en_9_q9": { ans: "had / left", pts: 1 },
+      "en_9_q10": { ans: "had worked", pts: 1 },
+      "en_9_q11": { ans: "to", pts: 1 },
+      "en_9_q12": { ans: "for", pts: 1 },
+      "en_9_q13": { ans: "on", pts: 1 },
+      "en_9_q14": { ans: "to", pts: 1 },
+      "en_9_q15": { ans: "from", pts: 1 },
+      "en_9_q16": { ans: "of", pts: 1 },
+      "en_9_q17": { ans: "of", pts: 1 },
+      "en_9_q18": { ans: "in", pts: 1 },
+      "en_9_q19": { ans: "in", pts: 1 },
+      "en_9_q20": { ans: "in", pts: 1 },
+      "en_9_q21": { ans: "have been waiting", pts: 1 },
+      "en_9_q22": { ans: "was working", pts: 1 },
+      "en_9_q23": { ans: "haven't finished", pts: 1 },
+      "en_9_q24": { ans: "would come", pts: 1 },
+      "en_9_q25": { ans: "were", pts: 1 },
+      "en_9_q26": { ans: "had already eaten", pts: 1 },
+      "en_9_q27": { ans: "was written", pts: 1 },
+      "en_9_q28": { ans: "has been trying", pts: 1 },
+      "en_9_q29": { ans: "was able to", pts: 1 },
+      "en_9_q30": { ans: "were playing", pts: 1 },
+      "en_9_q31": { ans: "mustn't", pts: 1 },
+      "en_9_q32": { ans: "might", pts: 1 },
+      "en_9_q33": { ans: "should", pts: 1 },
+      "en_9_q34": { ans: "could", pts: 1 },
+      "en_9_q35": { ans: "have to", pts: 1 },
+      "en_9_q36": { ans: "She doesn't enjoy watching TV in the evening.", pts: 1 },
+      "en_9_q37": { ans: "I saw him yesterday at the cinema.", pts: 1 },
+      "en_9_q38": { ans: "He was driving when the accident happened.", pts: 1 },
+      "en_9_q39": { ans: "We didn't go to school yesterday.", pts: 1 },
+      "en_9_q40": { ans: "They have known each other for years.", pts: 1 },
+      "en_9_q41": { ans: "If I see her, I will tell her.", pts: 1 },
+      "en_9_q42": { ans: "She suggested going out for dinner.", pts: 1 },
+      "en_9_q43": { ans: "If I knew about the problem, I would help you.", pts: 1 },
+      "en_9_q44": { ans: "He said that he was busy.", pts: 1 },
+      "en_9_q45": { ans: "I didn’t use to like coffee, but now I do.", pts: 1 },
+    },
         "logic": {
       "logic_1": {
         "ans": JSON.stringify({ "Белов": "Чёрная рубашка", "Серов": "Белая рубашка", "Чернов": "Серая рубашка" }),
@@ -413,6 +502,53 @@ const ANSWER_KEYS = {
       "ma_20_10": { ans: "y = -x^2 + 4x - 3", pts: 1 },
       "ma_21_10": { ans: "2", pts: 1 },
         },
+    "english": {
+      "en_10_11_q1": { ans: "had left", pts: 1 },
+      "en_10_11_q2": { ans: "had finished", pts: 1 },
+      "en_10_11_q3": { ans: "had been", pts: 1 },
+      "en_10_11_q4": { ans: "told", pts: 1 },
+      "en_10_11_q5": { ans: "told", pts: 1 },
+      "en_10_11_q6": { ans: "can’t", pts: 1 },
+      "en_10_11_q7": { ans: "better", pts: 1 },
+      "en_10_11_q8": { ans: "taking", pts: 1 },
+      "en_10_11_q9": { ans: "had", pts: 1 },
+      "en_10_11_q10": { ans: "was using", pts: 1 },
+      "en_10_11_q11": { ans: "worked", pts: 1 },
+      "en_10_11_q12": { ans: "has been", pts: 1 },
+      "en_10_11_q13": { ans: "will be lying", pts: 1 },
+      "en_10_11_q14": { ans: "will be having", pts: 1 },
+      "en_10_11_q15": { ans: "boils", pts: 1 },
+      "en_10_11_q16": { ans: "is said", pts: 1 },
+      "en_10_11_q17": { ans: "got", pts: 1 },
+      "en_10_11_q18": { ans: "waking", pts: 1 },
+      "en_10_11_q19": { ans: "had known", pts: 1 },
+      "en_10_11_q20": { ans: "had worked", pts: 1 },
+      "en_10_11_q21": { ans: "hadn’t said", pts: 1 },
+      "en_10_11_q22": { ans: "has been fixing", pts: 1 },
+      "en_10_11_q23": { ans: "will have built", pts: 1 },
+      "en_10_11_q24": { ans: "would finish", pts: 1 },
+      "en_10_11_q25": { ans: "were", pts: 1 },
+      "en_10_11_q26": { ans: "haven’t completed", pts: 1 },
+      "en_10_11_q27": { ans: "breaking", pts: 1 },
+      "en_10_11_q28": { ans: "had been waiting", pts: 1 },
+      "en_10_11_q29": { ans: "If I had known, I would have helped you.", pts: 1 },
+      "en_10_11_q30": { ans: "He told me that he would come later.", pts: 1 },
+      "en_10_11_q31": { ans: "I have already seen this film.", pts: 1 },
+      "en_10_11_q32": { ans: "She suggested taking a break.", pts: 1 },
+      "en_10_11_q33": { ans: "The project was completed by them.", pts: 1 },
+      "en_10_11_q34": { ans: "I look forward to hearing from you.", pts: 1 },
+      "en_10_11_q35": { ans: "however", pts: 1 },
+      "en_10_11_q36": { ans: "despite", pts: 1 },
+      "en_10_11_q37": { ans: "nevertheless", pts: 1 },
+      "en_10_11_q38": { ans: "whereas", pts: 1 },
+      "en_10_11_q39": { ans: "while", pts: 1 },
+      "en_10_11_q40": { ans: "in spite of", pts: 1 },
+      "en_10_11_q41": { ans: "She has been looking for a job for six months.", pts: 1 },
+      "en_10_11_q42": { ans: "I remember to lock the door before leaving.", pts: 1 },
+      "en_10_11_q43": { ans: "I would rather stay at home than go out.", pts: 1 },
+      "en_10_11_q44": { ans: "Despite the heavy rain, they went out.", pts: 1 },
+      "en_10_11_q45": { ans: "Try pressing this button to see if it works.", pts: 1 },
+    },
         "logic": {
       "logic_1": {
         "ans": JSON.stringify({ "Белов": "Чёрная рубашка", "Серов": "Белая рубашка", "Чернов": "Серая рубашка" }),
@@ -501,6 +637,53 @@ const ANSWER_KEYS = {
       "ma_7_11": { ans: "1.5", pts: 1 },
       "ma_8_11": { ans: "6", pts: 1 },
     },
+    "english": {
+      "en_10_11_q1": { ans: "had left", pts: 1 },
+      "en_10_11_q2": { ans: "had finished", pts: 1 },
+      "en_10_11_q3": { ans: "had been", pts: 1 },
+      "en_10_11_q4": { ans: "told", pts: 1 },
+      "en_10_11_q5": { ans: "told", pts: 1 },
+      "en_10_11_q6": { ans: "can’t", pts: 1 },
+      "en_10_11_q7": { ans: "better", pts: 1 },
+      "en_10_11_q8": { ans: "taking", pts: 1 },
+      "en_10_11_q9": { ans: "had", pts: 1 },
+      "en_10_11_q10": { ans: "was using", pts: 1 },
+      "en_10_11_q11": { ans: "worked", pts: 1 },
+      "en_10_11_q12": { ans: "has been", pts: 1 },
+      "en_10_11_q13": { ans: "will be lying", pts: 1 },
+      "en_10_11_q14": { ans: "will be having", pts: 1 },
+      "en_10_11_q15": { ans: "boils", pts: 1 },
+      "en_10_11_q16": { ans: "is said", pts: 1 },
+      "en_10_11_q17": { ans: "got", pts: 1 },
+      "en_10_11_q18": { ans: "waking", pts: 1 },
+      "en_10_11_q19": { ans: "had known", pts: 1 },
+      "en_10_11_q20": { ans: "had worked", pts: 1 },
+      "en_10_11_q21": { ans: "hadn’t said", pts: 1 },
+      "en_10_11_q22": { ans: "has been fixing", pts: 1 },
+      "en_10_11_q23": { ans: "will have built", pts: 1 },
+      "en_10_11_q24": { ans: "would finish", pts: 1 },
+      "en_10_11_q25": { ans: "were", pts: 1 },
+      "en_10_11_q26": { ans: "haven’t completed", pts: 1 },
+      "en_10_11_q27": { ans: "breaking", pts: 1 },
+      "en_10_11_q28": { ans: "had been waiting", pts: 1 },
+      "en_10_11_q29": { ans: "If I had known, I would have helped you.", pts: 1 },
+      "en_10_11_q30": { ans: "He told me that he would come later.", pts: 1 },
+      "en_10_11_q31": { ans: "I have already seen this film.", pts: 1 },
+      "en_10_11_q32": { ans: "She suggested taking a break.", pts: 1 },
+      "en_10_11_q33": { ans: "The project was completed by them.", pts: 1 },
+      "en_10_11_q34": { ans: "I look forward to hearing from you.", pts: 1 },
+      "en_10_11_q35": { ans: "however", pts: 1 },
+      "en_10_11_q36": { ans: "despite", pts: 1 },
+      "en_10_11_q37": { ans: "nevertheless", pts: 1 },
+      "en_10_11_q38": { ans: "whereas", pts: 1 },
+      "en_10_11_q39": { ans: "while", pts: 1 },
+      "en_10_11_q40": { ans: "in spite of", pts: 1 },
+      "en_10_11_q41": { ans: "She has been looking for a job for six months.", pts: 1 },
+      "en_10_11_q42": { ans: "I remember to lock the door before leaving.", pts: 1 },
+      "en_10_11_q43": { ans: "I would rather stay at home than go out.", pts: 1 },
+      "en_10_11_q44": { ans: "Despite the heavy rain, they went out.", pts: 1 },
+      "en_10_11_q45": { ans: "Try pressing this button to see if it works.", pts: 1 },
+    },
         "logic": {
       "logic_1": {
         "ans": JSON.stringify({ "Белов": "Чёрная рубашка", "Серов": "Белая рубашка", "Чернов": "Серая рубашка" }),
@@ -577,7 +760,7 @@ function calculateScores(grade, answers) {
   const keys = ANSWER_KEYS[String(grade)];
   if (!keys) return { russian: 0, math: 0, logic: 0 };
   
-  let ru = 0, ma = 0, lo = 0;
+  let ru = 0, ma = 0, lo = 0, en = 0;
   
   if (answers && typeof answers === 'object') {
     Object.keys(keys.russian).forEach(qId => {
@@ -660,8 +843,17 @@ function calculateScores(grade, answers) {
         if (normalizeString(userAns) === normalizeString(keys.logic[qId].ans)) lo += keys.logic[qId].pts;
       }
     });
+    if (keys.english) {
+      Object.keys(keys.english).forEach(qId => {
+        let userAns = answers[qId] ? String(answers[qId]).trim() : "";
+        let correctAns = keys.english[qId].ans;
+        let normalizedUser = userAns.toLowerCase().replace(/[.,!?;]/g, "").replace(/\s+/g, " ");
+        let normalizedCorrect = correctAns.toLowerCase().replace(/[.,!?;]/g, "").replace(/\s+/g, " ");
+        if (normalizedUser === normalizedCorrect) en += keys.english[qId].pts;
+      });
+    }
   }
-  return { russian: ru, math: ma, logic: lo };
+  return { russian: ru, math: ma, logic: lo, english: en };
 }
 
 function getTestByShortId(testSheet, shortId) {
@@ -676,6 +868,7 @@ function getTestByShortId(testSheet, shortId) {
         russian: data[i][3],
         math: data[i][4],
         logic: data[i][5],
+        english: data[i][12],
         totalScore: data[i][6],
         testId: data[i][7],
         timestamp: data[i][8],
@@ -752,10 +945,10 @@ function doPost(e) {
     let crmSheet = ss.getSheetByName(SHEET_CRM);
     
     if (testSheet.getLastRow() === 0) {
-      testSheet.appendRow(["Дата", "ФИО Ученика", "Класс", "Русский язык", "Математика", "Логика", "Общий балл", "Уникальный ID теста", "Timestamp", "Читерство", "Short ID", "Ответы ученика (JSON)"]);
+      testSheet.appendRow(["Дата", "ФИО Ученика", "Класс", "Русский язык", "Математика", "Логика", "Общий балл", "Уникальный ID теста", "Timestamp", "Читерство", "Short ID", "Ответы ученика (JSON)", "Английский язык"]);
     }
     if (crmSheet.getLastRow() === 0) {
-      crmSheet.appendRow(["Дата", "Менеджер", "ФИО Родителя", "Номер телефона", "ID Теста (ученика)", "Стадия работы", "Оплата до.инфо", "Взнос", "Общая стоимость", "Оплата -1-месяц", "К психологу?", "Вердикт", "Комментарий психолога", "Финальное решение", "Причина отказа", "Имя ребенка", "Русский", "Математика", "Логика", "Комментарий менеджера"]);
+      crmSheet.appendRow(["Дата", "Менеджер", "ФИО Родителя", "Номер телефона", "ID Теста (ученика)", "Стадия работы", "Оплата до.инфо", "Взнос", "Общая стоимость", "Оплата -1-месяц", "К психологу?", "Вердикт", "Комментарий психолога", "Финальное решение", "Причина отказа", "Имя ребенка", "Русский", "Математика", "Логика", "Комментарий менеджера", "Английский"]);
     }
 
     if (action === "submitTest") {
@@ -796,7 +989,7 @@ function doPost(e) {
       
       const ts = new Date().getTime();
       const answersStr = JSON.stringify(answers || {});
-      testSheet.appendRow([new Date(ts).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" }), finalName, grade, scores.russian, scores.math, scores.logic, totalScore, testId, ts, cheated ? "ДА" : "НЕТ", shortId, answersStr]);
+      testSheet.appendRow([new Date(ts).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" }), finalName, grade, scores.russian, scores.math, scores.logic, totalScore, testId, ts, cheated ? "ДА" : "НЕТ", shortId, answersStr, scores.english]);
       
       return ContentService.createTextOutput(JSON.stringify({ success: true, totalScore, scores, cheated: !!cheated })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -829,7 +1022,7 @@ function doPost(e) {
       // Appending to the new 20-column layout
       // ["Дата", "Менеджер", "ФИО Родителя", "Номер телефона", "ID Теста (ученика)", "Стадия работы", "Оплата до.инфо", "Взнос", "Общая стоимость", "Оплата -1-месяц", "К психологу?", "Вердикт", "Комментарий психолога", "Финальное решение", "Причина отказа", "Имя ребенка", "Русский", "Математика", "Логика", "Комментарий менеджера"]
       
-      let newRow = new Array(20).fill("");
+      let newRow = new Array(21).fill("");
       newRow[0] = new Date().toLocaleString("ru-RU", { timeZone: "Asia/Almaty" });
       newRow[1] = sanitize(managerName);
       newRow[2] = sanitize(parentName);
@@ -842,6 +1035,7 @@ function doPost(e) {
       newRow[17] = student.math;
       newRow[18] = student.logic;
       newRow[19] = sanitize(managerComment);
+      newRow[20] = student.english;
 
       crmSheet.appendRow(newRow);
       return ContentService.createTextOutput(JSON.stringify({ success: true, student })).setMimeType(ContentService.MimeType.JSON);
@@ -906,6 +1100,7 @@ function doPost(e) {
           ru: crmData[i][16],
           ma: crmData[i][17],
           lo: crmData[i][18],
+          en: crmData[i][20],
           cheated: testMap[sid] ? testMap[sid].cheated : false,
           grade: testMap[sid] ? String(testMap[sid].grade) : ""
         });
@@ -937,6 +1132,7 @@ function doPost(e) {
             ru: testData[i][3],
             ma: testData[i][4],
             lo: testData[i][5],
+            en: testData[i][12],
             cheated: testData[i][9] === "ДА",
             grade: String(testData[i][2])
           });

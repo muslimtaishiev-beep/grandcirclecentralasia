@@ -105,7 +105,7 @@ export interface PublicData {
   universities: University[];
 }
 
-export type Subject = "russian" | "math" | "logic";
+export type Subject = "russian" | "math" | "logic" | "english";
 
 export interface DropdownItem {
   label: string;
@@ -128,8 +128,10 @@ export interface Question {
   id: string;
   text: string;
   html?: string; // Optional HTML override for the text (e.g., LaTeX formulas)
-  type: "multiple_choice" | "free_text" | "two_step" | "logic_matrix" | "dropdown_multiple" | "drag_and_drop" | "number_input" | "clickable_text" | "inline_inputs";
+  type: "multiple_choice" | "free_text" | "two_step" | "logic_matrix" | "dropdown_multiple" | "drag_and_drop" | "number_input" | "clickable_text" | "inline_inputs" | "inline_dropdown";
+  instruction?: string; // Optional task instruction
   options?: string[]; // Only for multiple_choice and two_step
+  inlineOptions?: string[]; // For inline_dropdown shared options
   optionsHtml?: string[]; // Optional HTML override for the options
 
   step2Text?: string; // Instructions for step 2 in two_step questions
@@ -147,4 +149,5 @@ export interface TestData {
   russian: Question[];
   math: Question[];
   logic: Question[];
+  english?: Question[];
 }
