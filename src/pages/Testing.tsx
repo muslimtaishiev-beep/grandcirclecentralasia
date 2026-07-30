@@ -156,7 +156,7 @@ export default function Testing() {
     
     const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
     const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
-    if (!isTester && enteredPin !== getHourlyPIN()) {
+    if (!isTester && enteredPin !== getHourlyPIN(0) && enteredPin !== getHourlyPIN(-1) && enteredPin !== getHourlyPIN(1)) {
       return alert("Неверный PIN-код. Узнайте актуальный PIN у менеджера.");
     }
 
