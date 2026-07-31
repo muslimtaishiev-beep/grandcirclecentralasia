@@ -760,7 +760,7 @@ function calculateScores(grade, answers) {
   const keys = ANSWER_KEYS[String(grade)];
   if (!keys) return { russian: 0, math: 0, logic: 0 };
   
-  let ru = 0, ma = 0, lo = 0, en = 0;
+  let ru = 0, ma = 0, lo = 0, en = "";
   
   if (answers && typeof answers === 'object') {
     Object.keys(keys.russian).forEach(qId => {
@@ -844,13 +844,20 @@ function calculateScores(grade, answers) {
       }
     });
     if (keys.english) {
+      let hasEnglish = false;
       Object.keys(keys.english).forEach(qId => {
-        let userAns = answers[qId] ? String(answers[qId]).trim() : "";
+        if (answers[qId] !== undefined) hasEnglish = true;
+      });
+      if (hasEnglish) {
+        en = 0;
+        Object.keys(keys.english).forEach(qId => {
+          let userAns = answers[qId] ? String(answers[qId]).trim() : "";
         let correctAns = keys.english[qId].ans;
         let normalizedUser = userAns.toLowerCase().replace(/[.,!?;]/g, "").replace(/\s+/g, " ");
         let normalizedCorrect = correctAns.toLowerCase().replace(/[.,!?;]/g, "").replace(/\s+/g, " ");
         if (normalizedUser === normalizedCorrect) en += keys.english[qId].pts;
-      });
+        });
+      }
     }
   }
   return { russian: ru, math: ma, logic: lo, english: en };
