@@ -1,88 +1,73 @@
 import re
 
-with open("src/pages/Testing.tsx", "r", encoding="utf-8") as f:
-    content = f.read()
+with open('src/pages/Testing.tsx', 'r', encoding='utf-8') as f:
+    code = f.read()
 
-# Fix 1: Resume UI
-login_ui = """
-          {!isResumingEnglish ? (
-            <>
-              <button 
-                onClick={startTest}
-                disabled={!grade || !studentName.trim() || !enteredPin.trim() || !consentGiven}
-                className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-lg disabled:opacity-50 hover:bg-blue-700 transition shadow-lg mb-3"
-              >
-                Начать тест
-              </button>
-              <button 
-                onClick={() => setIsResumingEnglish(true)}
-                className="w-full py-3 bg-white text-blue-600 border-2 border-blue-600 rounded-xl font-bold text-lg hover:bg-blue-50 transition"
-              >
-                Продолжить тест по английскому
-              </button>
-            </>
-          ) : (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Ваш Test ID:</label>
-                <input
-                  type="text"
-                  value={resumeShortId}
-                  onChange={(e) => setResumeShortId(e.target.value)}
-                  className="w-full border rounded-xl p-3 bg-slate-50 font-mono tracking-widest text-center"
-                  placeholder="Например: 123456"
-                />
-              </div>
-              <button 
-                onClick={startTest}
-                disabled={!resumeShortId.trim() || !enteredPin.trim()}
-                className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold text-lg disabled:opacity-50 hover:bg-indigo-700 transition shadow-lg"
-              >
-                Войти и начать английский
-              </button>
-              <button 
-                onClick={() => setIsResumingEnglish(false)}
-                className="w-full py-2 text-slate-500 font-bold hover:text-slate-700 transition"
-              >
-                Назад
-              </button>
-            </div>
-          )}
-"""
-content = re.sub(r'<button\s*onClick=\{startTest\}\s*disabled=\{!grade.*?Начать тест\s*</button>', login_ui, content, flags=re.DOTALL)
+# Add a submit button at the bottom of the test page
+target_bottom_button = r"""        ))}
+      </div>
+    </div>
+  );
+}"""
 
-# Fix 2 & 3: Anti-cheat dependency & condition
-# Currently it is:
-#     const handleVisibilityChange = () => {
-#       if (document.hidden) {
-#         handleCheating();
-#       } else {
-#         handleFocus();
-#       }
-#     };
-# We need to wrap handleCheating with `if (phase === "core" || phase === "english")`
-content = content.replace(
-    'if (document.hidden) {\n        handleCheating();',
-    'if (document.hidden) {\n        if (phase === "core" || phase === "english") handleCheating();'
-)
-# And the ESC listener
-content = content.replace(
-    'submitCoreTest(true);\n          }',
-    'if (phase === "core" || phase === "english") { phase === "english" ? submitEnglishTest(true) : submitCoreTest(true); }\n          }'
-)
-# And the useEffect dependencies
-content = content.replace(
-    '[started, finished, disqualified, answers]',
-    '[started, finished, disqualified, answers, phase]'
-)
+replacement_bottom_button = """        ))}
+      </div>
+      <div className="max-w-3xl mx-auto px-6 pb-12 flex justify-end">
+        <button 
+          onClick={() => phase === "english" ? submitEnglishTest(false) : submitCoreTest(false)}
+          className="px-8 py-4 bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:shadow-xl hover:bg-blue-700 transition-all"
+        >
+          Завершить тест
+        </button>
+      </div>
+    </div>
+  );
+}"""
+code = code.replace(target_bottom_button, replacement_bottom_button)
 
-# Fix 4: setFinished on Intermediate screen
-content = content.replace(
-    'setPhase("final");\n                if (document.exitFullscreen) document.exitFullscreen().catch(()=>{});',
-    'setFinished(true);\n                setPhase("final");\n                if (document.exitFullscreen) document.exitFullscreen().catch(()=>{});'
-)
+# Add null safety to resultData
+target_result_data = r"""                  <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-left">
+                    <h3 className="font-bold text-green-800 text-lg mb-3 text-center">Основной тест:</h3>
+                    <div className="flex justify-between items-center mb-1 text-green-700">
+                      <span>Русский язык:</span><span className="font-bold">{resultData.scores?.russian || 0}</span>
+                    </div>
+                    <div className="flex justify-between items-center mb-1 text-green-700">
+                      <span>Математика:</span><span className="font-bold">{resultData.scores?.math || 0}</span>
+                    </div>
+                    <div className="flex justify-between items-center mb-1 text-green-700">
+                      <span>Логика:</span><span className="font-bold">{resultData.scores?.logic || 0}</span>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-green-200 flex flex-col items-end font-bold text-green-900 text-lg">
+                      <div className="w-full flex justify-between"><span>Общий балл:</span><span>{resultData.totalScore || 0} из {totalMax}</span></div>
+                      <div className="text-sm text-green-700 font-medium">({percent}% верных)</div>
+                    </div>
+                  </div>"""
 
-with open("src/pages/Testing.tsx", "w", encoding="utf-8") as f:
-    f.write(content)
+replacement_result_data = """                  {resultData && resultData.scores && (
+                  <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-left">
+                    <h3 className="font-bold text-green-800 text-lg mb-3 text-center">Основной тест:</h3>
+                    <div className="flex justify-between items-center mb-1 text-green-700">
+                      <span>Русский язык:</span><span className="font-bold">{resultData.scores.russian || 0}</span>
+                    </div>
+                    <div className="flex justify-between items-center mb-1 text-green-700">
+                      <span>Математика:</span><span className="font-bold">{resultData.scores.math || 0}</span>
+                    </div>
+                    <div className="flex justify-between items-center mb-1 text-green-700">
+                      <span>Логика:</span><span className="font-bold">{resultData.scores.logic || 0}</span>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-green-200 flex flex-col items-end font-bold text-green-900 text-lg">
+                      <div className="w-full flex justify-between"><span>Общий балл:</span><span>{resultData.totalScore || 0} из {totalMax}</span></div>
+                      <div className="text-sm text-green-700 font-medium">({percent}% верных)</div>
+                    </div>
+                  </div>
+                  )}"""
+code = code.replace(target_result_data, replacement_result_data)
 
-print("Testing.tsx patched successfully")
+# Also fix the english checking block to check if resultData.scores exists
+target_english_scores = r"""                  {resultData.scores?.english !== undefined && resultData.scores?.english !== "" && maxEn > 0 && ("""
+replacement_english_scores = r"""                  {resultData && resultData.scores && resultData.scores.english !== undefined && resultData.scores.english !== "" && maxEn > 0 && ("""
+code = code.replace(target_english_scores, replacement_english_scores)
+
+with open('src/pages/Testing.tsx', 'w', encoding='utf-8') as f:
+    f.write(code)
+print("Applied bugfixes to Testing.tsx")

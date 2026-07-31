@@ -468,6 +468,7 @@ export default function Testing() {
                 
                 return (
                   <>
+                  {resultData && resultData.scores && (
                   <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-left">
                     <h3 className="font-bold text-green-800 text-lg mb-3 text-center">Основной тест:</h3>
                     <div className="flex justify-between items-center mb-1 text-green-700">
@@ -484,12 +485,13 @@ export default function Testing() {
                       <div className="text-sm text-green-700 font-medium">({percent}% верных)</div>
                     </div>
                   </div>
+                  )}
                   
-                  {resultData.scores.english !== undefined && resultData.scores.english !== "" && maxEn > 0 && (
+                  {resultData && resultData.scores && resultData.scores.english !== undefined && resultData.scores.english !== "" && maxEn > 0 && (
                     <div className="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded-xl text-left">
                       <h3 className="font-bold text-indigo-800 text-lg mb-3 text-center">Английский язык:</h3>
                       {(() => {
-                        const cefr = getCEFRLevel(grade!, maxEn, Number(resultData.scores.english));
+                        const cefr = getCEFRLevel(grade!, maxEn, Number(resultData.scores?.english));
                         if (!cefr) return null;
                         return (
                           <div className="flex flex-col items-center">
@@ -963,6 +965,14 @@ export default function Testing() {
             </div>
           </div>
         ))}
+      </div>
+      <div className="max-w-3xl mx-auto px-6 pb-12 flex justify-end">
+        <button 
+          onClick={() => phase === "english" ? submitEnglishTest(false) : submitCoreTest(false)}
+          className="px-8 py-4 bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:shadow-xl hover:bg-blue-700 transition-all"
+        >
+          Завершить тест
+        </button>
       </div>
     </div>
   );
