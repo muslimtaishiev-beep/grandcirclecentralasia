@@ -278,7 +278,7 @@ export default function ManagerDashboard() {
                             {totalScore}
                           </div>
                         </div>
-                        <div className="text-[10px] text-gray-400 mt-1">{(() => { const maxEn = getMaxScore(s.grade, "english"); let enStr = `А:${s.en}/${maxEn}`; if (s.en !== undefined && s.en !== "" && maxEn !== "?") { const cefr = getCEFRLevel(parseInt(s.grade, 10), maxEn as number, parseInt(s.en, 10)); if(cefr) enStr = `Английский: ${cefr.actualLevel} (${cefr.percent}%) ${cefr.icon}`; } return `Р:${s.ru}/${getMaxScore(s.grade, "russian")} М:{s.ma}/${getMaxScore(s.grade, "math")} Л:{s.lo}/${getMaxScore(s.grade, "logic")} | ${enStr}`; })()}</div>
+                        <div className="text-[10px] text-gray-400 mt-1">{(() => { const maxEn = getMaxScore(s.grade, "english"); let enStr = `А:${s.en || 0}/${maxEn}`; if (s.en !== undefined && s.en !== null && s.en !== "" && maxEn !== "?") { const cefr = getCEFRLevel(parseInt(s.grade, 10), maxEn as number, parseInt(s.en, 10)); if(cefr) enStr = `Английский: ${cefr.actualLevel} (${cefr.percent}%) ${cefr.icon}`; } return `Р:${s.ru || 0}/${getMaxScore(s.grade, "russian")} М:${s.ma || 0}/${getMaxScore(s.grade, "math")} Л:${s.lo || 0}/${getMaxScore(s.grade, "logic")} | ${enStr}`; })()}</div>
                       </div>
                     </td>
                     <td className="p-4">
