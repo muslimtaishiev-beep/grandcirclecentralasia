@@ -212,7 +212,7 @@ app.post("/api/gas", async (req, res) => {
     
     // Check if tester
     const TESTER_PIN = process.env.VITE_TESTER_PIN;
-    if (TESTER_PIN && payload.action === "submitTest" && payload.testerPin) {
+    if (TESTER_PIN && (payload.action === "submitTest" || payload.action === "submitEnglishTest") && payload.testerPin) {
       if (payload.testerPin === TESTER_PIN) {
         payload.isTester = true;
       }
@@ -220,7 +220,7 @@ app.post("/api/gas", async (req, res) => {
     }
     
     // For protected actions, verify Firebase Auth token
-    const publicActions = ["submitTest", "getStudentByShortId", "getAllStudents", "updateFinalDecision", "submitManagerForm", "getPsychologistStudent", "submitPsychologistForm"];
+    const publicActions = ["submitTest", "submitEnglishTest", "getStudentByShortId", "getAllStudents", "updateFinalDecision", "submitManagerForm", "getPsychologistStudent", "submitPsychologistForm"];
     if (!publicActions.includes(payload.action)) {
       const authHeader = req.headers["authorization"] || "";
       const token = authHeader.replace("Bearer ", "").trim();

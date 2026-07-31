@@ -3,11 +3,17 @@ import { QRCodeCanvas } from "qrcode.react";
 import { Reorder } from "framer-motion";
 import { testsData } from "../data/testsData";
 import { Question } from "../types";
-import { getHourlyPIN, formatMathText } from "../lib/utils";
+import { getHourlyPIN, formatMathText, getCEFRLevel } from "../lib/utils";
 
 export default function Testing() {
   const [studentName, setStudentName] = useState(() => sessionStorage.getItem("studentName") || "");
   const [enteredPin, setEnteredPin] = useState("");
+  const [phase, setPhase] = useState<"login" | "core" | "intermediate" | "english" | "final">(
+    () => (sessionStorage.getItem("phase") as any) || "login"
+  );
+  const [isResumingEnglish, setIsResumingEnglish] = useState(false);
+  const [resumeShortId, setResumeShortId] = useState("");
+
   const [grade, setGrade] = useState<number | null>(() => {
     const saved = sessionStorage.getItem("grade");
     return saved ? Number(saved) : null;
@@ -52,6 +58,7 @@ export default function Testing() {
     sessionStorage.setItem("qrToken", qrToken);
     sessionStorage.setItem("pendingSubmission", String(pendingSubmission));
     if (resultData) sessionStorage.setItem("resultData", JSON.stringify(resultData));
+    sessionStorage.setItem("phase", phase);
   }, [studentName, grade, started, finished, disqualified, consentGiven, answers, testId, shortId, qrToken, pendingSubmission, resultData]);
 
   // Prevent accidental F5/Closing
@@ -73,7 +80,7 @@ export default function Testing() {
     const handleCheating = () => {
       // 2 seconds grace period
       blurTimeout.current = setTimeout(() => {
-        submitTest(true); // submit immediately as cheating
+        phase === 'english' ? submitEnglishTest(true) : submitCoreTest(true); // submit immediately as cheating
       }, 2000);
     };
 
@@ -127,7 +134,7 @@ export default function Testing() {
       if (e.key === "Escape") {
         if (!started || finished) return;
         if (!disqualified) {
-          submitTest(true); // Cheating
+          phase === 'english' ? submitEnglishTest(true) : submitCoreTest(true); // Cheating
         } else {
           setStopAudio(true); // Silence the song
         }
@@ -150,39 +157,62 @@ export default function Testing() {
     }
   }, [disqualified, stopAudio]);
 
+  
   const startTest = async () => {
+    if (isResumingEnglish) {
+       if (!resumeShortId.trim()) return alert("Введите Test ID");
+       if (!enteredPin.trim()) return alert("Введите PIN");
+       const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
+       const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
+       if (!isTester && enteredPin !== getHourlyPIN(0) && enteredPin !== getHourlyPIN(-1) && enteredPin !== getHourlyPIN(1)) {
+         return alert("Неверный PIN-код.");
+       }
+       
+       try {
+         const res = await fetch("/api/gas", {
+           method: "POST", headers: { "Content-Type": "application/json" },
+           body: JSON.stringify({ action: "getStudentByShortId", shortId: resumeShortId })
+         });
+         const data = await res.json();
+         if (!data.success) return alert(data.error || "Не найдено");
+         
+         const student = data.student;
+         setShortId(student.shortId);
+         setGrade(student.grade);
+         setStudentName(student.studentName);
+         setResultData({
+           totalScore: student.totalScore,
+           scores: { russian: student.russian, math: student.math, logic: student.logic, english: student.english }
+         });
+         if (student.english !== "") {
+           return alert("Английский тест уже был сдан для этого Test ID!");
+         }
+         if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen().catch(()=>{});
+         setStarted(true);
+         setPhase("english");
+       } catch (e:any) { alert("Ошибка: " + e.message); }
+       return;
+    }
+
     if (!grade) return alert("Выберите класс");
     if (!studentName.trim()) return alert("Введите ФИО");
-    
     const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
     const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
     if (!isTester && enteredPin !== getHourlyPIN(0) && enteredPin !== getHourlyPIN(-1) && enteredPin !== getHourlyPIN(1)) {
       return alert("Неверный PIN-код. Узнайте актуальный PIN у менеджера.");
     }
 
-    // We rely entirely on the Server for the 1-hour block.
-    // This allows the server to bypass the block if the manager has already made a decision.
-    
-    try {
-      if (document.documentElement.requestFullscreen) {
-        await document.documentElement.requestFullscreen();
-      }
-    } catch (err) {
-      console.warn("Fullscreen API failed", err);
-    }
-
-    if (!testId) {
-      setTestId(crypto.randomUUID());
-    }
+    if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen().catch(()=>{});
+    if (!testId) setTestId(crypto.randomUUID());
     setStarted(true);
+    setPhase("core");
   };
 
-  const submitTest = async (isDisqualified = false) => {
-    setFinished(true);
+  
+  const submitCoreTest = async (isDisqualified = false) => {
     if (isDisqualified) {
       setDisqualified(true);
     }
-
     const payloadTestId = testId || crypto.randomUUID();
     if (!testId) setTestId(payloadTestId);
 
@@ -192,64 +222,100 @@ export default function Testing() {
     const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
     const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
 
+    // Send only russian, math, logic answers
+    const coreAnswers = {};
+    if (grade && testsData[grade]) {
+        [...(testsData[grade].russian||[]), ...(testsData[grade].math||[]), ...(testsData[grade].logic||[])].forEach(q => {
+            if (answers[q.id]) coreAnswers[q.id] = answers[q.id];
+        });
+    }
+
     const payload = {
       action: "submitTest",
       testId: payloadTestId,
       shortId: shortId,
       studentName,
       grade,
-      answers,
+      answers: coreAnswers,
       cheated: isDisqualified,
       testerPin: isTester ? enteredPin : undefined
     };
 
-    // Save timer for anti-spam only if not tester
-    if (!isTester) {
-      localStorage.setItem("lastTestTime", Date.now().toString());
-    }
-
-    const sendData = async () => {
-      try {
-        const gasUrl = "/api/gas";
-        const res = await fetch(gasUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (data.success) {
-          setResultData({
-            totalScore: data.totalScore,
-            scores: data.scores,
-            cheated: data.cheated
-          });
-          setPendingSubmission(false);
-          localStorage.removeItem(`offline_test_${payloadTestId}`);
-        } else {
-          // If server actively rejects (e.g. rate limit or duplicate)
-          if (data.error && data.error.includes("уже сдавали")) {
-             alert(data.error);
-             setPendingSubmission(false); // Don't retry
-             localStorage.removeItem(`offline_test_${payloadTestId}`);
-             return;
-          }
-          throw new Error(data.error);
-        }
-      } catch (e: any) {
-        console.error("Failed to submit to GAS", e);
-        setPendingSubmission(true);
-        setSubmitError(e.message || "Unknown error");
-        localStorage.setItem(`offline_test_${payloadTestId}`, JSON.stringify(payload));
-      }
-    };
-    
-    await sendData();
+    if (!isTester) localStorage.setItem("lastTestTime", Date.now().toString());
 
     try {
-      if (document.exitFullscreen) {
-        await document.exitFullscreen();
+      const res = await fetch("/api/gas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setResultData({
+          totalScore: data.totalScore,
+          scores: data.scores,
+          cheated: data.cheated
+        });
+        setPendingSubmission(false);
+        // Do not set finished here! We move to intermediate phase.
+        setPhase("intermediate");
+      } else {
+        if (data.error && data.error.includes("уже сдавали")) {
+             alert(data.error);
+             return;
+        }
+        throw new Error(data.error);
       }
-    } catch (e) {}
+    } catch (e: any) {
+      console.error(e);
+      alert("Ошибка отправки теста: " + e.message);
+    }
+  };
+
+  const submitEnglishTest = async (isDisqualified = false) => {
+    setFinished(true);
+    if (isDisqualified) setDisqualified(true);
+
+    const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
+    const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
+
+    const engAnswers = {};
+    if (grade && testsData[grade] && testsData[grade].english) {
+        testsData[grade].english.forEach(q => {
+            if (answers[q.id]) engAnswers[q.id] = answers[q.id];
+        });
+    }
+
+    const payload = {
+      action: "submitEnglishTest",
+      shortId: shortId,
+      grade,
+      answers: engAnswers,
+      cheated: isDisqualified,
+      testerPin: isTester ? enteredPin : undefined
+    };
+
+    try {
+      const res = await fetch("/api/gas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setResultData((prev: any) => ({
+           ...prev,
+           scores: { ...(prev?.scores || {}), english: data.scores.english }
+        }));
+        setPhase("final");
+        if (document.exitFullscreen) await document.exitFullscreen().catch(()=>{});
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (e: any) {
+      console.error(e);
+      alert("Ошибка отправки английского: " + e.message);
+    }
   };
 
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -329,86 +395,129 @@ export default function Testing() {
     );
   }
 
-  if (finished) {
+  
+  if (phase === "intermediate") {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
-          <h2 className="text-2xl font-bold mb-2">Тест завершён</h2>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-center select-none">
+        <div className="bg-white p-10 rounded-3xl shadow-2xl max-w-2xl w-full border border-slate-100">
+          <h1 className="text-4xl font-extrabold text-blue-900 mb-6">Отлично! Основной тест сдан 🎉</h1>
+          <p className="text-xl text-slate-600 mb-8">
+            Ваш уникальный номер (Test ID): <span className="font-mono font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded">{shortId}</span>
+          </p>
+          <div className="bg-amber-50 p-6 rounded-xl border border-amber-200 mb-8 text-amber-800 text-left">
+            <h3 className="font-bold text-lg mb-2">Что дальше?</h3>
+            <p>Остался тест по английскому языку. Вы можете немного отдохнуть и сдать его прямо сейчас, либо завершить сессию и сдать его позже, введя свой Test ID на главном экране.</p>
+          </div>
           
-          {pendingSubmission ? (
-            <div className="bg-red-50 text-red-600 p-4 rounded-xl mb-6">
-              <strong>Ошибка: {submitError || "Сеть недоступна"}</strong>
-              <p className="text-sm mt-1 mb-3">Ваши ответы сохранены на устройстве. Пожалуйста, не закрывайте вкладку.</p>
-              <button onClick={retrySubmission} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium">Повторить отправку</button>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <button
+              onClick={() => {
+                setPhase("english");
+                if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
+              }}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-6 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all"
+            >
+              Сдать английский сейчас
+            </button>
+            <button
+              onClick={() => {
+                setPhase("final");
+                if (document.exitFullscreen) document.exitFullscreen().catch(()=>{});
+              }}
+              className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-4 px-6 rounded-xl text-lg transition-all"
+            >
+              Завершить и выйти
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === "final" || finished) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center select-none">
+        <div className="bg-white p-10 rounded-3xl shadow-2xl max-w-md w-full border border-slate-100 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
+          
+          {disqualified ? (
+            <>
+              <h1 className="text-4xl font-black text-red-600 mb-4 uppercase tracking-wider">Дисквалификация</h1>
+              <p className="text-lg text-slate-600 mb-8 font-medium">Ваш тест был принудительно завершен из-за нарушения правил.</p>
+            </>
           ) : (
             <>
-              {resultData && resultData.scores && (() => {
+              <h1 className="text-4xl font-extrabold text-blue-900 mb-4">Тест завершен!</h1>
+              <p className="text-lg text-slate-600 mb-8 font-medium">Спасибо за участие. Ваши ответы сохранены.</p>
+            </>
+          )}
+
+          {resultData ? (
+            <div className="mb-6">
+              {(() => {
                 let maxRu = 0, maxMa = 0, maxLo = 0, maxEn = 0;
                 if (grade && testsData[grade]) {
                   maxRu = testsData[grade].russian.reduce((sum, q) => sum + (q.points || 1), 0);
                   maxMa = testsData[grade].math.reduce((sum, q) => sum + (q.points || 1), 0);
-                  if (testsData[grade].logic) {
-                    maxLo = testsData[grade].logic.reduce((sum, q) => sum + (q.points || 1), 0);
-                  }
-                  if (testsData[grade].english) {
-                    maxEn = testsData[grade].english.reduce((sum, q) => sum + (q.points || 1), 0);
-                  }
+                  if (testsData[grade].logic) maxLo = testsData[grade].logic.reduce((sum, q) => sum + (q.points || 1), 0);
+                  if (testsData[grade].english) maxEn = testsData[grade].english.reduce((sum, q) => sum + (q.points || 1), 0);
                 }
-                const totalMax = maxRu + maxMa + maxLo + maxEn;
+                const totalMax = maxRu + maxMa + maxLo;
                 const percent = totalMax > 0 ? Math.round((resultData.totalScore / totalMax) * 100) : 0;
                 
                 return (
+                  <>
                   <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-left">
-                    <h3 className="font-bold text-green-800 text-lg mb-3 text-center">Ваш результат:</h3>
+                    <h3 className="font-bold text-green-800 text-lg mb-3 text-center">Основной тест:</h3>
                     <div className="flex justify-between items-center mb-1 text-green-700">
-                      <span>Русский язык:</span>
-                      <span className="font-bold">{resultData.scores.russian} из {maxRu}</span>
+                      <span>Русский язык:</span><span className="font-bold">{resultData.scores.russian || 0} из {maxRu}</span>
                     </div>
                     <div className="flex justify-between items-center mb-1 text-green-700">
-                      <span>Математика:</span>
-                      <span className="font-bold">{resultData.scores.math} из {maxMa}</span>
+                      <span>Математика:</span><span className="font-bold">{resultData.scores.math || 0} из {maxMa}</span>
                     </div>
                     <div className="flex justify-between items-center mb-1 text-green-700">
-                      <span>Логика:</span>
-                      <span className="font-bold">{resultData.scores.logic} из {maxLo}</span>
+                      <span>Логика:</span><span className="font-bold">{resultData.scores.logic || 0} из {maxLo}</span>
                     </div>
-                    {testsData[grade]?.english && (
-                      <div className="flex justify-between items-center mb-1 text-green-700">
-                        <span>Английский язык:</span>
-                        <span className="font-bold">{resultData.scores.english} из {maxEn}</span>
-                      </div>
-                    )}
-                    <div className="mt-3 pt-3 border-t border-green-200 flex flex-col items-end font-bold text-green-900 text-lg relative">
-                      <span className="absolute left-0 top-3">Общий балл:</span>
-                      <div>{resultData.totalScore} из {totalMax}</div>
+                    <div className="mt-3 pt-3 border-t border-green-200 flex flex-col items-end font-bold text-green-900 text-lg">
+                      <div className="w-full flex justify-between"><span>Общий балл:</span><span>{resultData.totalScore || 0} из {totalMax}</span></div>
                       <div className="text-sm text-green-700 font-medium">({percent}% верных)</div>
                     </div>
                   </div>
+                  
+                  {resultData.scores.english !== undefined && resultData.scores.english !== "" && maxEn > 0 && (
+                    <div className="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded-xl text-left">
+                      <h3 className="font-bold text-indigo-800 text-lg mb-3 text-center">Английский язык:</h3>
+                      {(() => {
+                        const cefr = getCEFRLevel(grade!, maxEn, Number(resultData.scores.english));
+                        if (!cefr) return null;
+                        return (
+                          <div className="flex flex-col items-center">
+                            <div className="text-3xl mb-2">{cefr.icon}</div>
+                            <div className="font-bold text-indigo-900 text-xl text-center">{cefr.actualLevel}</div>
+                            <div className="text-indigo-700 mt-1 font-medium">Усвоено: {cefr.percent}%</div>
+                            {cefr.icon !== "✅" && (
+                              <div className="text-xs text-indigo-500 mt-2 text-center">Ожидаемый уровень: {cefr.targetLevel}</div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                  </>
                 );
               })()}
-              <p className="text-slate-500 mb-6 font-medium">Покажите этот экран с QR-кодом менеджеру для проверки:</p>
-            </>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500 mb-6">Результаты обрабатываются. Ожидайте вердикт от менеджера.</p>
           )}
 
-          <div className="bg-slate-100 p-4 rounded-xl inline-block select-none pointer-events-none mb-6">
-            <QRCodeCanvas value={qrToken} size={250} level="H" />
+          <div className="mb-8 p-4 bg-blue-50 border border-blue-100 rounded-xl">
+            <p className="text-sm font-medium text-blue-800 mb-2">ID Теста для менеджера:</p>
+            <p className="text-3xl font-mono font-bold tracking-widest text-blue-600">{shortId}</p>
           </div>
-
-          <div className="text-4xl font-mono font-bold text-blue-700 tracking-widest bg-blue-50 py-3 rounded-xl border border-blue-200 mb-6">
-            {shortId}
-          </div>
-
-          <button 
-            onClick={() => {
-              if (window.confirm("Убедитесь, что менеджер зафиксировал ваш результат. QR-код будет удален. Продолжить?")) {
-                sessionStorage.clear();
-                window.location.reload();
-              }
-            }}
-            className="text-sm text-slate-500 hover:text-slate-800 underline transition-colors"
-          >
-            Закрыть и вернуться на главную
+          
+          <button onClick={() => window.location.reload()} className="w-full font-bold text-slate-500 hover:text-slate-700 py-2">
+            Вернуться на главную
           </button>
         </div>
       </div>
@@ -515,7 +624,7 @@ export default function Testing() {
       <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center z-10">
         <div className="font-bold text-lg">Тестирование: {grade} класс</div>
         <button 
-          onClick={() => submitTest(false)}
+          onClick={() => phase === "english" ? submitEnglishTest(false) : submitCoreTest(false)}
           className="px-6 py-2 bg-blue-600 text-white rounded-full font-medium hover:bg-blue-700"
         >
           Завершить тест

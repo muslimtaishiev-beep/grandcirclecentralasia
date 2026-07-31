@@ -2,7 +2,7 @@ import { auth as firebaseAuth } from "../lib/firebase";
 import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { getHourlyPIN } from "../lib/utils";
+import { getHourlyPIN, getCEFRLevel } from "../lib/utils";
 import { testsData } from "../data/testsData";
 
 export default function ManagerDashboard() {
@@ -278,7 +278,7 @@ export default function ManagerDashboard() {
                             {totalScore}
                           </div>
                         </div>
-                        <div className="text-[10px] text-gray-400 mt-1">Р:{s.ru}/{getMaxScore(s.grade, "russian")} М:{s.ma}/{getMaxScore(s.grade, "math")} Л:{s.lo}/{getMaxScore(s.grade, "logic")} А:{s.en}/{getMaxScore(s.grade, "english")}</div>
+                        <div className="text-[10px] text-gray-400 mt-1">{(() => { const maxEn = getMaxScore(s.grade, "english"); let enStr = `А:${s.en}/${maxEn}`; if (s.en !== undefined && s.en !== "" && maxEn !== "?") { const cefr = getCEFRLevel(parseInt(s.grade, 10), maxEn as number, parseInt(s.en, 10)); if(cefr) enStr = `Английский: ${cefr.actualLevel} (${cefr.percent}%) ${cefr.icon}`; } return `Р:${s.ru}/${getMaxScore(s.grade, "russian")} М:{s.ma}/${getMaxScore(s.grade, "math")} Л:{s.lo}/${getMaxScore(s.grade, "logic")} | ${enStr}`; })()}</div>
                       </div>
                     </td>
                     <td className="p-4">
