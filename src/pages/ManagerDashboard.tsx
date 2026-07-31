@@ -2,7 +2,7 @@ import { auth as firebaseAuth } from "../lib/firebase";
 import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { getHourlyPIN, getCEFRLevel } from "../lib/utils";
+import { getHourlyPIN, getCEFRLevel, fetchGasAPI } from "../lib/utils";
 import { testsData } from "../data/testsData";
 
 export default function ManagerDashboard() {
@@ -71,15 +71,7 @@ export default function ManagerDashboard() {
       const token = user ? await user.getIdToken() : "";
       
       const gasUrl = "/api/gas" || "";
-      const res = await fetch(gasUrl, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({ action: "getAllStudents" })
-      });
-      const data = await res.json();
+      const data = await fetchGasAPI(gasUrl, { action: "getAllStudents" }, token);
       if (data.success) {
         setStudents(data.students || data.data || []);
       } else {
@@ -141,13 +133,7 @@ export default function ManagerDashboard() {
       const token = user ? await user.getIdToken() : "";
 
       const gasUrl = "/api/gas" || "";
-      const res = await fetch(gasUrl, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({ 
+      const data = await fetchGasAPI(gasUrl, { 
           action: "updateFinalDecision", 
           shortId: selectedStudent, 
           childName: students.find(s => s.shortId === selectedStudent)?.childName,
@@ -158,9 +144,7 @@ export default function ManagerDashboard() {
           firstMonthPayment,
           rejectReason: finalRejectReason,
           feedback
-        })
-      });
-      const data = await res.json();
+      }, token);
       if (data.success) {
         setStudents(prev => (prev || []).map(s => s.shortId === selectedStudent ? { ...s, finalDecision: decision } : s));
         closeModals();

@@ -2,6 +2,7 @@ import { auth as firebaseAuth } from "../lib/firebase";
 import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { fetchGasAPI } from "../lib/utils";
 
 export default function PsychologistForm() {
   const { shortId } = useParams();
@@ -54,12 +55,7 @@ export default function PsychologistForm() {
     setError("");
     try {
       const gasUrl = "/api/gas" || "";
-      const res = await fetch(gasUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "getPsychologistStudent", shortId })
-      });
-      const data = await res.json();
+      const data = await fetchGasAPI(gasUrl, { action: "getPsychologistStudent", shortId });
       if (data.success) {
         setStudent(data.student);
       } else {
@@ -79,18 +75,13 @@ export default function PsychologistForm() {
 
     try {
       const gasUrl = "/api/gas" || "";
-      const res = await fetch(gasUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const data = await fetchGasAPI(gasUrl, {
           action: "submitPsychologistForm",
           shortId,
           verdict,
           comment
-        })
       });
 
-      const data = await res.json();
       if (data.success) {
         setSuccess(true);
       } else {

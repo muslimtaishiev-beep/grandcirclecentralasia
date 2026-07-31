@@ -86,3 +86,38 @@ export function getCEFRLevel(grade: number, maxPoints: number, score: number) {
     targetLevel: levels[targetIndex] 
   };
 }
+
+export async function fetchGasAPI(url: string, payload: any, token: string = ""): Promise<any> {
+  let delay = 2000;
+  // Infinite retries on 500+ errors until success
+  while (true) {
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload)
+      });
+      
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (err) {
+        throw new Error("Invalid JSON response from server");
+      }
+      
+      if (res.status >= 500) {
+        throw new Error(data.error || `Server Error ${res.status}`);
+      }
+      
+      return data;
+    } catch (e: any) {
+      console.warn(`[GAS] fetch failed, retrying in ${delay}ms...`, e);
+      await new Promise(r => setTimeout(r, delay));
+      delay = Math.min(delay * 1.5, 10000); // max 10s delay between retries
+    }
+  }
+}

@@ -3,6 +3,7 @@ import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import React, { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { testsData } from "../data/testsData";
+import { fetchGasAPI } from "../lib/utils";
 
 export default function ManagerForm() {
   const [searchParams] = useSearchParams();
@@ -47,12 +48,7 @@ export default function ManagerForm() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/gas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "getStudentByShortId", shortId })
-      });
-      const data = await res.json();
+      const data = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId });
       if (data.success) {
         setStudent(data.student);
         setChildName(data.student.studentName);
@@ -72,10 +68,7 @@ export default function ManagerForm() {
     }
     setLoading(true);
     try {
-      const res = await fetch("/api/gas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const data = await fetchGasAPI("/api/gas", {
           action: "submitManagerForm",
           shortId,
           childName,
@@ -84,9 +77,7 @@ export default function ManagerForm() {
           managerName,
           managerComment,
           sentToPsych: isPsych
-        })
       });
-      const data = await res.json();
       if (data.success) {
         if (isPsych) {
           navigate(`/receipt/${shortId}`);

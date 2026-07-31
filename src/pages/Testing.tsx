@@ -3,7 +3,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { Reorder } from "framer-motion";
 import { testsData } from "../data/testsData";
 import { Question } from "../types";
-import { getHourlyPIN, formatMathText, getCEFRLevel } from "../lib/utils";
+import { getHourlyPIN, formatMathText, getCEFRLevel, fetchGasAPI } from "../lib/utils";
 
 export default function Testing() {
   const [studentName, setStudentName] = useState(() => sessionStorage.getItem("studentName") || "");
@@ -170,11 +170,7 @@ export default function Testing() {
        }
        
        try {
-         const res = await fetch("/api/gas", {
-           method: "POST", headers: { "Content-Type": "application/json" },
-           body: JSON.stringify({ action: "getStudentByShortId", shortId: resumeShortId })
-         });
-         const data = await res.json();
+         const data = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId: resumeShortId });
          if (!data.success) return alert(data.error || "Не найдено");
          
          const student = data.student;
@@ -247,12 +243,7 @@ export default function Testing() {
     if (!isTester) localStorage.setItem("lastTestTime", Date.now().toString());
 
     try {
-      const res = await fetch("/api/gas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
+      const data = await fetchGasAPI("/api/gas", payload);
       if (data.success) {
         setResultData({
           totalScore: data.totalScore,
@@ -266,11 +257,7 @@ export default function Testing() {
         if (data.error && (data.error.includes("уже сдавали") || data.error.includes("already submitted"))) {
              // Recover student and proceed gracefully
              try {
-               const recoverRes = await fetch("/api/gas", {
-                 method: "POST", headers: { "Content-Type": "application/json" },
-                 body: JSON.stringify({ action: "getStudentByShortId", shortId })
-               });
-               const recoverData = await recoverRes.json();
+               const recoverData = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId });
                if (recoverData.success) {
                  setResultData({
                    totalScore: recoverData.student.totalScore,
@@ -319,12 +306,7 @@ export default function Testing() {
     };
 
     try {
-      const res = await fetch("/api/gas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
+      const data = await fetchGasAPI("/api/gas", payload);
       if (data.success) {
         setResultData((prev: any) => ({
            ...prev,
@@ -358,20 +340,8 @@ export default function Testing() {
       const payloadStr = localStorage.getItem(key);
       if (payloadStr) {
         try {
-          const gasUrl = "/api/gas" || "";
-          const res = await fetch(gasUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: payloadStr
-          });
-          
-          const text = await res.text();
-          let data;
-          try {
-            data = JSON.parse(text);
-          } catch(e) {
-            throw new Error("Invalid response from server. Check GAS URL.");
-          }
+          const payloadObj = JSON.parse(payloadStr);
+          const data = await fetchGasAPI("/api/gas", payloadObj);
 
           if (data.success) {
             localStorage.removeItem(key);
