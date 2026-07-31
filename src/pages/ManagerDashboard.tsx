@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { getHourlyPIN, getCEFRLevel, fetchGasAPI } from "../lib/utils";
 import { testsData } from "../data/testsData";
+import html2pdf from "html2pdf.js";
+import { DiagnosticReportPdf } from "../components/DiagnosticReportPdf";
 
 export default function ManagerDashboard() {
   const navigate = useNavigate();
@@ -29,6 +31,59 @@ export default function ManagerDashboard() {
   const [rejectReason, setRejectReason] = useState("Низкий балл");
   const [otherReason, setOtherReason] = useState("");
   const [feedback, setFeedback] = useState("");
+
+  // PDF Generation State
+  const [studentForPdf, setStudentForPdf] = useState<any>(null);
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+
+  const generatePdf = (student: any) => {
+    if (!student.diagnosticsRaw || Object.keys(student.diagnosticsRaw).length === 0) {
+      alert("У данного ученика нет сохраненных данных аналитики.");
+      return;
+    }
+    setStudentForPdf(student);
+    setAnalyzingId(student.shortId);
+    
+    // Give React time to render the DiagnosticReportPdf component with the student data
+    setTimeout(() => {
+      const element = document.getElementById('pdf-diagnostic-report');
+      if (element) {
+        const opt = {
+          margin: 0,
+          filename: `Аналитика_${student.childName || student.shortId}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        const worker = html2pdf().set(opt).from(element);
+        
+        worker.output('datauristring').then(async (base64: string) => {
+          try {
+            const user = firebaseAuth.currentUser;
+            const token = user ? await user.getIdToken() : "";
+            const gasUrl = "/api/gas" || "";
+            
+            await fetchGasAPI(gasUrl, {
+              action: "uploadPdf",
+              shortId: student.shortId,
+              childName: student.childName,
+              base64Data: base64
+            }, token);
+          } catch(err) {
+            console.error("Failed to upload PDF", err);
+          }
+        }).then(() => {
+          // Download locally after uploading
+          worker.save().then(() => {
+            setAnalyzingId(null);
+            setStudentForPdf(null);
+          });
+        });
+      } else {
+        setAnalyzingId(null);
+      }
+    }, 500);
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -298,6 +353,29 @@ export default function ManagerDashboard() {
                       {s.managerName === "Не назначен" && (
                         <button onClick={() => navigate(`/manager/form?testId=${s.shortId}`)} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">Заполнить анкету</button>
                       )}
+                      {s.diagnosticsRaw && Object.keys(s.diagnosticsRaw).length > 0 && (
+                        <div className="mt-2">
+                          <button 
+                            onClick={() => generatePdf(s)} 
+                            disabled={analyzingId === s.shortId}
+                            className={`text-xs px-2 py-1 rounded shadow-sm w-full font-medium flex items-center justify-center gap-1 ${
+                              analyzingId === s.shortId 
+                                ? "bg-gray-200 text-gray-500 cursor-not-allowed" 
+                                : "bg-purple-100 text-purple-700 hover:bg-purple-200 border border-purple-200"
+                            }`}
+                          >
+                            {analyzingId === s.shortId ? (
+                              <>
+                                <span className="animate-spin text-purple-700">↻</span> Генерация...
+                              </>
+                            ) : (
+                              <>
+                                📄 Анализ работы
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                   );
@@ -309,6 +387,12 @@ export default function ManagerDashboard() {
                 )}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {studentForPdf && (
+          <div className="absolute top-[-9999px] left-[-9999px]">
+            <DiagnosticReportPdf student={studentForPdf} />
           </div>
         )}
 

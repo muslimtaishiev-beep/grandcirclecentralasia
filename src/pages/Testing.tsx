@@ -261,7 +261,8 @@ export default function Testing() {
                if (recoverData.success) {
                  setResultData({
                    totalScore: recoverData.student.totalScore,
-                   scores: { russian: recoverData.student.russian, math: recoverData.student.math, logic: recoverData.student.logic, english: recoverData.student.english }
+                   scores: { russian: recoverData.student.russian, math: recoverData.student.math, logic: recoverData.student.logic, english: recoverData.student.english },
+                   diagnosticsReport: recoverData.student.diagnosticsReport
                  });
                  setPhase("intermediate");
                  return;
@@ -310,7 +311,8 @@ export default function Testing() {
       if (data.success) {
         setResultData((prev: any) => ({
            ...prev,
-           scores: { ...(prev?.scores || {}), english: data.scores.english }
+           scores: { ...(prev?.scores || {}), english: data.scores.english },
+           diagnosticsReport: data.diagnosticsReport
         }));
         setPhase("final");
         if (document.exitFullscreen) await document.exitFullscreen().catch(()=>{});
@@ -499,6 +501,17 @@ export default function Testing() {
                           </div>
                         );
                       })()}
+                    </div>
+                  )}
+                  
+                  {resultData && resultData.diagnosticsReport && (
+                    <div className="mb-6 p-4 bg-white border border-slate-200 rounded-xl text-left shadow-sm">
+                      <h3 className="font-bold text-slate-800 text-lg mb-3 border-b pb-2 flex items-center">
+                        <span className="mr-2">📊</span> Аналитика знаний (Темы)
+                      </h3>
+                      <div className="text-sm text-slate-700 whitespace-pre-wrap font-medium leading-relaxed">
+                        {resultData.diagnosticsReport}
+                      </div>
                     </div>
                   )}
                   </>

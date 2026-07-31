@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { testsData } from "../data/testsData";
 import { fetchGasAPI } from "../lib/utils";
+import html2pdf from "html2pdf.js";
+import { DiagnosticReportPdf } from "../components/DiagnosticReportPdf";
 
 export default function ManagerForm() {
   const [searchParams] = useSearchParams();
@@ -17,6 +19,47 @@ export default function ManagerForm() {
   const [student, setStudent] = useState<any>(null);
 
   const [managerName, setManagerName] = useState("");
+
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const generatePdf = () => {
+    if (!student || !student.diagnosticsRaw || Object.keys(student.diagnosticsRaw).length === 0) {
+      alert("У данного ученика нет сохраненных данных аналитики.");
+      return;
+    }
+    setAnalyzing(true);
+    setTimeout(() => {
+      const element = document.getElementById('pdf-diagnostic-report');
+      if (element) {
+        const opt = {
+          margin: 0,
+          filename: `Аналитика_${student.childName || student.shortId}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        const worker = html2pdf().set(opt).from(element);
+        worker.output('datauristring').then(async (base64: string) => {
+          try {
+            const user = firebaseAuth.currentUser;
+            const token = user ? await user.getIdToken() : "";
+            await fetchGasAPI("/api/gas", {
+              action: "uploadPdf",
+              shortId: student.shortId,
+              childName: student.childName,
+              base64Data: base64
+            }, token);
+          } catch(err) {
+            console.error(err);
+          }
+        }).then(() => {
+          worker.save().then(() => setAnalyzing(false));
+        });
+      } else {
+        setAnalyzing(false);
+      }
+    }, 500);
+  };
   const [childName, setChildName] = useState("");
   const [parentName, setParentName] = useState("");
   const [phone, setPhone] = useState("");
@@ -127,6 +170,11 @@ export default function ManagerForm() {
 
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-4">
+      {student && (
+        <div className="absolute top-[-9999px] left-[-9999px]">
+          <DiagnosticReportPdf student={student} />
+        </div>
+      )}
       <div className="max-w-xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden">
         <div className="bg-blue-600 px-8 py-6 text-white text-center flex justify-between items-center">
           <h1 className="text-2xl font-bold">Анкета Менеджера</h1>
@@ -182,6 +230,25 @@ export default function ManagerForm() {
                       <div>Логика: <b>{student.logic} из {maxLo}</b></div>
                       {student.cheated && <div className="col-span-2 text-red-600 font-bold bg-red-100 px-2 py-1 rounded inline-block w-max mt-2">! Заподозрен в списывании</div>}
                     </div>
+                    {student.diagnosticsRaw && Object.keys(student.diagnosticsRaw).length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-green-200">
+                        <button 
+                          onClick={generatePdf} 
+                          disabled={analyzing}
+                          className={`px-4 py-2 rounded-xl shadow-sm font-medium flex items-center gap-2 ${
+                            analyzing 
+                              ? "bg-gray-200 text-gray-500 cursor-not-allowed" 
+                              : "bg-white text-green-700 hover:bg-green-100 border border-green-200"
+                          }`}
+                        >
+                          {analyzing ? (
+                            <><span className="animate-spin text-green-700">↻</span> Генерация и сохранение...</>
+                          ) : (
+                            <>📄 Скачать Анализ работы</>
+                          )}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
