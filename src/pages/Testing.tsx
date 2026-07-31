@@ -384,7 +384,7 @@ export default function Testing() {
         <button 
           onClick={() => {
             sessionStorage.clear();
-            window.location.href = "/";
+            window.location.reload();
           }}
           className="text-sm text-slate-500 hover:text-slate-800 underline transition-colors"
         >
@@ -471,13 +471,13 @@ export default function Testing() {
                   <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-left">
                     <h3 className="font-bold text-green-800 text-lg mb-3 text-center">Основной тест:</h3>
                     <div className="flex justify-between items-center mb-1 text-green-700">
-                      <span>Русский язык:</span><span className="font-bold">{resultData.scores.russian || 0} из {maxRu}</span>
+                      <span>Русский язык:</span><span className="font-bold">{resultData.scores.russian || 0}</span>
                     </div>
                     <div className="flex justify-between items-center mb-1 text-green-700">
-                      <span>Математика:</span><span className="font-bold">{resultData.scores.math || 0} из {maxMa}</span>
+                      <span>Математика:</span><span className="font-bold">{resultData.scores.math || 0}</span>
                     </div>
                     <div className="flex justify-between items-center mb-1 text-green-700">
-                      <span>Логика:</span><span className="font-bold">{resultData.scores.logic || 0} из {maxLo}</span>
+                      <span>Логика:</span><span className="font-bold">{resultData.scores.logic || 0}</span>
                     </div>
                     <div className="mt-3 pt-3 border-t border-green-200 flex flex-col items-end font-bold text-green-900 text-lg">
                       <div className="w-full flex justify-between"><span>Общий балл:</span><span>{resultData.totalScore || 0} из {totalMax}</span></div>
@@ -517,8 +517,8 @@ export default function Testing() {
             <p className="text-3xl font-mono font-bold tracking-widest text-blue-600">{shortId}</p>
           </div>
           
-          <button onClick={() => { sessionStorage.clear(); window.location.href = "/"; }} className="w-full font-bold text-slate-500 hover:text-slate-700 py-2">
-            Вернуться на главную
+          <button onClick={() => { sessionStorage.clear(); window.location.reload(); }} className="w-full font-bold text-slate-500 hover:text-slate-700 py-2">
+            Вернуться к входу
           </button>
         </div>
       </div>
