@@ -238,19 +238,38 @@ app.post("/api/gas", async (req, res) => {
       }
     }
 
-    const fetchRes = await fetch(gasUrl, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(payload)
-    });
-    
-    const rawText = await fetchRes.text();
+    let rawText = "";
     let data;
-    try {
-      data = JSON.parse(rawText);
-    } catch(e) {
-      console.error("GAS Proxy parse error. Raw HTML:", rawText.substring(0, 500));
-      return res.status(500).json({ error: "GAS returned an invalid response (likely an HTML error page). This usually means the Google Apps Script crashed, hit a quota, or requires re-deployment." });
+    let retries = 3;
+    let delay = 1000;
+    
+    while (retries > 0) {
+      try {
+        const fetchRes = await fetch(gasUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(payload),
+          // Set a timeout signal so we don't wait 5 minutes if GAS hangs
+          signal: AbortSignal.timeout(15000) // 15 seconds timeout
+        });
+        
+        rawText = await fetchRes.text();
+        data = JSON.parse(rawText);
+        break; // Success, exit loop
+      } catch (e: any) {
+        retries--;
+        console.warn(`GAS request failed/timeout. Retries left: ${retries}. Error/Text:`, e.name === 'AbortError' ? 'Timeout' : rawText.substring(0, 200));
+        
+        if (retries === 0) {
+          return res.status(500).json({ 
+            error: "Серверы Google временно недоступны или перегружены. Пожалуйста, попробуйте отправить еще раз через несколько секунд.",
+            details: e.message 
+          });
+        }
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2; // Exponential backoff
+      }
     }
     
     // Sync with Firestore if final decision updated
