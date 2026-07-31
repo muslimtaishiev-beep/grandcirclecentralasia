@@ -930,7 +930,8 @@ function getTestByShortId(testSheet, shortId) {
         totalScore: data[i][6],
         testId: data[i][7],
         timestamp: data[i][8],
-        cheated: data[i][9] === "ДА"
+        cheated: data[i][9] === "ДА",
+        diagnosticsRaw: (() => { try { return JSON.parse(data[i][14] || "{}"); } catch(e) { return {}; } })()
       };
     }
   }
