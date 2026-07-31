@@ -960,7 +960,7 @@ function doPost(e) {
       const now = new Date().getTime();
       
       for (let i = 1; i < dataRange.length; i++) {
-        if (dataRange[i][7] === testId || dataRange[i][10] === shortId) {
+        if (String(dataRange[i][7]) === String(testId) || String(dataRange[i][10]) === String(shortId)) {
           return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Test already submitted" })).setMimeType(ContentService.MimeType.JSON);
         }
         
@@ -1003,7 +1003,7 @@ function doPost(e) {
       let scores = { english: 0 };
       
       for (let i = 1; i < testData.length; i++) {
-        if (testData[i][10] === shortId) {
+        if (String(testData[i][10]) === String(shortId)) {
           testRowIdx = i + 1;
           break;
         }
@@ -1023,7 +1023,7 @@ function doPost(e) {
       // Also update CRM sheet if the manager has already created a row
       const crmData = crmSheet.getDataRange().getValues();
       for (let i = 1; i < crmData.length; i++) {
-        if (crmData[i][4] === shortId) { // Column 5 is "ID Теста (ученика)"
+        if (String(crmData[i][4]) === String(shortId)) { // Column 5 is "ID Теста (ученика)"
           // Update English score in crmSheet (Column 21 - U)
           crmSheet.getRange(i + 1, 21).setValue(scores.english);
           break;

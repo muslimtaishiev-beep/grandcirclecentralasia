@@ -93,7 +93,7 @@ export default function Testing() {
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        handleCheating();
+        if (phase === "core" || phase === "english") handleCheating();
       } else {
         handleFocus();
       }
@@ -109,7 +109,7 @@ export default function Testing() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (blurTimeout.current) clearTimeout(blurTimeout.current);
     };
-  }, [started, finished, disqualified, answers]); // Add answers to dependencies so submitTest gets latest
+  }, [started, finished, disqualified, answers, phase]); // Add answers to dependencies so submitTest gets latest
 
   // Block copy/paste/context menu globally when test is active
   useEffect(() => {
@@ -421,6 +421,7 @@ export default function Testing() {
             </button>
             <button
               onClick={() => {
+                setFinished(true);
                 setPhase("final");
                 if (document.exitFullscreen) document.exitFullscreen().catch(()=>{});
               }}
@@ -602,13 +603,51 @@ export default function Testing() {
             </div>
           </div>
 
-          <button 
-            onClick={startTest}
-            disabled={!grade || !studentName.trim() || !enteredPin.trim() || !consentGiven}
-            className="w-full py-3 bg-blue-600 text-white rounded-xl font-medium disabled:opacity-50 hover:bg-blue-700 transition"
-          >
-            Начать тест
-          </button>
+          
+          {!isResumingEnglish ? (
+            <>
+              <button 
+                onClick={startTest}
+                disabled={!grade || !studentName.trim() || !enteredPin.trim() || !consentGiven}
+                className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-lg disabled:opacity-50 hover:bg-blue-700 transition shadow-lg mb-3"
+              >
+                Начать тест
+              </button>
+              <button 
+                onClick={() => setIsResumingEnglish(true)}
+                className="w-full py-3 bg-white text-blue-600 border-2 border-blue-600 rounded-xl font-bold text-lg hover:bg-blue-50 transition"
+              >
+                Продолжить тест по английскому
+              </button>
+            </>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Ваш Test ID:</label>
+                <input
+                  type="text"
+                  value={resumeShortId}
+                  onChange={(e) => setResumeShortId(e.target.value)}
+                  className="w-full border rounded-xl p-3 bg-slate-50 font-mono tracking-widest text-center"
+                  placeholder="Например: 123456"
+                />
+              </div>
+              <button 
+                onClick={startTest}
+                disabled={!resumeShortId.trim() || !enteredPin.trim()}
+                className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold text-lg disabled:opacity-50 hover:bg-indigo-700 transition shadow-lg"
+              >
+                Войти и начать английский
+              </button>
+              <button 
+                onClick={() => setIsResumingEnglish(false)}
+                className="w-full py-2 text-slate-500 font-bold hover:text-slate-700 transition"
+              >
+                Назад
+              </button>
+            </div>
+          )}
+
         </div>
       </div>
     );
