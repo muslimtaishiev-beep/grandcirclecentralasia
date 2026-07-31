@@ -517,7 +517,7 @@ export default function Testing() {
             <p className="text-3xl font-mono font-bold tracking-widest text-blue-600">{shortId}</p>
           </div>
           
-          <button onClick={() => window.location.href = "/"} className="w-full font-bold text-slate-500 hover:text-slate-700 py-2">
+          <button onClick={() => { sessionStorage.clear(); window.location.href = "/"; }} className="w-full font-bold text-slate-500 hover:text-slate-700 py-2">
             Вернуться на главную
           </button>
         </div>
