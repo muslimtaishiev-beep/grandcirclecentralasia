@@ -391,7 +391,7 @@ export default function ManagerDashboard() {
         )}
 
         {studentForPdf && (
-          <div className="absolute top-[-9999px] left-[-9999px]">
+          <div style={{ width: 0, height: 0, overflow: "hidden" }}>
             <DiagnosticReportPdf student={studentForPdf} />
           </div>
         )}

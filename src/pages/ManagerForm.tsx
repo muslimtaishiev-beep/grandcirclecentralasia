@@ -171,7 +171,7 @@ export default function ManagerForm() {
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-4">
       {student && (
-        <div className="absolute top-[-9999px] left-[-9999px]">
+        <div style={{ width: 0, height: 0, overflow: "hidden" }}>
           <DiagnosticReportPdf student={student} />
         </div>
       )}

@@ -57,7 +57,7 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
   const { childName, grade, date, diagnosticsRaw } = student;
   
   if (!diagnosticsRaw || Object.keys(diagnosticsRaw).length === 0) return (
-    <div id="pdf-diagnostic-report" className="p-10 w-[210mm] min-h-[297mm] absolute top-[-9999px] left-[-9999px]" style={{ backgroundColor: C.white, color: C.black }}>
+    <div id="pdf-diagnostic-report" className="p-10 w-[210mm] min-h-[297mm] " style={{ backgroundColor: C.white, color: C.black }}>
       <div className="text-center mt-20" style={{ color: C.gray500 }}>Нет данных для аналитики</div>
     </div>
   );
@@ -89,7 +89,7 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
   };
 
   return (
-    <div id="pdf-diagnostic-report" className="p-12 w-[210mm] min-h-[297mm] absolute top-[-9999px] left-[-9999px]" style={{ backgroundColor: C.white, color: C.black, fontFamily: '"Inter", "Arial", sans-serif' }}>
+    <div id="pdf-diagnostic-report" className="p-12 w-[210mm] min-h-[297mm] " style={{ backgroundColor: C.white, color: C.black, fontFamily: '"Inter", "Arial", sans-serif' }}>
       
       {/* Header */}
       <div className="flex justify-between items-start border-b-2 pb-6 mb-8" style={{ borderColor: C.gray200 }}>
