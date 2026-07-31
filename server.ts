@@ -10,6 +10,7 @@ import rateLimit from "express-rate-limit";
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1); // Trust Vercel's reverse proxy for correct client IP
 
 app.use(helmet({
   contentSecurityPolicy: false,
@@ -21,6 +22,7 @@ const apiLimiter = rateLimit({
   max: 200, // Limit each IP to 200 requests per minute
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false }, // We already set trust proxy above
 });
 app.use("/api/", apiLimiter);
 
