@@ -344,15 +344,18 @@ export default function Testing() {
           ) : (
             <>
               {resultData && resultData.scores && (() => {
-                let maxRu = 0, maxMa = 0, maxLo = 0;
+                let maxRu = 0, maxMa = 0, maxLo = 0, maxEn = 0;
                 if (grade && testsData[grade]) {
                   maxRu = testsData[grade].russian.reduce((sum, q) => sum + (q.points || 1), 0);
                   maxMa = testsData[grade].math.reduce((sum, q) => sum + (q.points || 1), 0);
                   if (testsData[grade].logic) {
                     maxLo = testsData[grade].logic.reduce((sum, q) => sum + (q.points || 1), 0);
                   }
+                  if (testsData[grade].english) {
+                    maxEn = testsData[grade].english.reduce((sum, q) => sum + (q.points || 1), 0);
+                  }
                 }
-                const totalMax = maxRu + maxMa + maxLo;
+                const totalMax = maxRu + maxMa + maxLo + maxEn;
                 const percent = totalMax > 0 ? Math.round((resultData.totalScore / totalMax) * 100) : 0;
                 
                 return (
@@ -370,6 +373,12 @@ export default function Testing() {
                       <span>Логика:</span>
                       <span className="font-bold">{resultData.scores.logic} из {maxLo}</span>
                     </div>
+                    {testsData[grade]?.english && (
+                      <div className="flex justify-between items-center mb-1 text-green-700">
+                        <span>Английский язык:</span>
+                        <span className="font-bold">{resultData.scores.english} из {maxEn}</span>
+                      </div>
+                    )}
                     <div className="mt-3 pt-3 border-t border-green-200 flex flex-col items-end font-bold text-green-900 text-lg relative">
                       <span className="absolute left-0 top-3">Общий балл:</span>
                       <div>{resultData.totalScore} из {totalMax}</div>
@@ -514,7 +523,7 @@ export default function Testing() {
       </div>
 
       <div className="max-w-3xl mx-auto px-6 py-8 space-y-12">
-        {[{ title: "Русский язык", q: test.russian }, { title: "Математика", q: test.math }, { title: "Логика", q: test.logic }].map((section, idx) => (
+        {[{ title: "Русский язык", q: test.russian }, { title: "Математика", q: test.math }, { title: "Логика", q: test.logic }, { title: "Английский язык", q: test.english }].filter(s => s.q && s.q.length > 0).map((section, idx) => (
           <div key={idx}>
             <h2 className="text-2xl font-bold mb-6 text-blue-600">{section.title}</h2>
             <div className="space-y-8">
