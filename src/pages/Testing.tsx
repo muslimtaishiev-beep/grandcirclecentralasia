@@ -13,6 +13,7 @@ export default function Testing() {
   );
   const [isResumingEnglish, setIsResumingEnglish] = useState(false);
   const [resumeShortId, setResumeShortId] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [grade, setGrade] = useState<number | null>(() => {
     const saved = sessionStorage.getItem("grade");
@@ -210,6 +211,8 @@ export default function Testing() {
 
   
   const submitCoreTest = async (isDisqualified = false) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     if (isDisqualified) {
       setDisqualified(true);
     }
@@ -260,7 +263,23 @@ export default function Testing() {
         // Do not set finished here! We move to intermediate phase.
         setPhase("intermediate");
       } else {
-        if (data.error && data.error.includes("уже сдавали")) {
+        if (data.error && (data.error.includes("уже сдавали") || data.error.includes("already submitted"))) {
+             // Recover student and proceed gracefully
+             try {
+               const recoverRes = await fetch("/api/gas", {
+                 method: "POST", headers: { "Content-Type": "application/json" },
+                 body: JSON.stringify({ action: "getStudentByShortId", shortId })
+               });
+               const recoverData = await recoverRes.json();
+               if (recoverData.success) {
+                 setResultData({
+                   totalScore: recoverData.student.totalScore,
+                   scores: { russian: recoverData.student.russian, math: recoverData.student.math, logic: recoverData.student.logic, english: recoverData.student.english }
+                 });
+                 setPhase("intermediate");
+                 return;
+               }
+             } catch(e) {}
              alert(data.error);
              return;
         }
@@ -269,10 +288,14 @@ export default function Testing() {
     } catch (e: any) {
       console.error(e);
       alert("Ошибка отправки теста: " + e.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const submitEnglishTest = async (isDisqualified = false) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     setFinished(true);
     if (isDisqualified) setDisqualified(true);
 
@@ -315,6 +338,8 @@ export default function Testing() {
     } catch (e: any) {
       console.error(e);
       alert("Ошибка отправки английского: " + e.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -665,14 +690,25 @@ export default function Testing() {
   }
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 pb-20 select-none">
+    <div className="min-h-screen bg-white text-slate-900 pb-20 select-none relative">
+      {isSubmitting && (
+        <div className="fixed inset-0 bg-white/70 backdrop-blur-sm z-50 flex items-center justify-center">
+           <div className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center border border-blue-100">
+              <div className="animate-spin h-12 w-12 border-4 border-blue-600 border-t-transparent rounded-full mb-6"></div>
+              <div className="text-xl font-bold text-slate-800">Сохранение результатов...</div>
+              <div className="text-sm text-slate-500 mt-2 font-medium">Пожалуйста, подождите (до 15 секунд)</div>
+           </div>
+        </div>
+      )}
+
       <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center z-10">
         <div className="font-bold text-lg">Тестирование: {grade} класс</div>
         <button 
           onClick={() => phase === "english" ? submitEnglishTest(false) : submitCoreTest(false)}
-          className="px-6 py-2 bg-blue-600 text-white rounded-full font-medium hover:bg-blue-700"
+          disabled={isSubmitting}
+          className="px-6 py-2 bg-blue-600 text-white rounded-full font-medium hover:bg-blue-700 disabled:opacity-50 transition flex items-center gap-2"
         >
-          Завершить тест
+          {isSubmitting ? "Сохраняем..." : "Завершить тест"}
         </button>
       </div>
 
