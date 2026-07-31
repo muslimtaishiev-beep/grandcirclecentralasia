@@ -923,14 +923,6 @@ function getTestByShortId(testSheet, shortId) {
     return crmStudent;
   }
 
-
-function safeSetValue(sheet, row, col, value) {
-  if (sheet.getMaxColumns() < col) {
-    sheet.insertColumnsAfter(sheet.getMaxColumns(), col - sheet.getMaxColumns());
-  }
-  sheet.getRange(row, col).setValue(value);
-}
-
 function doPost(e) {
   const lock = LockService.getScriptLock();
   try {
@@ -968,7 +960,7 @@ function doPost(e) {
       const now = new Date().getTime();
       
       for (let i = 1; i < dataRange.length; i++) {
-        if (String(dataRange[i][7]) === String(testId) || String(dataRange[i][10]) === String(shortId)) {
+        if (dataRange[i][7] === testId || dataRange[i][10] === shortId) {
           return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Test already submitted" })).setMimeType(ContentService.MimeType.JSON);
         }
         
@@ -1011,7 +1003,7 @@ function doPost(e) {
       let scores = { english: 0 };
       
       for (let i = 1; i < testData.length; i++) {
-        if (String(testData[i][10]) === String(shortId)) {
+        if (testData[i][10] === shortId) {
           testRowIdx = i + 1;
           break;
         }
@@ -1026,14 +1018,14 @@ function doPost(e) {
       }
       
       // Update English score in testSheet (Column 13 - M)
-      safeSetValue(testSheet, testRowIdx, 13, scores.english);
+      testSheet.getRange(testRowIdx, 13).setValue(scores.english);
       
       // Also update CRM sheet if the manager has already created a row
       const crmData = crmSheet.getDataRange().getValues();
       for (let i = 1; i < crmData.length; i++) {
-        if (String(crmData[i][4]) === String(shortId)) { // Column 5 is "ID Теста (ученика)"
+        if (crmData[i][4] === shortId) { // Column 5 is "ID Теста (ученика)"
           // Update English score in crmSheet (Column 21 - U)
-          safeSetValue(crmSheet, i + 1, 21, scores.english);
+          crmSheet.getRange(i + 1, 21).setValue(scores.english);
           break;
         }
       }

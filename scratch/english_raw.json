@@ -1,0 +1,256 @@
+{
+  "8": {
+    "title": "PRE-INTERMEDIATE TEST (8 КЛАСС)",
+    "tasks": [
+      {
+        "taskId": "task1",
+        "type": "TYPE_RADIO",
+        "instruction": "Choose the correct answer",
+        "questions": [
+          { "id": "q1", "text": "She ___ to school every day.", "options": ["go", "goes", "going", "went"], "answer": "goes" },
+          { "id": "q2", "text": "We ___ TV when you called.", "options": ["watched", "were watching", "watch", "watching"], "answer": "were watching" },
+          { "id": "q3", "text": "I ___ never ___ sushi before.", "options": ["did / eat", "have / eaten", "am / eating", "was / eating"], "answer": "have / eaten" },
+          { "id": "q4", "text": "They ___ in this city since 2020.", "options": ["live", "lived", "have lived", "living"], "answer": "have lived" },
+          { "id": "q5", "text": "There ___ any milk in the fridge.", "options": ["isn’t", "aren’t", "don’t", "doesn’t"], "answer": "isn’t" },
+          { "id": "q6", "text": "He is ___ than his brother.", "options": ["tall", "taller", "tallest", "more tall"], "answer": "taller" },
+          { "id": "q7", "text": "You ___ smoke here. It’s forbidden.", "options": ["must", "mustn’t", "can", "should"], "answer": "mustn’t" },
+          { "id": "q8", "text": "I ___ go to the party tonight. I’m not sure.", "options": ["must", "might", "can’t", "should"], "answer": "might" },
+          { "id": "q9", "text": "She ___ her homework yesterday.", "options": ["didn’t do", "doesn’t do", "isn’t doing", "hasn’t do"], "answer": "didn’t do" },
+          { "id": "q10", "text": "This is ___ book I’ve ever read.", "options": ["good", "better", "the best", "more good"], "answer": "the best" }
+        ]
+      },
+      {
+        "taskId": "task2",
+        "type": "TYPE_INLINE_DROPDOWN",
+        "instruction": "Put the verb in the correct form",
+        "questions": [
+          { "id": "q11", "text": "I usually [gap] at 7 a.m.", "options": ["wake up", "woke up", "am waking up"], "answer": "wake up" },
+          { "id": "q12", "text": "She [gap] coffee.", "options": ["doesn’t like", "don't like", "didn't liked"], "answer": "doesn’t like" },
+          { "id": "q13", "text": "We [gap] our grandparents last weekend.", "options": ["visit", "visited", "have visited"], "answer": "visited" },
+          { "id": "q14", "text": "They [gap] football now.", "options": ["play", "played", "are playing"], "answer": "are playing" },
+          { "id": "q15", "text": "He [gap] his work.", "options": ["has already finished", "already finished", "is already finishing"], "answer": "has already finished" },
+          { "id": "q16", "text": "I [gap] to London.", "options": ["have never been", "never was", "am never being"], "answer": "have never been" },
+          { "id": "q17", "text": "She [gap] when I called her.", "options": ["studied", "was studying", "is studying"], "answer": "was studying" },
+          { "id": "q18", "text": "We [gap] to the cinema tomorrow.", "options": ["went", "go", "are going"], "answer": "are going" },
+          { "id": "q19", "text": "He [gap] the question.", "options": ["doesn’t understand", "isn't understanding", "don't understand"], "answer": "doesn’t understand" },
+          { "id": "q20", "text": "They [gap] here for five years.", "options": ["live", "are living", "have lived"], "answer": "have lived" }
+        ]
+      },
+      {
+        "taskId": "task3",
+        "type": "TYPE_INLINE_DROPDOWN",
+        "instruction": "Fill in the gaps with the correct preposition or quantifier",
+        "optionsList": ["in", "on", "at", "of", "from", "for", "any", "some", "much", "many", "too", "most"],
+        "questions": [
+          { "id": "q21", "text": "I’m afraid [gap] spiders.", "answer": "of" },
+          { "id": "q22", "text": "She is interested [gap] music.", "answer": "in" },
+          { "id": "q23", "text": "We arrived [gap] the airport at 6 p.m.", "answer": "at" },
+          { "id": "q24", "text": "He’s good [gap] maths.", "answer": "at" },
+          { "id": "q25", "text": "I usually go to bed [gap] midnight.", "answer": "at" },
+          { "id": "q26", "text": "There isn’t [gap] sugar left.", "answer": "any" },
+          { "id": "q27", "text": "How [gap] money do you need?", "answer": "much" },
+          { "id": "q28", "text": "This bag is [gap] heavy for me.", "answer": "too" },
+          { "id": "q29", "text": "I don’t have [gap] friends here.", "answer": "many" },
+          { "id": "q30", "text": "She’s the [gap] intelligent student in the class.", "answer": "most" }
+        ]
+      },
+      {
+        "taskId": "task4",
+        "type": "TYPE_INLINE_DROPDOWN",
+        "instruction": "Comparatives & Superlatives",
+        "questions": [
+          { "id": "q31", "text": "This test is [gap] than the last one.", "options": ["easier", "more easy", "the easiest"], "answer": "easier" },
+          { "id": "q32", "text": "Who is [gap] student in your class?", "options": ["the tallest", "tallest", "taller"], "answer": "the tallest" },
+          { "id": "q33", "text": "My room is [gap] than yours.", "options": ["smaller", "more small", "the smallest"], "answer": "smaller" },
+          { "id": "q34", "text": "That’s [gap] pizza I’ve ever eaten.", "options": ["worse", "the worst", "baddest"], "answer": "the worst" },
+          { "id": "q35", "text": "English is [gap] than Maths for me.", "options": ["more interesting", "most interesting", "interestinger"], "answer": "more interesting" }
+        ]
+      },
+      {
+        "taskId": "task5",
+        "type": "TYPE_SENTENCE_CORRECTION",
+        "instruction": "Find and correct the mistake. Choose the correct sentence.",
+        "questions": [
+          { "id": "q36", "text": "Incorrect: They didn’t went to the party.", "options": ["They don't went to the party.", "They didn't go to the party.", "They didn't goes to the party."], "answer": "They didn't go to the party." },
+          { "id": "q37", "text": "Incorrect: There is many people in the room.", "options": ["There are many people in the room.", "There is much people in the room.", "There was many people in the room."], "answer": "There are many people in the room." },
+          { "id": "q38", "text": "Incorrect: I have seen him yesterday.", "options": ["I see him yesterday.", "I saw him yesterday.", "I had seen him yesterday."], "answer": "I saw him yesterday." },
+          { "id": "q39", "text": "Incorrect: She can to drive a car.", "options": ["She can drive a car.", "She cans drive a car.", "She can driving a car."], "answer": "She can drive a car." },
+          { "id": "q40", "text": "Incorrect: We are agree with you.", "options": ["We agreeing with you.", "We is agree with you.", "We agree with you."], "answer": "We agree with you." }
+        ]
+      }
+    ]
+  },
+  "9": {
+    "title": "INTERMEDIATE TEST (9 КЛАСС)",
+    "tasks": [
+      {
+        "taskId": "task1",
+        "type": "TYPE_RADIO",
+        "instruction": "Choose the correct answer",
+        "questions": [
+          { "id": "q1", "text": "If I ___ more time, I would learn another language.", "options": ["have", "had", "will have", "would have"], "answer": "had" },
+          { "id": "q2", "text": "She ___ working here for five years before she moved abroad.", "options": ["has been", "had been", "was", "is"], "answer": "had been" },
+          { "id": "q3", "text": "He told me he ___ me later.", "options": ["calls", "called", "would call", "will call"], "answer": "would call" },
+          { "id": "q4", "text": "This house ___ in the 18th century.", "options": ["built", "was built", "is building", "has build"], "answer": "was built" },
+          { "id": "q5", "text": "She ___ to the gym regularly these days.", "options": ["goes", "is going", "go", "went"], "answer": "is going" },
+          { "id": "q6", "text": "I ___ my keys. I can’t find them anywhere.", "options": ["lose", "lost", "have lost", "had lost"], "answer": "have lost" },
+          { "id": "q7", "text": "That’s the man ___ car was stolen.", "options": ["who", "which", "whose", "that"], "answer": "whose" },
+          { "id": "q8", "text": "If it ___ tomorrow, we will stay at home.", "options": ["rains", "will rain", "raining", "rained"], "answer": "rains" },
+          { "id": "q9", "text": "When I arrived, they ___ already ___.", "options": ["have / left", "had / left", "did / leave", "were / leaving"], "answer": "had / left" },
+          { "id": "q10", "text": "If I ___ harder, I would have got a promotion.", "options": ["work", "worked", "had worked", "have worked"], "answer": "had worked" }
+        ]
+      },
+      {
+        "taskId": "task2",
+        "type": "TYPE_INLINE_DROPDOWN",
+        "instruction": "Fill in the gaps with the correct preposition",
+        "optionsList": ["in", "on", "at", "to", "for", "from", "of", "with", "about"],
+        "questions": [
+          { "id": "q11", "text": "I’m really looking forward [gap] my vacation.", "answer": "to" },
+          { "id": "q12", "text": "She apologized [gap] being late.", "answer": "for" },
+          { "id": "q13", "text": "He insisted [gap] paying for dinner.", "answer": "on" },
+          { "id": "q14", "text": "I’m not used [gap] getting up early.", "answer": "to" },
+          { "id": "q15", "text": "This exercise is different [gap] the previous one.", "answer": "from" },
+          { "id": "q16", "text": "We ran out [gap] milk.", "answer": "of" },
+          { "id": "q17", "text": "She’s afraid [gap] losing her job.", "answer": "of" },
+          { "id": "q18", "text": "He succeeded [gap] passing the exam.", "answer": "in" },
+          { "id": "q19", "text": "I’m interested [gap] improving my English.", "answer": "in" },
+          { "id": "q20", "text": "There’s no point [gap] arguing.", "answer": "in" }
+        ]
+      },
+      {
+        "taskId": "task3",
+        "type": "TYPE_INLINE_DROPDOWN",
+        "instruction": "Put the verb in the correct form",
+        "questions": [
+          { "id": "q21", "text": "I [gap] for you for over an hour!", "options": ["wait", "have been waiting", "was waiting"], "answer": "have been waiting" },
+          { "id": "q22", "text": "She [gap] when the phone rang.", "options": ["worked", "was working", "has worked"], "answer": "was working" },
+          { "id": "q23", "text": "They [gap] the project yet.", "options": ["didn't finish", "haven't finished", "aren't finishing"], "answer": "haven't finished" },
+          { "id": "q24", "text": "He said he [gap] later.", "options": ["will come", "would come", "comes"], "answer": "would come" },
+          { "id": "q25", "text": "If I [gap] you, I wouldn’t do that.", "options": ["am", "was", "were"], "answer": "were" },
+          { "id": "q26", "text": "We [gap] when they arrived.", "options": ["already ate", "had already eaten", "were already eating"], "answer": "had already eaten" },
+          { "id": "q27", "text": "This book [gap] by a famous author.", "options": ["was written", "wrote", "is writing"], "answer": "was written" },
+          { "id": "q28", "text": "She [gap] to improve her English recently.", "options": ["tries", "has been trying", "was trying"], "answer": "has been trying" },
+          { "id": "q29", "text": "She [gap] speak three languages when she was 10.", "options": ["can", "was able to", "could to"], "answer": "was able to" },
+          { "id": "q30", "text": "They [gap] football when it started to rain.", "options": ["played", "were playing", "have played"], "answer": "were playing" }
+        ]
+      },
+      {
+        "taskId": "task4",
+        "type": "TYPE_INLINE_DROPDOWN",
+        "instruction": "Complete the sentences with the correct modal verb",
+        "optionsList": ["can", "could", "must", "mustn't", "might", "should", "have to"],
+        "questions": [
+          { "id": "q31", "text": "You [gap] smoke here. It’s prohibited.", "answer": "mustn't" },
+          { "id": "q32", "text": "I’m not sure, but she [gap] be at home – let’s call her.", "answer": "might" },
+          { "id": "q33", "text": "You look tired. You [gap] take a break.", "answer": "should" },
+          { "id": "q34", "text": "He [gap] speak three languages when he was five years old.", "answer": "could" },
+          { "id": "q35", "text": "In England, you [gap] drive on the left.", "answer": "have to" }
+        ]
+      },
+      {
+        "taskId": "task5",
+        "type": "TYPE_SENTENCE_CORRECTION",
+        "instruction": "Find and correct ONE mistake in each sentence.",
+        "questions": [
+          { "id": "q36", "text": "Incorrect: She don’t enjoy watching TV in the evening.", "options": ["She aren't enjoy watching TV in the evening.", "She doesn't enjoy watching TV in the evening.", "She hasn't enjoy watching TV in the evening."], "answer": "She doesn't enjoy watching TV in the evening." },
+          { "id": "q37", "text": "Incorrect: I have seen him yesterday at the cinema.", "options": ["I saw him yesterday at the cinema.", "I had seen him yesterday at the cinema.", "I was seeing him yesterday at the cinema."], "answer": "I saw him yesterday at the cinema." },
+          { "id": "q38", "text": "Incorrect: He was drive when the accident happened.", "options": ["He was driven when the accident happened.", "He was driving when the accident happened.", "He driving when the accident happened."], "answer": "He was driving when the accident happened." },
+          { "id": "q39", "text": "Incorrect: We didn’t went to school yesterday.", "options": ["We didn't go to school yesterday.", "We don't went to school yesterday.", "We didn't goes to school yesterday."], "answer": "We didn't go to school yesterday." },
+          { "id": "q40", "text": "Incorrect: They have been know each other for years.", "options": ["They have known each other for years.", "They have knowing each other for years.", "They knowed each other for years."], "answer": "They have known each other for years." },
+          { "id": "q41", "text": "Incorrect: If I will see her, I will tell her.", "options": ["If I saw her, I will tell her.", "If I seeing her, I will tell her.", "If I see her, I will tell her."], "answer": "If I see her, I will tell her." },
+          { "id": "q42", "text": "Incorrect: She suggested to go out for dinner.", "options": ["She suggested going out for dinner.", "She suggested go out for dinner.", "She suggested went out for dinner."], "answer": "She suggested going out for dinner." },
+          { "id": "q43", "text": "Incorrect: If I knew about the problem, I will help you.", "options": ["If I knew about the problem, I can help you.", "If I knew about the problem, I would help you.", "If I knew about the problem, I had helped you."], "answer": "If I knew about the problem, I would help you." },
+          { "id": "q44", "text": "Incorrect: He said “I am busy” → He said that he is busy.", "options": ["He said that he was busy.", "He said that he will be busy.", "He said that he has been busy."], "answer": "He said that he was busy." },
+          { "id": "q45", "text": "Incorrect: I didn’t use to liked coffee, but now I do.", "options": ["I didn’t use to liking coffee, but now I do.", "I didn’t used to like coffee, but now I do.", "I didn’t use to like coffee, but now I do."], "answer": "I didn’t use to like coffee, but now I do." }
+        ]
+      }
+    ]
+  },
+  "10_11": {
+    "title": "UPPER INTERMEDIATE TEST (10-11 КЛАСС)",
+    "tasks": [
+      {
+        "taskId": "task1",
+        "type": "TYPE_RADIO",
+        "instruction": "Choose the correct answer",
+        "questions": [
+          { "id": "q1", "text": "If I ___ earlier, I wouldn’t have missed the train.", "options": ["left", "had left", "would leave", "have left"], "answer": "had left" },
+          { "id": "q2", "text": "By the time we arrived, they ___ dinner.", "options": ["finished", "have finished", "had finished", "were finishing"], "answer": "had finished" },
+          { "id": "q3", "text": "She ___ working here for ten years before she finally quit.", "options": ["has been", "had been", "was", "is"], "answer": "had been" },
+          { "id": "q4", "text": "He ___ me he would call, but he didn’t.", "options": ["said", "told", "spoke", "talked"], "answer": "told" },
+          { "id": "q5", "text": "I’d rather you ___ me the truth.", "options": ["tell", "told", "have told", "telling"], "answer": "told" },
+          { "id": "q6", "text": "She ___ have forgotten about the meeting — she’s usually very organized.", "options": ["must", "might", "can’t", "should"], "answer": "can’t" },
+          { "id": "q7", "text": "The more you practice, the ___ you become.", "options": ["better", "best", "good", "well"], "answer": "better" },
+          { "id": "q8", "text": "He denied ___ the money.", "options": ["to take", "taking", "take", "taken"], "answer": "taking" },
+          { "id": "q9", "text": "I wish I ___ more time to finish the project.", "options": ["have", "had", "will have", "have had"], "answer": "had" },
+          { "id": "q10", "text": "She ___ her phone when I saw her.", "options": ["was using", "used", "has used", "had used"], "answer": "was using" },
+          { "id": "q11", "text": "If he ___ harder, he would be more successful now.", "options": ["works", "worked", "had worked", "would work"], "answer": "worked" },
+          { "id": "q12", "text": "He ___ living here since 2015.", "options": ["is", "was", "has been", "had been"], "answer": "has been" },
+          { "id": "q13", "text": "By this time tomorrow, I ___ on the beach.", "options": ["will lie", "will be lying", "lie", "am lying"], "answer": "will be lying" },
+          { "id": "q14", "text": "Don’t call me at 8 — I ___ dinner then.", "options": ["will have", "will be having", "have", "am having"], "answer": "will be having" },
+          { "id": "q15", "text": "If you heat water to 100°C, it ___.", "options": ["boils", "will boil", "would boil", "is boiling"], "answer": "boils" },
+          { "id": "q16", "text": "This book ___ to be one of the best of the year.", "options": ["says", "is said", "is saying", "said"], "answer": "is said" },
+          { "id": "q17", "text": "He ___ his car repaired last week.", "options": ["made", "did", "had", "got"], "answer": "got" },
+          { "id": "q18", "text": "I’m slowly getting used to ___ up early.", "options": ["wake", "waking", "woke", "be waking"], "answer": "waking" }
+        ]
+      },
+      {
+        "taskId": "task2",
+        "type": "TYPE_INLINE_DROPDOWN",
+        "instruction": "Put the verb in the correct form",
+        "questions": [
+          { "id": "q19", "text": "If I [gap] about the problem, I would have helped you.", "options": ["knew", "know", "had known"], "answer": "had known" },
+          { "id": "q20", "text": "She [gap] there for five years before she left.", "options": ["worked", "had worked", "has worked"], "answer": "had worked" },
+          { "id": "q21", "text": "I wish I [gap] that yesterday.", "options": ["didn't say", "haven't said", "hadn’t said"], "answer": "hadn’t said" },
+          { "id": "q22", "text": "He [gap] his car all morning, so he’s tired now.", "options": ["is fixing", "had fixed", "has been fixing"], "answer": "has been fixing" },
+          { "id": "q23", "text": "By next month, they [gap] the new bridge.", "options": ["will build", "will have built", "are building"], "answer": "will have built" },
+          { "id": "q24", "text": "She said she [gap] the report by the next day.", "options": ["would finish", "will finish", "finished"], "answer": "would finish" },
+          { "id": "q25", "text": "If I [gap] you, I would accept the offer.", "options": ["am", "was", "were"], "answer": "were" },
+          { "id": "q26", "text": "They [gap] the task yet.", "options": ["didn't complete", "haven’t completed", "aren't completing"], "answer": "haven’t completed" },
+          { "id": "q27", "text": "He admitted [gap] the window.", "options": ["breaking", "to break", "broke"], "answer": "breaking" },
+          { "id": "q28", "text": "We [gap] for over two hours when the bus finally arrived.", "options": ["were waiting", "had been waiting", "have waited"], "answer": "had been waiting" }
+        ]
+      },
+      {
+        "taskId": "task3",
+        "type": "TYPE_SENTENCE_CORRECTION",
+        "instruction": "Error Correction: Find and correct ONE mistake",
+        "questions": [
+          { "id": "q29", "text": "Incorrect: If I would have known, I would have helped you.", "options": ["If I knew, I would have helped you.", "If I had known, I would have helped you.", "If I have known, I would have helped you."], "answer": "If I had known, I would have helped you." },
+          { "id": "q30", "text": "Incorrect: He told me that he will come later.", "options": ["He told me that he would come later.", "He told me that he comes later.", "He told me that he has come later."], "answer": "He told me that he would come later." },
+          { "id": "q31", "text": "Incorrect: I have been seeing this film already.", "options": ["I had seen this film already.", "I have already seen this film.", "I was seeing this film already."], "answer": "I have already seen this film." },
+          { "id": "q32", "text": "Incorrect: She suggested to take a break.", "options": ["She suggested taking a break.", "She suggested take a break.", "She suggested took a break."], "answer": "She suggested taking a break." },
+          { "id": "q33", "text": "Incorrect: The project was completed by they.", "options": ["The project was completed by their.", "The project was completed by them.", "The project was completed by theirs."], "answer": "The project was completed by them." },
+          { "id": "q34", "text": "Incorrect: I look forward to hear from you.", "options": ["I look forward to hearing from you.", "I look forward for hear from you.", "I look forward heard from you."], "answer": "I look forward to hearing from you." }
+        ]
+      },
+      {
+        "taskId": "task4",
+        "type": "TYPE_INLINE_DROPDOWN",
+        "instruction": "Complete the text with ONE word in each gap (Clauses of contrast).",
+        "optionsList": ["despite", "although", "however", "whereas", "nevertheless", "in spite of", "while"],
+        "questions": [
+          { "id": "q35", "text": "Many people believe that working from home is more productive. [gap], recent studies suggest the opposite is sometimes true.", "answer": "however" },
+          { "id": "q36", "text": "[gap] the flexibility it offers, some employees struggle with focus.", "answer": "despite" },
+          { "id": "q37", "text": "[gap], others thrive without office distractions.", "answer": "nevertheless" },
+          { "id": "q38", "text": "[gap] a home environment may suit introverts...", "answer": "whereas" },
+          { "id": "q39", "text": "...[gap] extroverts often miss social interaction.", "answer": "while" },
+          { "id": "q40", "text": "[gap] these differences, most companies now adopt hybrid models.", "answer": "in spite of" }
+        ]
+      },
+      {
+        "taskId": "task5",
+        "type": "TYPE_DRAG_DROP",
+        "instruction": "Reordering: Put the words in the correct order to make a grammatical sentence.",
+        "questions": [
+          { "id": "q41", "text": "for / been / has / she / looking / job / a / months / six", "options": ["for", "been", "has", "she", "looking", "job", "a", "months", "six"], "answer": "She has been looking for a job for six months." },
+          { "id": "q42", "text": "remember / I / lock / door / the / to / before / leaving", "options": ["remember", "I", "lock", "door", "the", "to", "before", "leaving"], "answer": "I remember to lock the door before leaving." },
+          { "id": "q43", "text": "to / would / I / rather / home / stay / than / go / out", "options": ["to", "would", "I", "rather", "home", "stay", "than", "go", "out"], "answer": "I would rather stay at home than go out." },
+          { "id": "q44", "text": "the / despite / rain / heavy / went / they / out", "options": ["the", "despite", "rain", "heavy", "went", "they", "out"], "answer": "Despite the heavy rain, they went out." },
+          { "id": "q45", "text": "try / button / press / this / to / see / if / works / it", "options": ["try", "button", "press", "this", "to", "see", "if", "works", "it"], "answer": "Try pressing this button to see if it works." }
+        ]
+      }
+    ]
+  }
+}

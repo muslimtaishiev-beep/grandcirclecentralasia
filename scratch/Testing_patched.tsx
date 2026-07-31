@@ -93,7 +93,7 @@ export default function Testing() {
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        if (phase === "core" || phase === "english") handleCheating();
+        handleCheating();
       } else {
         handleFocus();
       }
@@ -109,7 +109,7 @@ export default function Testing() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (blurTimeout.current) clearTimeout(blurTimeout.current);
     };
-  }, [started, finished, disqualified, answers, phase]); // Add answers to dependencies so submitTest gets latest
+  }, [started, finished, disqualified, answers]); // Add answers to dependencies so submitTest gets latest
 
   // Block copy/paste/context menu globally when test is active
   useEffect(() => {
@@ -395,130 +395,86 @@ export default function Testing() {
     );
   }
 
-  
-  if (phase === "intermediate") {
+  if (finished) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-center select-none">
-        <div className="bg-white p-10 rounded-3xl shadow-2xl max-w-2xl w-full border border-slate-100">
-          <h1 className="text-4xl font-extrabold text-blue-900 mb-6">Отлично! Основной тест сдан 🎉</h1>
-          <p className="text-xl text-slate-600 mb-8">
-            Ваш уникальный номер (Test ID): <span className="font-mono font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded">{shortId}</span>
-          </p>
-          <div className="bg-amber-50 p-6 rounded-xl border border-amber-200 mb-8 text-amber-800 text-left">
-            <h3 className="font-bold text-lg mb-2">Что дальше?</h3>
-            <p>Остался тест по английскому языку. Вы можете немного отдохнуть и сдать его прямо сейчас, либо завершить сессию и сдать его позже, введя свой Test ID на главном экране.</p>
-          </div>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
+          <h2 className="text-2xl font-bold mb-2">Тест завершён</h2>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <button
-              onClick={() => {
-                setPhase("english");
-                if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
-              }}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-6 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all"
-            >
-              Сдать английский сейчас
-            </button>
-            <button
-              onClick={() => {
-                setFinished(true);
-                setPhase("final");
-                if (document.exitFullscreen) document.exitFullscreen().catch(()=>{});
-              }}
-              className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-4 px-6 rounded-xl text-lg transition-all"
-            >
-              Завершить и выйти
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (phase === "final" || finished) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center select-none">
-        <div className="bg-white p-10 rounded-3xl shadow-2xl max-w-md w-full border border-slate-100 relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
-          
-          {disqualified ? (
-            <>
-              <h1 className="text-4xl font-black text-red-600 mb-4 uppercase tracking-wider">Дисквалификация</h1>
-              <p className="text-lg text-slate-600 mb-8 font-medium">Ваш тест был принудительно завершен из-за нарушения правил.</p>
-            </>
+          {pendingSubmission ? (
+            <div className="bg-red-50 text-red-600 p-4 rounded-xl mb-6">
+              <strong>Ошибка: {submitError || "Сеть недоступна"}</strong>
+              <p className="text-sm mt-1 mb-3">Ваши ответы сохранены на устройстве. Пожалуйста, не закрывайте вкладку.</p>
+              <button onClick={retrySubmission} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium">Повторить отправку</button>
+            </div>
           ) : (
             <>
-              <h1 className="text-4xl font-extrabold text-blue-900 mb-4">Тест завершен!</h1>
-              <p className="text-lg text-slate-600 mb-8 font-medium">Спасибо за участие. Ваши ответы сохранены.</p>
-            </>
-          )}
-
-          {resultData ? (
-            <div className="mb-6">
-              {(() => {
+              {resultData && resultData.scores && (() => {
                 let maxRu = 0, maxMa = 0, maxLo = 0, maxEn = 0;
                 if (grade && testsData[grade]) {
                   maxRu = testsData[grade].russian.reduce((sum, q) => sum + (q.points || 1), 0);
                   maxMa = testsData[grade].math.reduce((sum, q) => sum + (q.points || 1), 0);
-                  if (testsData[grade].logic) maxLo = testsData[grade].logic.reduce((sum, q) => sum + (q.points || 1), 0);
-                  if (testsData[grade].english) maxEn = testsData[grade].english.reduce((sum, q) => sum + (q.points || 1), 0);
+                  if (testsData[grade].logic) {
+                    maxLo = testsData[grade].logic.reduce((sum, q) => sum + (q.points || 1), 0);
+                  }
+                  if (testsData[grade].english) {
+                    maxEn = testsData[grade].english.reduce((sum, q) => sum + (q.points || 1), 0);
+                  }
                 }
-                const totalMax = maxRu + maxMa + maxLo;
+                const totalMax = maxRu + maxMa + maxLo + maxEn;
                 const percent = totalMax > 0 ? Math.round((resultData.totalScore / totalMax) * 100) : 0;
                 
                 return (
-                  <>
                   <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-left">
-                    <h3 className="font-bold text-green-800 text-lg mb-3 text-center">Основной тест:</h3>
+                    <h3 className="font-bold text-green-800 text-lg mb-3 text-center">Ваш результат:</h3>
                     <div className="flex justify-between items-center mb-1 text-green-700">
-                      <span>Русский язык:</span><span className="font-bold">{resultData.scores.russian || 0}</span>
+                      <span>Русский язык:</span>
+                      <span className="font-bold">{resultData.scores.russian} из {maxRu}</span>
                     </div>
                     <div className="flex justify-between items-center mb-1 text-green-700">
-                      <span>Математика:</span><span className="font-bold">{resultData.scores.math || 0}</span>
+                      <span>Математика:</span>
+                      <span className="font-bold">{resultData.scores.math} из {maxMa}</span>
                     </div>
                     <div className="flex justify-between items-center mb-1 text-green-700">
-                      <span>Логика:</span><span className="font-bold">{resultData.scores.logic || 0}</span>
+                      <span>Логика:</span>
+                      <span className="font-bold">{resultData.scores.logic} из {maxLo}</span>
                     </div>
-                    <div className="mt-3 pt-3 border-t border-green-200 flex flex-col items-end font-bold text-green-900 text-lg">
-                      <div className="w-full flex justify-between"><span>Общий балл:</span><span>{resultData.totalScore || 0} из {totalMax}</span></div>
+                    {testsData[grade]?.english && (
+                      <div className="flex justify-between items-center mb-1 text-green-700">
+                        <span>Английский язык:</span>
+                        <span className="font-bold">{resultData.scores.english} из {maxEn}</span>
+                      </div>
+                    )}
+                    <div className="mt-3 pt-3 border-t border-green-200 flex flex-col items-end font-bold text-green-900 text-lg relative">
+                      <span className="absolute left-0 top-3">Общий балл:</span>
+                      <div>{resultData.totalScore} из {totalMax}</div>
                       <div className="text-sm text-green-700 font-medium">({percent}% верных)</div>
                     </div>
                   </div>
-                  
-                  {resultData.scores.english !== undefined && resultData.scores.english !== "" && maxEn > 0 && (
-                    <div className="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded-xl text-left">
-                      <h3 className="font-bold text-indigo-800 text-lg mb-3 text-center">Английский язык:</h3>
-                      {(() => {
-                        const cefr = getCEFRLevel(grade!, maxEn, Number(resultData.scores.english));
-                        if (!cefr) return null;
-                        return (
-                          <div className="flex flex-col items-center">
-                            <div className="text-3xl mb-2">{cefr.icon}</div>
-                            <div className="font-bold text-indigo-900 text-xl text-center">{cefr.actualLevel}</div>
-                            <div className="text-indigo-700 mt-1 font-medium">Усвоено: {cefr.percent}%</div>
-                            {cefr.icon !== "✅" && (
-                              <div className="text-xs text-indigo-500 mt-2 text-center">Ожидаемый уровень: {cefr.targetLevel}</div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-                  </>
                 );
               })()}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-500 mb-6">Результаты обрабатываются. Ожидайте вердикт от менеджера.</p>
+              <p className="text-slate-500 mb-6 font-medium">Покажите этот экран с QR-кодом менеджеру для проверки:</p>
+            </>
           )}
 
-          <div className="mb-8 p-4 bg-blue-50 border border-blue-100 rounded-xl">
-            <p className="text-sm font-medium text-blue-800 mb-2">ID Теста для менеджера:</p>
-            <p className="text-3xl font-mono font-bold tracking-widest text-blue-600">{shortId}</p>
+          <div className="bg-slate-100 p-4 rounded-xl inline-block select-none pointer-events-none mb-6">
+            <QRCodeCanvas value={qrToken} size={250} level="H" />
           </div>
-          
-          <button onClick={() => { sessionStorage.clear(); window.location.reload(); }} className="w-full font-bold text-slate-500 hover:text-slate-700 py-2">
-            Вернуться к входу
+
+          <div className="text-4xl font-mono font-bold text-blue-700 tracking-widest bg-blue-50 py-3 rounded-xl border border-blue-200 mb-6">
+            {shortId}
+          </div>
+
+          <button 
+            onClick={() => {
+              if (window.confirm("Убедитесь, что менеджер зафиксировал ваш результат. QR-код будет удален. Продолжить?")) {
+                sessionStorage.clear();
+                window.location.reload();
+              }
+            }}
+            className="text-sm text-slate-500 hover:text-slate-800 underline transition-colors"
+          >
+            Закрыть и вернуться на главную
           </button>
         </div>
       </div>
@@ -532,36 +488,32 @@ export default function Testing() {
           <h1 className="text-2xl font-bold mb-6 text-center">Входное тестирование</h1>
           
           <div className="space-y-4 mb-6">
-            {!isResumingEnglish && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium mb-2">ФИО Ученика:</label>
-                  <input
-                          autoComplete="off"
-                          autoCorrect="off"
-                          autoCapitalize="off"
-                          spellCheck={false}
-                          type="text" 
-                    placeholder="Иванов Иван Иванович"
-                    value={studentName}
-                    onChange={(e) => setStudentName(e.target.value)}
-                    className="w-full border rounded-xl p-3 bg-slate-50"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium mb-2">Выберите ваш класс:</label>
-                  <select 
-                    className="w-full border rounded-xl p-3 bg-slate-50"
-                    value={grade || ""}
-                    onChange={(e) => setGrade(Number(e.target.value))}
-                  >
-                    <option value="">Не выбран</option>
-                    {[7,8,9,10,11].map(g => <option key={g} value={g}>{g} класс</option>)}
-                  </select>
-                </div>
-              </>
-            )}
+            <div>
+              <label className="block text-sm font-medium mb-2">ФИО Ученика:</label>
+              <input
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      type="text" 
+                placeholder="Иванов Иван Иванович"
+                value={studentName}
+                onChange={(e) => setStudentName(e.target.value)}
+                className="w-full border rounded-xl p-3 bg-slate-50"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-2">Выберите ваш класс:</label>
+              <select 
+                className="w-full border rounded-xl p-3 bg-slate-50"
+                value={grade || ""}
+                onChange={(e) => setGrade(Number(e.target.value))}
+              >
+                <option value="">Не выбран</option>
+                {[7,8,9,10,11].map(g => <option key={g} value={g}>{g} класс</option>)}
+              </select>
+            </div>
 
             <div>
               <label className="block text-sm font-medium mb-2">PIN-код аудитории (спросите у менеджера):</label>
@@ -607,51 +559,13 @@ export default function Testing() {
             </div>
           </div>
 
-          
-          {!isResumingEnglish ? (
-            <>
-              <button 
-                onClick={startTest}
-                disabled={!grade || !studentName.trim() || !enteredPin.trim() || !consentGiven}
-                className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-lg disabled:opacity-50 hover:bg-blue-700 transition shadow-lg mb-3"
-              >
-                Начать тест
-              </button>
-              <button 
-                onClick={() => setIsResumingEnglish(true)}
-                className="w-full py-3 bg-white text-blue-600 border-2 border-blue-600 rounded-xl font-bold text-lg hover:bg-blue-50 transition"
-              >
-                Продолжить тест по английскому
-              </button>
-            </>
-          ) : (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Ваш Test ID:</label>
-                <input
-                  type="text"
-                  value={resumeShortId}
-                  onChange={(e) => setResumeShortId(e.target.value)}
-                  className="w-full border rounded-xl p-3 bg-slate-50 font-mono tracking-widest text-center"
-                  placeholder="Например: 123456"
-                />
-              </div>
-              <button 
-                onClick={startTest}
-                disabled={!resumeShortId.trim() || !enteredPin.trim()}
-                className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold text-lg disabled:opacity-50 hover:bg-indigo-700 transition shadow-lg"
-              >
-                Войти и начать английский
-              </button>
-              <button 
-                onClick={() => setIsResumingEnglish(false)}
-                className="w-full py-2 text-slate-500 font-bold hover:text-slate-700 transition"
-              >
-                Назад
-              </button>
-            </div>
-          )}
-
+          <button 
+            onClick={startTest}
+            disabled={!grade || !studentName.trim() || !enteredPin.trim() || !consentGiven}
+            className="w-full py-3 bg-blue-600 text-white rounded-xl font-medium disabled:opacity-50 hover:bg-blue-700 transition"
+          >
+            Начать тест
+          </button>
         </div>
       </div>
     );
@@ -667,7 +581,7 @@ export default function Testing() {
       <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center z-10">
         <div className="font-bold text-lg">Тестирование: {grade} класс</div>
         <button 
-          onClick={() => phase === "english" ? submitEnglishTest(false) : submitCoreTest(false)}
+          onClick={() => submitTest(false)}
           className="px-6 py-2 bg-blue-600 text-white rounded-full font-medium hover:bg-blue-700"
         >
           Завершить тест
@@ -675,16 +589,7 @@ export default function Testing() {
       </div>
 
       <div className="max-w-3xl mx-auto px-6 py-8 space-y-12">
-        {(phase === "core" 
-          ? [
-              { title: "Русский язык", q: test.russian }, 
-              { title: "Математика", q: test.math }, 
-              { title: "Логика", q: test.logic }
-            ]
-          : [
-              { title: "Английский язык", q: test.english }
-            ]
-        ).filter(s => s.q && s.q.length > 0).map((section, idx) => (
+        {[{ title: "Русский язык", q: test.russian }, { title: "Математика", q: test.math }, { title: "Логика", q: test.logic }, { title: "Английский язык", q: test.english }].filter(s => s.q && s.q.length > 0).map((section, idx) => (
           <div key={idx}>
             <h2 className="text-2xl font-bold mb-6 text-blue-600">{section.title}</h2>
             <div className="space-y-8">

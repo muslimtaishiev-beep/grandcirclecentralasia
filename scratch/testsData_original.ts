@@ -1114,7 +1114,6 @@ const english_grade_10_11: Question[] = [
 export const testsData: Record<number, TestData> = {
   "7": {
     grade: 7,
-    english: [],
     russian: [
 {
         id: "russian_1",
@@ -1352,7 +1351,6 @@ export const testsData: Record<number, TestData> = {
   },
   "8": {
     grade: 8,
-    english: english_grade_8,
     russian: [
 {
         id: "russian_1",
@@ -1655,7 +1653,6 @@ export const testsData: Record<number, TestData> = {
   },
   "9": {
     grade: 9,
-    english: english_grade_9,
     russian: [
 {
         id: "russian_1",
@@ -1896,7 +1893,6 @@ export const testsData: Record<number, TestData> = {
   },
   "10": {
     grade: 10,
-    english: english_grade_10_11,
     russian: [
 {
         id: "russian_1",
@@ -2147,7 +2143,6 @@ export const testsData: Record<number, TestData> = {
   },
   "11": {
     grade: 11,
-    english: english_grade_10_11,
     russian: [
 {
         id: "russian_1",
