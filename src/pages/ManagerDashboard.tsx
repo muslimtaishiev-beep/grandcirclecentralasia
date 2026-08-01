@@ -64,13 +64,20 @@ export default function ManagerDashboard() {
             const token = user ? await user.getIdToken() : "";
             const gasUrl = "/api/gas" || "";
             
-            await fetchGasAPI(gasUrl, {
+            const res = await fetchGasAPI(gasUrl, {
               action: "uploadPdf",
               shortId: student.shortId,
               childName: student.childName,
               base64Data: base64
             }, token);
-          } catch(err) {
+            
+            if (res.success) {
+              alert("PDF успешно сохранен на Google Диск!");
+            } else {
+              alert("Ошибка при сохранении на Диск: " + (res.error || JSON.stringify(res)));
+            }
+          } catch(err: any) {
+            alert("Критическая ошибка сети при сохранении: " + err.message);
             console.error("Failed to upload PDF", err);
           }
         }).then(() => {
