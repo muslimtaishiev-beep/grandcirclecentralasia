@@ -64,10 +64,11 @@ export default function ManagerDashboard() {
             const token = user ? await user.getIdToken() : "";
             const gasUrl = "/api/gas" || "";
             
+            const displayName = student.childName || student.studentName || student.shortId;
             const res = await fetchGasAPI(gasUrl, {
               action: "uploadPdf",
               shortId: student.shortId,
-              childName: student.childName,
+              childName: displayName,
               base64Data: base64
             }, token);
             

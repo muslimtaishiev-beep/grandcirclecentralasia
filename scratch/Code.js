@@ -920,6 +920,7 @@ function getTestByShortId(testSheet, shortId) {
     if (String(data[i][10]) === String(shortId)) {
       return {
         row: i + 1,
+        shortId: shortId,
         studentName: data[i][1],
         grade: data[i][2],
         russian: data[i][3],

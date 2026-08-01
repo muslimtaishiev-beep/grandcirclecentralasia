@@ -44,10 +44,11 @@ export default function ManagerForm() {
           try {
             const user = firebaseAuth.currentUser;
             const token = user ? await user.getIdToken() : "";
+            const displayName = student.childName || student.studentName || student.shortId;
             const res = await fetchGasAPI("/api/gas", {
               action: "uploadPdf",
-              shortId: student.shortId,
-              childName: student.childName,
+              shortId: student.shortId || shortId,
+              childName: displayName,
               base64Data: base64
             }, token);
             
