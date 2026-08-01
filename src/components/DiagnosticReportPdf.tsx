@@ -89,6 +89,67 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
     return { color: C.gray700, backgroundColor: C.gray50, label: "Общее" };
   };
 
+  const MACRO_MAP: Record<string, { macro: string, keywords: string[] }[]> = {
+    "russian": [
+      { macro: "Орфография", keywords: ["Орфография", "суффикс", "Гласная", "НН", "НЕ", "приставк", "корень", "слитное", "дефисное", "раздельное"] },
+      { macro: "Пунктуация", keywords: ["Пунктуация", "запятые", "оборот", "Вводные", "БСП", "ССП", "СПО", "обособлен", "однородн"] },
+      { macro: "Синтаксис и Грамматика", keywords: ["Синтаксис", "Грамматика", "основа", "односостав", "сказуем", "связи", "словосочетан", "морфология", "склонение"] },
+      { macro: "Лексика и Речь", keywords: ["Лексика", "Пароним", "Фразеологизм", "Ударение", "Орфоэпия", "смыслов", "значение", "обращения"] }
+    ],
+    "math": [
+      { macro: "Алгебра и Вычисления", keywords: ["дроби", "корни", "выражен", "числа", "степен", "многочлен", "прогресси", "умножения"] },
+      { macro: "Уравнения и Неравенства", keywords: ["уравнен", "неравенств", "систем", "интервал"] },
+      { macro: "Функции и Графики", keywords: ["Функци", "график", "парабол", "гипербол", "производная", "логарифм", "тригонометр"] },
+      { macro: "Геометрия", keywords: ["Геометрия", "Пифагор", "треугольник", "вектор", "площадь", "угол", "углы", "стереометрия", "планиметрия"] },
+      { macro: "Текстовые задачи", keywords: ["Текстовые", "движение", "работу", "проценты", "вероятность", "доли", "совместную"] }
+    ],
+    "logic": [
+      { macro: "Логическое мышление", keywords: ["Логика", "матрицы", "очереди", "утверждения", "загадки", "вычисления", "работу"] }
+    ],
+    "english": [
+      { macro: "Grammar: Tenses", keywords: ["Tense", "Present", "Past", "Future", "Perfect", "Continuous", "tenses", "verb", "grammar"] },
+      { macro: "Grammar: Conditionals & Modals", keywords: ["Conditionals", "Modal", "If"] },
+      { macro: "Vocabulary & Structure", keywords: ["Prepositions", "Vocabulary", "Order", "Correction", "Words", "Quantifiers", "Comparatives", "Phrasal", "Linking", "Reading", "Comprehension", "Reordering"] }
+    ]
+  };
+
+  const getMacroAndSubject = (topicText: string) => {
+    // 1. Exact match for already mapped macros
+    for (const [subjectKey, map] of Object.entries(MACRO_MAP)) {
+      for (const item of map) {
+        if (item.macro.toLowerCase() === topicText.toLowerCase()) {
+          return { macro: item.macro, subject: subjectKey };
+        }
+      }
+    }
+    // 2. Keyword match for micro-topics
+    for (const [subjectKey, map] of Object.entries(MACRO_MAP)) {
+      for (const item of map) {
+        if (item.keywords.some(kw => topicText.toLowerCase().includes(kw.toLowerCase()))) {
+          return { macro: item.macro, subject: subjectKey };
+        }
+      }
+    }
+    return { macro: "Основные навыки", subject: "general" };
+  };
+
+  // Aggregate stats frontend-side to fix existing DB records
+  const aggregatedStats: Record<string, { earned: number, possible: number, subject: string }> = {};
+  for (const [microTopic, stats] of Object.entries(diagnosticsRaw)) {
+    const s = stats as any;
+    if (!s || s.possible === 0) continue; 
+    
+    // If the backend already provided a subject, use it to aid mapping, otherwise fallback to guessing
+    const { macro, subject } = getMacroAndSubject(microTopic);
+    const finalSubject = s.subject && s.subject !== "general" ? s.subject : subject;
+
+    if (!aggregatedStats[macro]) {
+      aggregatedStats[macro] = { earned: 0, possible: 0, subject: finalSubject };
+    }
+    aggregatedStats[macro].earned += s.earned || 0;
+    aggregatedStats[macro].possible += s.possible || 0;
+  }
+
   return (
     <div id="pdf-diagnostic-report" className="p-12 w-[210mm] min-h-[297mm] " style={{ backgroundColor: C.white, color: C.black, fontFamily: 'Arial, Helvetica, sans-serif', lineHeight: 1.5 }}>
       
@@ -123,18 +184,17 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
         </p>
         
         <div className="space-y-4">
-          {Object.entries(diagnosticsRaw)
+          {Object.entries(aggregatedStats)
             .sort((a, b) => {
-              const aStats = a[1] as any;
-              const bStats = b[1] as any;
+              const aStats = a[1];
+              const bStats = b[1];
               return (bStats.earned / bStats.possible) - (aStats.earned / aStats.possible);
             })
             .map(([topic, stats]) => {
-            const s = stats as any;
-            const earned = s.earned || 0;
-            const possible = s.possible || 0;
+            const earned = stats.earned || 0;
+            const possible = stats.possible || 0;
             const percentage = possible > 0 ? Math.round((earned / possible) * 100) : 0;
-            const styleObj = getSubjectColor(s.subject);
+            const styleObj = getSubjectColor(stats.subject);
 
             return (
               <div key={topic} className="flex flex-col gap-2 p-4 rounded-xl border shadow-sm" style={{ backgroundColor: C.white, borderColor: C.gray100 }}>
