@@ -222,7 +222,7 @@ app.post("/api/gas", async (req, res) => {
     }
     
     // For protected actions, verify Firebase Auth token
-    const publicActions = ["submitTest", "submitEnglishTest", "getStudentByShortId", "getAllStudents", "updateFinalDecision", "submitManagerForm", "getPsychologistStudent", "submitPsychologistForm"];
+    const publicActions = ["submitTest", "submitEnglishTest", "getStudentByShortId", "getAllStudents", "updateFinalDecision", "submitManagerForm", "getPsychologistStudent", "submitPsychologistForm", "uploadPdf"];
     if (!publicActions.includes(payload.action)) {
       const authHeader = req.headers["authorization"] || "";
       const token = authHeader.replace("Bearer ", "").trim();
