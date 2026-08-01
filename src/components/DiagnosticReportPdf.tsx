@@ -81,52 +81,13 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
     return C.red600;
   };
 
-  const getSubjectColor = (macro: string) => {
-    if (macro.includes("Русский")) return { color: C.blue700, backgroundColor: C.blue50, label: "Русский язык" };
-    if (macro.includes("Математика")) return { color: C.indigo700, backgroundColor: C.indigo50, label: "Математика" };
-    if (macro.includes("Логика")) return { color: C.purple700, backgroundColor: C.purple50, label: "Логика" };
-    if (macro.includes("English")) return { color: C.teal700, backgroundColor: C.teal50, label: "English" };
+  const getSubjectColor = (subject: string) => {
+    if (subject === "russian") return { color: C.blue700, backgroundColor: C.blue50, label: "Русский язык" };
+    if (subject === "math") return { color: C.indigo700, backgroundColor: C.indigo50, label: "Математика" };
+    if (subject === "logic") return { color: C.purple700, backgroundColor: C.purple50, label: "Логика" };
+    if (subject === "english") return { color: C.teal700, backgroundColor: C.teal50, label: "English" };
     return { color: C.gray700, backgroundColor: C.gray50, label: "Общее" };
   };
-
-  const MACRO_CATEGORY_MAP: Record<string, string[]> = {
-    "Русский язык: Орфография": ["н и нн", "правописание", "суффикс", "гласная", "орфография", "дефисное", "слитное", "корней", "раздельное"],
-    "Русский язык: Пунктуация": ["пунктуация", "бсп", "ссп", "запятые", "оборот", "вводные", "обособленных", "однородных"],
-    "Русский язык: Синтаксис и Грамматика": ["основа", "односоставных", "сказуемых", "связи", "синтаксис", "морфология", "склонение"],
-    "Русский язык: Лексика и Речь": ["лексика", "паронимы", "фразеологизмы", "смысловые", "слова", "значение", "обращения"],
-
-    "Математика: Вычисления и алгебра": ["дроби", "корни", "выражений", "вычисления", "степеней", "многочлены", "прогрессии", "умножения"],
-    "Математика: Уравнения и неравенства": ["уравнения", "неравенства", "системы", "интервалов"],
-    "Математика: Функции и графики": ["функции", "графики", "парабола", "производная", "логарифмические", "тригонометрические"],
-    "Математика: Геометрия": ["пифагора", "вектора", "площадь", "геометрия", "стереометрия", "планиметрия", "треугольники", "углы", "треугольника"],
-    "Математика: Текстовые задачи": ["совместную", "текстовые", "проценты", "доли"],
-
-    "Логика и мышление": ["матрицы", "очереди", "утверждениями", "логика", "работу"],
-
-    "English: Tenses & Grammar": ["perfect", "continuous", "conditionals", "future", "tenses", "verb", "grammar"],
-    "English: Vocabulary & Prepositions": ["prepositions", "vocabulary", "phrasal", "linking"],
-    "English: Reading & Structure": ["reading", "comprehension", "reordering", "correction"]
-  };
-
-  const getMacroCategory = (microTopic: string) => {
-    for (const [macro, keywords] of Object.entries(MACRO_CATEGORY_MAP)) {
-      if (keywords.some(kw => microTopic.toLowerCase().includes(kw))) {
-        return macro;
-      }
-    }
-    return "Остальные темы";
-  };
-
-  const aggregatedStats: Record<string, { earned: number, possible: number }> = {};
-  
-  for (const [microTopic, stats] of Object.entries(diagnosticsRaw)) {
-    const s = stats as { earned: number, possible: number };
-    if (s.possible === 0) continue; 
-    const macro = getMacroCategory(microTopic);
-    if (!aggregatedStats[macro]) aggregatedStats[macro] = { earned: 0, possible: 0 };
-    aggregatedStats[macro].earned += s.earned;
-    aggregatedStats[macro].possible += s.possible;
-  }
 
   return (
     <div id="pdf-diagnostic-report" className="p-12 w-[210mm] min-h-[297mm] " style={{ backgroundColor: C.white, color: C.black, fontFamily: '"Inter", "Arial", sans-serif' }}>
@@ -162,18 +123,26 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
         </p>
         
         <div className="space-y-4">
-          {Object.entries(aggregatedStats)
-            .sort((a, b) => (b[1].earned / b[1].possible) - (a[1].earned / a[1].possible))
+          {Object.entries(diagnosticsRaw)
+            .sort((a, b) => {
+              const aStats = a[1] as any;
+              const bStats = b[1] as any;
+              return (bStats.earned / bStats.possible) - (aStats.earned / aStats.possible);
+            })
             .map(([topic, stats]) => {
-            const earned = stats.earned || 0;
-            const possible = stats.possible || 0;
+            const s = stats as any;
+            const earned = s.earned || 0;
+            const possible = s.possible || 0;
             const percentage = possible > 0 ? Math.round((earned / possible) * 100) : 0;
-            const styleObj = getSubjectColor(topic);
+            const styleObj = getSubjectColor(s.subject);
 
             return (
               <div key={topic} className="flex flex-col gap-2 p-4 rounded-xl border shadow-sm" style={{ backgroundColor: C.white, borderColor: C.gray100 }}>
                 <div className="flex justify-between items-center mb-1">
-                  <div className="font-semibold" style={{ color: C.gray800 }}>{topic}</div>
+                  <div className="font-semibold flex items-center gap-3">
+                    <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: styleObj.color }}></span>
+                    <span style={{ color: C.gray800 }}>{topic}</span>
+                  </div>
                   <div className="text-sm font-bold px-3 py-1 rounded-full" style={{ backgroundColor: C.slate100, color: getStatusTextColor(percentage) }}>
                     {getStatusText(percentage)} ({percentage}%)
                   </div>
@@ -188,9 +157,6 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
                 
                 <div className="flex justify-between text-xs mt-1" style={{ color: C.gray500 }}>
                   <span>Решено верно: {earned} из {possible}</span>
-                  <span className="px-2 py-0.5 rounded-md font-medium text-[10px]" style={{ color: styleObj.color, backgroundColor: styleObj.backgroundColor }}>
-                    {styleObj.label}
-                  </span>
                 </div>
               </div>
             );
