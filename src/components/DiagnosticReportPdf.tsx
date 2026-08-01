@@ -54,7 +54,8 @@ const C = {
 };
 
 export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ student }) => {
-  const { childName, grade, date, diagnosticsRaw } = student;
+  const { childName, studentName, grade, date, diagnosticsRaw } = student;
+  const displayName = childName || studentName;
   
   if (!diagnosticsRaw || Object.keys(diagnosticsRaw).length === 0) return (
     <div id="pdf-diagnostic-report" className="p-10 w-[210mm] min-h-[297mm] " style={{ backgroundColor: C.white, color: C.black }}>
@@ -107,7 +108,7 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
       <div className="rounded-xl p-6 mb-8 border flex justify-between items-center shadow-sm" style={{ backgroundColor: C.slate50, borderColor: C.slate100 }}>
         <div>
           <div className="text-sm mb-1" style={{ color: C.slate500 }}>Ученик</div>
-          <div className="text-2xl font-bold" style={{ color: C.slate800 }}>{childName || "Без имени"}</div>
+          <div className="text-2xl font-bold" style={{ color: C.slate800 }}>{displayName || "Без имени"}</div>
         </div>
         <div className="text-right">
           <div className="text-sm mb-1" style={{ color: C.slate500 }}>Класс</div>

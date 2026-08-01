@@ -48,9 +48,10 @@ export default function ManagerDashboard() {
     setTimeout(() => {
       const element = document.getElementById('pdf-diagnostic-report');
       if (element) {
+        const displayName = student.childName || student.studentName || student.shortId;
         const opt = {
           margin: 0,
-          filename: `Аналитика_${student.childName || student.shortId}_${student.grade}класс.pdf`,
+          filename: `Аналитика_${displayName}_${student.grade}класс.pdf`,
           image: { type: 'jpeg', quality: 0.98 },
           html2canvas: { scale: 2, useCORS: true },
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
