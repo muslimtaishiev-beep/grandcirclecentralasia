@@ -81,13 +81,52 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
     return C.red600;
   };
 
-  const getSubjectColor = (topic: string) => {
-    if (["Морфология", "Орфоэпия", "Фразеологизмы", "Лексика", "Склонение", "Дефисное", "Пунктуация", "Слитное", "Правописание", "Вводные", "односоставных", "сложном", "обособленных"].some(t => topic.includes(t))) return { color: C.blue700, backgroundColor: C.blue50 };
-    if (["Свойства", "Логарифмические", "Производная", "Тригонометрические", "неравенств", "Вычитание", "Корни", "Уравнения", "Геометрия", "Квадратные", "дроби"].some(t => topic.includes(t))) return { color: C.indigo700, backgroundColor: C.indigo50 };
-    if (topic.includes("Логические") || topic.includes("вычисления") || topic.includes("Очереди") || topic.includes("Проценты")) return { color: C.purple700, backgroundColor: C.purple50 };
-    if (topic.match(/[A-Za-z]/)) return { color: C.teal700, backgroundColor: C.teal50 };
-    return { color: C.gray700, backgroundColor: C.gray50 };
+  const getSubjectColor = (macro: string) => {
+    if (macro.includes("Русский")) return { color: C.blue700, backgroundColor: C.blue50, label: "Русский язык" };
+    if (macro.includes("Математика")) return { color: C.indigo700, backgroundColor: C.indigo50, label: "Математика" };
+    if (macro.includes("Логика")) return { color: C.purple700, backgroundColor: C.purple50, label: "Логика" };
+    if (macro.includes("English")) return { color: C.teal700, backgroundColor: C.teal50, label: "English" };
+    return { color: C.gray700, backgroundColor: C.gray50, label: "Общее" };
   };
+
+  const MACRO_CATEGORY_MAP: Record<string, string[]> = {
+    "Русский язык: Орфография": ["н и нн", "правописание", "суффикс", "гласная", "орфография", "дефисное", "слитное", "корней", "раздельное"],
+    "Русский язык: Пунктуация": ["пунктуация", "бсп", "ссп", "запятые", "оборот", "вводные", "обособленных", "однородных"],
+    "Русский язык: Синтаксис и Грамматика": ["основа", "односоставных", "сказуемых", "связи", "синтаксис", "морфология", "склонение"],
+    "Русский язык: Лексика и Речь": ["лексика", "паронимы", "фразеологизмы", "смысловые", "слова", "значение", "обращения"],
+
+    "Математика: Вычисления и алгебра": ["дроби", "корни", "выражений", "вычисления", "степеней", "многочлены", "прогрессии", "умножения"],
+    "Математика: Уравнения и неравенства": ["уравнения", "неравенства", "системы", "интервалов"],
+    "Математика: Функции и графики": ["функции", "графики", "парабола", "производная", "логарифмические", "тригонометрические"],
+    "Математика: Геометрия": ["пифагора", "вектора", "площадь", "геометрия", "стереометрия", "планиметрия", "треугольники", "углы", "треугольника"],
+    "Математика: Текстовые задачи": ["совместную", "текстовые", "проценты", "доли"],
+
+    "Логика и мышление": ["матрицы", "очереди", "утверждениями", "логика", "работу"],
+
+    "English: Tenses & Grammar": ["perfect", "continuous", "conditionals", "future", "tenses", "verb", "grammar"],
+    "English: Vocabulary & Prepositions": ["prepositions", "vocabulary", "phrasal", "linking"],
+    "English: Reading & Structure": ["reading", "comprehension", "reordering", "correction"]
+  };
+
+  const getMacroCategory = (microTopic: string) => {
+    for (const [macro, keywords] of Object.entries(MACRO_CATEGORY_MAP)) {
+      if (keywords.some(kw => microTopic.toLowerCase().includes(kw))) {
+        return macro;
+      }
+    }
+    return "Остальные темы";
+  };
+
+  const aggregatedStats: Record<string, { earned: number, possible: number }> = {};
+  
+  for (const [microTopic, stats] of Object.entries(diagnosticsRaw)) {
+    const s = stats as { earned: number, possible: number };
+    if (s.possible === 0) continue; 
+    const macro = getMacroCategory(microTopic);
+    if (!aggregatedStats[macro]) aggregatedStats[macro] = { earned: 0, possible: 0 };
+    aggregatedStats[macro].earned += s.earned;
+    aggregatedStats[macro].possible += s.possible;
+  }
 
   return (
     <div id="pdf-diagnostic-report" className="p-12 w-[210mm] min-h-[297mm] " style={{ backgroundColor: C.white, color: C.black, fontFamily: '"Inter", "Arial", sans-serif' }}>
@@ -123,7 +162,9 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
         </p>
         
         <div className="space-y-4">
-          {Object.entries(diagnosticsRaw).map(([topic, stats]: [string, any]) => {
+          {Object.entries(aggregatedStats)
+            .sort((a, b) => (b[1].earned / b[1].possible) - (a[1].earned / a[1].possible))
+            .map(([topic, stats]) => {
             const earned = stats.earned || 0;
             const possible = stats.possible || 0;
             const percentage = possible > 0 ? Math.round((earned / possible) * 100) : 0;
@@ -147,8 +188,8 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
                 
                 <div className="flex justify-between text-xs mt-1" style={{ color: C.gray500 }}>
                   <span>Решено верно: {earned} из {possible}</span>
-                  <span className="px-2 py-0.5 rounded-md font-medium text-[10px]" style={styleObj}>
-                    Тема
+                  <span className="px-2 py-0.5 rounded-md font-medium text-[10px]" style={{ color: styleObj.color, backgroundColor: styleObj.backgroundColor }}>
+                    {styleObj.label}
                   </span>
                 </div>
               </div>
