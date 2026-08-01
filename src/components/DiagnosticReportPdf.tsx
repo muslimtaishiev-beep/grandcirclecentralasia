@@ -90,7 +90,7 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
   };
 
   return (
-    <div id="pdf-diagnostic-report" className="p-12 w-[210mm] min-h-[297mm] " style={{ backgroundColor: C.white, color: C.black, fontFamily: 'Arial, Helvetica, sans-serif', whiteSpace: 'pre-wrap' }}>
+    <div id="pdf-diagnostic-report" className="p-12 w-[210mm] min-h-[297mm] " style={{ backgroundColor: C.white, color: C.black, fontFamily: 'Arial, Helvetica, sans-serif', lineHeight: 1.5 }}>
       
       {/* Header */}
       <div className="flex justify-between items-start border-b-2 pb-6 mb-8" style={{ borderColor: C.gray200 }}>
