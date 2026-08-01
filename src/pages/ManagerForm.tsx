@@ -36,7 +36,7 @@ export default function ManagerForm() {
           margin: 0,
           filename: `Аналитика_${displayName}_${student.grade}класс.pdf`,
           image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true },
+          html2canvas: { scale: 2, useCORS: true, letterRendering: true },
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
         };
         const worker = html2pdf().set(opt).from(element);
