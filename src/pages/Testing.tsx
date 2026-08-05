@@ -79,10 +79,10 @@ export default function Testing() {
     if (!started || finished || disqualified) return;
 
     const handleCheating = () => {
-      // 2 seconds grace period
+      // 15 seconds grace period to prevent false positives from notifications/accidental clicks
       blurTimeout.current = setTimeout(() => {
         phase === 'english' ? submitEnglishTest(true) : submitCoreTest(true); // submit immediately as cheating
-      }, 2000);
+      }, 15000);
     };
 
     const handleFocus = () => {
@@ -134,9 +134,7 @@ export default function Testing() {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (!started || finished) return;
-        if (!disqualified) {
-          phase === 'english' ? submitEnglishTest(true) : submitCoreTest(true); // Cheating
-        } else {
+        if (disqualified) {
           setStopAudio(true); // Silence the song
         }
       }
