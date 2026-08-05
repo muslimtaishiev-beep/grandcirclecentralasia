@@ -52,14 +52,14 @@ export default function Testing() {
   const [pendingSubmission, setPendingSubmission] = useState(() => safeGetSession("pendingSubmission", "") === "true");
   const [resultData, setResultData] = useState<any>(() => {
     const saved = safeGetSession("resultData", "");
-
+    return saved ? JSON.parse(saved) : null;
+  });
+  
   const [totalBlurTime, setTotalBlurTime] = useState<number>(() => {
     const saved = safeGetSession("totalBlurTime", "0");
     return Number(saved);
   });
   const [isFullscreenViolation, setIsFullscreenViolation] = useState(() => safeGetSession("isFullscreenViolation", "") === "true");
-    return saved ? JSON.parse(saved) : null;
-  });
   
   const blurTimeout = useRef<NodeJS.Timeout | null>(null);
   const phaseRef = useRef(phase);
@@ -230,36 +230,14 @@ export default function Testing() {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (!started || finished) return;
-      
-  // Fullscreen Violation UI
-  if (isFullscreenViolation) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center z-50">
-        <h1 className="text-3xl font-bold mb-4">Нарушение режима</h1>
-        <p className="text-lg text-slate-300 mb-8 max-w-md">Вы покинули полноэкранный режим. Тестирование должно проходить только в полноэкранном режиме, чтобы избежать списывания.</p>
-        <button 
-          onClick={() => {
-            const doc = document.documentElement as any;
-            if (doc.requestFullscreen) doc.requestFullscreen().catch(()=>{});
-            else if (doc.webkitRequestFullscreen) doc.webkitRequestFullscreen().catch(()=>{});
-            setIsFullscreenViolation(false);
-          }}
-          className="px-6 py-3 bg-blue-600 rounded-xl font-semibold hover:bg-blue-500 transition-colors"
-        >
-          Вернуться к тесту
-        </button>
-      </div>
-    );
-  }
-
-  if (disqualified) {
+        if (disqualified) {
           setStopAudio(true); // Silence the song
         }
       }
     };
     window.addEventListener("keydown", handleEsc);
     return () => window.removeEventListener("keydown", handleEsc);
-  }, [disqualified]);
+  }, [disqualified, started, finished]);
 
   // Reliable Audio Playback for Cheating
   useEffect(() => {
@@ -531,6 +509,27 @@ export default function Testing() {
     alert("Данные успешно отправлены!");
   };
 
+
+  // Fullscreen Violation UI
+  if (isFullscreenViolation) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center z-50">
+        <h1 className="text-3xl font-bold mb-4">Нарушение режима</h1>
+        <p className="text-lg text-slate-300 mb-8 max-w-md">Вы покинули полноэкранный режим. Тестирование должно проходить только в полноэкранном режиме, чтобы избежать списывания.</p>
+        <button 
+          onClick={() => {
+            const doc = document.documentElement as any;
+            if (doc.requestFullscreen) doc.requestFullscreen().catch(()=>{});
+            else if (doc.webkitRequestFullscreen) doc.webkitRequestFullscreen().catch(()=>{});
+            setIsFullscreenViolation(false);
+          }}
+          className="px-6 py-3 bg-blue-600 rounded-xl font-semibold hover:bg-blue-500 transition-colors"
+        >
+          Вернуться к тесту
+        </button>
+      </div>
+    );
+  }
 
   // Fullscreen Violation UI
   if (isFullscreenViolation) {
