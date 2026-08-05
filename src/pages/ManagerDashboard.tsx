@@ -36,6 +36,11 @@ export default function ManagerDashboard() {
   const [studentForPdf, setStudentForPdf] = useState<any>(null);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
 
+  // Recheck & Manual Review State
+  const [recheckingId, setRecheckingId] = useState<string | null>(null);
+  const [reviewData, setReviewData] = useState<any>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+
   const generatePdf = (student: any) => {
     if (!student.diagnosticsRaw || Object.keys(student.diagnosticsRaw).length === 0) {
       alert("У данного ученика нет сохраненных данных аналитики.");
@@ -385,6 +390,52 @@ export default function ManagerDashboard() {
                           </button>
                         </div>
                       )}
+                      {/* Recheck button */}
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Перепроверить результаты ${s.childName || s.shortId}?`)) return;
+                          setRecheckingId(s.shortId);
+                          try {
+                            const token = await firebaseAuth.currentUser?.getIdToken();
+                            const data = await fetchGasAPI("/api/gas", { action: "recheckScores", shortId: s.shortId }, token || "");
+                            if (data.success) {
+                              setStudents(prev => prev.map(st => st.shortId === s.shortId ? { ...st, ru: data.scores.russian, ma: data.scores.math, lo: data.scores.logic, en: data.scores.english, diagnosticsRaw: data.diagnosticsRaw } : st));
+                              alert(`✅ Перепроверка завершена!\nРус: ${data.scores.russian} | Мат: ${data.scores.math} | Лог: ${data.scores.logic} | Англ: ${data.scores.english}`);
+                            } else {
+                              alert("Ошибка: " + data.error);
+                            }
+                          } catch (e: any) { alert("Ошибка: " + e.message); }
+                          finally { setRecheckingId(null); }
+                        }}
+                        disabled={recheckingId === s.shortId}
+                        className={`text-xs px-2 py-1 rounded shadow-sm w-full font-medium flex items-center justify-center gap-1 ${
+                          recheckingId === s.shortId
+                            ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                            : "bg-amber-100 text-amber-700 hover:bg-amber-200 border border-amber-200"
+                        }`}
+                      >
+                        {recheckingId === s.shortId ? (<><span className="animate-spin">↻</span> Проверка...</>) : (<>🔄 Перепроверить</>)}
+                      </button>
+                      {/* Manual review button */}
+                      <button
+                        onClick={async () => {
+                          setReviewLoading(true);
+                          try {
+                            const token = await firebaseAuth.currentUser?.getIdToken();
+                            const data = await fetchGasAPI("/api/gas", { action: "getAnswerComparison", shortId: s.shortId }, token || "");
+                            if (data.success) {
+                              setReviewData(data);
+                            } else {
+                              alert("Ошибка: " + data.error);
+                            }
+                          } catch (e: any) { alert("Ошибка: " + e.message); }
+                          finally { setReviewLoading(false); }
+                        }}
+                        disabled={reviewLoading}
+                        className="text-xs px-2 py-1 rounded shadow-sm w-full font-medium flex items-center justify-center gap-1 bg-sky-100 text-sky-700 hover:bg-sky-200 border border-sky-200"
+                      >
+                        {reviewLoading ? (<><span className="animate-spin">↻</span> Загрузка...</>) : (<>🔍 Ручная проверка</>)}
+                      </button>
                     </td>
                   </tr>
                   );
@@ -402,6 +453,70 @@ export default function ManagerDashboard() {
         {studentForPdf && (
           <div style={{ width: 0, height: 0, overflow: "hidden" }}>
             <DiagnosticReportPdf student={studentForPdf} />
+          </div>
+        )}
+
+        {/* Answer Comparison Modal */}
+        {reviewData && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setReviewData(null)}>
+            <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="p-6 border-b border-slate-200 flex justify-between items-center">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-800">🔍 Ручная проверка ответов</h3>
+                  <p className="text-sm text-slate-500 mt-1">{reviewData.studentName} • {reviewData.grade} класс</p>
+                </div>
+                <button onClick={() => setReviewData(null)} className="text-slate-400 hover:text-slate-600 text-2xl">✕</button>
+              </div>
+              <div className="overflow-auto flex-1 p-4">
+                {(() => {
+                  const subjects = [...new Set(reviewData.comparison.map((c: any) => c.subject))];
+                  return subjects.map((subj: any) => {
+                    const items = reviewData.comparison.filter((c: any) => c.subject === subj);
+                    const correct = items.filter((c: any) => c.isCorrect).length;
+                    return (
+                      <div key={subj} className="mb-6">
+                        <div className="flex items-center gap-3 mb-3">
+                          <h4 className="text-lg font-bold text-slate-700">{subj}</h4>
+                          <span className={`text-sm font-semibold px-2 py-0.5 rounded-full ${
+                            correct / items.length >= 0.7 ? "bg-green-100 text-green-700" :
+                            correct / items.length >= 0.4 ? "bg-yellow-100 text-yellow-700" :
+                            "bg-red-100 text-red-700"
+                          }`}>{correct} / {items.length}</span>
+                        </div>
+                        <table className="w-full text-sm border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50">
+                              <th className="text-left p-2 border-b font-medium text-slate-500 w-20">Вопрос</th>
+                              <th className="text-left p-2 border-b font-medium text-slate-500">Тема</th>
+                              <th className="text-left p-2 border-b font-medium text-slate-500">Ответ ученика</th>
+                              <th className="text-left p-2 border-b font-medium text-slate-500">Правильный ответ</th>
+                              <th className="text-center p-2 border-b font-medium text-slate-500 w-16">✓/✗</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {items.map((item: any, idx: number) => (
+                              <tr key={idx} className={`${item.isCorrect ? "bg-green-50/50" : item.studentAnswer === "— (пропущен)" ? "bg-slate-50" : "bg-red-50/50"} hover:bg-slate-100 transition`}>
+                                <td className="p-2 border-b border-slate-100 font-mono text-xs text-slate-500">{item.questionId}</td>
+                                <td className="p-2 border-b border-slate-100 text-slate-600">{item.topic || "—"}</td>
+                                <td className={`p-2 border-b border-slate-100 font-medium ${
+                                  item.studentAnswer === "— (пропущен)" ? "text-slate-400 italic" :
+                                  item.isCorrect ? "text-green-700" : "text-red-600"
+                                }`}>{item.studentAnswer}</td>
+                                <td className="p-2 border-b border-slate-100 text-slate-700">{item.correctAnswer}</td>
+                                <td className="p-2 border-b border-slate-100 text-center text-lg">{item.isCorrect ? "✅" : item.studentAnswer === "— (пропущен)" ? "⬜" : "❌"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+              <div className="p-4 border-t border-slate-200 flex justify-end">
+                <button onClick={() => setReviewData(null)} className="px-6 py-2 bg-slate-600 text-white rounded-xl font-medium hover:bg-slate-700 transition">Закрыть</button>
+              </div>
+            </div>
           </div>
         )}
 

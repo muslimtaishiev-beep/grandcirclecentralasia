@@ -1118,15 +1118,11 @@ function doPost(e) {
         }
       }
 
-      let scores = { russian: 0, math: 0, logic: 0, english: 0 };
-      let diagnosticsReport = "";
-      let diagnosticsRawStr = "{}";
-      if (!cheated) {
-        const calc = calculateScores(grade, answers);
-        scores = calc.scores;
-        diagnosticsReport = generateDiagnosticReport(calc.diagnosticsRaw);
-        diagnosticsRawStr = JSON.stringify(calc.diagnosticsRaw || {});
-      }
+      // Always calculate scores, even for cheaters — managers need diagnostics
+      const calc = calculateScores(grade, answers);
+      let scores = calc.scores;
+      let diagnosticsReport = generateDiagnosticReport(calc.diagnosticsRaw);
+      let diagnosticsRawStr = JSON.stringify(calc.diagnosticsRaw || {});
       const totalScore = scores.russian + scores.math + scores.logic;
       
       const ts = new Date().getTime();
@@ -1168,15 +1164,11 @@ function doPost(e) {
       // merge english answers
       Object.assign(allAnswers, answers);
       
-      let scores = { english: 0 };
-      let diagnosticsReport = "";
-      let diagnosticsRawStr = "{}";
-      if (!cheated) {
-        const calc = calculateScores(grade, allAnswers);
-        scores = calc.scores;
-        diagnosticsReport = generateDiagnosticReport(calc.diagnosticsRaw);
-        diagnosticsRawStr = JSON.stringify(calc.diagnosticsRaw || {});
-      }
+      // Always calculate scores, even for cheaters
+      const calc = calculateScores(grade, allAnswers);
+      let scores = calc.scores;
+      let diagnosticsReport = generateDiagnosticReport(calc.diagnosticsRaw);
+      let diagnosticsRawStr = JSON.stringify(calc.diagnosticsRaw || {});
       
       // Update English score in testSheet (Column 13 - M)
       safeSetValue(testSheet, testRowIdx, 13, scores.english);
@@ -1417,7 +1409,155 @@ function doPost(e) {
       
       return ContentService.createTextOutput(JSON.stringify({ success: true, url: fileUrl })).setMimeType(ContentService.MimeType.JSON);
     }
-    
+
+    // ===== RECHECK SCORES: Re-run calculateScores on saved answers =====
+    if (action === "recheckScores") {
+      const { shortId } = data;
+      const testData = testSheet.getDataRange().getValues();
+      let rowIdx = -1;
+      let savedAnswersStr = "{}";
+      let studentGrade = 0;
+      
+      for (let i = 1; i < testData.length; i++) {
+        if (String(testData[i][10]) === String(shortId)) {
+          rowIdx = i + 1;
+          savedAnswersStr = testData[i][11] || "{}";
+          studentGrade = Number(testData[i][2]);
+          break;
+        }
+      }
+      
+      if (rowIdx === -1) {
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Ученик не найден" })).setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      let savedAnswers = {};
+      try { savedAnswers = JSON.parse(savedAnswersStr); } catch(e) {
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Ответы ученика повреждены в базе" })).setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      const calc = calculateScores(studentGrade, savedAnswers);
+      const scores = calc.scores;
+      const totalScore = scores.russian + scores.math + scores.logic;
+      const diagnosticsReport = generateDiagnosticReport(calc.diagnosticsRaw);
+      const diagnosticsRawStr = JSON.stringify(calc.diagnosticsRaw || {});
+      
+      // Update all score columns
+      safeSetValue(testSheet, rowIdx, 4, scores.russian);
+      safeSetValue(testSheet, rowIdx, 5, scores.math);
+      safeSetValue(testSheet, rowIdx, 6, scores.logic);
+      safeSetValue(testSheet, rowIdx, 7, totalScore);
+      safeSetValue(testSheet, rowIdx, 13, scores.english);
+      safeSetValue(testSheet, rowIdx, 14, diagnosticsReport);
+      safeSetValue(testSheet, rowIdx, 15, diagnosticsRawStr);
+      
+      return ContentService.createTextOutput(JSON.stringify({ 
+        success: true, 
+        scores, 
+        totalScore, 
+        diagnosticsReport,
+        diagnosticsRaw: calc.diagnosticsRaw 
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // ===== GET ANSWER COMPARISON: Human-readable table of student answers vs keys =====
+    if (action === "getAnswerComparison") {
+      const { shortId } = data;
+      const testData = testSheet.getDataRange().getValues();
+      let savedAnswersStr = "{}";
+      let studentGrade = 0;
+      let studentName = "";
+      
+      for (let i = 1; i < testData.length; i++) {
+        if (String(testData[i][10]) === String(shortId)) {
+          savedAnswersStr = testData[i][11] || "{}";
+          studentGrade = Number(testData[i][2]);
+          studentName = testData[i][1] || "";
+          break;
+        }
+      }
+      
+      if (!studentGrade) {
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Ученик не найден" })).setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      let savedAnswers = {};
+      try { savedAnswers = JSON.parse(savedAnswersStr); } catch(e) {
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Ответы ученика повреждены" })).setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      const keys = ANSWER_KEYS[studentGrade];
+      if (!keys) {
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Нет ключей для класса " + studentGrade })).setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      let comparison = [];
+      const subjects = ["russian", "math", "logic", "english"];
+      
+      for (let subj of subjects) {
+        if (!keys[subj]) continue;
+        let subjLabel = subj === "russian" ? "Русский язык" : subj === "math" ? "Математика" : subj === "logic" ? "Логика" : "English";
+        
+        Object.keys(keys[subj]).forEach(qId => {
+          let keyData = keys[subj][qId];
+          let correctAnswer = keyData.ans;
+          let studentAnswer = savedAnswers[qId] || "";
+          let topic = keyData.topic || "";
+          
+          // Make answers human-readable
+          let readableCorrect = correctAnswer;
+          let readableStudent = studentAnswer;
+          
+          // Parse JSON arrays/objects for display
+          try {
+            if (typeof correctAnswer === 'string' && correctAnswer.startsWith("[")) {
+              let arr = JSON.parse(correctAnswer);
+              readableCorrect = arr.join(", ");
+            }
+            if (typeof correctAnswer === 'string' && correctAnswer.startsWith("{")) {
+              let obj = JSON.parse(correctAnswer);
+              readableCorrect = Object.entries(obj).map(function(kv) { return kv[0] + ": " + kv[1]; }).join("; ");
+            }
+          } catch(e) {}
+          
+          try {
+            if (typeof studentAnswer === 'string' && studentAnswer.startsWith("[")) {
+              let arr = JSON.parse(studentAnswer);
+              readableStudent = arr.join(", ");
+            }
+            if (typeof studentAnswer === 'string' && studentAnswer.startsWith("{")) {
+              let obj = JSON.parse(studentAnswer);
+              readableStudent = Object.entries(obj).map(function(kv) { return kv[0] + ": " + kv[1]; }).join("; ");
+            }
+          } catch(e) {}
+          
+          // Determine correctness
+          let isCorrect = false;
+          try {
+            let normStudent = String(studentAnswer).trim().toLowerCase().replace(/\s+/g, " ");
+            let normCorrect = String(correctAnswer).trim().toLowerCase().replace(/\s+/g, " ");
+            isCorrect = normStudent === normCorrect;
+          } catch(e) {}
+          
+          comparison.push({
+            subject: subjLabel,
+            questionId: qId,
+            topic: topic,
+            studentAnswer: readableStudent || "— (пропущен)",
+            correctAnswer: readableCorrect,
+            isCorrect: isCorrect
+          });
+        });
+      }
+      
+      return ContentService.createTextOutput(JSON.stringify({ 
+        success: true, 
+        studentName,
+        grade: studentGrade,
+        comparison 
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Unknown action" })).setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: error.message })).setMimeType(ContentService.MimeType.JSON);
