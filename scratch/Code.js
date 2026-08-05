@@ -1157,7 +1157,14 @@ function doPost(e) {
       }
       
       let allAnswers = {};
-      try { allAnswers = JSON.parse(previousAnswersStr); } catch(e) {}
+      try { 
+        allAnswers = JSON.parse(previousAnswersStr); 
+      } catch(e) {
+        // If previous answers JSON is corrupted, don't silently lose them.
+        // Store raw string under a recovery key so we can debug, and proceed with english-only answers.
+        Logger.log("WARNING: Failed to parse previousAnswersStr for shortId=" + shortId + ": " + previousAnswersStr);
+        allAnswers = { "_recovery_raw": previousAnswersStr };
+      }
       // merge english answers
       Object.assign(allAnswers, answers);
       
