@@ -6,40 +6,52 @@ import { Question } from "../types";
 import { getHourlyPIN, formatMathText, getCEFRLevel, fetchGasAPI } from "../lib/utils";
 
 export default function Testing() {
-  const [studentName, setStudentName] = useState(() => sessionStorage.getItem("studentName") || "");
-  const [enteredPin, setEnteredPin] = useState(() => sessionStorage.getItem("enteredPin") || "");
+  const safeGetSession = (key: string, defaultVal: any) => {
+    try { return sessionStorage.getItem(key) || defaultVal; } catch(e) { return defaultVal; }
+  };
+  
+  const [studentName, setStudentName] = useState(() => safeGetSession("studentName", ""));
+  const [enteredPin, setEnteredPin] = useState(() => safeGetSession("enteredPin", ""));
   const [phase, setPhase] = useState<"login" | "core" | "intermediate" | "english" | "final">(
-    () => (sessionStorage.getItem("phase") as any) || "login"
+    () => (safeGetSession("phase", "") as any) || "login"
   );
   const [isResumingEnglish, setIsResumingEnglish] = useState(false);
   const [resumeShortId, setResumeShortId] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [grade, setGrade] = useState<number | null>(() => {
-    const saved = sessionStorage.getItem("grade");
+    const saved = safeGetSession("grade", null);
     return saved ? Number(saved) : null;
   });
-  const [started, setStarted] = useState(() => sessionStorage.getItem("started") === "true");
-  const [finished, setFinished] = useState(() => sessionStorage.getItem("finished") === "true");
-  const [disqualified, setDisqualified] = useState(() => sessionStorage.getItem("disqualified") === "true");
-  const [consentGiven, setConsentGiven] = useState(() => sessionStorage.getItem("consentGiven") === "true");
+  const [started, setStarted] = useState(() => safeGetSession("started", "") === "true");
+  const [finished, setFinished] = useState(() => safeGetSession("finished", "") === "true");
+  const [disqualified, setDisqualified] = useState(() => safeGetSession("disqualified", "") === "true");
+  const [consentGiven, setConsentGiven] = useState(() => safeGetSession("consentGiven", "") === "true");
   const [stopAudio, setStopAudio] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>(() => {
-    const saved = sessionStorage.getItem("answers");
-    return saved ? (JSON.parse(saved) || {}) : {};
+    try {
+      const saved = sessionStorage.getItem("answers");
+      if (saved) return JSON.parse(saved);
+      const shortId = sessionStorage.getItem("shortId");
+      if (shortId) {
+        const backup = localStorage.getItem(`backup_answers_${shortId}`);
+        if (backup) return JSON.parse(backup);
+      }
+    } catch(e) {}
+    return {};
   });
-  const [testId, setTestId] = useState(() => sessionStorage.getItem("testId") || "");
+  const [testId, setTestId] = useState(() => safeGetSession("testId", ""));
   const [shortId, setShortId] = useState(() => {
-    const saved = sessionStorage.getItem("shortId");
+    const saved = safeGetSession("shortId", "");
     if (saved) return saved;
     const newId = Math.floor(100000 + Math.random() * 900000).toString();
-    sessionStorage.setItem("shortId", newId);
+    try { sessionStorage.setItem("shortId", newId); } catch(e) {}
     return newId;
   });
-  const [qrToken, setQrToken] = useState(() => sessionStorage.getItem("qrToken") || "");
-  const [pendingSubmission, setPendingSubmission] = useState(() => sessionStorage.getItem("pendingSubmission") === "true");
+  const [qrToken, setQrToken] = useState(() => safeGetSession("qrToken", ""));
+  const [pendingSubmission, setPendingSubmission] = useState(() => safeGetSession("pendingSubmission", "") === "true");
   const [resultData, setResultData] = useState<any>(() => {
-    const saved = sessionStorage.getItem("resultData");
+    const saved = safeGetSession("resultData", "");
     return saved ? JSON.parse(saved) : null;
   });
   
@@ -49,20 +61,23 @@ export default function Testing() {
 
   // Sync state to sessionStorage for F5 protection
   useEffect(() => {
-    sessionStorage.setItem("studentName", studentName);
-    if (grade) sessionStorage.setItem("grade", String(grade));
-    sessionStorage.setItem("started", String(started));
-    sessionStorage.setItem("finished", String(finished));
-    sessionStorage.setItem("disqualified", String(disqualified));
-    sessionStorage.setItem("consentGiven", String(consentGiven));
-    sessionStorage.setItem("answers", JSON.stringify(answers));
-    sessionStorage.setItem("testId", testId);
-    sessionStorage.setItem("enteredPin", enteredPin);
-    sessionStorage.setItem("shortId", shortId);
-    sessionStorage.setItem("qrToken", qrToken);
-    sessionStorage.setItem("pendingSubmission", String(pendingSubmission));
-    if (resultData) sessionStorage.setItem("resultData", JSON.stringify(resultData));
-    sessionStorage.setItem("phase", phase);
+    try {
+      sessionStorage.setItem("studentName", studentName);
+      if (grade) sessionStorage.setItem("grade", String(grade));
+      sessionStorage.setItem("started", String(started));
+      sessionStorage.setItem("finished", String(finished));
+      sessionStorage.setItem("disqualified", String(disqualified));
+      sessionStorage.setItem("consentGiven", String(consentGiven));
+      sessionStorage.setItem("answers", JSON.stringify(answers));
+      if (shortId) localStorage.setItem(`backup_answers_${shortId}`, JSON.stringify(answers));
+      sessionStorage.setItem("testId", testId);
+      sessionStorage.setItem("enteredPin", enteredPin);
+      sessionStorage.setItem("shortId", shortId);
+      sessionStorage.setItem("qrToken", qrToken);
+      sessionStorage.setItem("pendingSubmission", String(pendingSubmission));
+      if (resultData) sessionStorage.setItem("resultData", JSON.stringify(resultData));
+      sessionStorage.setItem("phase", phase);
+    } catch(e) {}
   }, [studentName, grade, started, finished, disqualified, consentGiven, answers, testId, shortId, qrToken, pendingSubmission, resultData]);
 
   // Prevent accidental F5/Closing
@@ -83,6 +98,7 @@ export default function Testing() {
 
     const handleCheating = () => {
       // 15 seconds grace period to prevent false positives from notifications/accidental clicks
+      if (blurTimeout.current) clearTimeout(blurTimeout.current);
       blurTimeout.current = setTimeout(() => {
         // Use ref to check CURRENT phase, not stale closure value
         const currentPhase = phaseRef.current;
@@ -165,51 +181,78 @@ export default function Testing() {
 
   
   const startTest = async () => {
-    if (isResumingEnglish) {
-       if (!resumeShortId.trim()) return alert("Введите Test ID");
-       if (!enteredPin.trim()) return alert("Введите PIN");
-       const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
-       const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
-       if (!isTester && enteredPin !== getHourlyPIN(0) && enteredPin !== getHourlyPIN(-1) && enteredPin !== getHourlyPIN(1)) {
-         return alert("Неверный PIN-код.");
-       }
-       
-       try {
-         const data = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId: resumeShortId });
-         if (!data.success) return alert(data.error || "Не найдено");
+    if (isSubmitting) return; // Prevent double-tap
+    setIsSubmitting(true);
+    try {
+      if (isResumingEnglish) {
+         if (!resumeShortId.trim()) return alert("Введите Test ID");
+         if (!enteredPin.trim()) return alert("Введите PIN");
          
-         const student = data.student;
-         setShortId(student.shortId);
-         setGrade(student.grade);
-         setStudentName(student.studentName);
-         setResultData({
-           totalScore: student.totalScore,
-           scores: { russian: student.russian, math: student.math, logic: student.logic, english: student.english }
-         });
-         if (student.english !== "") {
-           return alert("Английский тест уже был сдан для этого Test ID!");
+         const EXPECTED_PIN = getHourlyPIN();
+         const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
+         if (enteredPin !== EXPECTED_PIN && (!TESTER_PIN || enteredPin !== TESTER_PIN)) {
+            return alert("Неверный PIN-код. Узнайте актуальный PIN у менеджера.");
          }
-         if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen().catch(()=>{});
-         setStarted(true);
-         setPhase("english");
-       } catch (e:any) { alert("Ошибка: " + e.message); }
-       return;
-    }
+         
+         try {
+           const data = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId: resumeShortId });
+           if (!data.success) return alert(data.error || "Не найдено");
+           
+           const student = data.student;
+           setShortId(student.shortId);
+           setGrade(student.grade);
+           setStudentName(student.studentName);
+           setResultData({
+             totalScore: student.totalScore,
+             scores: { russian: student.russian, math: student.math, logic: student.logic, english: student.english }
+           });
+           if (student.english !== "") {
+             return alert("Английский тест уже был сдан для этого Test ID!");
+           }
+           if (document.documentElement.requestFullscreen) {
+             const p = document.documentElement.requestFullscreen();
+             if (p && p.catch) p.catch(()=>{});
+           }
+           setStarted(true);
+           setPhase("english");
+         } catch (e:any) { alert("Ошибка: " + e.message); }
+         return;
+      }
 
-    if (!grade) return alert("Выберите класс");
-    if (!studentName.trim()) return alert("Введите ФИО");
-    const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
-    const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
-    if (!isTester && enteredPin !== getHourlyPIN(0) && enteredPin !== getHourlyPIN(-1) && enteredPin !== getHourlyPIN(1)) {
-      return alert("Неверный PIN-код. Узнайте актуальный PIN у менеджера.");
-    }
+      if (!grade) return alert("Выберите класс!");
+      if (!studentName.trim() || !/^[А-Яа-яЁёA-Za-z-]+\s+[А-Яа-яЁёA-Za-z-]+/u.test(studentName.trim())) {
+        return alert("Введите полное Фамилию и Имя через пробел.");
+      }
+      if (!consentGiven) {
+        return alert("Пожалуйста, подтвердите согласие на обработку данных.");
+      }
+      if (!enteredPin) {
+        return alert("Введите PIN-код менеджера.");
+      }
+      
+      const EXPECTED_PIN = getHourlyPIN();
+      const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
+      if (enteredPin !== EXPECTED_PIN && (!TESTER_PIN || enteredPin !== TESTER_PIN)) {
+        return alert("Неверный PIN-код. Узнайте актуальный PIN у менеджера.");
+      }
 
-    const doc = document.documentElement as any;
-    if (doc.requestFullscreen) await doc.requestFullscreen().catch(()=>{});
-    else if (doc.webkitRequestFullscreen) await doc.webkitRequestFullscreen().catch(()=>{});
-    if (!testId) setTestId(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
-    setStarted(true);
-    setPhase("core");
+      try {
+        const doc = document.documentElement as any;
+        if (doc.requestFullscreen) {
+          const p = doc.requestFullscreen();
+          if (p && p.catch) p.catch(()=>{});
+        } else if (doc.webkitRequestFullscreen) {
+          const p = doc.webkitRequestFullscreen();
+          if (p && p.catch) p.catch(()=>{});
+        }
+      } catch(e) { console.warn("Fullscreen API not supported", e); }
+      
+      if (!testId) setTestId(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
+      setStarted(true);
+      setPhase("core");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   
@@ -328,9 +371,17 @@ export default function Testing() {
            diagnosticsReport: data.diagnosticsReport
         }));
         setPhase("final");
-        const exitDoc = document as any;
-        if (exitDoc.exitFullscreen) await exitDoc.exitFullscreen().catch(()=>{});
-        else if (exitDoc.webkitExitFullscreen) await exitDoc.webkitExitFullscreen().catch(()=>{});
+        try {
+          const exitDoc = document as any;
+          if (exitDoc.exitFullscreen) {
+            const p = exitDoc.exitFullscreen();
+            if (p && p.catch) p.catch(()=>{});
+          }
+          else if (exitDoc.webkitExitFullscreen) {
+            const p = exitDoc.webkitExitFullscreen();
+            if (p && p.catch) p.catch(()=>{});
+          }
+        } catch(e) {}
       } else {
         throw new Error(data.error);
       }
