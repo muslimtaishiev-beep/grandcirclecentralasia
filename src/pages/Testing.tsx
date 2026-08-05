@@ -7,7 +7,7 @@ import { getHourlyPIN, formatMathText, getCEFRLevel, fetchGasAPI } from "../lib/
 
 export default function Testing() {
   const [studentName, setStudentName] = useState(() => sessionStorage.getItem("studentName") || "");
-  const [enteredPin, setEnteredPin] = useState("");
+  const [enteredPin, setEnteredPin] = useState(() => sessionStorage.getItem("enteredPin") || "");
   const [phase, setPhase] = useState<"login" | "core" | "intermediate" | "english" | "final">(
     () => (sessionStorage.getItem("phase") as any) || "login"
   );
@@ -44,6 +44,8 @@ export default function Testing() {
   });
   
   const blurTimeout = useRef<NodeJS.Timeout | null>(null);
+  const phaseRef = useRef(phase);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
 
   // Sync state to sessionStorage for F5 protection
   useEffect(() => {
@@ -55,6 +57,7 @@ export default function Testing() {
     sessionStorage.setItem("consentGiven", String(consentGiven));
     sessionStorage.setItem("answers", JSON.stringify(answers));
     sessionStorage.setItem("testId", testId);
+    sessionStorage.setItem("enteredPin", enteredPin);
     sessionStorage.setItem("shortId", shortId);
     sessionStorage.setItem("qrToken", qrToken);
     sessionStorage.setItem("pendingSubmission", String(pendingSubmission));
@@ -81,7 +84,10 @@ export default function Testing() {
     const handleCheating = () => {
       // 15 seconds grace period to prevent false positives from notifications/accidental clicks
       blurTimeout.current = setTimeout(() => {
-        phase === 'english' ? submitEnglishTest(true) : submitCoreTest(true); // submit immediately as cheating
+        // Use ref to check CURRENT phase, not stale closure value
+        const currentPhase = phaseRef.current;
+        if (currentPhase !== 'core' && currentPhase !== 'english') return; // Already submitted, don't overwrite
+        currentPhase === 'english' ? submitEnglishTest(true) : submitCoreTest(true);
       }, 15000);
     };
 
@@ -94,7 +100,8 @@ export default function Testing() {
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        if (phase === "core" || phase === "english") handleCheating();
+        const currentPhase = phaseRef.current;
+        if (currentPhase === "core" || currentPhase === "english") handleCheating();
       } else {
         handleFocus();
       }
@@ -197,8 +204,10 @@ export default function Testing() {
       return alert("Неверный PIN-код. Узнайте актуальный PIN у менеджера.");
     }
 
-    if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen().catch(()=>{});
-    if (!testId) setTestId(crypto.randomUUID());
+    const doc = document.documentElement as any;
+    if (doc.requestFullscreen) await doc.requestFullscreen().catch(()=>{});
+    else if (doc.webkitRequestFullscreen) await doc.webkitRequestFullscreen().catch(()=>{});
+    if (!testId) setTestId(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
     setStarted(true);
     setPhase("core");
   };
@@ -210,7 +219,7 @@ export default function Testing() {
     if (isDisqualified) {
       setDisqualified(true);
     }
-    const payloadTestId = testId || crypto.randomUUID();
+    const payloadTestId = testId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
     if (!testId) setTestId(payloadTestId);
 
     const tokenUrl = `https://studyfreeforum.com/manager/form?shortId=${shortId}`;
@@ -243,6 +252,8 @@ export default function Testing() {
     try {
       const data = await fetchGasAPI("/api/gas", payload);
       if (data.success) {
+        // Clear anti-cheat timer on successful submit to prevent race condition
+        if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
         setResultData({
           totalScore: data.totalScore,
           scores: data.scores,
@@ -252,8 +263,9 @@ export default function Testing() {
         // Do not set finished here! We move to intermediate phase.
         setPhase("intermediate");
       } else {
-        if (data.error && (data.error.includes("уже сдавали") || data.error.includes("already submitted"))) {
+        if (data.error && (data.error.includes("уже сдавали") || data.error.includes("already submitted") || data.error.includes("already"))) {
              // Recover student and proceed gracefully
+             if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
              try {
                const recoverData = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId });
                if (recoverData.success) {
@@ -273,7 +285,9 @@ export default function Testing() {
       }
     } catch (e: any) {
       console.error(e);
-      alert("Ошибка отправки теста: " + e.message);
+      // Save to localStorage for offline retry
+      try { localStorage.setItem('offline_test_' + payloadTestId, JSON.stringify(payload)); } catch(storageErr) {}
+      alert("Ошибка отправки теста: " + e.message + ". Ваши ответы сохранены, попробуйте еще раз.");
     } finally {
       setIsSubmitting(false);
     }
@@ -307,19 +321,24 @@ export default function Testing() {
     try {
       const data = await fetchGasAPI("/api/gas", payload);
       if (data.success) {
+        if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
         setResultData((prev: any) => ({
            ...prev,
            scores: { ...(prev?.scores || {}), english: data.scores.english },
            diagnosticsReport: data.diagnosticsReport
         }));
         setPhase("final");
-        if (document.exitFullscreen) await document.exitFullscreen().catch(()=>{});
+        const exitDoc = document as any;
+        if (exitDoc.exitFullscreen) await exitDoc.exitFullscreen().catch(()=>{});
+        else if (exitDoc.webkitExitFullscreen) await exitDoc.webkitExitFullscreen().catch(()=>{});
       } else {
         throw new Error(data.error);
       }
     } catch (e: any) {
       console.error(e);
-      alert("Ошибка отправки английского: " + e.message);
+      // Save to localStorage for offline retry
+      try { localStorage.setItem('offline_test_eng_' + shortId, JSON.stringify(payload)); } catch(storageErr) {}
+      alert("Ошибка отправки английского: " + e.message + ". Ваши ответы сохранены, попробуйте еще раз.");
     } finally {
       setIsSubmitting(false);
     }

@@ -89,8 +89,11 @@ export function getCEFRLevel(grade: number, maxPoints: number, score: number) {
 
 export async function fetchGasAPI(url: string, payload: any, token: string = ""): Promise<any> {
   let delay = 2000;
-  // Infinite retries on 500+ errors until success
-  while (true) {
+  const MAX_RETRIES = 3;
+  let attempt = 0;
+  
+  while (attempt < MAX_RETRIES) {
+    attempt++;
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -98,7 +101,8 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
       const res = await fetch(url, {
         method: "POST",
         headers,
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(20000) // 20 second timeout per request
       });
       
       const text = await res.text();
@@ -115,9 +119,13 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
       
       return data;
     } catch (e: any) {
-      console.warn(`[GAS] fetch failed, retrying in ${delay}ms...`, e);
+      console.warn(`[GAS] fetch failed (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delay}ms...`, e);
+      if (attempt >= MAX_RETRIES) {
+        throw new Error("Сервер временно недоступен. Ваши ответы сохранены локально. Попробуйте позже.");
+      }
       await new Promise(r => setTimeout(r, delay));
       delay = Math.min(delay * 1.5, 10000); // max 10s delay between retries
     }
   }
+  throw new Error("Превышено количество попыток отправки.");
 }

@@ -250,7 +250,7 @@ app.post("/api/gas", async (req, res) => {
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify(payload),
           // Set a timeout signal so we don't wait 5 minutes if GAS hangs
-          signal: AbortSignal.timeout(15000) // 15 seconds timeout
+          signal: AbortSignal.timeout(30000) // 30 seconds timeout (GAS can be slow with LockService)
         });
         
         rawText = await fetchRes.text();
@@ -269,6 +269,35 @@ app.post("/api/gas", async (req, res) => {
         // Wait before retrying
         await new Promise(resolve => setTimeout(resolve, delay));
         delay *= 2; // Exponential backoff
+      }
+    }
+
+    // Handle edge case: if this was a retry and GAS says "already submitted",
+    // it means a previous timed-out request actually succeeded. Treat as success.
+    if (data && !data.success && data.error && 
+        (payload.action === 'submitTest' || payload.action === 'submitEnglishTest') &&
+        (data.error.includes('already') || data.error.includes('уже сдавали'))) {
+      // Recover the student data and return success
+      try {
+        const shortId = payload.shortId;
+        const recoverRes = await fetch(gasUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: "getStudentByShortId", shortId }),
+          signal: AbortSignal.timeout(15000)
+        });
+        const recoverData = JSON.parse(await recoverRes.text());
+        if (recoverData.success && recoverData.student) {
+          return res.json({
+            success: true,
+            totalScore: recoverData.student.totalScore,
+            scores: { russian: recoverData.student.russian, math: recoverData.student.math, logic: recoverData.student.logic, english: recoverData.student.english },
+            cheated: recoverData.student.cheated,
+            diagnosticsReport: recoverData.student.diagnosticsReport
+          });
+        }
+      } catch (recoverErr) {
+        console.warn('Recovery after already-submitted failed:', recoverErr);
       }
     }
     
