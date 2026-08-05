@@ -52,6 +52,12 @@ export default function Testing() {
   const [pendingSubmission, setPendingSubmission] = useState(() => safeGetSession("pendingSubmission", "") === "true");
   const [resultData, setResultData] = useState<any>(() => {
     const saved = safeGetSession("resultData", "");
+
+  const [totalBlurTime, setTotalBlurTime] = useState<number>(() => {
+    const saved = safeGetSession("totalBlurTime", "0");
+    return Number(saved);
+  });
+  const [isFullscreenViolation, setIsFullscreenViolation] = useState(() => safeGetSession("isFullscreenViolation", "") === "true");
     return saved ? JSON.parse(saved) : null;
   });
   
@@ -78,7 +84,7 @@ export default function Testing() {
       if (resultData) sessionStorage.setItem("resultData", JSON.stringify(resultData));
       sessionStorage.setItem("phase", phase);
     } catch(e) {}
-  }, [studentName, grade, started, finished, disqualified, consentGiven, answers, testId, shortId, qrToken, pendingSubmission, resultData]);
+  }, [studentName, grade, started, finished, disqualified, consentGiven, answers, testId, shortId, qrToken, pendingSubmission, resultData, phase]);
 
   // Prevent accidental F5/Closing
   useEffect(() => {
@@ -92,25 +98,54 @@ export default function Testing() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [started, finished, disqualified]);
 
-  // --- ANTI-CHEAT LOGIC ---
+  // --- ANTI-CHEAT LOGIC V2 ---
+  useEffect(() => {
+    // Restore and check cumulative blur time on mount/reload
+    if (started && !finished && !disqualified) {
+      const lastBlur = safeGetSession("lastBlurTime", null);
+      if (lastBlur) {
+        const elapsed = Date.now() - parseInt(lastBlur, 10);
+        const newTotal = totalBlurTime + Math.max(0, elapsed);
+        setTotalBlurTime(newTotal);
+        sessionStorage.setItem("totalBlurTime", newTotal.toString());
+        sessionStorage.removeItem("lastBlurTime");
+        if (newTotal > 15000) {
+           phase === 'english' ? submitEnglishTest(true) : submitCoreTest(true);
+        }
+      }
+    }
+  }, [started]);
+
   useEffect(() => {
     if (!started || finished || disqualified) return;
 
     const handleCheating = () => {
-      // 15 seconds grace period to prevent false positives from notifications/accidental clicks
+      // 1. For mobile: ignore blur if document is still visible (avoids native dropdown/keyboard bugs)
+      const isMobile = window.innerWidth < 768;
+      if (isMobile && !document.hidden) return;
+
+      // 2. Log when they left
+      if (!safeGetSession("lastBlurTime", null)) {
+        sessionStorage.setItem("lastBlurTime", Date.now().toString());
+      }
+      
+      // 3. Start a timer just in case they don't trigger focus/visibilitychange (desktop hover bug)
       if (blurTimeout.current) clearTimeout(blurTimeout.current);
+      
+      const timeRemaining = Math.max(0, 15000 - totalBlurTime);
       blurTimeout.current = setTimeout(() => {
-        // Use ref to check CURRENT phase, not stale closure value
         const currentPhase = phaseRef.current;
-        if (currentPhase !== 'core' && currentPhase !== 'english') return; // Already submitted, don't overwrite
+        if (currentPhase !== 'core' && currentPhase !== 'english') return;
         
-        // Safety net for mobile: if a spurious blur fired (e.g., keyboard closed) but the user is still active on the page, ignore
+        // Safety net: if the document actually has focus right now (spurious blur event), ignore
         if (document.hasFocus && document.hasFocus() && !document.hidden) {
+          sessionStorage.removeItem("lastBlurTime");
           return;
         }
 
+        // Time is up!
         currentPhase === 'english' ? submitEnglishTest(true) : submitCoreTest(true);
-      }, 15000);
+      }, timeRemaining);
     };
 
     const handleFocus = () => {
@@ -118,43 +153,75 @@ export default function Testing() {
         clearTimeout(blurTimeout.current);
         blurTimeout.current = null;
       }
+      
+      const lastBlur = safeGetSession("lastBlurTime", null);
+      if (lastBlur) {
+        const elapsed = Date.now() - parseInt(lastBlur, 10);
+        const newTotal = totalBlurTime + Math.max(0, elapsed);
+        setTotalBlurTime(newTotal);
+        sessionStorage.setItem("totalBlurTime", newTotal.toString());
+        sessionStorage.removeItem("lastBlurTime");
+        
+        if (newTotal > 15000) {
+          const currentPhase = phaseRef.current;
+          if (currentPhase === 'core' || currentPhase === 'english') {
+            currentPhase === 'english' ? submitEnglishTest(true) : submitCoreTest(true);
+          }
+        }
+      }
     };
 
     const handleVisibilityChange = () => {
-      if (document.hidden) {
-        const currentPhase = phaseRef.current;
-        if (currentPhase === "core" || currentPhase === "english") handleCheating();
-      } else {
-        handleFocus();
+      if (document.hidden) handleCheating();
+      else handleFocus();
+    };
+
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        setIsFullscreenViolation(true);
       }
     };
 
     window.addEventListener("blur", handleCheating);
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
 
     return () => {
       window.removeEventListener("blur", handleCheating);
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
       if (blurTimeout.current) clearTimeout(blurTimeout.current);
     };
-  }, [started, finished, disqualified, answers, phase]); // Add answers to dependencies so submitTest gets latest
+  }, [started, finished, disqualified, phase, totalBlurTime]); // Added totalBlurTime
 
   // Block copy/paste/context menu globally when test is active
   useEffect(() => {
     if (!started || finished) return;
     const preventAction = (e: Event) => e.preventDefault();
+    const preventShortcuts = (e: KeyboardEvent) => {
+      if (e.key === "F12") e.preventDefault();
+      if (e.ctrlKey || e.metaKey) {
+        const k = e.key.toLowerCase();
+        if (["p", "s", "c", "v", "u"].includes(k)) e.preventDefault();
+      }
+    };
+    
     document.addEventListener("contextmenu", preventAction);
     document.addEventListener("copy", preventAction);
     document.addEventListener("paste", preventAction);
     document.addEventListener("selectstart", preventAction);
+    document.addEventListener("keydown", preventShortcuts);
 
     return () => {
       document.removeEventListener("contextmenu", preventAction);
       document.removeEventListener("copy", preventAction);
       document.removeEventListener("paste", preventAction);
       document.removeEventListener("selectstart", preventAction);
+      document.removeEventListener("keydown", preventShortcuts);
     };
   }, [started, finished]);
 
@@ -163,7 +230,29 @@ export default function Testing() {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (!started || finished) return;
-        if (disqualified) {
+      
+  // Fullscreen Violation UI
+  if (isFullscreenViolation) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center z-50">
+        <h1 className="text-3xl font-bold mb-4">Нарушение режима</h1>
+        <p className="text-lg text-slate-300 mb-8 max-w-md">Вы покинули полноэкранный режим. Тестирование должно проходить только в полноэкранном режиме, чтобы избежать списывания.</p>
+        <button 
+          onClick={() => {
+            const doc = document.documentElement as any;
+            if (doc.requestFullscreen) doc.requestFullscreen().catch(()=>{});
+            else if (doc.webkitRequestFullscreen) doc.webkitRequestFullscreen().catch(()=>{});
+            setIsFullscreenViolation(false);
+          }}
+          className="px-6 py-3 bg-blue-600 rounded-xl font-semibold hover:bg-blue-500 transition-colors"
+        >
+          Вернуться к тесту
+        </button>
+      </div>
+    );
+  }
+
+  if (disqualified) {
           setStopAudio(true); // Silence the song
         }
       }
@@ -441,6 +530,28 @@ export default function Testing() {
     setSubmitError(null);
     alert("Данные успешно отправлены!");
   };
+
+
+  // Fullscreen Violation UI
+  if (isFullscreenViolation) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center z-50">
+        <h1 className="text-3xl font-bold mb-4">Нарушение режима</h1>
+        <p className="text-lg text-slate-300 mb-8 max-w-md">Вы покинули полноэкранный режим. Тестирование должно проходить только в полноэкранном режиме, чтобы избежать списывания.</p>
+        <button 
+          onClick={() => {
+            const doc = document.documentElement as any;
+            if (doc.requestFullscreen) doc.requestFullscreen().catch(()=>{});
+            else if (doc.webkitRequestFullscreen) doc.webkitRequestFullscreen().catch(()=>{});
+            setIsFullscreenViolation(false);
+          }}
+          className="px-6 py-3 bg-blue-600 rounded-xl font-semibold hover:bg-blue-500 transition-colors"
+        >
+          Вернуться к тесту
+        </button>
+      </div>
+    );
+  }
 
   if (disqualified) {
     return (
@@ -965,7 +1076,7 @@ export default function Testing() {
                             className="space-y-2"
                           >
                             {items.map((item, index) => (
-                              <Reorder.Item key={item} value={item} className="flex items-center space-x-4 bg-white p-3 rounded shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing select-none hover:border-blue-300 transition-colors">
+                              <Reorder.Item key={item} value={item} className="flex items-center space-x-4 bg-white p-3 rounded shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing select-none touch-none hover:border-blue-300 transition-colors">
                                 <div className="font-bold text-slate-400 w-6 text-center">{index + 1}</div>
                                 <div className="flex-1 font-medium text-slate-800">{item}</div>
                                 <div className="text-slate-300">≡</div>
