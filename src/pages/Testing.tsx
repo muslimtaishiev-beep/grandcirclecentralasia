@@ -103,6 +103,12 @@ export default function Testing() {
         // Use ref to check CURRENT phase, not stale closure value
         const currentPhase = phaseRef.current;
         if (currentPhase !== 'core' && currentPhase !== 'english') return; // Already submitted, don't overwrite
+        
+        // Safety net for mobile: if a spurious blur fired (e.g., keyboard closed) but the user is still active on the page, ignore
+        if (document.hasFocus && document.hasFocus() && !document.hidden) {
+          return;
+        }
+
         currentPhase === 'english' ? submitEnglishTest(true) : submitCoreTest(true);
       }, 15000);
     };
@@ -257,6 +263,8 @@ export default function Testing() {
 
   
   const submitCoreTest = async (isDisqualified = false) => {
+    // Immediately clear any pending anti-cheat timers when user clicks submit
+    if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
     if (isSubmitting) return;
     setIsSubmitting(true);
     if (isDisqualified) {
@@ -337,6 +345,8 @@ export default function Testing() {
   };
 
   const submitEnglishTest = async (isDisqualified = false) => {
+    // Immediately clear any pending anti-cheat timers when user clicks submit
+    if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
     if (isSubmitting) return;
     setIsSubmitting(true);
     setFinished(true);
