@@ -109,7 +109,7 @@ export default function Testing() {
         setTotalBlurTime(newTotal);
         sessionStorage.setItem("totalBlurTime", newTotal.toString());
         sessionStorage.removeItem("lastBlurTime");
-        if (newTotal > 15000) {
+        if (newTotal > 30000) {
            phase === 'english' ? submitEnglishTest(true) : submitCoreTest(true);
         }
       }
@@ -132,7 +132,7 @@ export default function Testing() {
       // 3. Start a timer just in case they don't trigger focus/visibilitychange (desktop hover bug)
       if (blurTimeout.current) clearTimeout(blurTimeout.current);
       
-      const timeRemaining = Math.max(0, 15000 - totalBlurTime);
+      const timeRemaining = Math.max(0, 30000 - totalBlurTime);
       blurTimeout.current = setTimeout(() => {
         const currentPhase = phaseRef.current;
         if (currentPhase !== 'core' && currentPhase !== 'english') return;
@@ -162,7 +162,7 @@ export default function Testing() {
         sessionStorage.setItem("totalBlurTime", newTotal.toString());
         sessionStorage.removeItem("lastBlurTime");
         
-        if (newTotal > 15000) {
+        if (newTotal > 30000) {
           const currentPhase = phaseRef.current;
           if (currentPhase === 'core' || currentPhase === 'english') {
             currentPhase === 'english' ? submitEnglishTest(true) : submitCoreTest(true);
