@@ -133,7 +133,7 @@ const ANSWER_KEYS = {
         "pts": 1
         },
       "logic_3": {
-        "ans": "",
+        "ans": JSON.stringify(["митя","толя","сеня","костя","юра"]),
         "pts": 1
         },
       "logic_4": {
@@ -281,7 +281,7 @@ const ANSWER_KEYS = {
         "pts": 1
         },
       "logic_3": {
-        "ans": "",
+        "ans": JSON.stringify(["митя","толя","сеня","костя","юра"]),
         "pts": 1
         },
       "logic_4": {
@@ -439,7 +439,7 @@ const ANSWER_KEYS = {
         "pts": 1
         },
       "logic_3": {
-        "ans": "",
+        "ans": JSON.stringify(["митя","толя","сеня","костя","юра"]),
         "pts": 1
         },
       "logic_4": {
@@ -668,7 +668,7 @@ const ANSWER_KEYS = {
         "pts": 1
         },
       "logic_3": {
-        "ans": "",
+        "ans": JSON.stringify(["митя","толя","сеня","костя","юра"]),
         "pts": 1
         },
       "logic_4": {
@@ -811,6 +811,7 @@ function calculateScores(grade, answers) {
       if (qId === "logic_3") {
         let ansArray;
         try { ansArray = JSON.parse(userAns); } catch(e) { ansArray = []; }
+        if (!Array.isArray(ansArray)) ansArray = [];
         let ansStr = ansArray.join(",").replace(/\s+/g, "").toLowerCase();
         let val = userAns.replace(/\s+/g, "").toLowerCase();
         
@@ -832,11 +833,14 @@ function calculateScores(grade, answers) {
           userObj = JSON.parse(userAns); 
           correctObj = JSON.parse(keys.logic[qId].ans);
           let isCorrect = true;
-          for (let k in correctObj) {
-            if (userObj[k] !== correctObj[k]) isCorrect = false;
-          }
-          for (let k in userObj) {
-            if (userObj[k] !== correctObj[k]) isCorrect = false;
+          if (!userObj || typeof userObj !== 'object') isCorrect = false;
+          if (isCorrect) {
+            for (let k in correctObj) {
+              if (userObj[k] !== correctObj[k]) isCorrect = false;
+            }
+            for (let k in userObj) {
+              if (userObj[k] !== correctObj[k]) isCorrect = false;
+            }
           }
           if (isCorrect && Object.keys(correctObj).length > 0) lo += keys.logic[qId].pts;
         } catch(e) {}
@@ -971,22 +975,48 @@ function doPost(e) {
     if (crmSheet.getLastRow() === 0) {
       crmSheet.appendRow(["Дата", "Менеджер", "ФИО Родителя", "Номер телефона", "ID Теста (ученика)", "Стадия работы", "Оплата до.инфо", "Взнос", "Общая стоимость", "Оплата -1-месяц", "К психологу?", "Вердикт", "Комментарий психолога", "Финальное решение", "Причина отказа", "Имя ребенка", "Русский", "Математика", "Логика", "Комментарий менеджера", "Английский"]);
     }
+    if (action === "registerStudent") {
+      const { testId, shortId, studentName, grade, isTester } = data;
+      const dataRange = testSheet.getDataRange().getValues();
+      let exists = false;
+      
+      for (let i = 1; i < dataRange.length; i++) {
+        if (String(dataRange[i][10]) === String(shortId)) {
+          exists = true;
+          break;
+        }
+      }
+      
+      if (!exists) {
+        const safeName = sanitize(studentName || "Без имени");
+        const finalName = isTester ? `[ТЕСТ] ${safeName}` : safeName;
+        const ts = new Date().getTime();
+        testSheet.appendRow([new Date(ts).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" }), finalName, grade, "", "", "", "", testId, ts, "НЕТ", shortId, "", "", "В ПРОЦЕССЕ", "{}"]);
+      }
+      return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
+    }
 
     if (action === "submitTest") {
-      const { testId, shortId, studentName, grade, answers, cheated, isTester } = data;
+      const { testId, shortId, studentName, grade, answers, cheated, isTester, isRetake } = data;
       
       const dataRange = testSheet.getDataRange().getValues();
       const safeName = sanitize(studentName || "Без имени");
       const finalName = isTester ? `[ТЕСТ] ${safeName}` : safeName;
       const now = new Date().getTime();
+      let rowToUpdate = -1;
       
       for (let i = 1; i < dataRange.length; i++) {
         if (String(dataRange[i][7]) === String(testId) || String(dataRange[i][10]) === String(shortId)) {
-          return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Test already submitted" })).setMimeType(ContentService.MimeType.JSON);
+          const existingStatus = String(dataRange[i][13]);
+          if (isRetake || existingStatus === "В ПРОЦЕССЕ") {
+            rowToUpdate = i + 1;
+          } else {
+            return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Test already submitted" })).setMimeType(ContentService.MimeType.JSON);
+          }
         }
         
-        // Prevent same name from submitting within 1 hour, UNLESS manager already processed them
-        if (!isTester) {
+        // Prevent same name from submitting within 1 hour, UNLESS manager already processed them OR it's a retake
+        if (!isTester && !isRetake) {
           const rowName = dataRange[i][1];
           const rowTime = dataRange[i][8];
           const rowShortId = dataRange[i][10];
@@ -1010,7 +1040,32 @@ function doPost(e) {
       
       const ts = new Date().getTime();
       const answersStr = JSON.stringify(answers || {});
-      testSheet.appendRow([new Date(ts).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" }), finalName, grade, scores.russian, scores.math, scores.logic, totalScore, testId, ts, cheated ? "ДА" : "НЕТ", shortId, answersStr, scores.english]);
+      
+      if (rowToUpdate !== -1) {
+        // Retrieve existing english score to preserve it, if any (column 13 - M)
+        const existingEnglishScore = testSheet.getRange(rowToUpdate, 13).getValue();
+        // Update the entire row except maybe preserve english score
+        testSheet.getRange(rowToUpdate, 1, 1, 13).setValues([[
+          new Date(ts).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" }), 
+          finalName, 
+          grade, 
+          scores.russian, 
+          scores.math, 
+          scores.logic, 
+          totalScore, 
+          testId, 
+          ts, 
+          cheated ? "ДА" : "НЕТ", 
+          shortId, 
+          answersStr, 
+          existingEnglishScore
+        ]]);
+      } else {
+        testSheet.appendRow([
+          new Date(ts).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" }), 
+          finalName, grade, scores.russian, scores.math, scores.logic, totalScore, testId, ts, cheated ? "ДА" : "НЕТ", shortId, answersStr, scores.english
+        ]);
+      }
       
       return ContentService.createTextOutput(JSON.stringify({ success: true, totalScore, scores, cheated: !!cheated })).setMimeType(ContentService.MimeType.JSON);
     }

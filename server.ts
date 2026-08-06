@@ -200,6 +200,17 @@ app.post("/api/public/subscribe", async (req, res) => {
   res.status(201).json({ success: true });
 });
 
+// 3. Check Retake Authorization
+app.get("/api/public/check-retake/:shortId", async (req, res) => {
+  if (!useFirebase) return res.json({ allowed: false });
+  try {
+    const doc = await admin.firestore().collection("retakes").doc(req.params.shortId).get();
+    res.json({ allowed: doc.exists && doc.data()?.allowed === true });
+  } catch (e) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // GAS Proxy
 app.post("/api/gas", async (req, res) => {
   const gasUrl = process.env.VITE_GAS_URL;
@@ -429,6 +440,23 @@ app.post("/api/admin/logout", (req, res) => {
     activeSessions.delete(token);
   }
   res.json({ success: true });
+});
+
+// 4. Manager Allow Retake
+app.post("/api/manager/allow-retake", requireAuth, async (req, res) => {
+  const { shortId } = req.body;
+  if (!shortId) return res.status(400).json({ error: "shortId is required" });
+  if (!useFirebase) return res.status(500).json({ error: "Firebase not configured" });
+  
+  try {
+    await admin.firestore().collection("retakes").doc(shortId).set({
+      allowed: true,
+      timestamp: new Date().toISOString()
+    }, { merge: true });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to allow retake" });
+  }
 });
 
 // 4. Get administrative state (with subscribers & actual settings with password)

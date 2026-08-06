@@ -18,6 +18,7 @@ export default function Testing() {
   const [isResumingEnglish, setIsResumingEnglish] = useState(false);
   const [resumeShortId, setResumeShortId] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRetake, setIsRetake] = useState(false);
 
   const [grade, setGrade] = useState<number | null>(() => {
     const saved = safeGetSession("grade", null);
@@ -75,7 +76,14 @@ export default function Testing() {
       sessionStorage.setItem("disqualified", String(disqualified));
       sessionStorage.setItem("consentGiven", String(consentGiven));
       sessionStorage.setItem("answers", JSON.stringify(answers));
-      if (shortId) localStorage.setItem(`backup_answers_${shortId}`, JSON.stringify(answers));
+      if (shortId) {
+        localStorage.setItem(`backup_answers_${shortId}`, JSON.stringify({
+          answers,
+          phase,
+          grade,
+          studentName
+        }));
+      }
       sessionStorage.setItem("testId", testId);
       sessionStorage.setItem("enteredPin", enteredPin);
       sessionStorage.setItem("shortId", shortId);
@@ -252,7 +260,49 @@ export default function Testing() {
     }
   }, [disqualified, stopAudio]);
 
-  
+  const resumeInterruptedTest = async () => {
+    if (!resumeShortId.trim()) { alert("Введите Test ID"); return; }
+    
+    // Check if manager authorized retake
+    try {
+      const res = await fetch(`/api/public/check-retake/${resumeShortId.trim()}`);
+      const data = await res.json();
+      if (!data.allowed) {
+        alert("Отказ. Менеджер еще не разрешил вам продолжить прерванный тест. Обратитесь к менеджеру.");
+        return;
+      }
+    } catch(e) {
+      alert("Ошибка проверки разрешения сервера. Проверьте интернет-соединение.");
+      return;
+    }
+    
+    const backupStr = localStorage.getItem(`backup_answers_${resumeShortId.trim()}`);
+    if (!backupStr) {
+      alert("Сохраненных ответов на этом устройстве не найдено. Обратитесь к менеджеру.");
+      return;
+    }
+    try {
+      const backup = JSON.parse(backupStr);
+      setAnswers(backup.answers || {});
+      setPhase(backup.phase || "core");
+      setGrade(backup.grade || null);
+      setStudentName(backup.studentName || "Восстановленный Ученик");
+      setShortId(resumeShortId.trim());
+      setIsRetake(true);
+      setDisqualified(false);
+      setStarted(true);
+      setFinished(false);
+      
+      const docElm = document.documentElement as any;
+      if (docElm.requestFullscreen) {
+        const p = docElm.requestFullscreen();
+        if (p && p.catch) p.catch(()=>{});
+      }
+    } catch(e) {
+      alert("Ошибка восстановления данных.");
+    }
+  };
+
   const startTest = async () => {
     if (isSubmitting) return; // Prevent double-tap
     setIsSubmitting(true);
@@ -320,7 +370,19 @@ export default function Testing() {
         }
       } catch(e) { console.warn("Fullscreen API not supported", e); }
       
-      if (!testId) setTestId(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
+      const newTestId = testId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
+      if (!testId) setTestId(newTestId);
+      
+      // Notify backend that student has started the test
+      fetchGasAPI("/api/gas", {
+         action: "registerStudent",
+         testId: newTestId,
+         shortId: shortId,
+         studentName,
+         grade,
+         isTester: TESTER_PIN && enteredPin === TESTER_PIN
+      }).catch(e => console.error("Failed to register student:", e));
+
       setStarted(true);
       setPhase("core");
     } finally {
@@ -362,6 +424,7 @@ export default function Testing() {
       grade,
       answers: coreAnswers,
       cheated: isDisqualified,
+      isRetake,
       testerPin: isTester ? enteredPin : undefined
     };
 
@@ -416,7 +479,6 @@ export default function Testing() {
     if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
     if (isSubmitting) return;
     setIsSubmitting(true);
-    setFinished(true);
     if (isDisqualified) setDisqualified(true);
 
     const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
@@ -435,6 +497,7 @@ export default function Testing() {
       grade,
       answers: engAnswers,
       cheated: isDisqualified,
+      isRetake,
       testerPin: isTester ? enteredPin : undefined
     };
 
@@ -447,6 +510,7 @@ export default function Testing() {
            scores: { ...(prev?.scores || {}), english: data.scores.english },
            diagnosticsReport: data.diagnosticsReport
         }));
+        setFinished(true);
         setPhase("final");
         try {
           const exitDoc = document as any;
@@ -776,7 +840,7 @@ export default function Testing() {
                     </div>
                     <div className="mt-3 pt-3 border-t border-green-200 flex flex-col items-end font-bold text-green-900 text-lg">
                       <div className="w-full flex justify-between"><span>Общий балл:</span><span>{resultData.totalScore || 0} из {totalMax}</span></div>
-                      <div className="text-sm text-green-700 font-medium">({percent}% верных)</div>
+                      <div className="text-sm text-green-700 font-medium">({isNaN(percent) ? 0 : percent}% верных)</div>
                     </div>
                   </div>
                   )}
@@ -949,6 +1013,13 @@ export default function Testing() {
                 className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold text-lg disabled:opacity-50 hover:bg-indigo-700 transition shadow-lg"
               >
                 Войти и начать английский
+              </button>
+              <button 
+                onClick={resumeInterruptedTest}
+                disabled={!resumeShortId.trim() || !enteredPin.trim()}
+                className="w-full py-3 bg-amber-600 text-white rounded-xl font-bold text-lg disabled:opacity-50 hover:bg-amber-700 transition shadow-lg"
+              >
+                Продолжить прерванный тест
               </button>
               <button 
                 onClick={() => setIsResumingEnglish(false)}
@@ -1207,7 +1278,7 @@ export default function Testing() {
                       className="w-full border rounded-xl p-3 bg-white mt-2"
                     />
                   ) : q.type === "clickable_text" ? (
-                    <div className="leading-relaxed mt-2 text-slate-800">
+                    <div className="leading-relaxed mt-2 text-slate-800 space-y-4">
                       {(() => {
                         let selectedIds: string[] = [];
                         try { selectedIds = JSON.parse(answers[q.id] || "[]"); } catch(e) {}
@@ -1215,25 +1286,65 @@ export default function Testing() {
                         const toggleId = (id: string) => {
                           let newIds = selectedIds.includes(id) 
                             ? selectedIds.filter(x => x !== id) 
-                            : [...selectedIds, id];
+                            : [...selectedIds, id].sort((a, b) => Number(a) - Number(b));
                           setAnswers({...answers, [q.id]: JSON.stringify(newIds)});
                         };
 
-                        return q.clickableSegments?.map((seg, sIdx) => {
-                          if (seg.isTarget && seg.id) {
-                            const isSelected = selectedIds.includes(seg.id);
-                            return (
-                              <button 
-                                key={sIdx}
-                                onClick={() => toggleId(seg.id!)}
-                                className={`mx-1 inline-flex items-center justify-center min-w-[28px] h-7 px-2 rounded font-bold transition-colors ${isSelected ? 'bg-blue-600 text-white shadow-md' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
-                              >
-                                {seg.text}
-                              </button>
-                            )
-                          }
-                          return <span key={sIdx}>{seg.text}</span>;
-                        })
+                        const targetSegments = q.clickableSegments?.filter(s => s.isTarget && s.id) || [];
+
+                        return (
+                          <div>
+                            <div className="text-base sm:text-lg leading-relaxed p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                              {q.clickableSegments?.map((seg, sIdx) => {
+                                if (seg.isTarget && seg.id) {
+                                  const isSelected = selectedIds.includes(seg.id);
+                                  return (
+                                    <button 
+                                      key={sIdx}
+                                      type="button"
+                                      onClick={() => toggleId(seg.id!)}
+                                      className={`mx-1 inline-flex items-center justify-center min-w-[32px] h-8 px-2 rounded-lg font-bold text-sm transition-all border ${isSelected ? 'bg-blue-600 text-white border-blue-700 shadow-md scale-105' : 'bg-white text-blue-600 border-blue-300 hover:bg-blue-50'}`}
+                                    >
+                                      {seg.text}
+                                    </button>
+                                  )
+                                }
+                                return <span key={sIdx}>{seg.text}</span>;
+                              })}
+                            </div>
+
+                            {/* Explicit Option Buttons Below */}
+                            <div className="mt-3 p-3 bg-blue-50/50 border border-blue-100 rounded-xl">
+                              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                                Выберите цифры ответа (нажмите на цифры):
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {targetSegments.map((seg) => {
+                                  const isSelected = selectedIds.includes(seg.id!);
+                                  const cleanNum = seg.id!;
+                                  return (
+                                    <button
+                                      key={seg.id}
+                                      type="button"
+                                      onClick={() => toggleId(seg.id!)}
+                                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-sm sm:text-base border transition-all ${
+                                        isSelected 
+                                          ? 'bg-blue-600 text-white border-blue-700 shadow-sm ring-2 ring-blue-300' 
+                                          : 'bg-white text-slate-700 border-slate-200 hover:border-blue-300 hover:bg-blue-50'
+                                      }`}
+                                    >
+                                      <span>Цифра ({cleanNum})</span>
+                                      {isSelected && <span>✓</span>}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <div className="mt-2 text-xs text-slate-600 font-medium">
+                                Выбранные цифры: <span className="font-bold text-blue-700">{selectedIds.length > 0 ? selectedIds.join(", ") : "ничего не выбрано"}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
                       })()}
                     </div>
                   ) : q.type === "inline_inputs" ? (

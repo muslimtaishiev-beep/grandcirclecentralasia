@@ -59,8 +59,9 @@ export function getCEFRLevel(grade: number, maxPoints: number, score: number) {
   ];
   
   let targetIndex = 3; // default Grade 9 (Intermediate B1+)
-  if (grade === 8) targetIndex = 2; // Pre-Intermediate (A2-B1)
-  if (grade >= 10) targetIndex = 4; // Upper-Intermediate (B2)
+  const gradeNum = Number(grade);
+  if (gradeNum === 8) targetIndex = 2; // Pre-Intermediate (A2-B1)
+  if (gradeNum >= 10) targetIndex = 4; // Upper-Intermediate (B2)
 
   let actualIndex = targetIndex;
   let icon = "✅";

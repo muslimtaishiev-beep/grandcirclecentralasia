@@ -158,6 +158,25 @@ export default function ManagerDashboard() {
     }
   };
 
+  const allowRetake = async (shortId: string) => {
+    if (!confirm(`Разрешить ученику ${shortId} продолжить прерванный тест?`)) return;
+    try {
+      const res = await fetch("/api/manager/allow-retake", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ shortId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert("Разрешение успешно выдано! Ученик может зайти и нажать 'Продолжить прерванный тест'.");
+      } else {
+        alert("Ошибка: " + data.error);
+      }
+    } catch (e: any) {
+      alert("Ошибка сети: " + e.message);
+    }
+  };
+
   const openAcceptModal = (shortId: string) => {
     setSelectedStudent(shortId);
     setPaymentInfo("");
@@ -368,6 +387,9 @@ export default function ManagerDashboard() {
                           <button onClick={() => openRejectModal(s.shortId)} className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200">Отклонить</button>
                         </div>
                       )}
+                      <div className="mt-2">
+                        <button onClick={() => allowRetake(s.shortId)} className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded hover:bg-amber-200 shadow-sm w-full font-medium">Разрешить пересдачу / продолжение</button>
+                      </div>
                       {s.managerName === "Не назначен" && (
                         <button onClick={() => navigate(`/manager/form?testId=${s.shortId}`)} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">Заполнить анкету</button>
                       )}
