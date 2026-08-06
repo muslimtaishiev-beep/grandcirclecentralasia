@@ -12,7 +12,7 @@ export default function Testing() {
   
   const [studentName, setStudentName] = useState(() => safeGetSession("studentName", ""));
   const [enteredPin, setEnteredPin] = useState(() => safeGetSession("enteredPin", ""));
-  const [phase, setPhase] = useState<"login" | "core" | "intermediate" | "english" | "final">(
+  const [phase, setPhase] = useState<"login" | "core" | "intermediate" | "english" | "final" | "suspended">(
     () => (safeGetSession("phase", "") as any) || "login"
   );
   const [isResumingEnglish, setIsResumingEnglish] = useState(false);
@@ -143,8 +143,8 @@ export default function Testing() {
           return;
         }
 
-        // Time is up!
-        currentPhase === 'english' ? submitEnglishTest(true) : submitCoreTest(true);
+        // Time is up! Suspend the test instead of final submission
+        suspendTest(currentPhase);
       }, timeRemaining);
     };
 
@@ -165,7 +165,7 @@ export default function Testing() {
         if (newTotal > 30000) {
           const currentPhase = phaseRef.current;
           if (currentPhase === 'core' || currentPhase === 'english') {
-            currentPhase === 'english' ? submitEnglishTest(true) : submitCoreTest(true);
+            suspendTest(currentPhase);
           }
         }
       }
@@ -472,6 +472,87 @@ export default function Testing() {
     }
   };
 
+  const suspendTest = async (currentPhase: string) => {
+    if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    setDisqualified(true);
+
+    const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
+    const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
+
+    const payloadTestId = testId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
+    if (!testId) setTestId(payloadTestId);
+
+    const currentAnswers: Record<string, string> = {};
+    if (grade && testsData[grade]) {
+      if (currentPhase === 'core') {
+        [...(testsData[grade].russian||[]), ...(testsData[grade].math||[]), ...(testsData[grade].logic||[])].forEach(q => {
+            if (answers[q.id]) currentAnswers[q.id] = answers[q.id];
+        });
+      } else if (currentPhase === 'english') {
+        (testsData[grade].english||[]).forEach(q => {
+            if (answers[q.id]) currentAnswers[q.id] = answers[q.id];
+        });
+      }
+    }
+
+    const payload = {
+      action: "suspendTest",
+      testId: payloadTestId,
+      shortId: shortId,
+      studentName,
+      grade,
+      answers: currentAnswers,
+      phase: currentPhase,
+      testerPin: isTester ? enteredPin : undefined
+    };
+
+    try {
+      await fetchGasAPI("/api/gas", payload);
+      setPhase("suspended");
+      // Keep the currentPhase around to know where to resume
+      sessionStorage.setItem("suspendedPhase", currentPhase);
+    } catch (e: any) {
+      console.error("Failed to suspend:", e);
+      setPhase("suspended"); // Still block UI locally
+      sessionStorage.setItem("suspendedPhase", currentPhase);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const checkSuspendStatus = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const data = await fetchGasAPI("/api/gas", { action: "checkSuspendStatus", shortId });
+      if (data.success && data.status !== "ПРИОСТАНОВЛЕН") {
+        setDisqualified(false);
+        const resumePhase = sessionStorage.getItem("suspendedPhase") || "core";
+        setPhase(resumePhase as any);
+        setTotalBlurTime(0);
+        sessionStorage.setItem("totalBlurTime", "0");
+        
+        // Restore answers from backend if available
+        if (data.answers) {
+          try {
+            const parsed = JSON.parse(data.answers);
+            setAnswers(prev => ({ ...prev, ...parsed }));
+          } catch(e) {}
+        }
+        
+        alert("Разрешение получено! Вы можете продолжить тест.");
+      } else {
+        alert("Менеджер еще не дал разрешение на продолжение теста.");
+      }
+    } catch (e: any) {
+      alert("Ошибка при проверке статуса: " + e.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const retrySubmission = async () => {
@@ -552,7 +633,35 @@ export default function Testing() {
     );
   }
 
-  if (disqualified) {
+  if (phase === "suspended") {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-amber-500 to-amber-700"></div>
+          <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">⏸️</div>
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Тест приостановлен</h2>
+          <p className="text-slate-600 mb-6">Вы свернули вкладку или покинули страницу во время тестирования. Для продолжения необходимо разрешение менеджера.</p>
+          
+          <p className="text-sm text-slate-500 font-medium border-t pt-4">Покажите этот код менеджеру:</p>
+          <div className="mt-3 text-4xl font-mono font-bold text-amber-600 tracking-widest bg-amber-50 py-3 rounded-xl border border-amber-100 mb-6">
+            {shortId}
+          </div>
+          
+          <button 
+            onClick={checkSuspendStatus}
+            disabled={isSubmitting}
+            className={`w-full py-4 rounded-xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-[0.98] mb-4 ${
+              isSubmitting ? "bg-slate-400 cursor-not-allowed" : "bg-gradient-to-r from-blue-600 to-indigo-600 shadow-lg hover:shadow-xl hover:from-blue-700 hover:to-indigo-700"
+            }`}
+          >
+            {isSubmitting ? "Проверка..." : "Проверить разрешение"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (disqualified && phase !== "suspended") {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center relative overflow-hidden">

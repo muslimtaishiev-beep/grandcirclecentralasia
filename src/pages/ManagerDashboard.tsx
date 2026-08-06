@@ -41,6 +41,9 @@ export default function ManagerDashboard() {
   const [reviewData, setReviewData] = useState<any>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
 
+  // Unblock State
+  const [unblockingId, setUnblockingId] = useState<string | null>(null);
+
   const generatePdf = (student: any) => {
     if (!student.diagnosticsRaw || Object.keys(student.diagnosticsRaw).length === 0) {
       alert("У данного ученика нет сохраненных данных аналитики.");
@@ -308,6 +311,7 @@ export default function ManagerDashboard() {
                       <div className="font-bold text-gray-800 flex items-center gap-2">
                         {s.childName || "Без имени"}
                         {s.cheated && <span className="bg-red-600 text-white text-[10px] uppercase px-2 py-0.5 rounded font-bold animate-pulse">Читерил</span>}
+                        {s.status === "ПРИОСТАНОВЛЕН" && <span className="bg-amber-500 text-white text-[10px] uppercase px-2 py-0.5 rounded font-bold animate-pulse">ПРИОСТАНОВЛЕН</span>}
                       </div>
                       <div className="text-xs text-gray-400 mt-1">{s.date ? new Date(s.date).toLocaleString() : ""}</div>
                     </td>
@@ -432,10 +436,35 @@ export default function ManagerDashboard() {
                           finally { setReviewLoading(false); }
                         }}
                         disabled={reviewLoading}
-                        className="text-xs px-2 py-1 rounded shadow-sm w-full font-medium flex items-center justify-center gap-1 bg-sky-100 text-sky-700 hover:bg-sky-200 border border-sky-200"
+                        className="text-xs px-2 py-1 rounded shadow-sm w-full font-medium flex items-center justify-center gap-1 bg-sky-100 text-sky-700 hover:bg-sky-200 border border-sky-200 mb-2"
                       >
                         {reviewLoading ? (<><span className="animate-spin">↻</span> Загрузка...</>) : (<>🔍 Ручная проверка</>)}
                       </button>
+                      
+                      {/* Unblock button */}
+                      {s.status === "ПРИОСТАНОВЛЕН" && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Разрешить ученику ${s.childName || s.shortId} продолжить тест?`)) return;
+                            setUnblockingId(s.shortId);
+                            try {
+                              const token = await firebaseAuth.currentUser?.getIdToken();
+                              const data = await fetchGasAPI("/api/gas", { action: "unblockStudent", shortId: s.shortId }, token || "");
+                              if (data.success) {
+                                setStudents(prev => prev.map(st => st.shortId === s.shortId ? { ...st, status: "В ПРОЦЕССЕ" } : st));
+                                alert("Разрешение предоставлено! Ученик может продолжить тест.");
+                              } else {
+                                alert("Ошибка: " + data.error);
+                              }
+                            } catch (e: any) { alert("Ошибка: " + e.message); }
+                            finally { setUnblockingId(null); }
+                          }}
+                          disabled={unblockingId === s.shortId}
+                          className="text-xs px-2 py-1 rounded shadow-sm w-full font-bold flex items-center justify-center gap-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200"
+                        >
+                          {unblockingId === s.shortId ? (<><span className="animate-spin">↻</span> Загрузка...</>) : (<>🔓 Разрешить продолжение</>)}
+                        </button>
+                      )}
                     </td>
                   </tr>
                   );

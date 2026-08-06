@@ -1,5 +1,36 @@
 const SHEET_TESTS = "Результаты тестов";
 const SHEET_CRM = "CRM Менеджеров";
+// 1. Исправленный словарь макро-категорий (с поддержкой Орфоэпии, Лексики и Linking Words)
+const MACRO_MAP = {
+  "russian": [
+    { macro: "Лексика и Орфоэпия", keywords: ["Орфоэпия", "Ударени", "Лексика", "Пароним", "Фразеологизм"] },
+    { macro: "Орфография: НЕ/НИ, слитное и раздельное", keywords: ["НЕ", "НИ", "слитно", "раздельно", "частиц", "деепричастиями", "союзов"] },
+    { macro: "Орфография: Суффиксы и окончания", keywords: ["суффикс", "окончани", "НН", "причасти", "глаголов"] },
+    { macro: "Орфография: Корни и приставки", keywords: ["корень", "приставк", "безударн", "чередующ", "гласна", "Ъ"] },
+    { macro: "Пунктуация: Сложное предложение", keywords: ["БСП", "ССП", "СПП", "сложное", "подчинител"] },
+    { macro: "Пунктуация: Осложненное предложение", keywords: ["оборот", "вводн", "обращени", "однородн", "обособлен", "причастн", "деепричастн"] },
+    { macro: "Синтаксис и Грамматика", keywords: ["Синтаксис", "основа", "сказуем", "односостав", "связи", "словосочетан"] }
+  ],
+  "math": [
+    { macro: "Алгебра: Вычисления и преобразования", keywords: ["дроби", "корни", "степен", "выражен", "значения", "деление", "многочлены"] },
+    { macro: "Алгебра: Уравнения и неравенства", keywords: ["уравнен", "неравенств", "систем", "корень уравнения"] },
+    { macro: "Функции и графики", keywords: ["Функци", "график", "парабол", "гипербол"] },
+    { macro: "Геометрия", keywords: ["Геометрия", "Пифагор", "вектор", "площадь", "угол", "треугольник", "хорд"] },
+    { macro: "Текстовые задачи и Прогрессии", keywords: ["Текстовые", "движение", "работу", "мотоциклист", "Прогресси", "проценты"] }
+  ],
+  "logic": [
+    { macro: "Анализ данных и множества", keywords: ["матрицы", "утверждения", "ложные", "истинн", "ящик", "рубашки"] },
+    { macro: "Алгоритмы и последовательности", keywords: ["очереди", "упорядочивание", "закономерност"] },
+    { macro: "Логико-математические задачи", keywords: ["вычисления", "доли", "совместн", "скачк", "раза"] }
+  ],
+  "english": [
+    { macro: "Grammar: Basic Tenses (Present/Past)", keywords: ["Present Simple", "Past Simple", "Present Continuous", "Past Continuous", "Basic Tenses", "Continuous Tenses"] },
+    { macro: "Grammar: Advanced Tenses (Perfect/Future)", keywords: ["Perfect", "Future", "Advanced Tenses", "Perfect Tenses"] },
+    { macro: "Grammar: Conditionals & Modals", keywords: ["Conditionals", "Modal", "If", "can", "must", "Future & Conditionals"] },
+    { macro: "Vocabulary & Prepositions", keywords: ["Prepositions", "Quantifiers", "Much", "Many", "Vocabulary", "Linking Words"] },
+    { macro: "Syntax & Error Correction", keywords: ["Correction", "Reordering", "Structure", "Comparatives", "Superlatives", "Mistake"] }
+  ]
+};
 
 const ANSWER_KEYS = {
   "7": {
@@ -435,139 +466,98 @@ const ANSWER_KEYS = {
     },
   "10": {
     "russian": {
-
-      "ru_2_new": { ans: "ПРОСВЕТИТЕЛЬСКИЙ", pts: 1 },
-      "ru_8_new": { ans: "ПОЭТОМУ ТАКЖЕ", pts: 1 },
-      "russian_1": {
-        "ans": "газопровод",
-        "pts": 1
-      },
-      "russian_3": {
-        "ans": "туманы здесь бывают если не каждый день то через день непременно.",
-        "pts": 1
-      },
-      "russian_4": {
-        "ans": "м..литва",
-        "pts": 1
-      },
-      "russian_5": {
-        "ans": "пред..явить, с..езд;",
-        "pts": 1
-      },
-      "russian_6": {
-        "ans": "забол…ва",
-        "pts": 1
-      },
-      "russian_7": {
-        "ans": "ирина андреевна говорила (не)громко, но очень выразительно.",
-        "pts": 1
-      }
-      },
-        "math": {
-      "ma_1_10": { ans: "1/2", pts: 1 },
-      "ma_2_10": { ans: "6,2", pts: 1 },
-      "ma_3_10": { ans: "41,82", pts: 1 },
-      "ma_4_10": { ans: "98т", pts: 1 },
-      "ma_5_10": { ans: "1,34", pts: 1 },
-      "ma_6_10": { ans: "25√2", pts: 1 },
-      "ma_7_10": { ans: "x^5", pts: 1 },
-      "ma_8_10": { ans: "-26a^2 + 23a + 9", pts: 1 },
-      "ma_9_10": { ans: "(a+b)/ab", pts: 1 },
-      "ma_10_10": { ans: "a^9", pts: 1 },
-      "ma_11_10": { ans: "-3", pts: 1 },
-      "ma_12_10": { ans: "(-3; 0)", pts: 1 },
-      "ma_13_10": { ans: "-1,5", pts: 1 },
-      "ma_14_10": { ans: "ни одного", pts: 1 },
-      "ma_15_10": { ans: "-4", pts: 1 },
-      "ma_16_10": { ans: "-6", pts: 1 },
-      "ma_17_10": { ans: "(3; +∞)", pts: 1 },
-      "ma_18_10": { ans: "6", pts: 1 },
-      "ma_19_10": { ans: "(-∞; 15]", pts: 1 },
-      "ma_20_10": { ans: "y = -x^2 + 4x - 3", pts: 1 },
-      "ma_21_10": { ans: "2", pts: 1 },
-        },
+      "russian_1": { ans: "газопровод", pts: 1, topic: "Орфоэпия (Ударения)" },
+      "ru_2_new": { ans: "лесной", pts: 1, topic: "Лексика (Паронимы)" },
+      "russian_3": { ans: "туманы здесь бывают если не каждый день то через день непременно.", pts: 1, topic: "Пунктуация при однородных членах" },
+      "russian_4": { ans: "м..литва", pts: 1, topic: "Безударные гласные в корне" },
+      "russian_5": { ans: "пред..явить, с..езд;", pts: 1, topic: "Разделительные Ъ и Ь" },
+      "russian_6": { ans: "забол…вать", pts: 1, topic: "Правописание суффиксов глаголов" },
+      "russian_7": { ans: "ирина андреевна говорила (не)громко, но очень выразительно.", pts: 1, topic: "Слитное и раздельное написание НЕ" },
+      "ru_8_new": { ans: "такжепоэтому", pts: 1, topic: "Слитное/раздельное написание союзов" },
+      "russian_9": { ans: JSON.stringify(["1", "2", "3", "4", "5"]), pts: 1, topic: "Орфография: Суффиксы и окончания" },
+      "russian_10": { ans: JSON.stringify(["3", "4"]), pts: 1, topic: "Пунктуация: Осложненное предложение" }
+    },
+    "math": {
+      "ma_1_10": { ans: "1/2", pts: 1, topic: "Вычисления с дробями" },
+      "ma_2_10": { ans: "6,2", pts: 1, topic: "Вычисления (Десятичные дроби)" },
+      "ma_3_10": { ans: "41,82", pts: 1, topic: "Текстовые задачи (Проценты)" },
+      "ma_4_10": { ans: "98т", pts: 1, topic: "Текстовые задачи" },
+      "ma_5_10": { ans: "1,34", pts: 1, topic: "Вычисления (Десятичные дроби)" },
+      "ma_6_10": { ans: "25√2", pts: 1, topic: "Свойства квадратных корней" },
+      "ma_7_10": { ans: "x^5", pts: 1, topic: "Свойства степеней" },
+      "ma_8_10": { ans: "-26a^2 + 23a + 9", pts: 1, topic: "Многочлены" },
+      "ma_9_10": { ans: "(a+b)/ab", pts: 1, topic: "Рациональные дроби" },
+      "ma_10_10": { ans: "a^9", pts: 1, topic: "Свойства степеней" },
+      "ma_11_10": { ans: "-3", pts: 1, topic: "Прогрессии" },
+      "ma_12_10": { ans: "(-3; 0)", pts: 1, topic: "Алгебра: Уравнения и неравенства" },
+      "ma_13_10": { ans: "-1,5", pts: 1, topic: "Квадратные уравнения" },
+      "ma_14_10": { ans: "ни одного", pts: 1, topic: "Алгебра: Уравнения и неравенства" },
+      "ma_15_10": { ans: "-4", pts: 1, topic: "Системы уравнений" },
+      "ma_16_10": { ans: "-6", pts: 1, topic: "Алгебра: Уравнения и неравенства" },
+      "ma_17_10": { ans: "(3; +∞)", pts: 1, topic: "Алгебра: Уравнения и неравенства" },
+      "ma_18_10": { ans: "6", pts: 1, topic: "Алгебра: Уравнения и неравенства" },
+      "ma_19_10": { ans: "(-∞; 15]", pts: 1, topic: "Алгебра: Уравнения и неравенства" },
+      "ma_20_10": { ans: "y = -x^2 + 4x - 3", pts: 1, topic: "Графики функций (Парабола)" },
+      "ma_21_10": { ans: "2", pts: 1, topic: "Функции и графики" }
+    },
+    "logic": {
+      "logic_1": { ans: JSON.stringify({ "Белов": "Чёрная рубашка", "Серов": "Белая рубашка", "Чернов": "Серая рубашка" }), pts: 1, topic: "Логические матрицы" },
+      "logic_2": { ans: JSON.stringify({ "Ящик 1 (надпись «крупа»)": "Сахар", "Ящик 2 (надпись «вермишель»)": "Крупа", "Ящик 3 (надпись «крупа или сахар»)": "Вермишель" }), pts: 1, topic: "Задачи с ложными утверждениями" },
+      "logic_3": { ans: "митя,толя,сеня,костя,юра", pts: 1, topic: "Упорядочивание и очереди" },
+      "logic_4": { ans: JSON.stringify({ "Олег": "Скрипач", "Коля": "Пианист", "Ваня": "Певец" }), pts: 1, topic: "Логические матрицы" },
+      "logic_5": { ans: "Уменьшилась в 2 раза", pts: 1, topic: "Проценты и доли" },
+      "logic_6": { ans: "60", pts: 1, topic: "Задачи на совместную работу" },
+      "logic_7": { ans: "8", pts: 1, topic: "Обратные вычисления" },
+      "logic_8": { ans: "240", pts: 1, topic: "Задачи на движение" }
+    },
     "english": {
-      "en_10_11_q1": { ans: "had left", pts: 1 },
-      "en_10_11_q2": { ans: "had finished", pts: 1 },
-      "en_10_11_q3": { ans: "had been", pts: 1 },
-      "en_10_11_q4": { ans: "told", pts: 1 },
-      "en_10_11_q5": { ans: "told", pts: 1 },
-      "en_10_11_q6": { ans: "can’t", pts: 1 },
-      "en_10_11_q7": { ans: "better", pts: 1 },
-      "en_10_11_q8": { ans: "taking", pts: 1 },
-      "en_10_11_q9": { ans: "had", pts: 1 },
-      "en_10_11_q10": { ans: "was using", pts: 1 },
-      "en_10_11_q11": { ans: "worked", pts: 1 },
-      "en_10_11_q12": { ans: "has been", pts: 1 },
-      "en_10_11_q13": { ans: "will be lying", pts: 1 },
-      "en_10_11_q14": { ans: "will be having", pts: 1 },
-      "en_10_11_q15": { ans: "boils", pts: 1 },
-      "en_10_11_q16": { ans: "is said", pts: 1 },
-      "en_10_11_q17": { ans: "got", pts: 1 },
-      "en_10_11_q18": { ans: "waking", pts: 1 },
-      "en_10_11_q19": { ans: "had known", pts: 1 },
-      "en_10_11_q20": { ans: "had worked", pts: 1 },
-      "en_10_11_q21": { ans: "hadn’t said", pts: 1 },
-      "en_10_11_q22": { ans: "has been fixing", pts: 1 },
-      "en_10_11_q23": { ans: "will have built", pts: 1 },
-      "en_10_11_q24": { ans: "would finish", pts: 1 },
-      "en_10_11_q25": { ans: "were", pts: 1 },
-      "en_10_11_q26": { ans: "haven’t completed", pts: 1 },
-      "en_10_11_q27": { ans: "breaking", pts: 1 },
-      "en_10_11_q28": { ans: "had been waiting", pts: 1 },
-      "en_10_11_q29": { ans: "If I had known, I would have helped you.", pts: 1 },
-      "en_10_11_q30": { ans: "He told me that he would come later.", pts: 1 },
-      "en_10_11_q31": { ans: "I have already seen this film.", pts: 1 },
-      "en_10_11_q32": { ans: "She suggested taking a break.", pts: 1 },
-      "en_10_11_q33": { ans: "The project was completed by them.", pts: 1 },
-      "en_10_11_q34": { ans: "I look forward to hearing from you.", pts: 1 },
-      "en_10_11_q35": { ans: "however", pts: 1 },
-      "en_10_11_q36": { ans: "despite", pts: 1 },
-      "en_10_11_q37": { ans: "nevertheless", pts: 1 },
-      "en_10_11_q38": { ans: "whereas", pts: 1 },
-      "en_10_11_q39": { ans: "while", pts: 1 },
-      "en_10_11_q40": { ans: "in spite of", pts: 1 },
-      "en_10_11_q41": { ans: "She has been looking for a job for six months.", pts: 1 },
-      "en_10_11_q42": { ans: "I remember to lock the door before leaving.", pts: 1 },
-      "en_10_11_q43": { ans: "I would rather stay at home than go out.", pts: 1 },
-      "en_10_11_q44": { ans: "Despite the heavy rain, they went out.", pts: 1 },
-      "en_10_11_q45": { ans: "Try pressing this button to see if it works.", pts: 1 },
-    },
-        "logic": {
-      "logic_1": {
-        "ans": JSON.stringify({ "Белов": "Чёрная рубашка", "Серов": "Белая рубашка", "Чернов": "Серая рубашка" }),
-        "pts": 1
-        },
-      "logic_2": {
-        "ans": JSON.stringify({ "Ящик 1 (надпись «крупа»)": "Сахар", "Ящик 2 (надпись «вермишель»)": "Крупа", "Ящик 3 (надпись «крупа или сахар»)": "Вермишель" }),
-        "pts": 1
-        },
-      "logic_3": {
-        "ans": "",
-        "pts": 1
-        },
-      "logic_4": {
-        "ans": JSON.stringify({ "Олег": "Скрипач", "Коля": "Пианист", "Ваня": "Певец" }),
-        "pts": 1
-        },
-      "logic_5": {
-        "ans": "Уменьшилась в 2 раза",
-        "pts": 1
-        },
-      "logic_6": {
-        "ans": "60",
-        "pts": 1
-        },
-      "logic_7": {
-        "ans": "8",
-        "pts": 1
-        },
-      "logic_8": {
-        "ans": "240",
-        "pts": 1
-      }
+      "en_10_11_q1": { ans: "had left", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q2": { ans: "had finished", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q3": { ans: "had been", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q4": { ans: "told", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q5": { ans: "told", pts: 1, topic: "Future & Conditionals" },
+      "en_10_11_q6": { ans: "can’t", pts: 1, topic: "Modal Verbs" },
+      "en_10_11_q7": { ans: "better", pts: 1, topic: "Comparatives" },
+      "en_10_11_q8": { ans: "taking", pts: 1, topic: "Continuous Tenses" },
+      "en_10_11_q9": { ans: "had", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q10": { ans: "was using", pts: 1, topic: "Continuous Tenses" },
+      "en_10_11_q11": { ans: "worked", pts: 1, topic: "Future & Conditionals" },
+      "en_10_11_q12": { ans: "has been", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q13": { ans: "will be lying", pts: 1, topic: "Future & Conditionals" },
+      "en_10_11_q14": { ans: "will be having", pts: 1, topic: "Future & Conditionals" },
+      "en_10_11_q15": { ans: "boils", pts: 1, topic: "Future & Conditionals" },
+      "en_10_11_q16": { ans: "is said", pts: 1, topic: "Syntax & Error Correction" },
+      "en_10_11_q17": { ans: "got", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q18": { ans: "waking", pts: 1, topic: "Continuous Tenses" },
+      "en_10_11_q19": { ans: "had known", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q20": { ans: "had worked", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q21": { ans: "hadn’t said", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q22": { ans: "has been fixing", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q23": { ans: "will have built", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q24": { ans: "would finish", pts: 1, topic: "Future & Conditionals" },
+      "en_10_11_q25": { ans: "were", pts: 1, topic: "Continuous Tenses" },
+      "en_10_11_q26": { ans: "haven’t completed", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q27": { ans: "breaking", pts: 1, topic: "Continuous Tenses" },
+      "en_10_11_q28": { ans: "had been waiting", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q29": { ans: "If I had known, I would have helped you.", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q30": { ans: "He told me that he would come later.", pts: 1, topic: "Future & Conditionals" },
+      "en_10_11_q31": { ans: "I have already seen this film.", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q32": { ans: "She suggested taking a break.", pts: 1, topic: "Continuous Tenses" },
+      "en_10_11_q33": { ans: "The project was completed by them.", pts: 1, topic: "Continuous Tenses" },
+      "en_10_11_q34": { ans: "I look forward to hearing from you.", pts: 1, topic: "Continuous Tenses" },
+      "en_10_11_q35": { ans: "however", pts: 1, topic: "Linking Words" },
+      "en_10_11_q36": { ans: "despite", pts: 1, topic: "Linking Words" },
+      "en_10_11_q37": { ans: "nevertheless", pts: 1, topic: "Linking Words" },
+      "en_10_11_q38": { ans: "whereas", pts: 1, topic: "Linking Words" },
+      "en_10_11_q39": { ans: "while", pts: 1, topic: "Linking Words" },
+      "en_10_11_q40": { ans: "in spite of", pts: 1, topic: "Linking Words" },
+      "en_10_11_q41": { ans: "She has been looking for a job for six months.", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q42": { ans: "I remember to lock the door before leaving.", pts: 1, topic: "Continuous Tenses" },
+      "en_10_11_q43": { ans: "I would rather stay at home than go out.", pts: 1, topic: "Future & Conditionals" },
+      "en_10_11_q44": { ans: "Despite the heavy rain, they went out.", pts: 1, topic: "Linking Words" },
+      "en_10_11_q45": { ans: "Try pressing this button to see if it works.", pts: 1, topic: "Continuous Tenses" }
     }
-    },
+  },
   "11": {
     "russian": {
       "russian_1": {
@@ -751,16 +741,26 @@ function calculateScores(grade, answers) {
       let userAnsStr = answers[qId] ? String(answers[qId]).trim() : "";
       let userAnsLower = userAnsStr.toLowerCase();
       
-      if (String(grade) === "11" && qId === "russian_2") {
+      if (String(grade) === "11" && (qId === "ru_2_new" || qId === "russian_2")) {
         let parts = userAnsLower.split("|");
         let optChoice = parts[0] ? parts[0].trim() : "";
-        let wordChoice = parts[1] ? parts[1].trim() : "";
-        if (optChoice === "2" && (wordChoice === "наличие" || wordChoice === "наличии")) ru += keys.russian[qId].pts;
-      } else if (String(grade) === "11" && qId === "russian_8") {
+        let wordChoice = parts[1] ? parts[1].trim() : parts[0].trim();
+        if ((optChoice === "2" || parts.length === 1) && (wordChoice === "наличие" || wordChoice === "наличии")) ru += keys.russian[qId].pts;
+      } else if (String(grade) === "11" && (qId === "ru_8_new" || qId === "russian_8")) {
         let parts = userAnsLower.split("|");
         let optChoice = parts[0] ? parts[0].trim() : "";
-        let wordChoice = parts[1] ? parts[1].replace(/\s+/g, '').trim() : "";
-        if (optChoice === "4" && (wordChoice === "кверхутотчас" || wordChoice === "тотчаскверху")) ru += keys.russian[qId].pts;
+        let wordChoice = parts[1] ? parts[1].replace(/\s+/g, '').trim() : parts[0].replace(/\s+/g, '').trim();
+        if ((optChoice === "4" || parts.length === 1) && (wordChoice === "кверхутотчас" || wordChoice === "тотчаскверху")) ru += keys.russian[qId].pts;
+      } else if (String(grade) === "10" && (qId === "ru_2_new" || qId === "russian_2")) {
+        let parts = userAnsLower.split("|");
+        let optChoice = parts[0] ? parts[0].trim() : "";
+        let wordChoice = parts[1] ? parts[1].trim() : parts[0].trim();
+        if ((optChoice === "1" || parts.length === 1) && wordChoice === "лесной") ru += keys.russian[qId].pts;
+      } else if (String(grade) === "10" && (qId === "ru_8_new" || qId === "russian_8")) {
+        let parts = userAnsLower.split("|");
+        let optChoice = parts[0] ? parts[0].trim() : "";
+        let wordChoice = parts[1] ? parts[1].replace(/\s+/g, '').trim() : parts[0].replace(/\s+/g, '').trim();
+        if ((optChoice === "5" || parts.length === 1) && (wordChoice === "такжепоэтому" || wordChoice === "поэтомутакже")) ru += keys.russian[qId].pts;
       } else if (qId === "ru_5_new") {
         try {
           let userObj = JSON.parse(userAnsStr);
@@ -780,17 +780,23 @@ function calculateScores(grade, answers) {
           for (let k in userObj) { if (userObj[k] !== correctObj[k]) isCorrect = false; }
           if (isCorrect && Object.keys(correctObj).length > 0) ru += keys.russian[qId].pts;
         } catch(e) {}
-      } else if ((qId === "ru_9" || qId === "ru_10" || qId === "ru_7_new") && keys.russian[qId].ans.startsWith("[")) {
+      } else if ((qId === "russian_9" || qId === "russian_10" || qId === "ru_9" || qId === "ru_10" || qId === "ru_7_new") && keys.russian[qId].ans.startsWith("[")) {
         // These are clickable arrays — only parse as JSON if the key is a JSON array
         try {
-          let userArr = JSON.parse(userAnsStr);
+          let userArr = Array.isArray(userAnsStr) ? userAnsStr : JSON.parse(userAnsStr);
           let correctArr = JSON.parse(keys.russian[qId].ans);
           if (Array.isArray(userArr) && Array.isArray(correctArr)) {
             userArr.sort();
             correctArr.sort();
             if (userArr.join(",") === correctArr.join(",")) ru += keys.russian[qId].pts;
           }
-        } catch(e) {}
+        } catch(e) {
+          try {
+            let cleanUser = userAnsStr.replace(/\s+/g, "").split(",").sort().join(",");
+            let cleanCorrect = JSON.parse(keys.russian[qId].ans).sort().join(",");
+            if (cleanUser === cleanCorrect) ru += keys.russian[qId].pts;
+          } catch(err) {}
+        }
       } else {
         if (normalizeString(userAnsStr) === normalizeString(keys.russian[qId].ans)) ru += keys.russian[qId].pts;
       }
@@ -805,8 +811,19 @@ function calculateScores(grade, answers) {
       if (qId === "logic_3") {
         let ansArray;
         try { ansArray = JSON.parse(userAns); } catch(e) { ansArray = []; }
-        let ansStr = ansArray.join(",");
-        if (ansStr === "Митя,Толя,Сеня,Костя,Юра" || ansStr === "Митя,Толя,Костя,Сеня,Юра") {
+        let ansStr = ansArray.join(",").replace(/\s+/g, "").toLowerCase();
+        let val = userAns.replace(/\s+/g, "").toLowerCase();
+        
+        if (
+          val.includes("митя,толя,сеня,костя,юра") || 
+          val.includes("митя,толя,костя,сеня,юра") || 
+          val.includes("митя,сеня,толя,костя,юра") || 
+          val.includes("митя,костя,толя,сеня,юра") ||
+          ansStr.includes("митя,толя,сеня,костя,юра") || 
+          ansStr.includes("митя,толя,костя,сеня,юра") || 
+          ansStr.includes("митя,сеня,толя,костя,юра") || 
+          ansStr.includes("митя,костя,толя,сеня,юра")
+        ) {
           lo += keys.logic[qId].pts;
         }
       } else if (qId === "logic_1" || qId === "logic_2" || qId === "logic_4") {
@@ -830,6 +847,15 @@ function calculateScores(grade, answers) {
     if (keys.english) {
       Object.keys(keys.english).forEach(qId => {
         let userAns = answers[qId] ? String(answers[qId]).trim() : "";
+        try {
+          if (userAns.startsWith("[")) {
+            let arr = JSON.parse(userAns);
+            if (Array.isArray(arr)) {
+              userAns = arr.join(" ");
+            }
+          }
+        } catch(e) {}
+        
         let correctAns = keys.english[qId].ans;
         let normalizedUser = userAns.toLowerCase().replace(/[.,!?;]/g, "").replace(/\s+/g, " ");
         let normalizedCorrect = correctAns.toLowerCase().replace(/[.,!?;]/g, "").replace(/\s+/g, " ");
@@ -857,7 +883,9 @@ function getTestByShortId(testSheet, shortId) {
         testId: data[i][7],
         timestamp: data[i][8],
         cheated: data[i][9] === "ДА",
-        answers: data[i][11]
+        answers: data[i][11],
+        status: data[i][13],
+        suspendedAnswers: data[i][14]
       };
     }
   }
@@ -1025,6 +1053,58 @@ function doPost(e) {
       
       return ContentService.createTextOutput(JSON.stringify({ success: true, scores, cheated: !!cheated })).setMimeType(ContentService.MimeType.JSON);
     }
+    
+    if (action === "suspendTest") {
+      const { testId, shortId, studentName, grade, answers, phase, isTester } = data;
+      const dataRange = testSheet.getDataRange().getValues();
+      let rowToUpdate = -1;
+      
+      for (let i = 1; i < dataRange.length; i++) {
+        if (String(dataRange[i][7]) === String(testId) || String(dataRange[i][10]) === String(shortId)) {
+          rowToUpdate = i + 1;
+          break;
+        }
+      }
+      
+      const safeName = sanitize(studentName || "Без имени");
+      const finalName = isTester ? `[ТЕСТ] ${safeName}` : safeName;
+      const ts = new Date().getTime();
+      
+      if (rowToUpdate === -1) {
+         // Create row if they suspended early on
+         testSheet.appendRow([new Date(ts).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" }), finalName, grade, "", "", "", "", testId, ts, "НЕТ", shortId, "", "", "ПРИОСТАНОВЛЕН", JSON.stringify(answers || {})]);
+      } else {
+         safeSetValue(testSheet, rowToUpdate, 14, "ПРИОСТАНОВЛЕН"); // Column N
+         safeSetValue(testSheet, rowToUpdate, 15, JSON.stringify(answers || {})); // Column O
+      }
+      
+      return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    if (action === "checkSuspendStatus") {
+      const { shortId } = data;
+      const student = getTestByShortId(testSheet, shortId);
+      if (!student) return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Ученик не найден" })).setMimeType(ContentService.MimeType.JSON);
+      return ContentService.createTextOutput(JSON.stringify({ success: true, status: student.status, answers: student.suspendedAnswers })).setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    if (action === "unblockStudent") {
+      const { shortId } = data;
+      const dataRange = testSheet.getDataRange().getValues();
+      let rowToUpdate = -1;
+      for (let i = 1; i < dataRange.length; i++) {
+        if (String(dataRange[i][10]) === String(shortId)) {
+          rowToUpdate = i + 1;
+          break;
+        }
+      }
+      if (rowToUpdate === -1) return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Ученик не найден" })).setMimeType(ContentService.MimeType.JSON);
+      
+      safeSetValue(testSheet, rowToUpdate, 14, "В ПРОЦЕССЕ"); // Column N
+      
+      return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
+    }
+
 
     if (action === "getStudentByShortId") {
       const { shortId } = data;
@@ -1105,7 +1185,8 @@ function doPost(e) {
       for (let i = 1; i < testData.length; i++) {
         testMap[String(testData[i][10])] = {
           cheated: (testData[i][9] === "ДА"),
-          grade: testData[i][2]
+          grade: testData[i][2],
+          status: testData[i][13]
         };
       }
       
@@ -1134,7 +1215,8 @@ function doPost(e) {
           lo: crmData[i][18],
           en: crmData[i][20],
           cheated: testMap[sid] ? testMap[sid].cheated : false,
-          grade: testMap[sid] ? String(testMap[sid].grade) : ""
+          grade: testMap[sid] ? String(testMap[sid].grade) : "",
+          status: testMap[sid] ? String(testMap[sid].status) : ""
         });
       }
       
@@ -1166,7 +1248,8 @@ function doPost(e) {
             lo: testData[i][5],
             en: testData[i][12],
             cheated: testData[i][9] === "ДА",
-            grade: String(testData[i][2])
+            grade: String(testData[i][2]),
+            status: String(testData[i][13])
           });
         }
       }
@@ -1235,8 +1318,18 @@ function doPost(e) {
                     isCorrect = normUser === normCorrect;
                 } else if (subj === "logic" && qId === "logic_3") {
                     let ansStr = "";
-                    try { ansStr = JSON.parse(userAnsStr).join(","); } catch(e){}
-                    isCorrect = (ansStr === "Митя,Толя,Сеня,Костя,Юра" || ansStr === "Митя,Толя,Костя,Сеня,Юра");
+                    try { ansStr = JSON.parse(userAnsStr).join(",").replace(/\s+/g, "").toLowerCase(); } catch(e){}
+                    let val = userAnsStr.replace(/\s+/g, "").toLowerCase();
+                    isCorrect = (
+                      val.includes("митя,толя,сеня,костя,юра") || 
+                      val.includes("митя,толя,костя,сеня,юра") || 
+                      val.includes("митя,сеня,толя,костя,юра") || 
+                      val.includes("митя,костя,толя,сеня,юра") ||
+                      ansStr.includes("митя,толя,сеня,костя,юра") || 
+                      ansStr.includes("митя,толя,костя,сеня,юра") || 
+                      ansStr.includes("митя,сеня,толя,костя,юра") || 
+                      ansStr.includes("митя,костя,толя,сеня,юра")
+                    );
                 } else if ((subj === "logic" && ["logic_1","logic_2","logic_4"].includes(qId)) || (subj === "russian" && qId === "ru_7_new" && student.grade == "7")) {
                     try {
                         let userObj = JSON.parse(userAnsStr);
@@ -1246,30 +1339,42 @@ function doPost(e) {
                         for (let k in userObj) { if (userObj[k] !== correctObj[k]) isCorrect = false; }
                         if (Object.keys(correctObj).length === 0) isCorrect = false;
                     } catch(e) { isCorrect = false; }
-                } else if (subj === "russian" && (qId === "ru_9" || qId === "ru_10" || qId === "ru_7_new") && correctAnsStr.startsWith("[")) {
+                } else if (subj === "russian" && (qId === "russian_9" || qId === "russian_10" || qId === "ru_9" || qId === "ru_10" || qId === "ru_7_new") && correctAnsStr.startsWith("[")) {
                     try {
-                        let userArr = JSON.parse(userAnsStr);
+                        let userArr = Array.isArray(userAnsStr) ? userAnsStr : JSON.parse(userAnsStr);
                         let correctArr = JSON.parse(correctAnsStr);
                         if (Array.isArray(userArr) && Array.isArray(correctArr)) {
                             userArr.sort(); correctArr.sort();
                             isCorrect = userArr.join(",") === correctArr.join(",");
                         }
-                    } catch(e) {}
+                    } catch(e) {
+                        try {
+                            let cleanUser = userAnsStr.replace(/\s+/g, "").split(",").sort().join(",");
+                            let cleanCorrect = JSON.parse(correctAnsStr).sort().join(",");
+                            if (cleanUser === cleanCorrect) isCorrect = true;
+                        } catch(err) {}
+                    }
                 } else if (subj === "russian" && qId === "ru_5_new") {
                     try {
                         let userObj = JSON.parse(userAnsStr);
                         isCorrect = (String(userObj.input1).trim().toLowerCase() === "нн" && String(userObj.input2).trim().toLowerCase() === "н");
                     } catch(e){}
-                } else if (subj === "russian" && qId === "russian_2" && student.grade == "11") {
+                } else if (subj === "russian" && (qId === "ru_2_new" || qId === "russian_2") && student.grade == "11") {
                     let parts = userAnsStr.toLowerCase().split("|");
-                    isCorrect = (parts[0]?.trim() === "2" && (parts[1]?.trim() === "наличие" || parts[1]?.trim() === "наличии"));
-                } else if (subj === "russian" && qId === "russian_8" && student.grade == "11") {
+                    let w = parts[1] ? parts[1].trim() : parts[0].trim();
+                    isCorrect = ((parts[0]?.trim() === "2" || parts.length === 1) && (w === "наличие" || w === "наличии"));
+                } else if (subj === "russian" && (qId === "ru_8_new" || qId === "russian_8") && student.grade == "11") {
                     let parts = userAnsStr.toLowerCase().split("|");
-                    let w = parts[1]?.replace(/\s+/g, '').trim();
-                    isCorrect = (parts[0]?.trim() === "4" && (w === "кверхутотчас" || w === "тотчаскверху"));
-                } else if (subj === "russian" && qId === "ru_8_new" && student.grade == "10") {
-                    let v = userAnsStr.toLowerCase().replace(/\s+/g, "");
-                    isCorrect = (v === "такжепоэтому" || v === "поэтомутакже");
+                    let w = parts[1] ? parts[1].replace(/\s+/g, '').trim() : parts[0].replace(/\s+/g, '').trim();
+                    isCorrect = ((parts[0]?.trim() === "4" || parts.length === 1) && (w === "кверхутотчас" || w === "тотчаскверху"));
+                } else if (subj === "russian" && (qId === "ru_2_new" || qId === "russian_2") && student.grade == "10") {
+                    let parts = userAnsStr.toLowerCase().split("|");
+                    let w = parts[1] ? parts[1].trim() : parts[0].trim();
+                    isCorrect = ((parts[0]?.trim() === "1" || parts.length === 1) && w === "лесной");
+                } else if (subj === "russian" && (qId === "ru_8_new" || qId === "russian_8") && student.grade == "10") {
+                    let parts = userAnsStr.toLowerCase().split("|");
+                    let w = parts[1] ? parts[1].replace(/\s+/g, '').trim() : parts[0].replace(/\s+/g, '').trim();
+                    isCorrect = ((parts[0]?.trim() === "5" || parts.length === 1) && (w === "такжепоэтому" || w === "поэтомутакже"));
                 } else {
                     isCorrect = normalizeString(userAnsStr) === normalizeString(correctAnsStr);
                 }
