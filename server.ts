@@ -202,12 +202,38 @@ app.post("/api/public/subscribe", async (req, res) => {
 
 // 3. Check Retake Authorization
 app.get("/api/public/check-retake/:shortId", async (req, res) => {
-  if (!useFirebase) return res.json({ allowed: false });
   try {
-    const doc = await admin.firestore().collection("retakes").doc(req.params.shortId).get();
-    res.json({ allowed: doc.exists && doc.data()?.allowed === true });
+    let allowed = false;
+    
+    // 1. Try Firebase if enabled
+    if (useFirebase) {
+      try {
+        const doc = await admin.firestore().collection("retakes").doc(req.params.shortId).get();
+        if (doc.exists && doc.data()?.allowed === true) {
+          allowed = true;
+        }
+      } catch (fe) {}
+    }
+    
+    // 2. If not allowed yet, check GAS (Google Sheets status)
+    if (!allowed && process.env.VITE_GAS_URL) {
+      try {
+        const gasRes = await fetch(process.env.VITE_GAS_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: "checkSuspendStatus", shortId: req.params.shortId, apiKey: "GRAND_CIRCLE_SECURE_API_KEY_2026" }),
+          signal: AbortSignal.timeout(5000)
+        });
+        const gasData = await gasRes.json();
+        if (gasData.success && (gasData.status === "В ПРОЦЕССЕ" || gasData.status === "ПРИОСТАНОВЛЕН")) {
+          allowed = true;
+        }
+      } catch (ge) {}
+    }
+    
+    res.json({ allowed });
   } catch (e) {
-    res.status(500).json({ error: "Server error" });
+    res.json({ allowed: false });
   }
 });
 

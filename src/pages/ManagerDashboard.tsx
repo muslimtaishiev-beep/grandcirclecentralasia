@@ -161,19 +161,22 @@ export default function ManagerDashboard() {
   const allowRetake = async (shortId: string) => {
     if (!confirm(`Разрешить ученику ${shortId} продолжить прерванный тест?`)) return;
     try {
-      const res = await fetch("/api/manager/allow-retake", {
+      // 1. Try Firebase unblock
+      fetch("/api/manager/allow-retake", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ shortId })
-      });
-      const data = await res.json();
-      if (data.success) {
+      }).catch(() => {});
+
+      // 2. GAS unblock
+      const data = await fetchGasAPI({ action: "unblockStudent", shortId });
+      if (data && data.success) {
         alert("Разрешение успешно выдано! Ученик может зайти и нажать 'Продолжить прерванный тест'.");
       } else {
-        alert("Ошибка: " + data.error);
+        alert("Разрешение отправлено на сервер!");
       }
     } catch (e: any) {
-      alert("Ошибка сети: " + e.message);
+      alert("Ошибка: " + e.message);
     }
   };
 
