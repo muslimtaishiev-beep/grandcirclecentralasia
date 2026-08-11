@@ -244,11 +244,25 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
       </div>
 
       {/* Footer / Conclusion */}
-      <div className="mt-12 border p-6 rounded-xl" style={{ backgroundColor: C.blue50, borderColor: C.blue100 }}>
+      <div className="mt-12 border p-6 rounded-xl relative" style={{ backgroundColor: C.blue50, borderColor: C.blue100 }}>
         <h4 className="font-bold mb-2" style={{ color: C.blue800 }}>Заключение специалиста</h4>
         <p className="text-sm leading-relaxed" style={{ color: C.blue900 }}>
           Данная диагностика является срезом текущих академических навыков. Результаты позволяют адаптировать учебную программу под индивидуальные потребности ученика, сфокусировав внимание на темах, находящихся в "красной" и "желтой" зонах. Рекомендуется обсудить данные результаты с куратором для выстраивания оптимального образовательного маршрута.
         </p>
+        
+        {/* Signature & Stamp */}
+        <div className="mt-8 flex justify-end items-end pr-10">
+          <div className="text-right">
+            <div className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: C.gray500 }}>Подпись специалиста</div>
+            <div className="w-48 border-b-2 border-dashed border-gray-400"></div>
+          </div>
+          <img 
+            src="/stamp.png" 
+            alt="Печать" 
+            className="absolute -bottom-8 right-6 w-32 h-32 object-contain opacity-90 mix-blend-multiply" 
+            onError={(e) => e.currentTarget.style.display = 'none'} 
+          />
+        </div>
       </div>
 
       <div className="mt-12 pt-6 border-t text-center text-xs" style={{ borderColor: C.gray200, color: C.gray400 }}>

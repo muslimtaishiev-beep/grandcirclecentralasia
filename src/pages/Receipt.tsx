@@ -140,9 +140,15 @@ export default function Receipt() {
                 <span className="w-1/3">Подпись менеджера:</span>
                 <div className="w-2/3 border-b border-black"></div>
               </div>
-              <div className="flex items-end">
+              <div className="flex items-end relative">
                 <span className="w-1/3">М.П.</span>
                 <div className="w-2/3"></div>
+                <img 
+                  src="/stamp.png" 
+                  alt="Печать" 
+                  className="absolute -top-8 left-12 w-24 h-24 object-contain opacity-90 mix-blend-multiply" 
+                  onError={(e) => e.currentTarget.style.display = 'none'} 
+                />
               </div>
             </div>
           </div>
