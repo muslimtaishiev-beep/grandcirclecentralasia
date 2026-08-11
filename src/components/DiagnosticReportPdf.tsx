@@ -185,7 +185,7 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
       </div>
 
       {/* Student Info */}
-      <div className="rounded-xl p-6 mb-8 border flex justify-between items-center shadow-sm" style={{ backgroundColor: C.slate50, borderColor: C.slate100 }}>
+      <div className="rounded-xl p-6 mb-8 border flex justify-between items-center " style={{ backgroundColor: C.slate50, borderColor: C.slate100 }}>
         <div>
           <div className="text-sm mb-1" style={{ color: C.slate500 }}>Ученик</div>
           <div className="text-2xl font-bold" style={{ color: C.slate800 }}>{displayName || "Без имени"}</div>
@@ -216,7 +216,7 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
             const styleObj = getSubjectColor(stats.subject);
 
             return (
-              <div key={topic} className="flex flex-col gap-2 p-4 rounded-xl border shadow-sm" style={{ backgroundColor: C.white, borderColor: C.gray100 }}>
+              <div key={topic} className="flex flex-col gap-2 p-4 rounded-xl border " style={{ backgroundColor: C.white, borderColor: C.gray100 }}>
                 <div className="flex justify-between items-center mb-1">
                   <div className="font-semibold flex items-center gap-3">
                     <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: styleObj.color }}></span>
@@ -254,7 +254,7 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
         <div className="mt-8 flex justify-end items-end pr-10">
           <div className="text-right">
             <div className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: C.gray500 }}>Подпись специалиста</div>
-            <div className="w-48 border-b-2 border-dashed border-gray-400"></div>
+            <div className="w-48 border-b-2 border-dashed" style={{ borderColor: C.gray400 }}></div>
           </div>
           <img 
             src="/stamp.png" 
