@@ -56,6 +56,19 @@ const C = {
 export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ student }) => {
   const { childName, studentName, grade, date, diagnosticsRaw } = student;
   const displayName = childName || studentName;
+
+  let formattedDate = "";
+  if (date) {
+    if (String(date).includes(",")) {
+      formattedDate = String(date).split(",")[0];
+    } else {
+      const d = new Date(date);
+      formattedDate = isNaN(d.getTime()) ? String(date) : d.toLocaleDateString('ru-RU');
+    }
+  } else {
+    formattedDate = new Date().toLocaleDateString('ru-RU');
+  }
+
   
   if (!diagnosticsRaw || Object.keys(diagnosticsRaw).length === 0) return (
     <div id="pdf-diagnostic-report" className="p-10 w-[210mm] min-h-[297mm] " style={{ backgroundColor: C.white, color: C.black }}>
