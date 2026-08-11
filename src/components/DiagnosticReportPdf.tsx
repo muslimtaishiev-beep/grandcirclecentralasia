@@ -167,7 +167,7 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
         </div>
         <div className="text-right">
           <div className="text-sm uppercase tracking-wider font-semibold mb-1" style={{ color: C.gray500 }}>Официальный отчет</div>
-          <div className="text-sm font-medium" style={{ color: C.gray700 }}>Дата: {date ? new Date(date).toLocaleDateString('ru-RU') : new Date().toLocaleDateString('ru-RU')}</div>
+          <div className="text-sm font-medium" style={{ color: C.gray700 }}>Дата: {formattedDate}</div>
         </div>
       </div>
 
@@ -222,7 +222,7 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
                 </div>
                 
                 <div className="flex justify-between text-xs mt-1" style={{ color: C.gray500 }}>
-                  <span>Решено верно: {earned} из {possible}</span>
+                  <span style={{ letterSpacing: "0px", wordSpacing: "normal" }}>Решено верно: {earned} из {possible}</span>
                 </div>
               </div>
             );
