@@ -104,52 +104,69 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
 
   const MACRO_MAP: Record<string, { macro: string, keywords: string[] }[]> = {
     "russian": [
-      { macro: "Орфография: НЕ/НИ, слитное и раздельное", keywords: ["НЕ", "НИ", "слитно", "раздельно", "частиц", "деепричастиями"] },
-      { macro: "Орфография: Суффиксы и окончания", keywords: ["суффикс", "окончани", "НН", "причасти"] },
-      { macro: "Орфография: Корни и приставки", keywords: ["корень", "приставк", "безударн", "чередующ", "гласна"] },
-      { macro: "Пунктуация: Сложное предложение", keywords: ["БСП", "ССП", "СПП", "сложное", "подчинител"] },
-      { macro: "Пунктуация: Осложненное предложение", keywords: ["оборот", "вводн", "обращени", "однородн", "обособлен", "причастн", "деепричастн"] },
-      { macro: "Синтаксис и Грамматика", keywords: ["Синтаксис", "основа", "сказуем", "односостав", "связи", "словосочетан"] }
+      { macro: "Лексика и Орфоэпия", keywords: ["орфоэпия", "ударени", "лексика", "пароним", "фразеологизм", "значение слова", "словообразование", "морфолог"] },
+      { macro: "Орфография: НЕ/НИ, слитное и раздельное", keywords: ["не", "ни", "слитно", "раздельно", "частиц", "деепричастиями", "союзов", "дефис", "слитное"] },
+      { macro: "Орфография: Суффиксы и окончания", keywords: ["суффикс", "окончани", "нн", "причасти", "глаголов", "о/ё", "шипящих"] },
+      { macro: "Орфография: Корни и приставки", keywords: ["корень", "приставк", "безударн", "чередующ", "гласна", "ъ", "ь", "пре-", "при-", "орфографи"] },
+      { macro: "Пунктуация: Сложное предложение", keywords: ["бсп", "ссп", "спп", "сложное", "подчинител", "бессоюзн"] },
+      { macro: "Пунктуация: Осложненное предложение", keywords: ["оборот", "вводн", "обращени", "однородн", "обособлен", "причастн", "деепричастн", "пунктуация"] },
+      { macro: "Синтаксис и Грамматика", keywords: ["синтаксис", "основа", "сказуем", "односостав", "связи", "словосочетан", "числительн", "склонени", "примыкани", "грамматич"] }
     ],
     "math": [
-      { macro: "Алгебра: Вычисления и преобразования", keywords: ["дроби", "корни", "степен", "выражен", "значения", "деление"] },
-      { macro: "Алгебра: Уравнения и неравенства", keywords: ["уравнен", "неравенств", "систем", "корень уравнения"] },
-      { macro: "Функции и графики", keywords: ["Функци", "график", "парабол", "гипербол"] },
-      { macro: "Геометрия", keywords: ["Геометрия", "Пифагор", "вектор", "площадь", "угол", "треугольник", "хорд"] },
-      { macro: "Текстовые задачи", keywords: ["Текстовые", "движение", "работу", "мотоциклист"] }
+      { macro: "Алгебра: Вычисления и преобразования", keywords: ["дроби", "корни", "степен", "выражен", "значения", "деление", "многочлены", "вычитание", "умножения", "множител", "делимост", "смешанн", "пропорци", "алгебра"] },
+      { macro: "Алгебра: Уравнения и неравенства", keywords: ["уравнен", "неравенств", "систем", "корень уравнения", "интервал"] },
+      { macro: "Функции и графики", keywords: ["функци", "график", "парабол", "гипербол", "производная", "касательная", "координатн"] },
+      { macro: "Геометрия", keywords: ["геометрия", "пифагор", "вектор", "площадь", "угол", "треугольник", "хорд", "периметр", "планиметрия", "стереометрия"] },
+      { macro: "Текстовые задачи и Прогрессии", keywords: ["текстовые", "задачи", "задача", "движение", "работу", "мотоциклист", "прогресси", "проценты", "единицы измерения"] }
     ],
     "logic": [
-      { macro: "Анализ данных и множества", keywords: ["матрицы", "утверждения", "ложные", "истинн", "ящик", "рубашки"] },
-      { macro: "Алгоритмы и последовательности", keywords: ["очереди", "упорядочивание", "закономерност"] },
-      { macro: "Логико-математические задачи", keywords: ["вычисления", "доли", "совместн", "скачк", "раза"] }
+      { macro: "Анализ данных и множества", keywords: ["матрицы", "утверждения", "ложные", "истинн", "ящик", "рубашки", "множества"] },
+      { macro: "Алгоритмы и последовательности", keywords: ["очереди", "упорядочивание", "закономерност", "обратные"] },
+      { macro: "Логико-математические задачи", keywords: ["вычисления", "доли", "совместн", "скачк", "раза", "задачи"] }
     ],
     "english": [
-      { macro: "Grammar: Basic Tenses (Present/Past)", keywords: ["Present Simple", "Past Simple", "Present Continuous", "Past Continuous", "Basic Tenses"] },
-      { macro: "Grammar: Advanced Tenses (Perfect/Future)", keywords: ["Perfect", "Future", "Advanced Tenses"] },
-      { macro: "Grammar: Conditionals & Modals", keywords: ["Conditionals", "Modal", "If", "can", "must"] },
-      { macro: "Vocabulary & Prepositions", keywords: ["Prepositions", "Quantifiers", "Much", "Many", "Vocabulary"] },
-      { macro: "Syntax & Error Correction", keywords: ["Correction", "Reordering", "Structure", "Comparatives", "Superlatives", "Mistake"] }
+      { macro: "Grammar: Basic Tenses (Present/Past)", keywords: ["present simple", "past simple", "present continuous", "past continuous", "basic tenses", "continuous tenses", "continuous"] },
+      { macro: "Grammar: Advanced Tenses (Perfect/Future)", keywords: ["perfect", "future", "advanced tenses", "perfect tenses"] },
+      { macro: "Grammar: Conditionals & Modals", keywords: ["conditionals", "modal", "modals", "if", "can", "must", "future & conditionals"] },
+      { macro: "Vocabulary & Prepositions", keywords: ["prepositions", "quantifiers", "much", "many", "vocabulary", "linking words", "reading & comprehension", "reading"] },
+      { macro: "Syntax & Error Correction", keywords: ["correction", "reordering", "structure", "comparatives", "superlatives", "mistake", "syntax"] }
     ]
   };
 
+  const getFallbackSubjectCategory = (subjectKey: string) => {
+    switch (subjectKey) {
+      case "russian": return "Синтаксис и Грамматика";
+      case "math": return "Алгебра: Вычисления и преобразования";
+      case "logic": return "Логико-математические задачи";
+      case "english": return "Vocabulary & Prepositions";
+      default: return "Синтаксис и Грамматика";
+    }
+  };
+
   const getMacroAndSubject = (topicText: string) => {
-    // 1. Exact match for already mapped macros
+    const lowerTopic = String(topicText).toLowerCase().trim();
+    
+    // 1. Keyword match
     for (const [subjectKey, map] of Object.entries(MACRO_MAP)) {
       for (const item of map) {
-        if (item.macro.toLowerCase() === topicText.toLowerCase()) {
+        if (item.keywords.some(kw => lowerTopic.includes(kw))) {
           return { macro: item.macro, subject: subjectKey };
         }
       }
     }
-    // 2. Keyword match for micro-topics
+    
+    // 2. Macro roots match
     for (const [subjectKey, map] of Object.entries(MACRO_MAP)) {
       for (const item of map) {
-        if (item.keywords.some(kw => topicText.toLowerCase().includes(kw.toLowerCase()))) {
+        let macroWords = item.macro.toLowerCase().split(/[\s:,&]+/);
+        if (macroWords.some(word => word.length > 3 && lowerTopic.includes(word))) {
           return { macro: item.macro, subject: subjectKey };
         }
       }
     }
-    return { macro: "Основные навыки", subject: "general" };
+    
+    // 3. Fallback to general (will be handled by aggregatedStats logic to guess subject)
+    return { macro: getFallbackSubjectCategory("general"), subject: "general" };
   };
 
   // Aggregate stats frontend-side to fix existing DB records
