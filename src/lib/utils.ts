@@ -90,7 +90,7 @@ export function getCEFRLevel(grade: number, maxPoints: number, score: number) {
 
 export async function fetchGasAPI(url: string, payload: any, token: string = ""): Promise<any> {
   let delay = 2000;
-  const MAX_RETRIES = 3;
+  const MAX_RETRIES = 4;
   let attempt = 0;
   
   while (attempt < MAX_RETRIES) {
@@ -103,7 +103,7 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
         method: "POST",
         headers,
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(20000) // 20 second timeout per request
+        signal: AbortSignal.timeout(45000) // 45 second timeout — GAS cold starts can take 30s+
       });
       
       const text = await res.text();
