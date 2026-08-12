@@ -33,12 +33,15 @@ export default function Testing() {
   const [stopAudio, setStopAudio] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>(() => {
     try {
-      const saved = sessionStorage.getItem("answers");
+      const saved = safeGetSession("answers", "");
       if (saved) return JSON.parse(saved);
-      const shortId = sessionStorage.getItem("shortId");
-      if (shortId) {
-        const backup = localStorage.getItem(`backup_answers_${shortId}`);
-        if (backup) return JSON.parse(backup);
+      const sId = safeGetSession("shortId", "");
+      if (sId) {
+        const backup = localStorage.getItem(`backup_answers_${sId}`);
+        if (backup) {
+          const parsed = JSON.parse(backup);
+          if (parsed.answers) return parsed.answers;
+        }
       }
     } catch(e) {}
     return {};
