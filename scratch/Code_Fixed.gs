@@ -841,11 +841,11 @@ function calculateScores(grade, answers) {
           let userObj = JSON.parse(userAnsStr);
           let val1 = String(userObj["input1"] || "").trim().toLowerCase();
           let val2 = String(userObj["input2"] || "").trim().toLowerCase();
-          if (val1 === "нн" && val2 === "н") ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
+          if (val1 === "нн" && val2 === "н") { ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian); }
         } catch(e) {}
       } else if (qId === "ru_8_new" && String(grade) === "10") {
         let val = userAnsLower.replace(/\s+/g, "");
-        if (val === "такжепоэтому" || val === "поэтомутакже") ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
+        if (val === "такжепоэтому" || val === "поэтомутакже") { ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian); }
       } else if (qId === "ru_7_new" && String(grade) === "7") {
         try {
           let userObj = JSON.parse(userAnsStr);
@@ -853,7 +853,7 @@ function calculateScores(grade, answers) {
           let isCorrect = true;
           for (let k in correctObj) { if (userObj[k] !== correctObj[k]) isCorrect = false; }
           for (let k in userObj) { if (userObj[k] !== correctObj[k]) isCorrect = false; }
-          if (isCorrect && Object.keys(correctObj).length > 0) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
+          if (isCorrect && Object.keys(correctObj).length > 0) { ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian); }
         } catch(e) {}
       } else if ((qId === "russian_9" || qId === "russian_10" || qId === "ru_9" || qId === "ru_10" || qId === "ru_7_new") && keys.russian[qId].ans.startsWith("[")) {
         // These are clickable arrays — only parse as JSON if the key is a JSON array
@@ -863,22 +863,22 @@ function calculateScores(grade, answers) {
           if (Array.isArray(userArr) && Array.isArray(correctArr)) {
             userArr.sort();
             correctArr.sort();
-            if (userArr.join(",") === correctArr.join(",")) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
+            if (userArr.join(",") === correctArr.join(",")) { ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian); }
           }
         } catch(e) {
           try {
             let cleanUser = userAnsStr.replace(/\s+/g, "").split(",").sort().join(",");
             let cleanCorrect = JSON.parse(keys.russian[qId].ans).sort().join(",");
-            if (cleanUser === cleanCorrect) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
+            if (cleanUser === cleanCorrect) { ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian); }
           } catch(err) {}
         }
       } else {
-        if (normalizeString(userAnsStr) === normalizeString(keys.russian[qId].ans)) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
+        if (normalizeString(userAnsStr) === normalizeString(keys.russian[qId].ans)) { ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian); }
       }
     });
     Object.keys(keys.math).forEach(qId => {
       let userAns = answers[qId] ? String(answers[qId]) : "";
-      if (normalizeString(userAns) === normalizeString(keys.math[qId].ans)) ma += keys.math[qId].pts;
+      if (normalizeString(userAns) === normalizeString(keys.math[qId].ans)) { ma += keys.math[qId].pts; addEarned("math", qId, keys.math); }
     });
     Object.keys(keys.logic).forEach(qId => {
       let userAns = answers[qId] ? String(answers[qId]).trim() : "";
@@ -901,6 +901,7 @@ function calculateScores(grade, answers) {
           ansStr.includes("митя,костя,толя,сеня,юра")
         ) {
           lo += keys.logic[qId].pts;
+          addEarned("logic", qId, keys.logic);
         }
       } else if (qId === "logic_1" || qId === "logic_2" || qId === "logic_4") {
         let userObj, correctObj;
@@ -917,10 +918,10 @@ function calculateScores(grade, answers) {
               if (userObj[k] !== correctObj[k]) isCorrect = false;
             }
           }
-          if (isCorrect && Object.keys(correctObj).length > 0) lo += keys.logic[qId].pts;
+          if (isCorrect && Object.keys(correctObj).length > 0) { lo += keys.logic[qId].pts; addEarned("logic", qId, keys.logic); }
         } catch(e) {}
       } else {
-        if (normalizeString(userAns) === normalizeString(keys.logic[qId].ans)) lo += keys.logic[qId].pts;
+        if (normalizeString(userAns) === normalizeString(keys.logic[qId].ans)) { lo += keys.logic[qId].pts; addEarned("logic", qId, keys.logic); }
       }
     });
     if (keys.english) {
