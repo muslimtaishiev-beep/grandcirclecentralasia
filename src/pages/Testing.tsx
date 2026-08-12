@@ -8,7 +8,9 @@ import { getHourlyPIN, formatMathText, getCEFRLevel, fetchGasAPI } from "../lib/
 export default function Testing() {
   const safeGetSession = (key: string, defaultVal: any) => {
     try { 
-      return sessionStorage.getItem(key) || localStorage.getItem("persist_" + key) || defaultVal; 
+      const val = sessionStorage.getItem(key) || localStorage.getItem("persist_" + key);
+      if (!val || val === "undefined" || val === "null") return defaultVal;
+      return val; 
     } catch(e) { return defaultVal; }
   };
   
@@ -47,7 +49,7 @@ export default function Testing() {
       const saved = safeGetSession("answers", "");
       if (saved) return JSON.parse(saved);
       const sId = safeGetSession("shortId", "");
-      if (sId) {
+      if (sId && sId !== "undefined") {
         const backup = localStorage.getItem(`backup_answers_${sId}`);
         if (backup) {
           const parsed = JSON.parse(backup);
@@ -60,9 +62,12 @@ export default function Testing() {
   const [testId, setTestId] = useState(() => safeGetSession("testId", ""));
   const [shortId, setShortId] = useState(() => {
     const saved = safeGetSession("shortId", "");
-    if (saved) return saved;
+    if (saved && saved !== "undefined" && saved !== "null") return saved;
     const newId = Math.floor(100000 + Math.random() * 900000).toString();
-    try { sessionStorage.setItem("shortId", newId); } catch(e) {}
+    try { 
+      sessionStorage.setItem("shortId", newId); 
+      localStorage.setItem("persist_shortId", newId);
+    } catch(e) {}
     return newId;
   });
   const [qrToken, setQrToken] = useState(() => safeGetSession("qrToken", ""));
@@ -85,7 +90,11 @@ export default function Testing() {
   // Sync state to sessionStorage and localStorage for OS tab kill protection
   useEffect(() => {
     try {
-      const setBoth = (k: string, v: string) => { sessionStorage.setItem(k, v); localStorage.setItem("persist_" + k, v); };
+      const setBoth = (k: string, v: string) => { 
+        if (!v || v === "undefined" || v === "null") return;
+        sessionStorage.setItem(k, v); 
+        localStorage.setItem("persist_" + k, v); 
+      };
       
       setBoth("studentName", studentName);
       if (grade) setBoth("grade", String(grade));
@@ -513,9 +522,12 @@ export default function Testing() {
         });
     }
 
+    const activeShortId = (shortId && shortId !== "undefined" && shortId !== "null") ? shortId : Math.floor(100000 + Math.random() * 900000).toString();
+    if (shortId !== activeShortId) setShortId(activeShortId);
+
     const payload = {
       action: "submitEnglishTest",
-      shortId: shortId,
+      shortId: activeShortId,
       grade,
       answers: engAnswers,
       cheated: isDisqualified,
@@ -566,13 +578,15 @@ export default function Testing() {
     if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
     if (isSubmitting) return;
     setIsSubmitting(true);
-    setDisqualified(true);
 
     const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
     const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
 
     const payloadTestId = testId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
     if (!testId) setTestId(payloadTestId);
+
+    const activeShortId = (shortId && shortId !== "undefined" && shortId !== "null") ? shortId : Math.floor(100000 + Math.random() * 900000).toString();
+    if (shortId !== activeShortId) setShortId(activeShortId);
 
     const currentAnswers: Record<string, string> = {};
     if (grade && testsData[grade]) {
@@ -590,7 +604,7 @@ export default function Testing() {
     const payload = {
       action: "suspendTest",
       testId: payloadTestId,
-      shortId: shortId,
+      shortId: activeShortId,
       studentName,
       grade,
       answers: currentAnswers,
@@ -599,13 +613,12 @@ export default function Testing() {
     };
 
     try {
-      await fetchGasAPI("/api/gas", payload);
       setPhase("suspended");
-      // Keep the currentPhase around to know where to resume
       sessionStorage.setItem("suspendedPhase", currentPhase);
+      await fetchGasAPI("/api/gas", payload);
     } catch (e: any) {
       console.error("Failed to suspend:", e);
-      setPhase("suspended"); // Still block UI locally
+      setPhase("suspended");
       sessionStorage.setItem("suspendedPhase", currentPhase);
     } finally {
       setIsSubmitting(false);
