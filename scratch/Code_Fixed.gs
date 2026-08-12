@@ -1155,7 +1155,7 @@ function doPost(e) {
       
       const testData = testSheet.getDataRange().getValues();
       let testRowIdx = -1;
-      let scores = { english: 0 };
+      let englishScore = 0;
       
       for (let i = 1; i < testData.length; i++) {
         if (String(testData[i][10]) === String(shortId)) {
@@ -1169,23 +1169,24 @@ function doPost(e) {
       }
       
       if (!cheated) {
-        scores = calculateScores(grade, answers);
+        let calcRes = calculateScores(grade, answers);
+        englishScore = (calcRes && calcRes.scores && typeof calcRes.scores.english === 'number') ? calcRes.scores.english : 0;
       }
       
       // Update English score in testSheet (Column 13 - M)
-      safeSetValue(testSheet, testRowIdx, 13, scores.english);
+      safeSetValue(testSheet, testRowIdx, 13, englishScore);
       
       // Also update CRM sheet if the manager has already created a row
       const crmData = crmSheet.getDataRange().getValues();
       for (let i = 1; i < crmData.length; i++) {
         if (String(crmData[i][4]) === String(shortId)) { // Column 5 is "ID Теста (ученика)"
           // Update English score in crmSheet (Column 21 - U)
-          safeSetValue(crmSheet, i + 1, 21, scores.english);
+          safeSetValue(crmSheet, i + 1, 21, englishScore);
           break;
         }
       }
       
-      return ContentService.createTextOutput(JSON.stringify({ success: true, scores, cheated: !!cheated })).setMimeType(ContentService.MimeType.JSON);
+      return ContentService.createTextOutput(JSON.stringify({ success: true, scores: { english: englishScore }, cheated: !!cheated })).setMimeType(ContentService.MimeType.JSON);
     }
     
     if (action === "suspendTest") {

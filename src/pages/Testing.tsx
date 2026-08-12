@@ -527,10 +527,14 @@ export default function Testing() {
       const data = await fetchGasAPI("/api/gas", payload);
       if (data.success) {
         if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
+        const engScore = (data.scores && typeof data.scores.english === 'number') 
+          ? data.scores.english 
+          : (typeof data.scores?.scores?.english === 'number' ? data.scores.scores.english : 0);
+
         setResultData((prev: any) => ({
            ...prev,
-           scores: { ...(prev?.scores || {}), english: data.scores.english },
-           diagnosticsReport: data.diagnosticsReport
+           scores: { ...(prev?.scores || {}), english: engScore },
+           diagnosticsReport: prev?.diagnosticsReport || data.diagnosticsReport || ""
         }));
         setFinished(true);
         setPhase("final");
