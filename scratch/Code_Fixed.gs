@@ -769,7 +769,7 @@ function getMacroCategory(topicText, subjectKey) {
 
 function calculateScores(grade, answers) {
   const keys = ANSWER_KEYS[String(grade)];
-  if (!keys) return { russian: 0, math: 0, logic: 0 };
+  if (!keys) return { scores: { russian: 0, math: 0, logic: 0, english: 0 }, diagnosticsRaw: {} };
   
 
   // Если answers пришел в виде JSON-строки, парсим его в объект:
@@ -938,7 +938,7 @@ function calculateScores(grade, answers) {
         let correctAns = keys.english[qId].ans;
         let normalizedUser = userAns.toLowerCase().replace(/[.,!?;]/g, "").replace(/\s+/g, " ");
         let normalizedCorrect = correctAns.toLowerCase().replace(/[.,!?;]/g, "").replace(/\s+/g, " ");
-        if (normalizedUser === normalizedCorrect) en += keys.english[qId].pts;
+        if (normalizedUser === normalizedCorrect) { en += keys.english[qId].pts; addEarned("english", qId, keys.english); }
       });
     }
   }
