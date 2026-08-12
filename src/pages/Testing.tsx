@@ -7,7 +7,9 @@ import { getHourlyPIN, formatMathText, getCEFRLevel, fetchGasAPI } from "../lib/
 
 export default function Testing() {
   const safeGetSession = (key: string, defaultVal: any) => {
-    try { return sessionStorage.getItem(key) || defaultVal; } catch(e) { return defaultVal; }
+    try { 
+      return sessionStorage.getItem(key) || localStorage.getItem("persist_" + key) || defaultVal; 
+    } catch(e) { return defaultVal; }
   };
   
   const [studentName, setStudentName] = useState(() => safeGetSession("studentName", ""));
@@ -66,31 +68,30 @@ export default function Testing() {
   const phaseRef = useRef(phase);
   useEffect(() => { phaseRef.current = phase; }, [phase]);
 
-  // Sync state to sessionStorage for F5 protection
+  // Sync state to sessionStorage and localStorage for OS tab kill protection
   useEffect(() => {
     try {
-      sessionStorage.setItem("studentName", studentName);
-      if (grade) sessionStorage.setItem("grade", String(grade));
-      sessionStorage.setItem("started", String(started));
-      sessionStorage.setItem("finished", String(finished));
-      sessionStorage.setItem("disqualified", String(disqualified));
-      sessionStorage.setItem("consentGiven", String(consentGiven));
-      sessionStorage.setItem("answers", JSON.stringify(answers));
+      const setBoth = (k: string, v: string) => { sessionStorage.setItem(k, v); localStorage.setItem("persist_" + k, v); };
+      
+      setBoth("studentName", studentName);
+      if (grade) setBoth("grade", String(grade));
+      setBoth("started", String(started));
+      setBoth("finished", String(finished));
+      setBoth("disqualified", String(disqualified));
+      setBoth("consentGiven", String(consentGiven));
+      setBoth("answers", JSON.stringify(answers));
+      
       if (shortId) {
-        localStorage.setItem(`backup_answers_${shortId}`, JSON.stringify({
-          answers,
-          phase,
-          grade,
-          studentName
-        }));
+        localStorage.setItem(`backup_answers_${shortId}`, JSON.stringify({ answers, phase, grade, studentName }));
       }
-      sessionStorage.setItem("testId", testId);
-      sessionStorage.setItem("enteredPin", enteredPin);
-      sessionStorage.setItem("shortId", shortId);
-      sessionStorage.setItem("qrToken", qrToken);
-      sessionStorage.setItem("pendingSubmission", String(pendingSubmission));
-      if (resultData) sessionStorage.setItem("resultData", JSON.stringify(resultData));
-      sessionStorage.setItem("phase", phase);
+      
+      setBoth("testId", testId);
+      setBoth("enteredPin", enteredPin);
+      setBoth("shortId", shortId);
+      setBoth("qrToken", qrToken);
+      setBoth("pendingSubmission", String(pendingSubmission));
+      if (resultData) setBoth("resultData", JSON.stringify(resultData));
+      setBoth("phase", phase);
     } catch(e) {}
   }, [studentName, grade, started, finished, disqualified, consentGiven, answers, testId, shortId, qrToken, pendingSubmission, resultData, phase]);
 
@@ -116,9 +117,11 @@ export default function Testing() {
         const newTotal = totalBlurTime + Math.max(0, elapsed);
         setTotalBlurTime(newTotal);
         sessionStorage.setItem("totalBlurTime", newTotal.toString());
+        localStorage.setItem("persist_totalBlurTime", newTotal.toString());
+        localStorage.removeItem("persist_lastBlurTime");
         sessionStorage.removeItem("lastBlurTime");
         if (newTotal > 30000) {
-           phase === 'english' ? submitEnglishTest(true) : submitCoreTest(true);
+           suspendTest(phase);
         }
       }
     }
@@ -134,7 +137,9 @@ export default function Testing() {
 
       // 2. Log when they left
       if (!safeGetSession("lastBlurTime", null)) {
-        sessionStorage.setItem("lastBlurTime", Date.now().toString());
+        const now = Date.now().toString();
+        sessionStorage.setItem("lastBlurTime", now);
+        localStorage.setItem("persist_lastBlurTime", now);
       }
       
       // 3. Start a timer just in case they don't trigger focus/visibilitychange (desktop hover bug)
@@ -148,6 +153,7 @@ export default function Testing() {
         // Safety net: if the document actually has focus right now (spurious blur event), ignore
         if (document.hasFocus && document.hasFocus() && !document.hidden) {
           sessionStorage.removeItem("lastBlurTime");
+          localStorage.removeItem("persist_lastBlurTime");
           return;
         }
 
@@ -168,7 +174,9 @@ export default function Testing() {
         const newTotal = totalBlurTime + Math.max(0, elapsed);
         setTotalBlurTime(newTotal);
         sessionStorage.setItem("totalBlurTime", newTotal.toString());
+        localStorage.setItem("persist_totalBlurTime", newTotal.toString());
         sessionStorage.removeItem("lastBlurTime");
+        localStorage.removeItem("persist_lastBlurTime");
         
         if (newTotal > 30000) {
           const currentPhase = phaseRef.current;
