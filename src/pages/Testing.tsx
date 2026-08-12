@@ -12,6 +12,17 @@ export default function Testing() {
     } catch(e) { return defaultVal; }
   };
   
+  const clearAllTestData = () => {
+    try {
+      sessionStorage.clear();
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith("persist_") || key.startsWith("backup_answers_") || key === "suspendedPhase" || key === "totalBlurTime" || key === "lastBlurTime") {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch(e) {}
+  };
+  
   const [studentName, setStudentName] = useState(() => safeGetSession("studentName", ""));
   const [enteredPin, setEnteredPin] = useState(() => safeGetSession("enteredPin", ""));
   const [phase, setPhase] = useState<"login" | "core" | "intermediate" | "english" | "final" | "suspended">(
@@ -752,7 +763,7 @@ export default function Testing() {
         
         <button 
           onClick={() => {
-            sessionStorage.clear();
+            clearAllTestData();
             window.location.reload();
           }}
           className="text-sm text-slate-500 hover:text-slate-800 underline transition-colors"
@@ -899,7 +910,7 @@ export default function Testing() {
             <p className="text-3xl font-mono font-bold tracking-widest text-blue-600">{shortId}</p>
           </div>
           
-          <button onClick={() => { sessionStorage.clear(); window.location.reload(); }} className="w-full font-bold text-slate-500 hover:text-slate-700 py-2">
+          <button onClick={() => { clearAllTestData(); window.location.reload(); }} className="w-full font-bold text-slate-500 hover:text-slate-700 py-2">
             Вернуться к входу
           </button>
         </div>
