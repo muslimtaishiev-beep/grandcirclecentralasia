@@ -1096,8 +1096,9 @@ function doPost(e) {
           const rowName = dataRange[i][1];
           const rowTime = dataRange[i][8];
           const rowShortId = dataRange[i][10];
+          const rowTestId = dataRange[i][7];
           
-          if (rowName === safeName && (now - Number(rowTime)) < 60 * 60 * 1000) {
+          if (String(rowShortId) !== String(shortId) && String(rowTestId) !== String(testId) && rowName === safeName && (now - Number(rowTime)) < 60 * 60 * 1000) {
              const crmStudent = getCrmByShortId(crmSheet, rowShortId, null);
              const isProcessed = crmStudent && (crmStudent.finalDecision === "ПРИНЯТ" || crmStudent.finalDecision === "ОТКЛОНЕН");
              
@@ -1122,8 +1123,8 @@ function doPost(e) {
       if (rowToUpdate !== -1) {
         // Retrieve existing english score to preserve it, if any (column 13 - M)
         const existingEnglishScore = testSheet.getRange(rowToUpdate, 13).getValue();
-        // Update the entire row except maybe preserve english score
-        testSheet.getRange(rowToUpdate, 1, 1, 13).setValues([[
+        // Update the entire row including status and diagnosticsRaw (15 columns A-O)
+        testSheet.getRange(rowToUpdate, 1, 1, 15).setValues([[
           new Date(ts).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" }), 
           finalName, 
           grade, 
@@ -1136,7 +1137,9 @@ function doPost(e) {
           cheated ? "ДА" : "НЕТ", 
           shortId, 
           answersStr, 
-          existingEnglishScore
+          existingEnglishScore,
+          "ЗАВЕРШЕН",
+          JSON.stringify(diagnosticsRaw || {})
         ]]);
       } else {
         testSheet.appendRow([new Date(ts).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" }), 
