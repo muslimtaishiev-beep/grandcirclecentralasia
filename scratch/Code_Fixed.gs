@@ -1,138 +1,88 @@
 const SHEET_TESTS = "Результаты тестов";
 const SHEET_CRM = "CRM Менеджеров";
-// 1. Исправленный словарь макро-категорий (с поддержкой Орфоэпии, Лексики и Linking Words)
 const MACRO_MAP = {
   "russian": [
-    { 
-      macro: "Лексика и Орфоэпия", 
-      keywords: ["орфоэпия", "ударени", "лексика", "пароним", "фразеологизм", "значение слова", "словообразование", "морфолог"] 
-    },
-    { 
-      macro: "Орфография: НЕ/НИ, слитное и раздельное", 
-      keywords: ["не", "ни", "слитно", "раздельно", "частиц", "деепричастиями", "союзов", "дефис", "слитное"] 
-    },
-    { 
-      macro: "Орфография: Суффиксы и окончания", 
-      keywords: ["суффикс", "окончани", "нн", "причасти", "глаголов", "о/ё", "шипящих"] 
-    },
-    { 
-      macro: "Орфография: Корни и приставки", 
-      keywords: ["корень", "приставк", "безударн", "чередующ", "гласна", "ъ", "ь", "пре-", "при-", "орфографи"] 
-    },
-    { 
-      macro: "Пунктуация: Сложное предложение", 
-      keywords: ["бсп", "ссп", "спп", "сложное", "подчинител", "бессоюзн"] 
-    },
-    { 
-      macro: "Пунктуация: Осложненное предложение", 
-      keywords: ["оборот", "вводн", "обращени", "однородн", "обособлен", "причастн", "деепричастн", "пунктуация"] 
-    },
-    { 
-      macro: "Синтаксис и Грамматика", 
-      keywords: ["синтаксис", "основа", "сказуем", "односостав", "связи", "словосочетан", "числительн", "склонени", "примыкани", "грамматич"] 
-    }
+    { macro: "Лексика и Орфоэпия", keywords: ["орфоэпия", "ударени", "лексика", "пароним", "фразеологизм", "значение слова", "словообразование", "морфолог"] },
+    { macro: "Орфография: НЕ/НИ, слитное и раздельное", keywords: ["написание не", "написание ни", "не/ни", "слитно", "раздельно", "частиц", "дефис", "слитное", "написание союзов"] },
+    { macro: "Орфография: Суффиксы и окончания", keywords: ["суффикс", "окончани", "причасти", "глаголов", "о/ё", "шипящих", "правописание суффикс"] },
+    { macro: "Орфография: Корни и приставки", keywords: ["корни и приставки", "безударн", "чередующ", "гласна", "разделительные", "орфографи"] },
+    { macro: "Пунктуация: Сложное предложение", keywords: ["бсп", "ссп", "спп", "сложное предложение", "подчинител", "бессоюзн"] },
+    { macro: "Пунктуация: Осложненное предложение", keywords: ["оборот", "вводн", "обращени", "однородн", "обособлен", "причастн", "деепричастн", "пунктуация"] },
+    { macro: "Синтаксис и Грамматика", keywords: ["синтаксис", "основа", "сказуем", "односостав", "связи", "словосочетан", "числительн", "склонени", "примыкани", "грамматич"] }
   ],
   "math": [
-    { 
-      macro: "Алгебра: Вычисления и преобразования", 
-      keywords: ["дроби", "корни", "степен", "выражен", "значения", "деление", "многочлены", "вычитание", "умножения", "множител", "делимост", "смешанн", "пропорци", "алгебра"] 
-    },
-    { 
-      macro: "Алгебра: Уравнения и неравенства", 
-      keywords: ["уравнен", "неравенств", "систем", "корень уравнения", "интервал"] 
-    },
-    { 
-      macro: "Функции и графики", 
-      keywords: ["функци", "график", "парабол", "гипербол", "производная", "касательная", "координатн"] 
-    },
-    { 
-      macro: "Геометрия", 
-      keywords: ["геометрия", "пифагор", "вектор", "площадь", "угол", "треугольник", "хорд", "периметр", "планиметрия", "стереометрия"] 
-    },
-    { 
-      macro: "Текстовые задачи и Прогрессии", 
-      keywords: ["текстовые", "задачи", "задача", "движение", "работу", "мотоциклист", "прогресси", "проценты", "единицы измерения"] 
-    }
+    { macro: "Алгебра: Вычисления и преобразования", keywords: ["дроби", "степен", "выражен", "значения", "деление", "многочлены", "вычитание", "умножения", "множител", "делимост", "смешанн", "пропорци", "алгебра", "рациональные", "квадратных корней", "вычисления с", "десятичн"] },
+    { macro: "Алгебра: Уравнения и неравенства", keywords: ["уравнен", "неравенств", "системы уравнений", "корень уравнения", "интервал"] },
+    { macro: "Функции и графики", keywords: ["функци", "график", "парабол", "гипербол", "производная", "касательная", "координатн"] },
+    { macro: "Геометрия", keywords: ["геометрия", "пифагор", "вектор", "площадь", "угол", "треугольник", "хорд", "периметр", "планиметрия", "стереометрия"] },
+    { macro: "Текстовые задачи и Прогрессии", keywords: ["текстовые задачи", "движение", "работу", "мотоциклист", "прогресси", "проценты", "единицы измерения", "задачи на движение"] }
   ],
   "logic": [
-    { 
-      macro: "Анализ данных и множества", 
-      keywords: ["матрицы", "утверждения", "ложные", "истинн", "ящик", "рубашки", "множества"] 
-    },
-    { 
-      macro: "Алгоритмы и последовательности", 
-      keywords: ["очереди", "упорядочивание", "закономерност", "обратные"] 
-    },
-    { 
-      macro: "Логико-математические задачи", 
-      keywords: ["вычисления", "доли", "совместн", "скачк", "раза", "задачи"] 
-    }
+    { macro: "Анализ данных и множества", keywords: ["логические матрицы", "утверждения", "ложные", "истинн", "ящик", "рубашки", "множества"] },
+    { macro: "Алгоритмы и последовательности", keywords: ["очереди", "упорядочивание", "закономерност", "обратные вычисления"] },
+    { macro: "Логико-математические задачи", keywords: ["логико-математические", "доли", "совместн", "скачк", "раза", "совместную работу", "проценты и доли"] }
   ],
   "english": [
-    { 
-      macro: "Grammar: Basic Tenses (Present/Past)", 
-      keywords: ["present simple", "past simple", "present continuous", "past continuous", "basic tenses", "continuous tenses", "continuous"] 
-    },
-    { 
-      macro: "Grammar: Advanced Tenses (Perfect/Future)", 
-      keywords: ["perfect", "future", "advanced tenses", "perfect tenses"] 
-    },
-    { 
-      macro: "Grammar: Conditionals & Modals", 
-      keywords: ["conditionals", "modal", "modals", "if", "can", "must", "future & conditionals"] 
-    },
-    { 
-      macro: "Vocabulary & Prepositions", 
-      keywords: ["prepositions", "quantifiers", "much", "many", "vocabulary", "linking words", "reading & comprehension", "reading"] 
-    },
-    { 
-      macro: "Syntax & Error Correction", 
-      keywords: ["correction", "reordering", "structure", "comparatives", "superlatives", "mistake", "syntax"] 
-    }
+    { macro: "Grammar: Basic Tenses (Present/Past)", keywords: ["present simple", "past simple", "present continuous", "past continuous", "basic tenses", "continuous tenses"] },
+    { macro: "Grammar: Advanced Tenses (Perfect/Future)", keywords: ["perfect tenses", "future simple", "advanced tenses", "future continuous", "future perfect"] },
+    { macro: "Grammar: Conditionals & Modals", keywords: ["conditionals", "modal verbs", "modals", "future & conditionals"] },
+    { macro: "Vocabulary & Prepositions", keywords: ["prepositions", "quantifiers", "vocabulary", "linking words", "reading & comprehension"] },
+    { macro: "Syntax & Error Correction", keywords: ["correction", "reordering", "structure", "comparatives", "superlatives", "mistake", "error correction"] }
   ]
 };
+
+function getFallbackSubjectCategory(subjectKey) {
+  switch (subjectKey) {
+    case "russian": return "Синтаксис и Грамматика";
+    case "math": return "Алгебра: Вычисления и преобразования";
+    case "logic": return "Логико-математические задачи";
+    case "english": return "Vocabulary & Prepositions";
+    default: return "Синтаксис и Грамматика";
+  }
+}
+
 
 const ANSWER_KEYS = {
   "7": {
     "russian": {
 
-      "ru_7_new": { ans: JSON.stringify({"Прилагательное":"Часть речи","Сказуемое":"Член предложения","Союз":"Часть речи","Определение":"Член предложения","Существительное":"Часть речи"}), pts: 1, topic: "Пунктуация" },
-      "ru_9": { ans: "Гвоздем программы было выступление известного актера.", pts: 1, topic: "Пунктуация" },
-      "ru_10": { ans: "Аккуратный, точный", pts: 1, topic: "Пунктуация" },
-      "ru_11": { ans: "К четырехстам прибавить пятьдесят.", pts: 1, topic: "Орфография" },
-      "ru_12": { ans: "какой(либо), (шахматно)шашечный, ярко(красный)", pts: 1, topic: "Орфография" },
-      "ru_13": { ans: "Из-под этой тучи вырвались яркие лучи, и мокрые леса и поля засверкали.", pts: 1, topic: "Орфография" },
+      "ru_7_new": { ans: JSON.stringify({"Прилагательное":"Часть речи","Сказуемое":"Член предложения","Союз":"Часть речи","Определение":"Член предложения","Существительное":"Часть речи"}), pts: 1, topic: "Пунктуация: Осложненное предложение" },
+      "ru_9": { ans: "Гвоздем программы было выступление известного актера.", pts: 1, topic: "Пунктуация: Осложненное предложение" },
+      "ru_10": { ans: "Аккуратный, точный", pts: 1, topic: "Пунктуация: Осложненное предложение" },
+      "ru_11": { ans: "К четырехстам прибавить пятьдесят.", pts: 1, topic: "Синтаксис и Грамматика" },
+      "ru_12": { ans: "какой(либо), (шахматно)шашечный, ярко(красный)", pts: 1, topic: "Орфография: НЕ/НИ, слитное и раздельное" },
+      "ru_13": { ans: "Из-под этой тучи вырвались яркие лучи, и мокрые леса и поля засверкали.", pts: 1, topic: "Орфография: Корни и приставки" },
       "russian_1": {
         "ans": "гвоздем программы было выступление известного актера.",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Суффиксы и окончания"
         },
       "russian_2": {
         "ans": "бесполезный",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Корни и приставки"
         },
       "russian_3": {
         "ans": "девч…нка, плащ…м",
-        "pts": 1, topic: "Пунктуация"
+        "pts": 1, topic: "Орфография: Суффиксы и окончания"
         },
       "russian_4": {
         "ans": "(не) решительность, (не) подвижная вода",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: НЕ/НИ, слитное и раздельное"
         },
       "russian_5": {
         "ans": "пр…паять, пр…обрести, пр…усадебный",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Корни и приставки"
         },
       "russian_6": {
         "ans": "к четырехстам прибавить пятьдесят.",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Синтаксис и Грамматика"
         },
       "russian_7": {
         "ans": "часть речи сказуемое —",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Синтаксис и Грамматика"
         },
       "russian_8": {
         "ans": "из-под этой тучи вырвались яркие лучи, и мокрые леса и поля засверкали.",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: НЕ/НИ, слитное и раздельное"
       }
       },
     "math": {
@@ -221,48 +171,48 @@ const ANSWER_KEYS = {
   "8": {
     "russian": {
 
-      "ru_8_new": { ans: "3) Посетитель кафе, зевая, заказал на обед рыбу жаренную в тесте.", pts: 1, topic: "Орфография" },
-      "ru_9": { ans: JSON.stringify(["1", "5"]), pts: 1, topic: "Пунктуация" },
-      "ru_10": { ans: JSON.stringify(["4", "12"]), pts: 1, topic: "Пунктуация" },
+      "ru_8_new": { ans: "3) Посетитель кафе, зевая, заказал на обед рыбу жаренную в тесте.", pts: 1, topic: "Орфография: Корни и приставки" },
+      "ru_9": { ans: JSON.stringify(["1", "5"]), pts: 1, topic: "Пунктуация: Осложненное предложение" },
+      "ru_10": { ans: JSON.stringify(["4", "12"]), pts: 1, topic: "Пунктуация: Осложненное предложение" },
       "russian_1": {
         "ans": "расколотый орех",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Суффиксы и окончания"
         },
       "russian_2": {
         "ans": "купив продукты",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Корни и приставки"
         },
       "russian_3": {
         "ans": "стро…щийся дом",
-        "pts": 1, topic: "Пунктуация"
+        "pts": 1, topic: "Орфография: Суффиксы и окончания"
         },
       "russian_4": {
         "ans": "вид…мый свет",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: НЕ/НИ, слитное и раздельное"
         },
       "russian_5": {
         "ans": "растаив",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Корни и приставки"
         },
       "russian_6": {
         "ans": "кова….ый сундук, картошка пожаре….а",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Синтаксис и Грамматика"
         },
       "russian_7": {
         "ans": "(не) закрыв дверь",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Синтаксис и Грамматика"
         },
       "russian_8": {
         "ans": "3",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: НЕ/НИ, слитное и раздельное"
         },
       "russian_9": {
         "ans": "1, 3",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Корни и приставки"
         },
       "russian_10": {
         "ans": "2, 4",
-        "pts": 1, topic: "Пунктуация"
+        "pts": 1, topic: "Пунктуация: Осложненное предложение"
       }
       },
         "math": {
@@ -290,26 +240,26 @@ const ANSWER_KEYS = {
       "ma_22_8": { ans: "156000", pts: 1, topic: "Алгебра: Вычисления и преобразования" },
     },
     "english": {
-      "en_8_q1": { ans: "goes", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q2": { ans: "were watching", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q3": { ans: "have / eaten", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q4": { ans: "have lived", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q5": { ans: "isn’t", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q6": { ans: "taller", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q7": { ans: "mustn’t", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q8": { ans: "might", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q9": { ans: "didn’t do", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q10": { ans: "the best", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q11": { ans: "wake up", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q12": { ans: "doesn’t like", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q13": { ans: "visited", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q14": { ans: "are playing", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q15": { ans: "has already finished", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q16": { ans: "have never been", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q17": { ans: "was studying", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q18": { ans: "are going", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q19": { ans: "doesn’t understand", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q20": { ans: "have lived", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_8_q1": { ans: "goes", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_8_q2": { ans: "were watching", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_8_q3": { ans: "have / eaten", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_8_q4": { ans: "have lived", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_8_q5": { ans: "isn’t", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_8_q6": { ans: "taller", pts: 1, topic: "Syntax & Error Correction" },
+      "en_8_q7": { ans: "mustn’t", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_8_q8": { ans: "might", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_8_q9": { ans: "didn’t do", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_8_q10": { ans: "the best", pts: 1, topic: "Syntax & Error Correction" },
+      "en_8_q11": { ans: "wake up", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_8_q12": { ans: "doesn’t like", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_8_q13": { ans: "visited", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_8_q14": { ans: "are playing", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_8_q15": { ans: "has already finished", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_8_q16": { ans: "have never been", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_8_q17": { ans: "was studying", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_8_q18": { ans: "are going", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_8_q19": { ans: "doesn’t understand", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_8_q20": { ans: "have lived", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
       "en_8_q21": { ans: "of", pts: 1, topic: "Vocabulary & Prepositions" },
       "en_8_q22": { ans: "in", pts: 1, topic: "Vocabulary & Prepositions" },
       "en_8_q23": { ans: "at", pts: 1, topic: "Vocabulary & Prepositions" },
@@ -319,17 +269,17 @@ const ANSWER_KEYS = {
       "en_8_q27": { ans: "much", pts: 1, topic: "Vocabulary & Prepositions" },
       "en_8_q28": { ans: "too", pts: 1, topic: "Vocabulary & Prepositions" },
       "en_8_q29": { ans: "many", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q30": { ans: "most", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q31": { ans: "easier", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q32": { ans: "the tallest", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q33": { ans: "smaller", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q34": { ans: "the worst", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q35": { ans: "more interesting", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q36": { ans: "They didn't go to the party.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q37": { ans: "There are many people in the room.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q38": { ans: "I saw him yesterday.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q39": { ans: "She can drive a car.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_8_q40": { ans: "We agree with you.", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_8_q30": { ans: "most", pts: 1, topic: "Syntax & Error Correction" },
+      "en_8_q31": { ans: "easier", pts: 1, topic: "Syntax & Error Correction" },
+      "en_8_q32": { ans: "the tallest", pts: 1, topic: "Syntax & Error Correction" },
+      "en_8_q33": { ans: "smaller", pts: 1, topic: "Syntax & Error Correction" },
+      "en_8_q34": { ans: "the worst", pts: 1, topic: "Syntax & Error Correction" },
+      "en_8_q35": { ans: "more interesting", pts: 1, topic: "Syntax & Error Correction" },
+      "en_8_q36": { ans: "They didn't go to the party.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_8_q37": { ans: "There are many people in the room.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_8_q38": { ans: "I saw him yesterday.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_8_q39": { ans: "She can drive a car.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_8_q40": { ans: "We agree with you.", pts: 1, topic: "Syntax & Error Correction" },
     },
         "logic": {
       "logic_1": {
@@ -369,53 +319,53 @@ const ANSWER_KEYS = {
   "9": {
     "russian": {
 
-      "ru_5_new": { ans: JSON.stringify({"input1":"НН","input2":"Н"}), pts: 1, topic: "Орфография" },
-      "ru_7_new": { ans: JSON.stringify(["1", "4"]), pts: 1, topic: "Пунктуация" },
-      "ru_13_new": { ans: "Безличное предложение", pts: 1, topic: "Пунктуация" },
-      "ru_14_new": { ans: "2) Вторая часть указывает на причину того, о чём говорится в первой (можно вставить «потому что»).", pts: 1, topic: "Орфография" },
+      "ru_5_new": { ans: JSON.stringify({"input1":"НН","input2":"Н"}), pts: 1, topic: "Орфография: Корни и приставки" },
+      "ru_7_new": { ans: JSON.stringify(["1", "4"]), pts: 1, topic: "Синтаксис и Грамматика" },
+      "ru_13_new": { ans: "Безличное предложение", pts: 1, topic: "Пунктуация: Осложненное предложение" },
+      "ru_14_new": { ans: "2) Вторая часть указывает на причину того, о чём говорится в первой (можно вставить «потому что»).", pts: 1, topic: "Орфография: Корни и приставки" },
       "russian_1": {
         "ans": "быстро бежать",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Суффиксы и окончания"
         },
       "russian_2": {
         "ans": "вставная конструкция",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Корни и приставки"
         },
       "russian_3": {
         "ans": "иду по лесной тропинке.",
-        "pts": 1, topic: "Пунктуация"
+        "pts": 1, topic: "Орфография: Суффиксы и окончания"
         },
       "russian_4": {
         "ans": "три ученика",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: НЕ/НИ, слитное и раздельное"
         },
       "russian_5": {
         "ans": "неслыханная, решена",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Корни и приставки"
         },
       "russian_6": {
         "ans": "утомленные долгим путем туристы отдыхали.",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Синтаксис и Грамматика"
         },
       "russian_7": {
         "ans": "ветер, дующий с моря, принес прохладу.",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Синтаксис и Грамматика"
         },
       "russian_8": {
         "ans": "(не) закрыв дверь",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: НЕ/НИ, слитное и раздельное"
         },
       "russian_9": {
         "ans": "(не) навидевший",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Корни и приставки"
         },
       "russian_10": {
         "ans": "закончив работу я пошел гулять.",
-        "pts": 1, topic: "Пунктуация"
+        "pts": 1, topic: "Пунктуация: Осложненное предложение"
         },
       "russian_11": {
         "ans": "кажется дождь начинается.",
-        "pts": 1, topic: "Пунктуация"
+        "pts": 1, topic: "Пунктуация: Осложненное предложение"
         },
       "russian_12": {
         "ans": "составное глагольное.",
@@ -423,11 +373,11 @@ const ANSWER_KEYS = {
         },
       "russian_13": {
         "ans": "ссп, 1-я часть безличная, 2-я двусоставная.",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Корни и приставки"
         },
       "russian_14": {
         "ans": "двоеточие между частями бсп, запятая перед если не ставится из-за то",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Корни и приставки"
       }
       },
         "math": {
@@ -443,16 +393,16 @@ const ANSWER_KEYS = {
       "ma_10_9": { ans: "40/(x-10) - 40/x = 1/3", pts: 1, topic: "Алгебра: Уравнения и неравенства" },
     },
     "english": {
-      "en_9_q1": { ans: "had", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q2": { ans: "had been", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q3": { ans: "would call", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q4": { ans: "was built", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q5": { ans: "is going", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q6": { ans: "have lost", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_9_q1": { ans: "had", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_9_q2": { ans: "had been", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_9_q3": { ans: "would call", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_9_q4": { ans: "was built", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_9_q5": { ans: "is going", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_9_q6": { ans: "have lost", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
       "en_9_q7": { ans: "whose", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q8": { ans: "rains", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q9": { ans: "had / left", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q10": { ans: "had worked", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_9_q8": { ans: "rains", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_9_q9": { ans: "had / left", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_9_q10": { ans: "had worked", pts: 1, topic: "Grammar: Conditionals & Modals" },
       "en_9_q11": { ans: "to", pts: 1, topic: "Vocabulary & Prepositions" },
       "en_9_q12": { ans: "for", pts: 1, topic: "Vocabulary & Prepositions" },
       "en_9_q13": { ans: "on", pts: 1, topic: "Vocabulary & Prepositions" },
@@ -463,31 +413,31 @@ const ANSWER_KEYS = {
       "en_9_q18": { ans: "in", pts: 1, topic: "Vocabulary & Prepositions" },
       "en_9_q19": { ans: "in", pts: 1, topic: "Vocabulary & Prepositions" },
       "en_9_q20": { ans: "in", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q21": { ans: "have been waiting", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q22": { ans: "was working", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q23": { ans: "haven't finished", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q24": { ans: "would come", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q25": { ans: "were", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q26": { ans: "had already eaten", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q27": { ans: "was written", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q28": { ans: "has been trying", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q29": { ans: "was able to", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q30": { ans: "were playing", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q31": { ans: "mustn't", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q32": { ans: "might", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q33": { ans: "should", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q34": { ans: "could", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q35": { ans: "have to", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q36": { ans: "She doesn't enjoy watching TV in the evening.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q37": { ans: "I saw him yesterday at the cinema.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q38": { ans: "He was driving when the accident happened.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q39": { ans: "We didn't go to school yesterday.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q40": { ans: "They have known each other for years.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q41": { ans: "If I see her, I will tell her.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q42": { ans: "She suggested going out for dinner.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q43": { ans: "If I knew about the problem, I would help you.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q44": { ans: "He said that he was busy.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_9_q45": { ans: "I didn’t use to like coffee, but now I do.", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_9_q21": { ans: "have been waiting", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_9_q22": { ans: "was working", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_9_q23": { ans: "haven't finished", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_9_q24": { ans: "would come", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_9_q25": { ans: "were", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_9_q26": { ans: "had already eaten", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_9_q27": { ans: "was written", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_9_q28": { ans: "has been trying", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_9_q29": { ans: "was able to", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_9_q30": { ans: "were playing", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_9_q31": { ans: "mustn't", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_9_q32": { ans: "might", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_9_q33": { ans: "should", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_9_q34": { ans: "could", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_9_q35": { ans: "have to", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_9_q36": { ans: "She doesn't enjoy watching TV in the evening.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_9_q37": { ans: "I saw him yesterday at the cinema.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_9_q38": { ans: "He was driving when the accident happened.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_9_q39": { ans: "We didn't go to school yesterday.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_9_q40": { ans: "They have known each other for years.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_9_q41": { ans: "If I see her, I will tell her.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_9_q42": { ans: "She suggested going out for dinner.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_9_q43": { ans: "If I knew about the problem, I would help you.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_9_q44": { ans: "He said that he was busy.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_9_q45": { ans: "I didn’t use to like coffee, but now I do.", pts: 1, topic: "Syntax & Error Correction" },
     },
         "logic": {
       "logic_1": {
@@ -587,7 +537,7 @@ const ANSWER_KEYS = {
       "en_10_11_q14": { ans: "will be having", pts: 1, topic: "Future & Conditionals" },
       "en_10_11_q15": { ans: "boils", pts: 1, topic: "Future & Conditionals" },
       "en_10_11_q16": { ans: "is said", pts: 1, topic: "Syntax & Error Correction" },
-      "en_10_11_q17": { ans: "got", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q17": { ans: "got", pts: 1, topic: "Syntax & Error Correction" },
       "en_10_11_q18": { ans: "waking", pts: 1, topic: "Continuous Tenses" },
       "en_10_11_q19": { ans: "had known", pts: 1, topic: "Perfect Tenses" },
       "en_10_11_q20": { ans: "had worked", pts: 1, topic: "Perfect Tenses" },
@@ -605,12 +555,12 @@ const ANSWER_KEYS = {
       "en_10_11_q32": { ans: "She suggested taking a break.", pts: 1, topic: "Continuous Tenses" },
       "en_10_11_q33": { ans: "The project was completed by them.", pts: 1, topic: "Continuous Tenses" },
       "en_10_11_q34": { ans: "I look forward to hearing from you.", pts: 1, topic: "Continuous Tenses" },
-      "en_10_11_q35": { ans: "however", pts: 1, topic: "Linking Words" },
-      "en_10_11_q36": { ans: "despite", pts: 1, topic: "Linking Words" },
-      "en_10_11_q37": { ans: "nevertheless", pts: 1, topic: "Linking Words" },
-      "en_10_11_q38": { ans: "whereas", pts: 1, topic: "Linking Words" },
-      "en_10_11_q39": { ans: "while", pts: 1, topic: "Linking Words" },
-      "en_10_11_q40": { ans: "in spite of", pts: 1, topic: "Linking Words" },
+      "en_10_11_q35": { ans: "however", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q36": { ans: "despite", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q37": { ans: "nevertheless", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q38": { ans: "whereas", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q39": { ans: "while", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q40": { ans: "in spite of", pts: 1, topic: "Vocabulary & Prepositions" },
       "en_10_11_q41": { ans: "She has been looking for a job for six months.", pts: 1, topic: "Perfect Tenses" },
       "en_10_11_q42": { ans: "I remember to lock the door before leaving.", pts: 1, topic: "Continuous Tenses" },
       "en_10_11_q43": { ans: "I would rather stay at home than go out.", pts: 1, topic: "Future & Conditionals" },
@@ -622,43 +572,43 @@ const ANSWER_KEYS = {
     "russian": {
       "russian_1": {
         "ans": "заперла",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Суффиксы и окончания"
         },
       "russian_2": {
         "ans": "наличии",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Корни и приставки"
         },
       "russian_3": {
         "ans": "сложноподчиненное",
-        "pts": 1, topic: "Пунктуация"
+        "pts": 1, topic: "Орфография: Суффиксы и окончания"
         },
       "russian_4": {
         "ans": "выт..реть",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: НЕ/НИ, слитное и раздельное"
         },
       "russian_5": {
         "ans": "6",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Корни и приставки"
         },
       "russian_6": {
         "ans": "проста…вать",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Синтаксис и Грамматика"
         },
       "russian_7": {
         "ans": "(не) дерзал",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Синтаксис и Грамматика"
         },
       "russian_8": {
         "ans": "4",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: НЕ/НИ, слитное и раздельное"
         },
       "russian_9": {
         "ans": "2, 4",
-        "pts": 1, topic: "Орфография"
+        "pts": 1, topic: "Орфография: Корни и приставки"
         },
       "russian_10": {
         "ans": "3, 5",
-        "pts": 1, topic: "Пунктуация"
+        "pts": 1, topic: "Пунктуация: Осложненное предложение"
       }
       },
         "math": {
@@ -672,51 +622,51 @@ const ANSWER_KEYS = {
       "ma_8_11": { ans: "6", pts: 1, topic: "Функции и графики" },
     },
     "english": {
-      "en_10_11_q1": { ans: "had left", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q2": { ans: "had finished", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q3": { ans: "had been", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q1": { ans: "had left", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_10_11_q2": { ans: "had finished", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_10_11_q3": { ans: "had been", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
       "en_10_11_q4": { ans: "told", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q5": { ans: "told", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q6": { ans: "can’t", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q7": { ans: "better", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q8": { ans: "taking", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q9": { ans: "had", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q10": { ans: "was using", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q11": { ans: "worked", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q12": { ans: "has been", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q13": { ans: "will be lying", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q14": { ans: "will be having", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q15": { ans: "boils", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q16": { ans: "is said", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q17": { ans: "got", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q18": { ans: "waking", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q19": { ans: "had known", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q20": { ans: "had worked", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q21": { ans: "hadn’t said", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q22": { ans: "has been fixing", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q23": { ans: "will have built", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q24": { ans: "would finish", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q25": { ans: "were", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q26": { ans: "haven’t completed", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q27": { ans: "breaking", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q28": { ans: "had been waiting", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q29": { ans: "If I had known, I would have helped you.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q30": { ans: "He told me that he would come later.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q31": { ans: "I have already seen this film.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q32": { ans: "She suggested taking a break.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q33": { ans: "The project was completed by them.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q34": { ans: "I look forward to hearing from you.", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q5": { ans: "told", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_10_11_q6": { ans: "can’t", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_10_11_q7": { ans: "better", pts: 1, topic: "Syntax & Error Correction" },
+      "en_10_11_q8": { ans: "taking", pts: 1, topic: "Syntax & Error Correction" },
+      "en_10_11_q9": { ans: "had", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_10_11_q10": { ans: "was using", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_10_11_q11": { ans: "worked", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_10_11_q12": { ans: "has been", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_10_11_q13": { ans: "will be lying", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_10_11_q14": { ans: "will be having", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_10_11_q15": { ans: "boils", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_10_11_q16": { ans: "is said", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
+      "en_10_11_q17": { ans: "got", pts: 1, topic: "Syntax & Error Correction" },
+      "en_10_11_q18": { ans: "waking", pts: 1, topic: "Syntax & Error Correction" },
+      "en_10_11_q19": { ans: "had known", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_10_11_q20": { ans: "had worked", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_10_11_q21": { ans: "hadn’t said", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_10_11_q22": { ans: "has been fixing", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_10_11_q23": { ans: "will have built", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_10_11_q24": { ans: "would finish", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_10_11_q25": { ans: "were", pts: 1, topic: "Grammar: Conditionals & Modals" },
+      "en_10_11_q26": { ans: "haven’t completed", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_10_11_q27": { ans: "breaking", pts: 1, topic: "Syntax & Error Correction" },
+      "en_10_11_q28": { ans: "had been waiting", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
+      "en_10_11_q29": { ans: "If I had known, I would have helped you.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_10_11_q30": { ans: "He told me that he would come later.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_10_11_q31": { ans: "I have already seen this film.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_10_11_q32": { ans: "She suggested taking a break.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_10_11_q33": { ans: "The project was completed by them.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_10_11_q34": { ans: "I look forward to hearing from you.", pts: 1, topic: "Syntax & Error Correction" },
       "en_10_11_q35": { ans: "however", pts: 1, topic: "Vocabulary & Prepositions" },
       "en_10_11_q36": { ans: "despite", pts: 1, topic: "Vocabulary & Prepositions" },
       "en_10_11_q37": { ans: "nevertheless", pts: 1, topic: "Vocabulary & Prepositions" },
       "en_10_11_q38": { ans: "whereas", pts: 1, topic: "Vocabulary & Prepositions" },
       "en_10_11_q39": { ans: "while", pts: 1, topic: "Vocabulary & Prepositions" },
       "en_10_11_q40": { ans: "in spite of", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q41": { ans: "She has been looking for a job for six months.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q42": { ans: "I remember to lock the door before leaving.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q43": { ans: "I would rather stay at home than go out.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q44": { ans: "Despite the heavy rain, they went out.", pts: 1, topic: "Vocabulary & Prepositions" },
-      "en_10_11_q45": { ans: "Try pressing this button to see if it works.", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q41": { ans: "She has been looking for a job for six months.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_10_11_q42": { ans: "I remember to lock the door before leaving.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_10_11_q43": { ans: "I would rather stay at home than go out.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_10_11_q44": { ans: "Despite the heavy rain, they went out.", pts: 1, topic: "Syntax & Error Correction" },
+      "en_10_11_q45": { ans: "Try pressing this button to see if it works.", pts: 1, topic: "Syntax & Error Correction" },
     },
         "logic": {
       "logic_1": {
@@ -816,15 +766,6 @@ function getMacroCategory(topicText, subjectKey) {
   return getFallbackSubjectCategory(subjectKey);
 }
 
-function getFallbackSubjectCategory(subjectKey) {
-  switch (subjectKey) {
-    case "russian": return "Синтаксис и Грамматика";
-    case "math": return "Алгебра: Вычисления и преобразования";
-    case "logic": return "Логико-математические задачи";
-    case "english": return "Vocabulary & Prepositions";
-    default: return "Синтаксис и Грамматика";
-  }
-}
 
 function calculateScores(grade, answers) {
   const keys = ANSWER_KEYS[String(grade)];

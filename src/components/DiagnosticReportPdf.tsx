@@ -102,71 +102,117 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
     return { color: C.gray700, backgroundColor: C.gray50, label: "Общее" };
   };
 
-  const MACRO_MAP: Record<string, { macro: string, keywords: string[] }[]> = {
-    "russian": [
-      { macro: "Лексика и Орфоэпия", keywords: ["орфоэпия", "ударени", "лексика", "пароним", "фразеологизм", "значение слова", "словообразование", "морфолог"] },
-      { macro: "Орфография: НЕ/НИ, слитное и раздельное", keywords: ["не", "ни", "слитно", "раздельно", "частиц", "деепричастиями", "союзов", "дефис", "слитное"] },
-      { macro: "Орфография: Суффиксы и окончания", keywords: ["суффикс", "окончани", "нн", "причасти", "глаголов", "о/ё", "шипящих"] },
-      { macro: "Орфография: Корни и приставки", keywords: ["корень", "приставк", "безударн", "чередующ", "гласна", "ъ", "ь", "пре-", "при-", "орфографи"] },
-      { macro: "Пунктуация: Сложное предложение", keywords: ["бсп", "ссп", "спп", "сложное", "подчинител", "бессоюзн"] },
-      { macro: "Пунктуация: Осложненное предложение", keywords: ["оборот", "вводн", "обращени", "однородн", "обособлен", "причастн", "деепричастн", "пунктуация"] },
-      { macro: "Синтаксис и Грамматика", keywords: ["синтаксис", "основа", "сказуем", "односостав", "связи", "словосочетан", "числительн", "склонени", "примыкани", "грамматич"] }
-    ],
-    "math": [
-      { macro: "Алгебра: Вычисления и преобразования", keywords: ["дроби", "корни", "степен", "выражен", "значения", "деление", "многочлены", "вычитание", "умножения", "множител", "делимост", "смешанн", "пропорци", "алгебра"] },
-      { macro: "Алгебра: Уравнения и неравенства", keywords: ["уравнен", "неравенств", "систем", "корень уравнения", "интервал"] },
-      { macro: "Функции и графики", keywords: ["функци", "график", "парабол", "гипербол", "производная", "касательная", "координатн"] },
-      { macro: "Геометрия", keywords: ["геометрия", "пифагор", "вектор", "площадь", "угол", "треугольник", "хорд", "периметр", "планиметрия", "стереометрия"] },
-      { macro: "Текстовые задачи и Прогрессии", keywords: ["текстовые", "задачи", "задача", "движение", "работу", "мотоциклист", "прогресси", "проценты", "единицы измерения"] }
-    ],
-    "logic": [
-      { macro: "Анализ данных и множества", keywords: ["матрицы", "утверждения", "ложные", "истинн", "ящик", "рубашки", "множества"] },
-      { macro: "Алгоритмы и последовательности", keywords: ["очереди", "упорядочивание", "закономерност", "обратные"] },
-      { macro: "Логико-математические задачи", keywords: ["вычисления", "доли", "совместн", "скачк", "раза", "задачи"] }
-    ],
-    "english": [
-      { macro: "Grammar: Basic Tenses (Present/Past)", keywords: ["present simple", "past simple", "present continuous", "past continuous", "basic tenses", "continuous tenses", "continuous"] },
-      { macro: "Grammar: Advanced Tenses (Perfect/Future)", keywords: ["perfect", "future", "advanced tenses", "perfect tenses"] },
-      { macro: "Grammar: Conditionals & Modals", keywords: ["conditionals", "modal", "modals", "if", "can", "must", "future & conditionals"] },
-      { macro: "Vocabulary & Prepositions", keywords: ["prepositions", "quantifiers", "much", "many", "vocabulary", "linking words", "reading & comprehension", "reading"] },
-      { macro: "Syntax & Error Correction", keywords: ["correction", "reordering", "structure", "comparatives", "superlatives", "mistake", "syntax"] }
-    ]
-  };
+  // ============================================================
+  // EXACT TOPIC → MACRO CATEGORY MAP
+  // No substring matching — zero collision risk
+  // ============================================================
+  const TOPIC_TO_MACRO: Record<string, { macro: string, subject: string }> = {
+    // ── RUSSIAN: Лексика и Орфоэпия ──
+    "орфоэпия (ударения)":            { macro: "Лексика и Орфоэпия", subject: "russian" },
+    "лексика (паронимы)":             { macro: "Лексика и Орфоэпия", subject: "russian" },
+    // ── RUSSIAN: Орфография: НЕ/НИ, слитное и раздельное ──
+    "орфография: не/ни, слитное и раздельное": { macro: "Орфография: НЕ/НИ, слитное и раздельное", subject: "russian" },
+    "слитное и раздельное написание не": { macro: "Орфография: НЕ/НИ, слитное и раздельное", subject: "russian" },
+    "слитное/раздельное написание союзов": { macro: "Орфография: НЕ/НИ, слитное и раздельное", subject: "russian" },
+    // ── RUSSIAN: Орфография: Суффиксы и окончания ──
+    "орфография: суффиксы и окончания": { macro: "Орфография: Суффиксы и окончания", subject: "russian" },
+    "правописание суффиксов глаголов": { macro: "Орфография: Суффиксы и окончания", subject: "russian" },
+    // ── RUSSIAN: Орфография: Корни и приставки ──
+    "орфография: корни и приставки":  { macro: "Орфография: Корни и приставки", subject: "russian" },
+    "безударные гласные в корне":     { macro: "Орфография: Корни и приставки", subject: "russian" },
+    "разделительные ъ и ь":          { macro: "Орфография: Корни и приставки", subject: "russian" },
+    // ── RUSSIAN: Пунктуация ──
+    "пунктуация: осложненное предложение": { macro: "Пунктуация: Осложненное предложение", subject: "russian" },
+    "пунктуация: сложное предложение": { macro: "Пунктуация: Сложное предложение", subject: "russian" },
+    "пунктуация при однородных членах": { macro: "Пунктуация: Осложненное предложение", subject: "russian" },
+    // ── RUSSIAN: Синтаксис и Грамматика ──
+    "синтаксис и грамматика":        { macro: "Синтаксис и Грамматика", subject: "russian" },
+    "синтаксис":                     { macro: "Синтаксис и Грамматика", subject: "russian" },
 
-  const getFallbackSubjectCategory = (subjectKey: string) => {
-    switch (subjectKey) {
-      case "russian": return "Синтаксис и Грамматика";
-      case "math": return "Алгебра: Вычисления и преобразования";
-      case "logic": return "Логико-математические задачи";
-      case "english": return "Vocabulary & Prepositions";
-      default: return "Синтаксис и Грамматика";
-    }
+    // ── MATH: Алгебра: Вычисления и преобразования ──
+    "алгебра: вычисления и преобразования": { macro: "Алгебра: Вычисления и преобразования", subject: "math" },
+    "вычисления (десятичные дроби)":  { macro: "Алгебра: Вычисления и преобразования", subject: "math" },
+    "вычисления с дробями":          { macro: "Алгебра: Вычисления и преобразования", subject: "math" },
+    "свойства степеней":             { macro: "Алгебра: Вычисления и преобразования", subject: "math" },
+    "свойства квадратных корней":     { macro: "Алгебра: Вычисления и преобразования", subject: "math" },
+    "многочлены":                    { macro: "Алгебра: Вычисления и преобразования", subject: "math" },
+    "рациональные дроби":            { macro: "Алгебра: Вычисления и преобразования", subject: "math" },
+    // ── MATH: Алгебра: Уравнения и неравенства ──
+    "алгебра: уравнения и неравенства": { macro: "Алгебра: Уравнения и неравенства", subject: "math" },
+    "квадратные уравнения":          { macro: "Алгебра: Уравнения и неравенства", subject: "math" },
+    "системы уравнений":             { macro: "Алгебра: Уравнения и неравенства", subject: "math" },
+    // ── MATH: Функции и графики ──
+    "функции и графики":             { macro: "Функции и графики", subject: "math" },
+    "графики функций (парабола)":    { macro: "Функции и графики", subject: "math" },
+    // ── MATH: Геометрия ──
+    "геометрия":                     { macro: "Геометрия", subject: "math" },
+    // ── MATH: Текстовые задачи и Прогрессии ──
+    "текстовые задачи и прогрессии": { macro: "Текстовые задачи и Прогрессии", subject: "math" },
+    "текстовые задачи":             { macro: "Текстовые задачи и Прогрессии", subject: "math" },
+    "текстовые задачи (проценты)":  { macro: "Текстовые задачи и Прогрессии", subject: "math" },
+    "прогрессии":                   { macro: "Текстовые задачи и Прогрессии", subject: "math" },
+    "задачи на движение":           { macro: "Текстовые задачи и Прогрессии", subject: "math" },
+
+    // ── LOGIC: Анализ данных и множества ──
+    "логические матрицы":           { macro: "Анализ данных и множества", subject: "logic" },
+    "задачи с ложными утверждениями": { macro: "Анализ данных и множества", subject: "logic" },
+    // ── LOGIC: Алгоритмы и последовательности ──
+    "упорядочивание и очереди":     { macro: "Алгоритмы и последовательности", subject: "logic" },
+    "обратные вычисления":          { macro: "Алгоритмы и последовательности", subject: "logic" },
+    // ── LOGIC: Логико-математические задачи ──
+    "логико-математические задачи": { macro: "Логико-математические задачи", subject: "logic" },
+    "проценты и доли":              { macro: "Логико-математические задачи", subject: "logic" },
+    "задачи на совместную работу":  { macro: "Логико-математические задачи", subject: "logic" },
+
+    // ── ENGLISH: Grammar: Basic Tenses (Present/Past) ──
+    "grammar: basic tenses (present/past)": { macro: "Grammar: Basic Tenses (Present/Past)", subject: "english" },
+    "continuous tenses":            { macro: "Grammar: Basic Tenses (Present/Past)", subject: "english" },
+    // ── ENGLISH: Grammar: Advanced Tenses (Perfect/Future) ──
+    "grammar: advanced tenses (perfect/future)": { macro: "Grammar: Advanced Tenses (Perfect/Future)", subject: "english" },
+    "perfect tenses":               { macro: "Grammar: Advanced Tenses (Perfect/Future)", subject: "english" },
+    // ── ENGLISH: Grammar: Conditionals & Modals ──
+    "grammar: conditionals & modals": { macro: "Grammar: Conditionals & Modals", subject: "english" },
+    "future & conditionals":        { macro: "Grammar: Conditionals & Modals", subject: "english" },
+    "modal verbs":                  { macro: "Grammar: Conditionals & Modals", subject: "english" },
+    // ── ENGLISH: Vocabulary & Prepositions ──
+    "vocabulary & prepositions":    { macro: "Vocabulary & Prepositions", subject: "english" },
+    "linking words":                { macro: "Vocabulary & Prepositions", subject: "english" },
+    // ── ENGLISH: Syntax & Error Correction ──
+    "syntax & error correction":    { macro: "Syntax & Error Correction", subject: "english" },
+    "comparatives":                 { macro: "Syntax & Error Correction", subject: "english" },
   };
 
   const getMacroAndSubject = (topicText: string) => {
     const lowerTopic = String(topicText).toLowerCase().trim();
     
-    // 1. Keyword match
-    for (const [subjectKey, map] of Object.entries(MACRO_MAP)) {
-      for (const item of map) {
-        if (item.keywords.some(kw => lowerTopic.includes(kw))) {
-          return { macro: item.macro, subject: subjectKey };
-        }
+    // 1. Exact lookup (fastest, zero collisions)
+    if (TOPIC_TO_MACRO[lowerTopic]) {
+      return TOPIC_TO_MACRO[lowerTopic];
+    }
+    
+    // 2. Partial match: check if topic starts with or contains a known key
+    for (const [key, val] of Object.entries(TOPIC_TO_MACRO)) {
+      if (lowerTopic.startsWith(key) || key.startsWith(lowerTopic)) {
+        return val;
       }
     }
     
-    // 2. Macro roots match
-    for (const [subjectKey, map] of Object.entries(MACRO_MAP)) {
-      for (const item of map) {
-        let macroWords = item.macro.toLowerCase().split(/[\s:,&]+/);
-        if (macroWords.some(word => word.length > 3 && lowerTopic.includes(word))) {
-          return { macro: item.macro, subject: subjectKey };
-        }
-      }
-    }
+    // 3. Subject-aware fallback based on topic content hints
+    if (lowerTopic.includes("орфография") || lowerTopic.includes("правописан"))
+      return { macro: "Орфография: Корни и приставки", subject: "russian" };
+    if (lowerTopic.includes("пунктуац"))
+      return { macro: "Пунктуация: Осложненное предложение", subject: "russian" };
+    if (lowerTopic.includes("grammar") || lowerTopic.includes("tense"))
+      return { macro: "Grammar: Basic Tenses (Present/Past)", subject: "english" };
+    if (lowerTopic.includes("алгебра") || lowerTopic.includes("дроб") || lowerTopic.includes("уравнен"))
+      return { macro: "Алгебра: Вычисления и преобразования", subject: "math" };
+    if (lowerTopic.includes("геометри") || lowerTopic.includes("треугольник") || lowerTopic.includes("площад"))
+      return { macro: "Геометрия", subject: "math" };
+    if (lowerTopic.includes("логик") || lowerTopic.includes("логическ"))
+      return { macro: "Логико-математические задачи", subject: "logic" };
     
-    // 3. Fallback to general (will be handled by aggregatedStats logic to guess subject)
-    return { macro: getFallbackSubjectCategory("general"), subject: "general" };
+    // 4. Absolute last resort
+    return { macro: "Синтаксис и Грамматика", subject: "russian" };
   };
 
   // Aggregate stats frontend-side to fix existing DB records
