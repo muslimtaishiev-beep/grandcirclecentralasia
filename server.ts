@@ -293,51 +293,61 @@ app.post("/api/gas", async (req, res) => {
 
     let rawText = "";
     let data;
-    let retries = 3;
-    let delay = 1000;
     
-    while (retries > 0) {
-      try {
-        const fetchRes = await fetch(gasUrl, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify(payload),
-          // Set a timeout signal so we don't wait 5 minutes if GAS hangs
-          signal: AbortSignal.timeout(30000) // 30 seconds timeout (GAS can be slow with LockService)
-        });
-        
-        rawText = await fetchRes.text();
-        data = JSON.parse(rawText);
-        break; // Success, exit loop
-      } catch (e: any) {
-        retries--;
-        console.warn(`GAS request failed/timeout. Retries left: ${retries}. Error/Text:`, e.name === 'AbortError' ? 'Timeout' : rawText.substring(0, 200));
-        
-        if (retries === 0) {
-          return res.status(500).json({ 
-            error: "Серверы Google временно недоступны или перегружены. Пожалуйста, попробуйте отправить еще раз через несколько секунд.",
-            details: e.message 
+    try {
+      const fetchRes = await fetch(gasUrl, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(14000) // 14 seconds timeout to stay within Vercel's serverless limit
+      });
+      
+      rawText = await fetchRes.text();
+      data = JSON.parse(rawText);
+    } catch (e: any) {
+      console.warn(`GAS Proxy fetch error for action [${payload.action}]:`, e.name === 'AbortError' ? 'Timeout' : e.message);
+      
+      // If payload action was submitTest or submitEnglishTest, attempt quick recovery
+      if (payload.action === 'submitTest' || payload.action === 'submitEnglishTest') {
+        try {
+          const shortId = payload.shortId;
+          const recoverRes = await fetch(gasUrl, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({ action: "getStudentByShortId", shortId, apiKey: gasApiKey }),
+            signal: AbortSignal.timeout(5000)
           });
-        }
-        // Wait before retrying
-        await new Promise(resolve => setTimeout(resolve, delay));
-        delay *= 2; // Exponential backoff
+          const recoverData = JSON.parse(await recoverRes.text());
+          if (recoverData.success && recoverData.student && (recoverData.student.totalScore > 0 || recoverData.student.english > 0)) {
+            return res.json({
+              success: true,
+              totalScore: recoverData.student.totalScore,
+              scores: { russian: recoverData.student.russian, math: recoverData.student.math, logic: recoverData.student.logic, english: recoverData.student.english },
+              cheated: recoverData.student.cheated,
+              diagnosticsReport: recoverData.student.diagnosticsReport
+            });
+          }
+        } catch (recoverErr) {}
       }
+
+      return res.status(503).json({ 
+        success: false, 
+        error: "Google Apps Script временно не ответил. Попробуйте еще раз через несколько секунд.",
+        details: e.message 
+      });
     }
 
-    // Handle edge case: if this was a retry and GAS says "already submitted",
-    // it means a previous timed-out request actually succeeded. Treat as success.
+    // Handle edge case: if GAS says "already submitted", recover student data and return success
     if (data && !data.success && data.error && 
         (payload.action === 'submitTest' || payload.action === 'submitEnglishTest') &&
-        (data.error.includes('already') || data.error.includes('уже сдавали'))) {
-      // Recover the student data and return success
+        data.error.includes('already')) {
       try {
         const shortId = payload.shortId;
         const recoverRes = await fetch(gasUrl, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({ action: "getStudentByShortId", shortId }),
-          signal: AbortSignal.timeout(15000)
+          body: JSON.stringify({ action: "getStudentByShortId", shortId, apiKey: gasApiKey }),
+          signal: AbortSignal.timeout(5000)
         });
         const recoverData = JSON.parse(await recoverRes.text());
         if (recoverData.success && recoverData.student) {
