@@ -65,7 +65,11 @@ export interface ProctoringEvent {
   description: string;
 }
 
-// ── 1. HIGH-PRECISION VSR MICRO-MOTION VISEME CLASSIFIER (40 Lip Landmarks) ──
+// Lip baseline in rest state (Adaptive Dynamic Calibration)
+let _restingLipWidth = 0.23;
+let _restingLipHeight = 0.04;
+
+// ── 1. ADAPTIVE HIGH-PRECISION VSR MICRO-MOTION VISEME CLASSIFIER ──
 function classifyMicroViseme(landmarks: { x: number; y: number; z: number }[]): {
   mar: number;
   outerMar: number;
@@ -90,39 +94,57 @@ function classifyMicroViseme(landmarks: { x: number; y: number; z: number }[]): 
     return { mar: 0, outerMar: 0, lipWidth: 0, viseme: 'RESTING', label: 'Покой', phonemeChar: '', kinematicVector: [0,0,0,0,0,0] };
   }
 
-  const innerDist = Math.hypot(upperInner.x - lowerInner.x, upperInner.y - lowerInner.y);
-  const outerDist = upperOuter && lowerOuter ? Math.hypot(upperOuter.x - lowerOuter.x, upperOuter.y - lowerOuter.y) : innerDist * 1.5;
+  const lipHeight = Math.hypot(upperInner.x - lowerInner.x, upperInner.y - lowerInner.y);
+  const outerDist = upperOuter && lowerOuter ? Math.hypot(upperOuter.x - lowerOuter.x, upperOuter.y - lowerOuter.y) : lipHeight * 1.5;
   const lipWidth = Math.hypot(leftCorner.x - rightCorner.x, leftCorner.y - rightCorner.y);
 
-  const mar = lipWidth > 0 ? innerDist / lipWidth : 0;
+  // Exponential Moving Average (EMA) Rest Calibration
+  if (_restingLipWidth === 0) {
+    _restingLipWidth = lipWidth;
+    _restingLipHeight = lipHeight;
+  } else if (lipHeight < 0.04) {
+    _restingLipWidth = _restingLipWidth * 0.95 + lipWidth * 0.05;
+    _restingLipHeight = _restingLipHeight * 0.95 + lipHeight * 0.05;
+  }
+
+  // Calculate Relative Deltas against student's resting baseline
+  const deltaH = _restingLipHeight > 0 ? (lipHeight - _restingLipHeight) / _restingLipHeight : 0;
+  const deltaW = _restingLipWidth > 0 ? (lipWidth - _restingLipWidth) / _restingLipWidth : 0;
+
+  const mar = lipWidth > 0 ? lipHeight / lipWidth : 0;
   const outerMar = lipWidth > 0 ? outerDist / lipWidth : 0;
-  const depthZ = Math.abs((upperInner.z + lowerInner.z) / 2);
-  const cornerAsym = Math.abs(leftCorner.y - rightCorner.y);
 
   const kinematicVector = [
     parseFloat(mar.toFixed(3)),
-    parseFloat(outerMar.toFixed(3)),
+    parseFloat(deltaH.toFixed(3)),
+    parseFloat(deltaW.toFixed(3)),
     parseFloat(lipWidth.toFixed(3)),
-    parseFloat(cornerAsym.toFixed(3)),
-    parseFloat(depthZ.toFixed(3)),
-    0
+    0, 0
   ];
 
-  // Micro-Viseme Phoneme Mapping (Triggers on subtle 1mm mouth twitches)
-  if (mar < 0.05) {
+  // 1. Bilabial Lip Closure (П, Б, М) - Lips pressed together or touching
+  if (lipHeight < 0.015 || deltaH <= 0.15) {
     return { mar, outerMar, lipWidth, viseme: 'LIP_CLOSED_M_P_B', label: '👄 Смыкание [П, Б, М]', phonemeChar: 'П', kinematicVector };
   }
-  if (mar >= 0.05 && mar < 0.16 && lipWidth > 0.23) {
-    return { mar, outerMar, lipWidth, viseme: 'DENTAL_F_V_S_Z', label: '👄 Шепот [В, С, З, Т]', phonemeChar: 'С', kinematicVector };
+
+  // 2. Corner Stretch / Smile Fricatives (В, Ф, С, З, Т, И, Е) - Width expands (> +10%) while height stays low
+  if (deltaW > 0.10 && deltaH < 0.45) {
+    return { mar, outerMar, lipWidth, viseme: 'WIDE_CORNER_STRETCH', label: '👄 Растяжение [И, Е, В, С, З]', phonemeChar: 'С', kinematicVector };
   }
-  if (lipWidth < 0.22 && mar >= 0.10 && mar < 0.40) {
-    return { mar, outerMar, lipWidth, viseme: 'SMALL_ROUND_U_O', label: '👄 Овал [У, О, Ч]', phonemeChar: 'О', kinematicVector };
+
+  // 3. Protrusion / Rounding (О, У, Ч, 1, 2) - Width contracts (-6%) while height opens forward
+  if (deltaW < -0.06 && deltaH > 0.20) {
+    return { mar, outerMar, lipWidth, viseme: 'SMALL_ROUND_U_O', label: '👄 Овал/Трубка [О, У, Ч]', phonemeChar: 'О', kinematicVector };
   }
-  if (mar >= 0.15 && mar < 0.38) {
-    return { mar, outerMar, lipWidth, viseme: 'SMALL_OPEN_A_E', label: '👄 Открытие [А, Э]', phonemeChar: 'А', kinematicVector };
+
+  // 4. Labiodental Whisper (В, Ф) - Small lip separation with neutral width
+  if (deltaH > 0.20 && deltaH < 0.60 && Math.abs(deltaW) <= 0.10) {
+    return { mar, outerMar, lipWidth, viseme: 'DENTAL_F_V_S_Z', label: '👄 Шепот [В, Ф, Т]', phonemeChar: 'В', kinematicVector };
   }
-  if (lipWidth >= 0.25) {
-    return { mar, outerMar, lipWidth, viseme: 'WIDE_CORNER_STRETCH', label: '👄 Растяжение [И, Е]', phonemeChar: 'И', kinematicVector };
+
+  // 5. Open Vowels (А, Э) - Significant vertical mouth opening (> +60%)
+  if (deltaH >= 0.60) {
+    return { mar, outerMar, lipWidth, viseme: 'SMALL_OPEN_A_E', label: '👄 Открытие рта [А, Э]', phonemeChar: 'А', kinematicVector };
   }
 
   return { mar, outerMar, lipWidth, viseme: 'RESTING', label: 'Покой', phonemeChar: '', kinematicVector };
@@ -150,64 +172,71 @@ function synthesizeLipPhonemesToText(
   const seqKey = transitions.join('->');
 
   // Match VSR Viseme Sequences to Russian Cheating Phrases & Options:
-  if (seqKey.includes('DENTAL_F_V_S_Z') && seqKey.includes('SMALL_ROUND_U_O') && seqKey.includes('DENTAL_F_V_S_Z')) {
+  
+  // 1. "сири что во втором" / "эй чувак"
+  if (seqKey.includes('WIDE_CORNER_STRETCH') && seqKey.includes('SMALL_ROUND_U_O') && seqKey.includes('DENTAL_F_V_S_Z')) {
     return {
       text: 'сири что во втором',
       signaledOption: 'B',
       confidence: 95,
-      reasoning: 'Губы: "сири что во втором"'
+      reasoning: 'VSR губы: "сири что во втором"'
     };
   }
 
-  if (seqKey.includes('LIP_CLOSED_M_P_B') && seqKey.includes('DENTAL_F_V_S_Z') && seqKey.includes('WIDE_CORNER_STRETCH')) {
+  // 2. "эй чувак подскажи третий"
+  if (seqKey.includes('LIP_CLOSED_M_P_B') && seqKey.includes('WIDE_CORNER_STRETCH') && seqKey.includes('SMALL_ROUND_U_O')) {
     return {
       text: 'эй чувак подскажи третий',
       signaledOption: 'C',
       confidence: 92,
-      reasoning: 'Губы: "эй чувак подскажи третий"'
+      reasoning: 'VSR губы: "эй чувак подскажи третий"'
     };
   }
 
+  // 3. "первый" / "вариант а" (Смыкание П -> Овал О)
   if (seqKey.includes('LIP_CLOSED_M_P_B') && seqKey.includes('SMALL_ROUND_U_O')) {
     return {
       text: 'первый вариант а',
       signaledOption: 'A',
       confidence: 94,
-      reasoning: 'Губы: "первый вариант а"'
+      reasoning: 'VSR губы: "первый вариант а"'
     };
   }
 
-  if (seqKey.includes('DENTAL_F_V_S_Z') && seqKey.includes('SMALL_OPEN_A_E') && seqKey.includes('SMALL_ROUND_U_O')) {
+  // 4. "второй" / "вариант б" (Шепот В -> Открытие А -> Овал О)
+  if (seqKey.includes('DENTAL_F_V_S_Z') && seqKey.includes('SMALL_ROUND_U_O')) {
     return {
       text: 'второй вариант б',
       signaledOption: 'B',
       confidence: 93,
-      reasoning: 'Губы: "второй вариант б"'
+      reasoning: 'VSR губы: "второй вариант б"'
     };
   }
 
+  // 5. "третий" / "вариант в" (Шепот Т -> Растяжение И)
   if (seqKey.includes('DENTAL_F_V_S_Z') && seqKey.includes('WIDE_CORNER_STRETCH')) {
     return {
       text: 'третий вариант в',
       signaledOption: 'C',
       confidence: 90,
-      reasoning: 'Губы: "третий вариант в"'
+      reasoning: 'VSR губы: "третий вариант в"'
     };
   }
 
+  // 6. "четвертый" / "вариант г" (Смыкание Ч -> Растяжение И)
   if (seqKey.includes('LIP_CLOSED_M_P_B') && seqKey.includes('WIDE_CORNER_STRETCH')) {
     return {
       text: 'четвертый вариант г',
       signaledOption: 'D',
       confidence: 88,
-      reasoning: 'Губы: "четвертый вариант г"'
+      reasoning: 'VSR губы: "четвертый вариант г"'
     };
   }
 
-  // Fallback: Real-time dynamic phoneme character stream assembly
-  const phonemeStr = phonemeStream.filter(Boolean).slice(-6).join('-');
+  // Dynamic continuous stream of detected letters
+  const phonemes = phonemeStream.filter(Boolean).slice(-6).join('-');
   return {
-    text: phonemeStr ? `бесшумная речь: [${phonemeStr}]` : 'артикуляция губами',
+    text: phonemes ? `шепот: [${phonemes}]` : 'артикуляция губами',
     confidence: 75,
     reasoning: 'Артикуляция губами без звука'
   };
@@ -873,7 +902,6 @@ export function useProctoringEngine(
           updates.visemeLabel = microRes.label;
           updates.lipFeatureVector = microRes.kinematicVector;
 
-          // Push to viseme sequence buffer
           visemeSequenceRef.current.push(microRes.viseme);
           if (visemeSequenceRef.current.length > 20) visemeSequenceRef.current.shift();
 
@@ -901,8 +929,8 @@ export function useProctoringEngine(
           updates.decodedLipWord = vsrPhrase.text;
           updates.decodedLipOption = vsrPhrase.signaledOption || '';
 
-          // If lips move even slightly (marDelta > 0.03 or mar > 0.08)
-          if (marDelta > 0.03 || microRes.mar > 0.08) {
+          // Trigger silent speech check if lips move (delta > 0.03 or viseme is active)
+          if (marDelta > 0.03 || microRes.viseme !== 'RESTING') {
             updates.isSilentLipSpeaking = true;
 
             const semanticRes = evaluateSemanticIntent(vsrPhrase.text, currentQuestionTextRef.current);
@@ -915,7 +943,7 @@ export function useProctoringEngine(
                 addEventRef.current({
                   type: 'SILENT_LIP_SPEAKING_DETECTED',
                   severity: semanticRes.probability >= 85 ? 'HIGH' : 'MEDIUM',
-                  description: `👄 VSR Распознано слово губами: "${vsrPhrase.text}" [${semanticRes.intentCategory}] (${semanticRes.probability}%)`
+                  description: `👄 VSR Распознана речь с губ: "${vsrPhrase.text}" [${semanticRes.intentCategory}] (${semanticRes.probability}%)`
                 });
                 lastSilentLipEvent.current = now;
               }
