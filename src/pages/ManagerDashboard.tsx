@@ -76,7 +76,7 @@ export default function ManagerDashboard() {
               shortId: student.shortId,
               childName: displayName,
               base64Data: base64
-            }, token);
+            }, "");
             
             if (res.success) {
               alert("PDF успешно сохранен на Google Диск!");
@@ -159,7 +159,7 @@ export default function ManagerDashboard() {
   const allowRetake = async (shortId: string) => {
     if (!confirm(`Разрешить ученику ${shortId} продолжить прерванный тест?`)) return;
     try {
-      // 1. Try Firebase unblock
+      // 1. Try server retake authorization
       fetch("/api/manager/allow-retake", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -167,7 +167,7 @@ export default function ManagerDashboard() {
       }).catch(() => {});
 
       // 2. GAS unblock
-      const data = await fetchGasAPI({ action: "unblockStudent", shortId });
+      const data = await fetchGasAPI("/api/gas", { action: "unblockStudent", shortId }, "");
       if (data && data.success) {
         alert("Разрешение успешно выдано! Ученик может зайти и нажать 'Продолжить прерванный тест'.");
       } else {
@@ -233,7 +233,7 @@ export default function ManagerDashboard() {
           firstMonthPayment,
           rejectReason: finalRejectReason,
           feedback
-      }, token);
+      }, "");
       if (data.success) {
         setStudents(prev => (prev || []).map(s => s.shortId === selectedStudent ? { ...s, finalDecision: decision } : s));
         closeModals();
