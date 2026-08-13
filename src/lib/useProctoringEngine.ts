@@ -18,7 +18,7 @@ export interface HandGestureResult {
   gesture: HandGestureType;
   label: string;
   extendedFingers: number;
-  signaledOption?: string; // 'A', 'B', 'C', 'D'
+  signaledOption?: string;
 }
 
 export interface ProctoringTelemetry {
@@ -37,6 +37,12 @@ export interface ProctoringTelemetry {
   isDraftWork: boolean;
   fps: number;
 
+  // Lip Reading Telemetry
+  mouthAspectRatio: number;     // MAR (0.0 - 1.0)
+  isSilentLipSpeaking: boolean;
+  currentViseme: 'RESTING' | 'OPEN_A' | 'ROUND_O_U' | 'WIDE_I' | 'SPEAKING_CADENCE';
+  visemeLabel: string;
+
   // Audio Telemetry
   audioLevel: number;           // 0 - 100 RMS volume
   audioStatus: 'SILENT' | 'NORMAL' | 'WHISPER' | 'TALKING';
@@ -49,12 +55,53 @@ export interface ProctoringTelemetry {
 export interface ProctoringEvent {
   id: string;
   timestamp: number;
-  type: 'GAZE_LEFT' | 'GAZE_RIGHT' | 'EXTRA_FACE' | 'HAND_BELOW' | 'SWIPE' | 'LIGHT_ANOMALY' | 'FAST_ANSWER' | 'PASTE_DETECTED' | 'TAB_SWITCH' | 'FACE_LOST' | 'PHONE_DETECTED' | 'BOOK_DETECTED' | 'SPEECH_CHEAT_DETECTED' | 'GESTURE_SIGNAL_DETECTED';
+  type: 'GAZE_LEFT' | 'GAZE_RIGHT' | 'EXTRA_FACE' | 'HAND_BELOW' | 'SWIPE' | 'LIGHT_ANOMALY' | 'FAST_ANSWER' | 'PASTE_DETECTED' | 'TAB_SWITCH' | 'FACE_LOST' | 'PHONE_DETECTED' | 'BOOK_DETECTED' | 'SPEECH_CHEAT_DETECTED' | 'GESTURE_SIGNAL_DETECTED' | 'SILENT_LIP_SPEAKING_DETECTED';
   severity: 'LOW' | 'MEDIUM' | 'HIGH';
   description: string;
 }
 
-// ── 1. FINGER GESTURE CLASSIFIER (MediaPipe 3D Hand Landmarks) ──
+// ── 1. LIP READING & VISEME ANALYZER (MediaPipe 478 Face Mesh) ──
+function classifyVisemeAndLipMotion(landmarks: { x: number; y: number; z: number }[]): {
+  mar: number;
+  viseme: ProctoringTelemetry['currentViseme'];
+  label: string;
+} {
+  if (!landmarks || landmarks.length < 468) {
+    return { mar: 0, viseme: 'RESTING', label: 'Покой' };
+  }
+
+  // Landmark 13: Upper inner lip, 14: Lower inner lip
+  // Landmark 61: Left mouth corner, 291: Right mouth corner
+  const upperLip = landmarks[13];
+  const lowerLip = landmarks[14];
+  const leftCorner = landmarks[61];
+  const rightCorner = landmarks[291];
+
+  if (!upperLip || !lowerLip || !leftCorner || !rightCorner) {
+    return { mar: 0, viseme: 'RESTING', label: 'Покой' };
+  }
+
+  const lipDistance = Math.hypot(upperLip.x - lowerLip.x, upperLip.y - lowerLip.y);
+  const lipWidth = Math.hypot(leftCorner.x - rightCorner.x, leftCorner.y - rightCorner.y);
+  const mar = lipWidth > 0 ? lipDistance / lipWidth : 0;
+
+  if (mar > 0.50 && lipWidth < 0.22) {
+    return { mar, viseme: 'ROUND_O_U', label: '😮 Губы: О / У (Вариант 1)' };
+  }
+  if (mar > 0.42) {
+    return { mar, viseme: 'OPEN_A', label: '😃 Губы: А / Э' };
+  }
+  if (mar < 0.20 && lipWidth > 0.26) {
+    return { mar, viseme: 'WIDE_I', label: '😬 Губы: И / Е (Вариант 2)' };
+  }
+  if (mar > 0.16) {
+    return { mar, viseme: 'SPEAKING_CADENCE', label: '👄 Губы: Артикуляция' };
+  }
+
+  return { mar, viseme: 'RESTING', label: 'Покой' };
+}
+
+// ── 2. FINGER GESTURE CLASSIFIER (MediaPipe 3D Hand Landmarks) ──
 function classifyHandGesture(landmarks: { x: number; y: number; z: number }[]): HandGestureResult {
   if (!landmarks || landmarks.length < 21) {
     return { gesture: 'NONE', label: 'Нет жеста', extendedFingers: 0 };
@@ -117,7 +164,7 @@ function classifyHandGesture(landmarks: { x: number; y: number; z: number }[]): 
   return { gesture: 'NONE', label: 'Ладонь', extendedFingers: count + (isThumbOut ? 1 : 0) };
 }
 
-// ── 2. DYNAMIC SEMANTIC INTENT CLASSIFIER (With Question Text Overlap Verification) ──
+// ── 3. DYNAMIC SEMANTIC INTENT CLASSIFIER (With Question Text Overlap Verification) ──
 function evaluateSemanticIntent(text: string, currentQuestionText?: string): {
   probability: number;
   intentCategory: ProctoringTelemetry['speechIntentCategory'];
@@ -131,7 +178,6 @@ function evaluateSemanticIntent(text: string, currentQuestionText?: string): {
   const words = clean.split(/\s+/).filter(w => w.length > 2);
   const wordCount = words.length;
 
-  // STEP 0: Context Overlap Verification against the current active question on screen
   if (currentQuestionText && currentQuestionText.trim().length > 0) {
     const qClean = currentQuestionText.toLowerCase();
     
@@ -144,18 +190,15 @@ function evaluateSemanticIntent(text: string, currentQuestionText?: string): {
 
     const overlapRatio = wordCount > 0 ? matchedInQuestionCount / wordCount : 0;
 
-    // If > 45% of significant words match the question text on screen (and no Siri/AI calls),
-    // the student is just reading the question text out loud!
     if (overlapRatio > 0.45 && !/(?:сири|siri|эй чувак|чувак|эй брат|гугл|яндекс|алиса|гпт|gpt)/i.test(clean)) {
       return {
-        probability: 5, // 5% BENIGN - NOT A VIOLATION!
+        probability: 5,
         intentCategory: 'NORMAL_READING',
         reasoning: `Ученик читает текст текущего задания на экране (Совпадение слов ${Math.round(overlapRatio * 100)}%)`
       };
     }
   }
 
-  // 1. Direct AI/Device Assistance Call ("сири", "эй чувак", "гугл", "алиса", "гпт") -> 95-100%
   const hasAiOrDeviceCall = /(?:сири|siri|эй чувак|чувак|эй|эй брат|гугл|яндекс|алиса|сафари|гпт|gpt|chat|джипити|поиск|найди)/i.test(clean);
   if (hasAiOrDeviceCall) {
     return {
@@ -165,7 +208,6 @@ function evaluateSemanticIntent(text: string, currentQuestionText?: string): {
     };
   }
 
-  // 2. Conversational Answer Inquiries ("что во втором", "третье", "что в первом", "какой ответ", "какая буква", "че там в...") -> 90%
   const hasConversationalAnswerPrompt = /(?:что в|что во|какой|какая|какое|че там|чо там|подскажи|помоги|скажи|выбери)\s*(?:первом|втором|третьем|четвертом|пятом|шестом|седьмом|восьмом|варианте|букве|ответ)?/i.test(clean)
     || /(?:первое|второе|третье|четвертое|пятое|первый|второй|третий|четвертый|пятый)\b/i.test(clean);
 
@@ -177,7 +219,6 @@ function evaluateSemanticIntent(text: string, currentQuestionText?: string): {
     };
   }
 
-  // 3. Dictation or third-party help -> 80%
   const isQuestionOrRequest = /(?:кто|что|где|когда|как|сколько|почему|зачем|верно|правильно)/i.test(clean);
   const hasDictationPointers = /(?:вопрос|уравнение|текст|задача|пример|читать|напиши|сфотай|смотри)/i.test(clean);
 
@@ -189,7 +230,6 @@ function evaluateSemanticIntent(text: string, currentQuestionText?: string): {
     };
   }
 
-  // 4. Normal Reading Aloud -> 15% (BENIGN, NOT A VIOLATION!)
   if (wordCount >= 4 && !hasConversationalAnswerPrompt && !hasAiOrDeviceCall) {
     return {
       probability: 15,
@@ -205,7 +245,7 @@ function evaluateSemanticIntent(text: string, currentQuestionText?: string): {
   };
 }
 
-// ── 3. ACOUSTIC WHISPER & DSP CLASSIFIER ──
+// ── 4. ACOUSTIC WHISPER & DSP CLASSIFIER ──
 function classifyAcousticState(timeData: Float32Array, freqData: Uint8Array, rmsVolume: number): {
   status: ProctoringTelemetry['audioStatus'];
   zcr: number;
@@ -279,6 +319,10 @@ export function useProctoringEngine(
     isViolating: false,
     isDraftWork: false,
     fps: 0,
+    mouthAspectRatio: 0,
+    isSilentLipSpeaking: false,
+    currentViseme: 'RESTING',
+    visemeLabel: 'Покой',
     audioLevel: 0,
     audioStatus: 'SILENT',
     zeroCrossingRate: 0,
@@ -312,6 +356,8 @@ export function useProctoringEngine(
   const handBelowStart = useRef<number | null>(null);
   const lightAnomalyStart = useRef<number | null>(null);
   const faceLostStart = useRef<number | null>(null);
+  const silentLipStart = useRef<number | null>(null);
+  const marHistoryRef = useRef<number[]>([]);
   
   // Event cooldown refs
   const lastExtraFaceEvent = useRef<number>(0);
@@ -324,6 +370,7 @@ export function useProctoringEngine(
   const lastBookEvent = useRef<number>(0);
   const lastSpeechEvent = useRef<number>(0);
   const lastGestureEvent = useRef<number>(0);
+  const lastSilentLipEvent = useRef<number>(0);
   const EVENT_COOLDOWN = 3000;
 
   // Hand tracking
@@ -362,7 +409,7 @@ export function useProctoringEngine(
   const addEventRef = useRef(addEvent);
   addEventRef.current = addEvent;
 
-  // Initialize Web Speech Recognition with Question Text Overlap Verification
+  // Initialize Speech Recognition & AudioContext DSP
   useEffect(() => {
     if (!isActive) return;
 
@@ -393,7 +440,6 @@ export function useProctoringEngine(
               speechIntentCategory: intentCategory,
             }));
 
-            // Only trigger event if probability >= 60% (meaning NOT reading current question)
             if (probability >= 60 && Date.now() - lastSpeechEvent.current > EVENT_COOLDOWN) {
               addEventRef.current({
                 type: 'SPEECH_CHEAT_DETECTED',
@@ -422,7 +468,6 @@ export function useProctoringEngine(
       }
     }
 
-    // AudioContext DSP Analyzer
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
       try {
         const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -607,7 +652,7 @@ export function useProctoringEngine(
     const updates: Partial<ProctoringTelemetry> = {};
     let isViolatingThisFrame = false;
 
-    // ── 1. FACE PROCESSING (~20 FPS / every ~50ms) ──
+    // ── 1. FACE PROCESSING & LIP READING (~20 FPS / every ~50ms) ──
     if (now - lastFaceProcessTime.current >= 50 && faceLandmarkerRef.current) {
       try {
         const faceResult = faceLandmarkerRef.current.detectForVideo(video, now);
@@ -646,6 +691,7 @@ export function useProctoringEngine(
           const landmarks = faceResult.faceLandmarks[0];
           const matrices = faceResult.facialTransformationMatrixes?.[0];
 
+          // Head Pose
           if (matrices) {
             const m = matrices.data;
             const pitch = Math.atan2(m[9], m[10]) * (180 / Math.PI);
@@ -675,6 +721,7 @@ export function useProctoringEngine(
             }
           }
 
+          // Iris gaze
           if (landmarks[468] && landmarks[33] && landmarks[133]) {
             const leftIris = landmarks[468];
             const leftOuter = landmarks[33];
@@ -699,6 +746,41 @@ export function useProctoringEngine(
             }
 
             updates.gazeDirection = gazeDir;
+          }
+
+          // LIP READING & VISEME ANALYZER
+          const lipRes = classifyVisemeAndLipMotion(landmarks);
+          updates.mouthAspectRatio = parseFloat(lipRes.mar.toFixed(3));
+          updates.currentViseme = lipRes.viseme;
+          updates.visemeLabel = lipRes.label;
+
+          // Track MAR history over 500ms sliding window (10 samples)
+          marHistoryRef.current.push(lipRes.mar);
+          if (marHistoryRef.current.length > 10) marHistoryRef.current.shift();
+
+          const maxMar = Math.max(...marHistoryRef.current);
+          const minMar = Math.min(...marHistoryRef.current);
+          const marDelta = maxMar - minMar;
+
+          // Silent Lip Speaking Detection:
+          // If audio is silent (level < 10 dB) BUT lips are oscillating dynamically (marDelta > 0.16) for > 1.2s
+          if (marDelta > 0.16) {
+            updates.isSilentLipSpeaking = true;
+            if (!silentLipStart.current) silentLipStart.current = now;
+            else if (now - silentLipStart.current > 1200) {
+              if (now - lastSilentLipEvent.current > EVENT_COOLDOWN) {
+                addEventRef.current({
+                  type: 'SILENT_LIP_SPEAKING_DETECTED',
+                  severity: 'HIGH',
+                  description: `👄 Чтение по губам: Бесшумное артикулирование губами без звука микрофона (${lipRes.label})`
+                });
+                lastSilentLipEvent.current = now;
+              }
+              isViolatingThisFrame = true;
+            }
+          } else {
+            updates.isSilentLipSpeaking = false;
+            silentLipStart.current = null;
           }
 
           // STRICT LIGHT ANOMALY DETECTION

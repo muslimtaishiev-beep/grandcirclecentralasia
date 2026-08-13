@@ -52,6 +52,7 @@ function eventTypeIcon(type: string): string {
     case "BOOK_DETECTED": return "📖";
     case "SPEECH_CHEAT_DETECTED": return "🗣";
     case "GESTURE_SIGNAL_DETECTED": return "✌️";
+    case "SILENT_LIP_SPEAKING_DETECTED": return "👄";
     case "PASTE_DETECTED": return "📋";
     case "TAB_SWITCH": return "🔀";
     case "FACE_LOST": return "❌";
@@ -72,6 +73,7 @@ function eventTypeLabel(type: string): string {
     case "BOOK_DETECTED": return "Книга / конспект";
     case "SPEECH_CHEAT_DETECTED": return "Речь / Попытка подсказки";
     case "GESTURE_SIGNAL_DETECTED": return "Сигнализирование пальцами";
+    case "SILENT_LIP_SPEAKING_DETECTED": return "Чтение по губам / Проговаривание";
     case "PASTE_DETECTED": return "Вставка текста";
     case "TAB_SWITCH": return "Смена вкладки";
     case "FACE_LOST": return "Лицо потеряно";
@@ -657,6 +659,12 @@ export default function ProctorSandbox() {
                   value={engine.telemetry.currentGesture?.label || "Нет жеста"}
                   isWarning={Boolean(engine.telemetry.currentGesture?.signaledOption)}
                 />
+                <StatusBadge
+                  icon="👄"
+                  label="Чтение по губам"
+                  value={engine.telemetry.isSilentLipSpeaking ? `БЕСШУМНЫЙ РАЗГОВОР (${engine.telemetry.visemeLabel})` : engine.telemetry.visemeLabel || "Покой"}
+                  isWarning={engine.telemetry.isSilentLipSpeaking}
+                />
               </div>
 
               <div className="flex items-center justify-between text-xs text-slate-400 font-mono pt-1">
@@ -705,6 +713,12 @@ export default function ProctorSandbox() {
                   className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-slate-300 transition text-left"
                 >
                   ✌️ Сигнал 2 пальца (B)
+                </button>
+                <button
+                  onClick={() => simulateEvent("SILENT_LIP_SPEAKING_DETECTED", "HIGH", "👄 Чтение по губам: Бесшумная артикуляция без звука микрофона")}
+                  className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-slate-300 transition text-left"
+                >
+                  👄 Чтение по губам
                 </button>
                 <button
                   onClick={() => simulateEvent("TAB_SWITCH", "HIGH", "Пользователь сменил вкладку браузера")}

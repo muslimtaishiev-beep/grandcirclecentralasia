@@ -21,6 +21,12 @@ interface ProctoringTelemetry {
   isDraftWork: boolean;
   fps: number;
 
+  // Lip reading telemetry
+  mouthAspectRatio?: number;
+  isSilentLipSpeaking?: boolean;
+  currentViseme?: string;
+  visemeLabel?: string;
+
   // Audio telemetry
   audioLevel?: number;
   audioStatus?: 'SILENT' | 'NORMAL' | 'WHISPER' | 'TALKING';
@@ -70,10 +76,14 @@ interface ProctoringOverlayProps {
 const NEON_CYAN = "#00E5FF";
 const NEON_RED = "#FF2A6D";
 const NEON_PURPLE = "#A855F7";
+const NEON_PINK = "#EC4899";
 const NEON_YELLOW = "#FACC15";
 const GREEN_OK = "#10B981";
 const HUD_BG = "rgba(15, 23, 42, 0.82)";
 const HUD_TEXT = "#E2E8F0";
+
+// Lip landmark indices for Face Mesh
+const LIP_OUTER_INDICES = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291, 375, 321, 405, 314, 17, 84, 181, 91, 146];
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -139,7 +149,7 @@ export default function ProctoringOverlay({
     const boxColor = isViolating ? NEON_RED : GREEN_OK;
     const vectorColor = isViolating ? NEON_RED : NEON_CYAN;
 
-    // 2. Draw Face Bounding Box & Vector
+    // 2. Draw Face Bounding Box & Vector & Lip Mesh Outline
     if (faceLandmarks && faceLandmarks.length > 0) {
       for (let faceIdx = 0; faceIdx < faceLandmarks.length; faceIdx++) {
         const face = faceLandmarks[faceIdx];
@@ -171,6 +181,39 @@ export default function ProctoringOverlay({
           ctx.fillStyle = "#000";
           ctx.font = "bold 13px monospace";
           ctx.fillText("⚠ EXTRA PERSON", bx + 4, by - 7);
+        }
+
+        // Draw Lip Mesh Contour & Viseme Label on Primary Face
+        if (faceIdx === 0) {
+          ctx.beginPath();
+          for (let i = 0; i < LIP_OUTER_INDICES.length; i++) {
+            const idx = LIP_OUTER_INDICES[i];
+            if (face[idx]) {
+              const lx = face[idx].x * w;
+              const ly = face[idx].y * h;
+              if (i === 0) ctx.moveTo(lx, ly);
+              else ctx.lineTo(lx, ly);
+            }
+          }
+          ctx.closePath();
+          ctx.strokeStyle = telemetry.isSilentLipSpeaking ? NEON_PINK : "rgba(236, 72, 153, 0.4)";
+          ctx.lineWidth = telemetry.isSilentLipSpeaking ? 2.5 : 1;
+          ctx.stroke();
+
+          // If silent speaking is active, show lip reading badge above mouth (landmark 13)
+          if (telemetry.isSilentLipSpeaking && face[13]) {
+            const mx = face[13].x * w;
+            const my = face[13].y * h;
+            const lipBadgeText = `👄 ${telemetry.visemeLabel || 'Чтение по губам'}`;
+            const lbW = ctx.measureText(lipBadgeText).width + 16;
+
+            ctx.fillStyle = "rgba(236, 72, 153, 0.92)";
+            roundRect(ctx, mx - lbW / 2, my + 15, lbW, 22, 5);
+            ctx.fill();
+            ctx.fillStyle = "#FFFFFF";
+            ctx.font = "bold 11px sans-serif";
+            ctx.fillText(lipBadgeText, mx - lbW / 2 + 8, my + 30);
+          }
         }
 
         if (faceIdx === 0 && face[1]) {
@@ -240,7 +283,6 @@ export default function ProctoringOverlay({
 
         let minX = 1, minY = 1, maxX = 0, maxY = 0;
 
-        // Draw 21 hand landmark points & skeletal lines
         ctx.fillStyle = NEON_CYAN;
         for (const pt of hand) {
           const px = pt.x * w;
@@ -260,14 +302,12 @@ export default function ProctoringOverlay({
         const hbw = (maxX - minX) * w;
         const hbh = (maxY - minY) * h;
 
-        // Hand bounding box
         ctx.strokeStyle = telemetry.currentGesture?.signaledOption ? NEON_YELLOW : "rgba(0, 229, 255, 0.5)";
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 4]);
         ctx.strokeRect(hbx, hby, hbw, hbh);
         ctx.setLineDash([]);
 
-        // Gesture label above hand
         if (telemetry.currentGesture && telemetry.currentGesture.gesture !== 'NONE') {
           const gText = telemetry.currentGesture.label;
           const gW = ctx.measureText(gText).width + 16;
@@ -284,7 +324,7 @@ export default function ProctoringOverlay({
       }
     }
 
-    // 4. Draw Detected Objects (Phones, Books, Laptops)
+    // 4. Draw Detected Objects
     if (detectedObjects && detectedObjects.length > 0) {
       for (const obj of detectedObjects) {
         const bbox = obj.boundingBox;
@@ -314,17 +354,17 @@ export default function ProctoringOverlay({
       }
     }
 
-    // 5. HUD Telemetry Panel (top-left)
+    // 5. HUD Telemetry Panel
     const hudX = 10;
     const hudY = 10;
     const hudW = 330;
-    const hudH = telemetry.phoneDetected || telemetry.lightAnomaly ? 130 : 105;
+    const hudH = telemetry.phoneDetected || telemetry.lightAnomaly || telemetry.isSilentLipSpeaking ? 130 : 105;
 
     ctx.fillStyle = HUD_BG;
     roundRect(ctx, hudX, hudY, hudW, hudH, 8);
     ctx.fill();
 
-    ctx.strokeStyle = isViolating || telemetry.phoneDetected ? NEON_RED : "rgba(0, 229, 255, 0.3)";
+    ctx.strokeStyle = isViolating || telemetry.phoneDetected || telemetry.isSilentLipSpeaking ? NEON_RED : "rgba(0, 229, 255, 0.3)";
     ctx.lineWidth = 1.5;
     roundRect(ctx, hudX, hudY, hudW, hudH, 8);
     ctx.stroke();
@@ -354,7 +394,12 @@ export default function ProctoringOverlay({
     ctx.fillStyle = (telemetry.speechProbability || 0) > 50 ? NEON_RED : "#64748B";
     ctx.fillText(`Mic: ${telemetry.audioStatus || 'SILENT'} (${telemetry.audioLevel || 0}dB)`, hudX + 130, y3);
 
-    if (telemetry.phoneDetected) {
+    if (telemetry.isSilentLipSpeaking) {
+      const y4 = y3 + 18;
+      ctx.fillStyle = NEON_PINK;
+      ctx.font = "bold 11px monospace";
+      ctx.fillText(`👄 LIP READING: ${telemetry.visemeLabel || 'SILENT SPEAKING'}`, hudX + 12, y4);
+    } else if (telemetry.phoneDetected) {
       const y4 = y3 + 18;
       ctx.fillStyle = NEON_RED;
       ctx.font = "bold 11px monospace";
