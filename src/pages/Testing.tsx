@@ -910,7 +910,13 @@ export default function Testing() {
                         <span className="mr-2">📊</span> Аналитика знаний (Темы)
                       </h3>
                       <div className="text-sm text-slate-700 whitespace-pre-wrap font-medium leading-relaxed">
-                        {resultData.diagnosticsReport}
+                        {typeof resultData.diagnosticsReport === 'string' 
+                          ? resultData.diagnosticsReport 
+                          : typeof resultData.diagnosticsReport === 'object'
+                            ? Object.entries(resultData.diagnosticsReport).map(([topic, val]: any) => 
+                                `• ${topic}: ${typeof val === 'object' ? `${val.earned || 0} из ${val.possible || 0}` : val}`
+                              ).join('\n')
+                            : String(resultData.diagnosticsReport)}
                       </div>
                     </div>
                   )}
