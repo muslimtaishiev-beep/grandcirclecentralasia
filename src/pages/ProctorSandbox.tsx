@@ -48,6 +48,8 @@ function eventTypeIcon(type: string): string {
     case "SWIPE": return "👆";
     case "LIGHT_ANOMALY": return "💡";
     case "FAST_ANSWER": return "⚡";
+    case "PHONE_DETECTED": return "📱";
+    case "BOOK_DETECTED": return "📖";
     case "PASTE_DETECTED": return "📋";
     case "TAB_SWITCH": return "🔀";
     case "FACE_LOST": return "❌";
@@ -64,6 +66,8 @@ function eventTypeLabel(type: string): string {
     case "SWIPE": return "Свайп-жест";
     case "LIGHT_ANOMALY": return "Свет телефона";
     case "FAST_ANSWER": return "Быстрый ответ";
+    case "PHONE_DETECTED": return "Телефон в кадре!";
+    case "BOOK_DETECTED": return "Книга / конспект";
     case "PASTE_DETECTED": return "Вставка текста";
     case "TAB_SWITCH": return "Смена вкладки";
     case "FACE_LOST": return "Лицо потеряно";
@@ -263,6 +267,7 @@ export default function ProctorSandbox() {
           recordingDuration={recorder.recordingDuration}
           sessionStartTime={engine.sessionStartTime}
           faceLandmarks={engine.faceLandmarks}
+          detectedObjects={engine.detectedObjects}
         />
       </Suspense>
 
@@ -615,6 +620,12 @@ export default function ProctorSandbox() {
                   label="Лица"
                   value={String(engine.telemetry.facesDetected)}
                   isWarning={engine.telemetry.facesDetected > 1}
+                />
+                <StatusBadge
+                  icon="📱"
+                  label="Телефон"
+                  value={engine.telemetry.phoneDetected ? "ОБНАРУЖЕН!" : "Нет"}
+                  isWarning={Boolean(engine.telemetry.phoneDetected)}
                 />
                 <StatusBadge
                   icon="💡"

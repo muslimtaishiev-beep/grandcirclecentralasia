@@ -8,6 +8,8 @@ interface ProctoringTelemetry {
   handsDetected: number;
   handStatus: "IN_FRAME" | "BELOW_DESK" | "NO_HANDS";
   facesDetected: number;
+  phoneDetected?: boolean;
+  bookDetected?: boolean;
   lightAnomaly: boolean;
   isViolating: boolean;
   isDraftWork: boolean;
@@ -28,6 +30,17 @@ interface FaceLandmark {
   z: number;
 }
 
+interface DetectedObject {
+  categoryName: string;
+  score: number;
+  boundingBox: {
+    originX: number;
+    originY: number;
+    width: number;
+    height: number;
+  };
+}
+
 interface ProctoringOverlayProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -36,15 +49,16 @@ interface ProctoringOverlayProps {
   isRecording: boolean;
   recordingDuration: number;
   sessionStartTime: number;
-  /** Raw face landmarks from the engine (if available) for precise drawing */
   faceLandmarks?: FaceLandmark[][] | null;
+  detectedObjects?: DetectedObject[] | null;
 }
 
 // Colors
 const NEON_CYAN = "#00E5FF";
 const NEON_RED = "#FF2A6D";
+const NEON_PURPLE = "#A855F7";
 const GREEN_OK = "#10B981";
-const HUD_BG = "rgba(15, 23, 42, 0.78)";
+const HUD_BG = "rgba(15, 23, 42, 0.82)";
 const HUD_TEXT = "#E2E8F0";
 
 function formatTime(seconds: number): string {
@@ -60,10 +74,6 @@ function formatEventTime(ms: number): string {
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
-/**
- * ProctoringOverlay draws ML analytics on top of the webcam video.
- * It renders video frames + overlay to a shared canvas that is also used for recording.
- */
 export default function ProctoringOverlay({
   videoRef,
   canvasRef,
@@ -73,11 +83,11 @@ export default function ProctoringOverlay({
   recordingDuration,
   sessionStartTime,
   faceLandmarks,
+  detectedObjects,
 }: ProctoringOverlayProps) {
   const animFrameRef = useRef<number>(0);
   const recentEventsRef = useRef<ProctoringEvent[]>([]);
 
-  // Keep a sliding window of recent events for on-screen display (last 8 seconds)
   useEffect(() => {
     const now = Date.now() - sessionStartTime;
     recentEventsRef.current = events.filter(
@@ -102,20 +112,19 @@ export default function ProctoringOverlay({
     const w = video.videoWidth || 640;
     const h = video.videoHeight || 480;
 
-    // Sync canvas resolution to video
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
     }
 
-    // 1. Draw raw webcam frame
+    // 1. Draw raw video frame
     ctx.drawImage(video, 0, 0, w, h);
 
     const isViolating = telemetry.isViolating;
     const boxColor = isViolating ? NEON_RED : GREEN_OK;
     const vectorColor = isViolating ? NEON_RED : NEON_CYAN;
 
-    // 2. Draw Face Bounding Box(es)
+    // 2. Draw Face Bounding Box & Vector
     if (faceLandmarks && faceLandmarks.length > 0) {
       for (let faceIdx = 0; faceIdx < faceLandmarks.length; faceIdx++) {
         const face = faceLandmarks[faceIdx];
@@ -134,15 +143,13 @@ export default function ProctoringOverlay({
         const bw = (maxX - minX) * w;
         const bh = (maxY - minY) * h;
 
-        // Face bounding box
-        const faceColor = faceIdx === 0 ? boxColor : "#F59E0B"; // second face = amber
+        const faceColor = faceIdx === 0 ? boxColor : "#F59E0B";
         ctx.strokeStyle = faceColor;
         ctx.lineWidth = 2.5;
         ctx.setLineDash(faceIdx === 0 ? [] : [8, 4]);
         ctx.strokeRect(bx, by, bw, bh);
         ctx.setLineDash([]);
 
-        // Label for extra faces
         if (faceIdx > 0) {
           ctx.fillStyle = "rgba(245, 158, 11, 0.85)";
           ctx.fillRect(bx, by - 24, 140, 22);
@@ -151,20 +158,17 @@ export default function ProctoringOverlay({
           ctx.fillText("⚠ EXTRA PERSON", bx + 4, by - 7);
         }
 
-        // Gaze vector from nose tip (landmark 1) — only for primary face
         if (faceIdx === 0 && face[1]) {
           const nose = face[1];
           const noseX = nose.x * w;
           const noseY = nose.y * h;
 
-          // Vector direction from head pose
           const yawRad = (telemetry.headPose.yaw * Math.PI) / 180;
           const pitchRad = (telemetry.headPose.pitch * Math.PI) / 180;
           const vecLen = 80;
           const endX = noseX + Math.sin(yawRad) * vecLen;
           const endY = noseY + Math.sin(pitchRad) * vecLen;
 
-          // Draw arrow line
           ctx.beginPath();
           ctx.moveTo(noseX, noseY);
           ctx.lineTo(endX, endY);
@@ -172,7 +176,6 @@ export default function ProctoringOverlay({
           ctx.lineWidth = 2.5;
           ctx.stroke();
 
-          // Arrow head
           const angle = Math.atan2(endY - noseY, endX - noseX);
           const headLen = 10;
           ctx.beginPath();
@@ -190,23 +193,22 @@ export default function ProctoringOverlay({
           ctx.lineWidth = 2;
           ctx.stroke();
 
-          // Violation badge at top-left of bounding box
           if (isViolating) {
             const now = Date.now() - sessionStartTime;
             const recentViolations = recentEventsRef.current.filter(
               (e) => e.severity === "HIGH" && now - e.timestamp < 5000
             );
             if (recentViolations.length > 0) {
-              const latestViolation = recentViolations[recentViolations.length - 1];
-              const badgeW = Math.min(ctx.measureText(latestViolation.description).width + 16, 300);
+              const latest = recentViolations[recentViolations.length - 1];
+              const badgeW = Math.min(ctx.measureText(latest.description).width + 16, 320);
               
-              ctx.fillStyle = "rgba(255, 42, 109, 0.88)";
+              ctx.fillStyle = "rgba(255, 42, 109, 0.90)";
               roundRect(ctx, bx, by - 30, badgeW, 26, 6);
               ctx.fill();
               ctx.fillStyle = "#FFF";
               ctx.font = "bold 12px monospace";
               ctx.fillText(
-                `[${formatEventTime(latestViolation.timestamp)}] ${latestViolation.description}`.slice(0, 50),
+                `[${formatEventTime(latest.timestamp)}] ${latest.description}`.slice(0, 52),
                 bx + 6,
                 by - 12
               );
@@ -216,18 +218,47 @@ export default function ProctoringOverlay({
       }
     }
 
-    // 3. HUD Telemetry Panel (top-left)
+    // 3. Draw Detected Objects (Phones, Books, Laptops, etc.)
+    if (detectedObjects && detectedObjects.length > 0) {
+      for (const obj of detectedObjects) {
+        const bbox = obj.boundingBox;
+        if (!bbox) continue;
+
+        const isPhone = obj.categoryName.toLowerCase().includes("phone");
+        const strokeColor = isPhone ? NEON_RED : NEON_PURPLE;
+        const labelEmoji = isPhone ? "📱" : obj.categoryName.toLowerCase().includes("book") ? "📖" : "🔍";
+
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 3;
+        ctx.setLineDash([4, 2]);
+        ctx.strokeRect(bbox.originX, bbox.originY, bbox.width, bbox.height);
+        ctx.setLineDash([]);
+
+        const labelText = `${labelEmoji} ${obj.categoryName.toUpperCase()} (${Math.round(obj.score * 100)}%)`;
+        const textW = ctx.measureText(labelText).width + 16;
+        const ly = Math.max(0, bbox.originY - 24);
+
+        ctx.fillStyle = isPhone ? "rgba(255, 42, 109, 0.90)" : "rgba(168, 85, 247, 0.90)";
+        roundRect(ctx, bbox.originX, ly, textW, 22, 4);
+        ctx.fill();
+
+        ctx.fillStyle = "#FFFFFF";
+        ctx.font = "bold 11px monospace";
+        ctx.fillText(labelText, bbox.originX + 8, ly + 15);
+      }
+    }
+
+    // 4. HUD Telemetry Panel (top-left)
     const hudX = 10;
     const hudY = 10;
-    const hudW = 310;
-    const hudH = telemetry.lightAnomaly ? 120 : 100;
+    const hudW = 320;
+    const hudH = telemetry.phoneDetected || telemetry.lightAnomaly ? 130 : 105;
 
     ctx.fillStyle = HUD_BG;
     roundRect(ctx, hudX, hudY, hudW, hudH, 8);
     ctx.fill();
 
-    // Border glow
-    ctx.strokeStyle = isViolating ? NEON_RED : "rgba(0, 229, 255, 0.3)";
+    ctx.strokeStyle = isViolating || telemetry.phoneDetected ? NEON_RED : "rgba(0, 229, 255, 0.3)";
     ctx.lineWidth = 1.5;
     roundRect(ctx, hudX, hudY, hudW, hudH, 8);
     ctx.stroke();
@@ -238,29 +269,17 @@ export default function ProctoringOverlay({
 
     ctx.font = "11px monospace";
     const y1 = hudY + 36;
-    ctx.fillStyle = Math.abs(telemetry.headPose.yaw) > 25 ? NEON_RED : "#94A3B8";
-    ctx.fillText(
-      `Yaw: ${telemetry.headPose.yaw.toFixed(1)}°`,
-      hudX + 12,
-      y1
-    );
-    ctx.fillStyle = telemetry.headPose.pitch < -50 ? NEON_RED : telemetry.isDraftWork ? "#FCD34D" : "#94A3B8";
-    ctx.fillText(
-      `Pitch: ${telemetry.headPose.pitch.toFixed(1)}°`,
-      hudX + 130,
-      y1
-    );
+    ctx.fillStyle = Math.abs(telemetry.headPose.yaw) > 20 ? NEON_RED : "#94A3B8";
+    ctx.fillText(`Yaw: ${telemetry.headPose.yaw.toFixed(1)}°`, hudX + 12, y1);
+    ctx.fillStyle = telemetry.headPose.pitch < -45 ? NEON_RED : telemetry.isDraftWork ? "#FCD34D" : "#94A3B8";
+    ctx.fillText(`Pitch: ${telemetry.headPose.pitch.toFixed(1)}°`, hudX + 130, y1);
 
     const y2 = y1 + 18;
     ctx.fillStyle = telemetry.gazeDirection !== "CENTER" && telemetry.gazeDirection !== "DOWN" ? NEON_RED : "#94A3B8";
     ctx.fillText(`Gaze: ${telemetry.gazeDirection}`, hudX + 12, y2);
 
     ctx.fillStyle = telemetry.handStatus === "BELOW_DESK" ? NEON_RED : "#94A3B8";
-    ctx.fillText(
-      `Hands: ${telemetry.handsDetected} (${telemetry.handStatus})`,
-      hudX + 130,
-      y2
-    );
+    ctx.fillText(`Hands: ${telemetry.handsDetected} (${telemetry.handStatus})`, hudX + 130, y2);
 
     const y3 = y2 + 18;
     ctx.fillStyle = telemetry.facesDetected > 1 ? NEON_RED : "#94A3B8";
@@ -271,17 +290,22 @@ export default function ProctoringOverlay({
 
     if (telemetry.isDraftWork) {
       ctx.fillStyle = "#FCD34D";
-      ctx.fillText("📝 Draft Work", hudX + 200, y3);
+      ctx.fillText("📝 Draft", hudX + 220, y3);
     }
 
-    if (telemetry.lightAnomaly) {
+    if (telemetry.phoneDetected) {
+      const y4 = y3 + 18;
+      ctx.fillStyle = NEON_RED;
+      ctx.font = "bold 11px monospace";
+      ctx.fillText("📱 PHONE DETECTED IN FRAME!", hudX + 12, y4);
+    } else if (telemetry.lightAnomaly) {
       const y4 = y3 + 18;
       ctx.fillStyle = NEON_RED;
       ctx.font = "bold 11px monospace";
       ctx.fillText("⚡ LIGHT ANOMALY DETECTED", hudX + 12, y4);
     }
 
-    // 4. Recording indicator (top-right)
+    // 5. Recording indicator (top-right)
     if (isRecording) {
       const recX = w - 150;
       const recY = 10;
@@ -289,7 +313,6 @@ export default function ProctoringOverlay({
       roundRect(ctx, recX, recY, 140, 30, 6);
       ctx.fill();
 
-      // Blinking red dot
       const blink = Math.floor(Date.now() / 500) % 2 === 0;
       if (blink) {
         ctx.beginPath();
@@ -307,22 +330,22 @@ export default function ProctoringOverlay({
       ctx.fillText(formatTime(recordingDuration), recX + 68, recY + 19);
     }
 
-    // 5. Draft work indicator (subtle, bottom-center)
+    // 6. Draft work indicator
     if (telemetry.isDraftWork && !isViolating) {
-      const draftText = "📝 Черновик";
+      const draftText = "📝 Работа с черновиком";
       const tw = ctx.measureText(draftText).width + 24;
       const dx = (w - tw) / 2;
       const dy = h - 40;
-      ctx.fillStyle = "rgba(252, 211, 77, 0.2)";
+      ctx.fillStyle = "rgba(252, 211, 77, 0.25)";
       roundRect(ctx, dx, dy, tw, 28, 6);
       ctx.fill();
       ctx.fillStyle = "#FCD34D";
-      ctx.font = "13px sans-serif";
+      ctx.font = "bold 13px sans-serif";
       ctx.fillText(draftText, dx + 12, dy + 19);
     }
 
     animFrameRef.current = requestAnimationFrame(draw);
-  }, [videoRef, canvasRef, telemetry, events, isRecording, recordingDuration, sessionStartTime, faceLandmarks]);
+  }, [videoRef, canvasRef, telemetry, events, isRecording, recordingDuration, sessionStartTime, faceLandmarks, detectedObjects]);
 
   useEffect(() => {
     animFrameRef.current = requestAnimationFrame(draw);
@@ -331,10 +354,9 @@ export default function ProctoringOverlay({
     };
   }, [draw]);
 
-  return null; // This component only draws to the shared canvas, no DOM output
+  return null;
 }
 
-/** Helper: draw a rounded rectangle path */
 function roundRect(
   ctx: CanvasRenderingContext2D,
   x: number,

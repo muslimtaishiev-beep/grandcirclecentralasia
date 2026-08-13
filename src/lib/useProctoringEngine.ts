@@ -1,5 +1,16 @@
 import { useState, useEffect, useRef, useCallback, RefObject } from 'react';
-import { FilesetResolver, FaceLandmarker, HandLandmarker } from '@mediapipe/tasks-vision';
+import { FilesetResolver, FaceLandmarker, HandLandmarker, ObjectDetector } from '@mediapipe/tasks-vision';
+
+export interface DetectedObject {
+  categoryName: string;
+  score: number;
+  boundingBox: {
+    originX: number;
+    originY: number;
+    width: number;
+    height: number;
+  };
+}
 
 export interface ProctoringTelemetry {
   headPose: { pitch: number; yaw: number; roll: number };
@@ -8,6 +19,9 @@ export interface ProctoringTelemetry {
   handsDetected: number;
   handStatus: 'IN_FRAME' | 'BELOW_DESK' | 'NO_HANDS';
   facesDetected: number;
+  phoneDetected: boolean;
+  bookDetected: boolean;
+  detectedObjects: DetectedObject[];
   lightAnomaly: boolean;
   isViolating: boolean;
   isDraftWork: boolean;
@@ -17,7 +31,7 @@ export interface ProctoringTelemetry {
 export interface ProctoringEvent {
   id: string;
   timestamp: number;
-  type: 'GAZE_LEFT' | 'GAZE_RIGHT' | 'EXTRA_FACE' | 'HAND_BELOW' | 'SWIPE' | 'LIGHT_ANOMALY' | 'FAST_ANSWER' | 'PASTE_DETECTED' | 'TAB_SWITCH' | 'FACE_LOST';
+  type: 'GAZE_LEFT' | 'GAZE_RIGHT' | 'EXTRA_FACE' | 'HAND_BELOW' | 'SWIPE' | 'LIGHT_ANOMALY' | 'FAST_ANSWER' | 'PASTE_DETECTED' | 'TAB_SWITCH' | 'FACE_LOST' | 'PHONE_DETECTED' | 'BOOK_DETECTED';
   severity: 'LOW' | 'MEDIUM' | 'HIGH';
   description: string;
 }
@@ -47,6 +61,9 @@ export function useProctoringEngine(
     handsDetected: 0,
     handStatus: 'NO_HANDS',
     facesDetected: 0,
+    phoneDetected: false,
+    bookDetected: false,
+    detectedObjects: [],
     lightAnomaly: false,
     isViolating: false,
     isDraftWork: false,
@@ -63,11 +80,13 @@ export function useProctoringEngine(
 
   const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
+  const objectDetectorRef = useRef<ObjectDetector | null>(null);
   const requestRef = useRef<number>(0);
 
   // Throttling refs
   const lastFaceProcessTime = useRef(0);
   const lastHandProcessTime = useRef(0);
+  const lastObjectProcessTime = useRef(0);
   const fpsFrameCount = useRef(0);
   const lastFpsTime = useRef(0);
 
@@ -84,14 +103,17 @@ export function useProctoringEngine(
   const lastHandBelowEvent = useRef<number>(0);
   const lastSwipeEvent = useRef<number>(0);
   const lastLightEvent = useRef<number>(0);
+  const lastPhoneEvent = useRef<number>(0);
+  const lastBookEvent = useRef<number>(0);
   const EVENT_COOLDOWN = 3000; // 3 seconds between duplicate event logs
 
   // Hand tracking
   const previousWristX = useRef<number | null>(null);
   const lastWristTime = useRef<number>(0);
   
-  // Face landmarks for canvas overlay
+  // Face landmarks & detected objects refs for canvas overlay
   const faceLandmarksRef = useRef<any[][] | null>(null);
+  const detectedObjectsRef = useRef<DetectedObject[]>([]);
 
   const addEvent = useCallback((eventInit: Omit<ProctoringEvent, 'id' | 'timestamp'>) => {
     const newEvent: ProctoringEvent = {
@@ -114,20 +136,20 @@ export function useProctoringEngine(
   const addEventRef = useRef(addEvent);
   addEventRef.current = addEvent;
 
-  // Initialize MediaPipe Models
+  // Initialize MediaPipe Models (Face + Hand + ObjectDetector)
   useEffect(() => {
     let active = true;
 
     async function initModels() {
       try {
         setIsLoading(true);
-        setLoadingProgress('Загрузка движка WebAssembly...');
+        setLoadingProgress('1/3 Загрузка движка WebAssembly...');
         
         const vision = await FilesetResolver.forVisionTasks(
           'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
         );
 
-        setLoadingProgress('Загрузка нейросети лица (Face Mesh)...');
+        setLoadingProgress('2/3 Загрузка нейросетей лица и рук...');
         try {
           faceLandmarkerRef.current = await FaceLandmarker.createFromOptions(vision, {
             baseOptions: {
@@ -140,7 +162,6 @@ export function useProctoringEngine(
             runningMode: 'VIDEO'
           });
         } catch (e) {
-          console.warn('GPU fallback to CPU for face landmarker:', e);
           faceLandmarkerRef.current = await FaceLandmarker.createFromOptions(vision, {
             baseOptions: {
               modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
@@ -153,7 +174,6 @@ export function useProctoringEngine(
           });
         }
 
-        setLoadingProgress('Загрузка нейросети рук (Hand Tracking)...');
         try {
           handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
             baseOptions: {
@@ -164,7 +184,6 @@ export function useProctoringEngine(
             runningMode: 'VIDEO'
           });
         } catch (e) {
-          console.warn('GPU fallback to CPU for hand landmarker:', e);
           handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
             baseOptions: {
               modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
@@ -173,16 +192,42 @@ export function useProctoringEngine(
             numHands: 2,
             runningMode: 'VIDEO'
           });
+        }
+
+        setLoadingProgress('3/3 Загрузка нейросети распознавания предметов (EfficientDet)...');
+        try {
+          objectDetectorRef.current = await ObjectDetector.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite',
+              delegate: 'GPU'
+            },
+            scoreThreshold: 0.30,
+            runningMode: 'VIDEO'
+          });
+        } catch (e) {
+          console.warn('ObjectDetector GPU failed, fallback to CPU:', e);
+          try {
+            objectDetectorRef.current = await ObjectDetector.createFromOptions(vision, {
+              baseOptions: {
+                modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite',
+                delegate: 'CPU'
+              },
+              scoreThreshold: 0.30,
+              runningMode: 'VIDEO'
+            });
+          } catch (e2) {
+            console.warn('ObjectDetector load failed completely:', e2);
+          }
         }
 
         if (active) {
           setIsReady(true);
           setIsLoading(false);
-          setLoadingProgress('Модели готовы');
+          setLoadingProgress('Все ML-модели готовы');
         }
       } catch (err: any) {
         if (active) {
-          setError(err.message || ' Ошибка инициализации ML-моделей');
+          setError(err.message || 'Ошибка инициализации ML-моделей');
           setIsLoading(false);
         }
       }
@@ -194,6 +239,7 @@ export function useProctoringEngine(
       active = false;
       if (faceLandmarkerRef.current) faceLandmarkerRef.current.close();
       if (handLandmarkerRef.current) handLandmarkerRef.current.close();
+      if (objectDetectorRef.current) objectDetectorRef.current.close();
     };
   }, []);
 
@@ -234,7 +280,6 @@ export function useProctoringEngine(
         faceLandmarksRef.current = faceResult.faceLandmarks;
 
         if (facesDetected > 1) {
-          // Multiple faces
           if (now - lastExtraFaceEvent.current > EVENT_COOLDOWN) {
             addEventRef.current({
               type: 'EXTRA_FACE',
@@ -245,7 +290,6 @@ export function useProctoringEngine(
           }
           isViolatingThisFrame = true;
         } else if (facesDetected === 0) {
-          // Face lost
           if (!faceLostStart.current) faceLostStart.current = now;
           else if (now - faceLostStart.current > 1500) {
             if (now - lastFaceLostEvent.current > EVENT_COOLDOWN) {
@@ -264,7 +308,6 @@ export function useProctoringEngine(
           const landmarks = faceResult.faceLandmarks[0];
           const matrices = faceResult.facialTransformationMatrixes?.[0];
 
-          // Head Pose (Yaw / Pitch / Roll)
           if (matrices) {
             const m = matrices.data;
             const pitch = Math.atan2(m[9], m[10]) * (180 / Math.PI);
@@ -272,10 +315,8 @@ export function useProctoringEngine(
             const roll = Math.atan2(m[4], m[0]) * (180 / Math.PI);
             
             updates.headPose = { pitch, yaw, roll };
-            // Draft work: pitch between -15° and -40°
             updates.isDraftWork = pitch >= -40 && pitch <= -15;
 
-            // Gaze deviation check (Yaw > 20° or Yaw < -20°) — 2 seconds continuous
             if (Math.abs(yaw) > 20) {
               if (!gazeViolationStart.current) gazeViolationStart.current = now;
               else if (now - gazeViolationStart.current > 2000) {
@@ -285,7 +326,7 @@ export function useProctoringEngine(
                   addEventRef.current({
                     type,
                     severity: 'MEDIUM',
-                    description: `Взгляд отвлекся ${dirText} (угол ${Math.abs(yaw).toFixed(0)}°)`
+                    description: `Взгляд отвлёкся ${dirText} (угол ${Math.abs(yaw).toFixed(0)}°)`
                   });
                   lastGazeEvent.current = now;
                 }
@@ -296,7 +337,6 @@ export function useProctoringEngine(
             }
           }
 
-          // Iris Gaze Direction (Ratio)
           if (landmarks[468] && landmarks[33] && landmarks[133]) {
             const leftIris = landmarks[468];
             const leftOuter = landmarks[33];
@@ -323,7 +363,7 @@ export function useProctoringEngine(
             updates.gazeDirection = gazeDir;
           }
 
-          // Light Anomaly Detection (using offscreen 160x120 canvas)
+          // Light Anomaly Detection
           const lc = getLightCanvas();
           if (lc) {
             lc.ctx.drawImage(video, 0, 0, 160, 120);
@@ -385,7 +425,7 @@ export function useProctoringEngine(
                   lightAnomalyStart.current = null;
                 }
               } catch (e) {
-                // Ignore offscreen canvas crop error
+                // Ignore crop error
               }
             }
           }
@@ -412,14 +452,12 @@ export function useProctoringEngine(
           let isBelow = false;
           
           for (const handLandmarks of handResult.handLandmarks) {
-            const wrist = handLandmarks[0]; // Landmark 0: wrist
+            const wrist = handLandmarks[0];
             
-            // If wrist Y is > 0.72 (chest/desk boundary)
             if (wrist.y > 0.72) {
               isBelow = true;
             }
 
-            // Fast swipe detection
             if (previousWristX.current !== null) {
               const dt = now - lastWristTime.current;
               if (dt > 0 && dt <= 300) {
@@ -460,6 +498,73 @@ export function useProctoringEngine(
         }
       } catch (e) {
         console.warn('Hand landmarker error:', e);
+      }
+    }
+
+    // ── 3. OBJECT DETECTION (~4 FPS / every ~250ms) ──
+    if (now - lastObjectProcessTime.current >= 250 && objectDetectorRef.current) {
+      try {
+        const objResult = objectDetectorRef.current.detectForVideo(video, now);
+        lastObjectProcessTime.current = now;
+
+        let hasPhone = false;
+        let hasBook = false;
+        const validObjects: DetectedObject[] = [];
+
+        if (objResult.detections && objResult.detections.length > 0) {
+          for (const det of objResult.detections) {
+            const cat = det.categories?.[0];
+            if (!cat || cat.score < 0.30) continue;
+
+            const label = cat.categoryName.toLowerCase();
+            const bbox = det.boundingBox;
+
+            if (!bbox) continue;
+
+            validObjects.push({
+              categoryName: cat.categoryName,
+              score: cat.score,
+              boundingBox: {
+                originX: bbox.originX,
+                originY: bbox.originY,
+                width: bbox.width,
+                height: bbox.height,
+              }
+            });
+
+            // Check specific prohibited objects
+            if (label.includes('phone') || label.includes('mobile') || label.includes('cell')) {
+              hasPhone = true;
+              if (now - lastPhoneEvent.current > EVENT_COOLDOWN) {
+                addEventRef.current({
+                  type: 'PHONE_DETECTED',
+                  severity: 'HIGH',
+                  description: `В КАДРЕ ОБНАРУЖЕН МОБИЛЬНЫЙ ТЕЛЕФОН (${Math.round(cat.score * 100)}% уверенность)!`
+                });
+                lastPhoneEvent.current = now;
+              }
+              isViolatingThisFrame = true;
+            } else if (label.includes('book') || label.includes('binder') || label.includes('paper')) {
+              hasBook = true;
+              if (now - lastBookEvent.current > EVENT_COOLDOWN) {
+                addEventRef.current({
+                  type: 'BOOK_DETECTED',
+                  severity: 'MEDIUM',
+                  description: `В кадре обнаружена книга/конспект (${Math.round(cat.score * 100)}% уверенность).`
+                });
+                lastBookEvent.current = now;
+              }
+            }
+          }
+        }
+
+        updates.phoneDetected = hasPhone;
+        updates.bookDetected = hasBook;
+        updates.detectedObjects = validObjects;
+        detectedObjectsRef.current = validObjects;
+
+      } catch (e) {
+        console.warn('Object detector error:', e);
       }
     }
 
@@ -524,6 +629,7 @@ export function useProctoringEngine(
     addEvent,
     sessionStartTime,
     honestyIndex,
-    faceLandmarks: faceLandmarksRef.current
+    faceLandmarks: faceLandmarksRef.current,
+    detectedObjects: detectedObjectsRef.current,
   };
 }
