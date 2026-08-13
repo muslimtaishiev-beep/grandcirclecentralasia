@@ -5,7 +5,7 @@ import { useAnswerTiming } from "../lib/useAnswerTiming";
 
 const ProctoringOverlay = lazy(() => import("../components/ProctoringOverlay"));
 
-// ─── Mock test questions for the sandbox prototype ───
+// Mock questions for test simulation
 const MOCK_QUESTIONS = [
   { id: "q1", text: "Укажите правильное написание слова:", options: ["Парашют", "Парашут", "Порашют", "Порашут"], correct: 0, points: 1, subject: "russian" },
   { id: "q2", text: "Решите уравнение: 2x + 5 = 17", options: ["x = 4", "x = 5", "x = 6", "x = 7"], correct: 2, points: 2, subject: "math" },
@@ -71,7 +71,6 @@ function eventTypeLabel(type: string): string {
   }
 }
 
-// ─── MAIN COMPONENT ───
 export default function ProctorSandbox() {
   const [mode, setMode] = useState<"setup" | "student" | "admin">("setup");
   const [cameraReady, setCameraReady] = useState(false);
@@ -84,16 +83,30 @@ export default function ProctorSandbox() {
   const [testAnswers, setTestAnswers] = useState<Record<string, number>>({});
   const [testFinished, setTestFinished] = useState(false);
 
-  // Refs
+  // Refs — PERSISTENT across DOM changes
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const eventLogRef = useRef<HTMLDivElement | null>(null);
 
-  // Hooks
+  // ML & Recording Hooks
   const engine = useProctoringEngine(videoRef, canvasRef, isSessionActive);
   const recorder = useCompositeRecorder(canvasRef);
   const timing = useAnswerTiming();
+
+  // Ensure camera stream stays attached to videoRef whenever DOM updates
+  const syncVideoStream = useCallback(() => {
+    if (videoRef.current && mediaStreamRef.current) {
+      if (videoRef.current.srcObject !== mediaStreamRef.current) {
+        videoRef.current.srcObject = mediaStreamRef.current;
+      }
+      videoRef.current.play().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    syncVideoStream();
+  }, [mode, cameraReady, syncVideoStream]);
 
   // Auto-scroll event log
   useEffect(() => {
@@ -108,7 +121,7 @@ export default function ProctorSandbox() {
       const cleanup = timing.setupPasteMonitoring();
       return cleanup;
     }
-  }, [isSessionActive]);
+  }, [isSessionActive, timing]);
 
   // Convert paste events to proctoring events
   useEffect(() => {
@@ -117,12 +130,12 @@ export default function ProctorSandbox() {
       engine.addEvent({
         type: "PASTE_DETECTED",
         severity: "HIGH",
-        description: `Clipboard paste detected (${latest.textLength} chars)`,
+        description: `Вставка из буфера обмена (${latest.textLength} символов)`,
       });
     }
-  }, [timing.pasteEvents.length]);
+  }, [timing.pasteEvents.length, engine]);
 
-  // ─── Camera Init ───
+  // Camera initialization
   const initCamera = useCallback(async () => {
     try {
       setCameraError(null);
@@ -141,8 +154,8 @@ export default function ProctorSandbox() {
     } catch (err: any) {
       setCameraError(
         err.name === "NotAllowedError"
-          ? "Доступ к камере запрещён. Разрешите камеру в настройках браузера."
-          : "Не удалось подключить камеру: " + err.message
+          ? "Доступ к камере запрещён. Разрешите доступ к камере в браузере."
+          : "Ошибка подключения камеры: " + err.message
       );
     }
   }, []);
@@ -156,7 +169,7 @@ export default function ProctorSandbox() {
     };
   }, []);
 
-  // ─── Session Start ───
+  // Start Session
   const startSession = useCallback(
     (selectedMode: "student" | "admin") => {
       setMode(selectedMode);
@@ -165,23 +178,26 @@ export default function ProctorSandbox() {
       setTestAnswers({});
       setTestFinished(false);
 
-      // Start recording with audio
+      // Re-sync video element stream
+      setTimeout(syncVideoStream, 100);
+
+      // Start composite recording
       if (audioStream) {
         recorder.startRecording(audioStream);
       } else {
         recorder.startRecording();
       }
 
-      // Start timer for first question
+      // Start timer for question 1
       if (selectedMode === "student") {
         const q = MOCK_QUESTIONS[0];
         timing.startQuestionTimer(q.id, (q.points || 1) * 45);
       }
     },
-    [audioStream, recorder, timing]
+    [audioStream, recorder, timing, syncVideoStream]
   );
 
-  // ─── Answer a question ───
+  // Handle answering question in student mode
   const handleAnswer = useCallback(
     (optionIdx: number) => {
       const q = MOCK_QUESTIONS[currentQ];
@@ -191,7 +207,7 @@ export default function ProctorSandbox() {
         engine.addEvent({
           type: "FAST_ANSWER",
           severity: result.severity || "MEDIUM",
-          description: `Ответ за ${(result.actualTime || 0).toFixed(1)}с (ожидалось ${(result.expectedTime || 0).toFixed(0)}с)`,
+          description: `Слишком быстрый ответ на вопрос "${q.text.slice(0, 25)}..." (${(result.actualTime || 0).toFixed(1)}с)`,
         });
       }
 
@@ -208,252 +224,35 @@ export default function ProctorSandbox() {
     [currentQ, engine, timing]
   );
 
-  // ─── Stop Session ───
+  // Stop Session
   const stopSession = useCallback(async () => {
     setIsSessionActive(false);
     const blob = await recorder.stopRecording();
     if (blob) {
-      recorder.downloadRecording(`proctoring_sandbox_${Date.now()}`);
+      recorder.downloadRecording(`proctoring_session_${Date.now()}`);
     }
   }, [recorder]);
 
-  // ══════════════════════════════════════════════
-  // RENDER: Setup Screen
-  // ══════════════════════════════════════════════
-  if (mode === "setup") {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex flex-col items-center justify-center p-4 sm:p-6 text-white select-none">
-        {/* Hidden video for camera init */}
-        <video ref={videoRef} className="hidden" playsInline muted />
-        <canvas ref={canvasRef} className="hidden" />
+  // Simulate test events for manual verification
+  const simulateEvent = useCallback(
+    (type: ProctoringEvent["type"], severity: ProctoringEvent["severity"], desc: string) => {
+      engine.addEvent({ type, severity, description: desc });
+    },
+    [engine]
+  );
 
-        <div className="w-full max-w-xl">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 rounded-full px-4 py-1.5 mb-4">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-              <span className="text-cyan-300 text-xs font-mono uppercase tracking-widest">Sandbox Mode</span>
-            </div>
-            <h1 className="text-3xl sm:text-4xl font-black tracking-tight">
-              AI <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">Proctoring</span>
-            </h1>
-            <p className="text-slate-400 mt-2 text-sm max-w-md mx-auto">
-              Система визуального наблюдения с ML-анализом лица, рук, взгляда и скорости ответов. Полностью работает в браузере.
-            </p>
-          </div>
-
-          {/* Camera Card */}
-          <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-6 mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-white">📹 Камера и микрофон</h2>
-              {cameraReady && <span className="text-xs bg-green-500/20 text-green-400 border border-green-500/30 rounded-full px-3 py-1">✓ Подключено</span>}
-            </div>
-
-            {!cameraReady && !cameraError && (
-              <button
-                onClick={initCamera}
-                className="w-full py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-cyan-500/20"
-              >
-                Разрешить доступ к камере
-              </button>
-            )}
-
-            {cameraError && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-300 text-sm">
-                {cameraError}
-                <button onClick={initCamera} className="mt-2 w-full py-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-sm transition">
-                  Попробовать снова
-                </button>
-              </div>
-            )}
-
-            {cameraReady && (
-              <div className="text-sm text-slate-400 space-y-1">
-                <p>✓ Видеопоток: {videoRef.current?.videoWidth}×{videoRef.current?.videoHeight}</p>
-                <p>✓ Аудио: активен</p>
-                <p className="text-xs text-slate-500 mt-2">
-                  {engine.isLoading ? `⏳ ${engine.loadingProgress}` : engine.isReady ? "✓ ML-модели загружены" : engine.error ? `❌ ${engine.error}` : ""}
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Mode Selection */}
-          {cameraReady && engine.isReady && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <button
-                onClick={() => startSession("student")}
-                className="group bg-slate-800/50 backdrop-blur border border-slate-700/50 hover:border-cyan-500/50 rounded-2xl p-5 text-left transition-all hover:bg-slate-800/70"
-              >
-                <div className="text-2xl mb-2">🎓</div>
-                <h3 className="text-white font-bold text-lg group-hover:text-cyan-300 transition">Режим ученика</h3>
-                <p className="text-slate-400 text-xs mt-1">Пройдите мок-тест из 8 вопросов с активным прокторингом</p>
-              </button>
-              <button
-                onClick={() => startSession("admin")}
-                className="group bg-slate-800/50 backdrop-blur border border-slate-700/50 hover:border-blue-500/50 rounded-2xl p-5 text-left transition-all hover:bg-slate-800/70"
-              >
-                <div className="text-2xl mb-2">👨‍💼</div>
-                <h3 className="text-white font-bold text-lg group-hover:text-blue-300 transition">Режим менеджера</h3>
-                <p className="text-slate-400 text-xs mt-1">Мониторинг в реальном времени с полной телеметрией и логом</p>
-              </button>
-            </div>
-          )}
-
-          {cameraReady && engine.isLoading && (
-            <div className="text-center py-6">
-              <div className="w-12 h-12 border-4 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin mx-auto mb-4" />
-              <p className="text-slate-400 text-sm">{engine.loadingProgress}</p>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ══════════════════════════════════════════════
-  // RENDER: Student Test Mode
-  // ══════════════════════════════════════════════
-  if (mode === "student") {
-    const q = MOCK_QUESTIONS[currentQ];
-
-    return (
-      <div className="min-h-screen bg-slate-950 text-white select-none">
-        {/* Canvas overlay (renders on the hidden canvas) */}
-        <Suspense fallback={null}>
-          <ProctoringOverlay
-            videoRef={videoRef}
-            canvasRef={canvasRef}
-            telemetry={engine.telemetry}
-            events={engine.events}
-            isRecording={recorder.isRecording}
-            recordingDuration={recorder.recordingDuration}
-            sessionStartTime={engine.sessionStartTime}
-          faceLandmarks={engine.faceLandmarks}
-          />
-        </Suspense>
-
-        {/* Hidden elements */}
-        <video ref={videoRef} className="hidden" playsInline muted />
-        <canvas ref={canvasRef} className="hidden" />
-
-        <div className="max-w-3xl mx-auto p-4 sm:p-8">
-          {/* Top bar */}
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
-              <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-xs text-slate-400 font-mono">PROCTORING ACTIVE</span>
-            </div>
-            <div className="flex items-center gap-4">
-              {/* Small camera preview */}
-              <div className="relative w-16 h-12 rounded-lg overflow-hidden border border-slate-700/50 shadow-lg">
-                <video
-                  ref={(el) => {
-                    if (el && mediaStreamRef.current) {
-                      el.srcObject = mediaStreamRef.current;
-                      el.play().catch(() => {});
-                    }
-                  }}
-                  className="w-full h-full object-cover"
-                  playsInline
-                  muted
-                />
-                <div className="absolute bottom-0 right-0 w-2 h-2 bg-red-500 rounded-full m-0.5 animate-pulse" />
-              </div>
-              <div className="text-right">
-                <div className="text-xs text-slate-500">Вопрос</div>
-                <div className="text-lg font-bold">{testFinished ? MOCK_QUESTIONS.length : currentQ + 1}/{MOCK_QUESTIONS.length}</div>
-              </div>
-            </div>
-          </div>
-
-          {testFinished ? (
-            // ─── Results ───
-            <div className="bg-slate-800/50 backdrop-blur border border-slate-700/50 rounded-2xl p-8 text-center">
-              <div className="text-5xl mb-4">✅</div>
-              <h2 className="text-2xl font-black mb-2">Тест завершён!</h2>
-              <p className="text-slate-400 text-sm mb-6">
-                Правильных ответов: {Object.entries(testAnswers).filter(([qid, ans]) => MOCK_QUESTIONS.find(q => q.id === qid)?.correct === ans).length} из {MOCK_QUESTIONS.length}
-              </p>
-
-              {/* Honesty Index */}
-              <div className="inline-flex items-center gap-3 bg-slate-900/50 rounded-xl px-6 py-3 mb-6">
-                <span className="text-sm text-slate-400">Индекс честности:</span>
-                <span className={`text-2xl font-black ${engine.honestyIndex >= 80 ? "text-green-400" : engine.honestyIndex >= 50 ? "text-amber-400" : "text-red-400"}`}>
-                  {engine.honestyIndex}%
-                </span>
-              </div>
-
-              {/* Events summary */}
-              {engine.events.length > 0 && (
-                <div className="mt-4 text-left">
-                  <h3 className="text-sm font-bold text-slate-300 mb-2">Зафиксированные сработки ({engine.events.length}):</h3>
-                  <div className="space-y-1 max-h-40 overflow-y-auto">
-                    {engine.events.map(e => (
-                      <div key={e.id} className={`text-xs px-3 py-1.5 rounded-lg border ${severityBg(e.severity)} flex items-center gap-2`}>
-                        <span>{eventTypeIcon(e.type)}</span>
-                        <span className="text-slate-400 font-mono">[{formatEventTime(e.timestamp)}]</span>
-                        <span className={severityColor(e.severity)}>{e.description}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-3 mt-6 justify-center">
-                <button
-                  onClick={stopSession}
-                  className="px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 rounded-xl font-bold text-sm hover:from-cyan-500 hover:to-blue-500 transition-all"
-                >
-                  ⬇ Скачать запись и выйти
-                </button>
-                <button
-                  onClick={() => { setMode("admin"); }}
-                  className="px-6 py-3 bg-slate-700/50 rounded-xl font-bold text-sm hover:bg-slate-700 transition"
-                >
-                  👨‍💼 Переключить на вид менеджера
-                </button>
-              </div>
-            </div>
-          ) : (
-            // ─── Active Question ───
-            <div className="bg-slate-800/50 backdrop-blur border border-slate-700/50 rounded-2xl p-6 sm:p-8">
-              {/* Subject badge */}
-              <div className="flex items-center gap-2 mb-4">
-                <span className={`text-xs px-2.5 py-1 rounded-full font-bold ${q.subject === "russian" ? "bg-green-500/20 text-green-400" : q.subject === "math" ? "bg-blue-500/20 text-blue-400" : "bg-purple-500/20 text-purple-400"}`}>
-                  {q.subject === "russian" ? "Русский" : q.subject === "math" ? "Математика" : "Логика"}
-                </span>
-                <span className="text-xs text-slate-500">{q.points} {q.points === 1 ? "балл" : q.points < 5 ? "балла" : "баллов"}</span>
-              </div>
-
-              <h2 className="text-xl font-bold mb-6">{q.text}</h2>
-
-              <div className="space-y-3">
-                {q.options.map((opt, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleAnswer(idx)}
-                    className="w-full text-left px-5 py-3.5 bg-slate-900/50 hover:bg-slate-700/50 border border-slate-700/50 hover:border-cyan-500/40 rounded-xl transition-all text-sm font-medium group"
-                  >
-                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-700/50 text-xs font-bold mr-3 group-hover:bg-cyan-500/30 group-hover:text-cyan-300 transition">
-                      {String.fromCharCode(65 + idx)}
-                    </span>
-                    {opt}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ══════════════════════════════════════════════
-  // RENDER: Admin / Manager Monitoring Mode
-  // ══════════════════════════════════════════════
   return (
-    <div className="min-h-screen bg-slate-950 text-white select-none">
+    <div className="min-h-screen bg-slate-950 text-white select-none relative">
+      {/* ── PERSISTENT HIDDEN MEDIA ELEMENTS ── */}
+      {/* These elements stay in DOM at all times so video stream & canvas are never lost */}
+      <video
+        ref={videoRef}
+        className="fixed -top-[9999px] -left-[9999px] w-[640px] h-[480px] pointer-events-none opacity-0"
+        playsInline
+        muted
+      />
+
+      {/* Proctoring Overlay renderer */}
       <Suspense fallback={null}>
         <ProctoringOverlay
           videoRef={videoRef}
@@ -467,199 +266,455 @@ export default function ProctorSandbox() {
         />
       </Suspense>
 
-      {/* Hidden video source */}
-      <video ref={videoRef} className="hidden" playsInline muted />
+      {/* ══════════════════════════════════════════════ */}
+      {/* MODE 1: SETUP SCREEN */}
+      {/* ══════════════════════════════════════════════ */}
+      {mode === "setup" && (
+        <div className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6">
+          <canvas ref={canvasRef} className="hidden" />
 
-      <div className="flex flex-col lg:flex-row h-screen">
-        {/* LEFT: Video + Canvas (70%) */}
-        <div className="flex-1 lg:w-[70%] flex flex-col p-3 sm:p-4">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <h1 className="text-lg font-black">👨‍💼 Панель наблюдения</h1>
-              <div className="flex items-center gap-1.5 bg-slate-800/80 rounded-full px-3 py-1">
-                <div className={`w-2 h-2 rounded-full ${isSessionActive ? "bg-green-400 animate-pulse" : "bg-slate-600"}`} />
-                <span className="text-xs text-slate-400">{isSessionActive ? "LIVE" : "STOPPED"}</span>
+          <div className="w-full max-w-xl">
+            {/* Title */}
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 rounded-full px-4 py-1.5 mb-4">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                <span className="text-cyan-300 text-xs font-mono uppercase tracking-widest">AI Proctoring Sandbox</span>
               </div>
+              <h1 className="text-3xl sm:text-4xl font-black tracking-tight">
+                Песочница <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">Прокторинга</span>
+              </h1>
+              <p className="text-slate-400 mt-2 text-sm max-w-md mx-auto">
+                Автономная система визуального наблюдения: нейросети распознают лицо, взгляд, руки и свет прямо в браузере.
+              </p>
             </div>
-            <div className="flex items-center gap-2">
-              {isSessionActive ? (
+
+            {/* Camera Card */}
+            <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-2xl p-6 mb-6 shadow-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <span>📹</span> Камера и Микрофон
+                </h2>
+                {cameraReady && (
+                  <span className="text-xs bg-green-500/20 text-green-400 border border-green-500/30 rounded-full px-3 py-1 font-mono">
+                    ✓ Камера активна
+                  </span>
+                )}
+              </div>
+
+              {!cameraReady && !cameraError && (
                 <button
-                  onClick={stopSession}
-                  className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 rounded-lg text-xs font-bold transition"
+                  onClick={initCamera}
+                  className="w-full py-3.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-cyan-500/20"
                 >
-                  ⏹ Остановить
+                  Включить камеру и запустить ML
                 </button>
-              ) : (
+              )}
+
+              {cameraError && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-300 text-sm">
+                  {cameraError}
+                  <button onClick={initCamera} className="mt-2 w-full py-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-sm transition">
+                    Попробовать снова
+                  </button>
+                </div>
+              )}
+
+              {cameraReady && (
+                <div className="space-y-3">
+                  <div className="text-sm text-slate-300 space-y-1">
+                    <p>✓ Камера: <span className="font-mono text-cyan-400">{videoRef.current?.videoWidth || 1280}×{videoRef.current?.videoHeight || 720}</span></p>
+                    <p>✓ Запись звука: <span className="text-green-400">Включена</span></p>
+                    <p className="text-xs text-slate-400">
+                      {engine.isLoading ? `⏳ ${engine.loadingProgress}` : engine.isReady ? "✓ Нейросети загружены и готовы" : engine.error ? `❌ ${engine.error}` : ""}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Mode selection buttons */}
+            {cameraReady && engine.isReady && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <button
+                  onClick={() => startSession("student")}
+                  className="group bg-slate-900/80 backdrop-blur border border-slate-800 hover:border-cyan-500/50 rounded-2xl p-5 text-left transition-all hover:bg-slate-800/80 shadow-xl"
+                >
+                  <div className="text-3xl mb-3">🎓</div>
+                  <h3 className="text-white font-bold text-lg group-hover:text-cyan-300 transition">Режим Ученика</h3>
+                  <p className="text-slate-400 text-xs mt-1 leading-relaxed">
+                    Пройдите тест из 8 вопросов с фоновым наблюдением
+                  </p>
+                </button>
+
                 <button
                   onClick={() => startSession("admin")}
-                  className="px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 rounded-lg text-xs font-bold transition"
+                  className="group bg-slate-900/80 backdrop-blur border border-slate-800 hover:border-blue-500/50 rounded-2xl p-5 text-left transition-all hover:bg-slate-800/80 shadow-xl"
                 >
-                  ▶ Запустить
+                  <div className="text-3xl mb-3">👨‍💼</div>
+                  <h3 className="text-white font-bold text-lg group-hover:text-blue-300 transition">Режим Менеджера</h3>
+                  <p className="text-slate-400 text-xs mt-1 leading-relaxed">
+                    Панель онлайн-наблюдения с вектором взгляда и логом
+                  </p>
                 </button>
-              )}
-            </div>
-          </div>
-
-          {/* Canvas Display (shows the composite video + overlay) */}
-          <div className="flex-1 relative bg-black rounded-xl overflow-hidden border border-slate-800 shadow-2xl">
-            <canvas
-              ref={canvasRef}
-              className="w-full h-full object-contain"
-            />
-
-            {/* Honesty Index Badge */}
-            <div className="absolute bottom-4 right-4 bg-slate-900/80 backdrop-blur rounded-xl px-4 py-2 border border-slate-700/50">
-              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Индекс честности</div>
-              <div className={`text-2xl font-black ${engine.honestyIndex >= 80 ? "text-green-400" : engine.honestyIndex >= 50 ? "text-amber-400" : "text-red-400"}`}>
-                {engine.honestyIndex}%
-              </div>
-            </div>
-          </div>
-
-          {/* Timeline Bar */}
-          <div className="mt-3 bg-slate-800/50 rounded-xl p-3 border border-slate-700/30">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] text-slate-500 uppercase tracking-wider">Timeline событий</span>
-              <span className="text-xs text-slate-400 font-mono">{formatTime(recorder.recordingDuration)}</span>
-            </div>
-            <div className="relative h-6 bg-slate-900/50 rounded-full overflow-hidden">
-              {/* Progress bar */}
-              <div
-                className="absolute top-0 left-0 h-full bg-gradient-to-r from-cyan-500/20 to-blue-500/20 rounded-full"
-                style={{ width: `${Math.min(100, (recorder.recordingDuration / (90 * 60)) * 100)}%` }}
-              />
-
-              {/* Event markers */}
-              {engine.events.map((e) => {
-                const totalDuration = Math.max(recorder.recordingDuration, 1) * 1000;
-                const pos = Math.min(100, (e.timestamp / totalDuration) * 100);
-                return (
-                  <div
-                    key={e.id}
-                    className="absolute top-0 h-full w-1 cursor-pointer group"
-                    style={{ left: `${pos}%` }}
-                    title={`[${formatEventTime(e.timestamp)}] ${e.description}`}
-                  >
-                    <div
-                      className={`w-1.5 h-full rounded-full ${
-                        e.severity === "HIGH" ? "bg-red-500" : e.severity === "MEDIUM" ? "bg-amber-500" : "bg-blue-500"
-                      }`}
-                    />
-                    {/* Tooltip on hover */}
-                    <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs whitespace-nowrap z-50 shadow-xl">
-                      <div className="font-mono text-slate-400">[{formatEventTime(e.timestamp)}]</div>
-                      <div className={severityColor(e.severity)}>{e.description}</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT: Telemetry Panel (30%) */}
-        <div className="lg:w-[30%] bg-slate-900/50 border-l border-slate-800/50 flex flex-col overflow-hidden">
-          {/* Telemetry Gauges */}
-          <div className="p-4 border-b border-slate-800/50 space-y-3">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">📊 Телеметрия</h3>
-
-            {/* Head Pose */}
-            <div className="grid grid-cols-3 gap-2">
-              <TelemetryGauge label="Yaw" value={engine.telemetry.headPose.yaw} max={60} danger={25} unit="°" />
-              <TelemetryGauge label="Pitch" value={engine.telemetry.headPose.pitch} max={60} danger={50} unit="°" />
-              <TelemetryGauge label="Roll" value={engine.telemetry.headPose.roll} max={45} danger={30} unit="°" />
-            </div>
-
-            {/* Status indicators */}
-            <div className="grid grid-cols-2 gap-2">
-              <StatusBadge
-                icon="👁"
-                label="Взгляд"
-                value={engine.telemetry.gazeDirection}
-                isWarning={engine.telemetry.gazeDirection !== "CENTER" && engine.telemetry.gazeDirection !== "DOWN"}
-              />
-              <StatusBadge
-                icon="✋"
-                label="Руки"
-                value={engine.telemetry.handStatus === "IN_FRAME" ? `В кадре (${engine.telemetry.handsDetected})` : engine.telemetry.handStatus === "BELOW_DESK" ? "Под столом" : "Нет"}
-                isWarning={engine.telemetry.handStatus === "BELOW_DESK"}
-              />
-              <StatusBadge
-                icon="👤"
-                label="Лица"
-                value={String(engine.telemetry.facesDetected)}
-                isWarning={engine.telemetry.facesDetected > 1}
-              />
-              <StatusBadge
-                icon="💡"
-                label="Свет"
-                value={engine.telemetry.lightAnomaly ? "Аномалия!" : "Норма"}
-                isWarning={engine.telemetry.lightAnomaly}
-              />
-            </div>
-
-            {/* FPS & Draft indicator */}
-            <div className="flex items-center gap-3 text-xs text-slate-500">
-              <span>FPS: {engine.telemetry.fps}</span>
-              {engine.telemetry.isDraftWork && (
-                <span className="bg-yellow-500/10 text-yellow-400 border border-yellow-500/30 rounded px-2 py-0.5">📝 Черновик</span>
-              )}
-              {engine.telemetry.isViolating && (
-                <span className="bg-red-500/10 text-red-400 border border-red-500/30 rounded px-2 py-0.5 animate-pulse">⚠ Нарушение</span>
-              )}
-            </div>
-          </div>
-
-          {/* Event Log */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between p-4 pb-2">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">📋 Лог событий ({engine.events.length})</h3>
-            </div>
-
-            <div ref={eventLogRef} className="flex-1 overflow-y-auto px-4 pb-4 space-y-1.5">
-              {engine.events.length === 0 ? (
-                <div className="text-center py-8 text-slate-600 text-xs">Нет событий — всё чисто 🟢</div>
-              ) : (
-                engine.events.map((e) => (
-                  <div
-                    key={e.id}
-                    className={`text-xs px-3 py-2 rounded-lg border transition-all ${severityBg(e.severity)}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">{eventTypeIcon(e.type)}</span>
-                      <span className="font-mono text-slate-500">[{formatEventTime(e.timestamp)}]</span>
-                      <span className={`font-bold ${severityColor(e.severity)}`}>{eventTypeLabel(e.type)}</span>
-                    </div>
-                    <div className="text-slate-400 mt-0.5 pl-7">{e.description}</div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Recording controls footer */}
-          <div className="p-4 border-t border-slate-800/50 space-y-2">
-            {recorder.isRecording && (
-              <div className="flex items-center gap-2 text-xs text-slate-400">
-                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                <span>Запись: {formatTime(recorder.recordingDuration)}</span>
               </div>
             )}
-            <button
-              onClick={stopSession}
-              className="w-full py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-xl text-sm font-bold transition-all"
-            >
-              ⬇ Остановить и скачать запись
-            </button>
+
+            {cameraReady && engine.isLoading && (
+              <div className="text-center py-6">
+                <div className="w-10 h-10 border-3 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-slate-400 text-sm font-mono">{engine.loadingProgress}</p>
+              </div>
+            )}
           </div>
         </div>
-      </div>
+      )}
+
+      {/* ══════════════════════════════════════════════ */}
+      {/* MODE 2: STUDENT TEST MODE */}
+      {/* ══════════════════════════════════════════════ */}
+      {mode === "student" && (
+        <div className="min-h-screen p-4 sm:p-8">
+          <canvas ref={canvasRef} className="hidden" />
+
+          <div className="max-w-3xl mx-auto">
+            {/* Top Bar */}
+            <div className="flex items-center justify-between mb-8 bg-slate-900/80 backdrop-blur border border-slate-800 rounded-2xl p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
+                <div>
+                  <div className="text-xs font-bold text-green-400 uppercase tracking-wider">AI Proctoring Active</div>
+                  <div className="text-[11px] text-slate-400">Наблюдение ведётся в скрытом режиме</div>
+                </div>
+              </div>
+
+              {/* Floating Camera Overlay Canvas Preview */}
+              <div className="flex items-center gap-4">
+                <div className="relative w-28 h-20 bg-black rounded-xl overflow-hidden border border-cyan-500/40 shadow-lg">
+                  {/* Mirrors the main overlay canvas so student can see camera */}
+                  <canvas
+                    ref={(c) => {
+                      if (c && canvasRef.current) {
+                        const ctx = c.getContext("2d");
+                        if (ctx) ctx.drawImage(canvasRef.current, 0, 0, c.width, c.height);
+                      }
+                    }}
+                    width={112}
+                    height={80}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                </div>
+                <div className="text-right">
+                  <div className="text-[11px] text-slate-500">Вопрос</div>
+                  <div className="text-lg font-bold text-white">{testFinished ? MOCK_QUESTIONS.length : currentQ + 1}/{MOCK_QUESTIONS.length}</div>
+                </div>
+              </div>
+            </div>
+
+            {testFinished ? (
+              /* Test Results */
+              <div className="bg-slate-900/80 backdrop-blur border border-slate-800 rounded-2xl p-8 text-center shadow-2xl">
+                <div className="text-5xl mb-4">🎉</div>
+                <h2 className="text-2xl font-black mb-2">Тест завершён!</h2>
+                <p className="text-slate-400 text-sm mb-6">
+                  Правильных ответов: <span className="text-white font-bold">{Object.entries(testAnswers).filter(([qid, ans]) => MOCK_QUESTIONS.find(q => q.id === qid)?.correct === ans).length}</span> из {MOCK_QUESTIONS.length}
+                </p>
+
+                {/* Honesty Index */}
+                <div className="inline-flex items-center gap-3 bg-slate-950/80 rounded-xl px-6 py-3 border border-slate-800 mb-6">
+                  <span className="text-sm text-slate-400">Индекс честности:</span>
+                  <span className={`text-3xl font-black ${engine.honestyIndex >= 80 ? "text-green-400" : engine.honestyIndex >= 50 ? "text-amber-400" : "text-red-400"}`}>
+                    {engine.honestyIndex}%
+                  </span>
+                </div>
+
+                {/* Detected Events */}
+                {engine.events.length > 0 && (
+                  <div className="mt-4 text-left max-w-md mx-auto">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Зафиксированные сработки ({engine.events.length}):</h3>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                      {engine.events.map((e) => (
+                        <div key={e.id} className={`text-xs px-3 py-2 rounded-lg border ${severityBg(e.severity)} flex items-center gap-2`}>
+                          <span>{eventTypeIcon(e.type)}</span>
+                          <span className="text-slate-400 font-mono">[{formatEventTime(e.timestamp)}]</span>
+                          <span className={severityColor(e.severity)}>{e.description}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-3 mt-8 justify-center">
+                  <button
+                    onClick={stopSession}
+                    className="px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-xl font-bold text-sm shadow-lg shadow-cyan-500/20 transition-all"
+                  >
+                    ⬇ Скачать видеозапись
+                  </button>
+                  <button
+                    onClick={() => setMode("admin")}
+                    className="px-6 py-3 bg-slate-800 hover:bg-slate-700 rounded-xl font-bold text-sm text-slate-300 transition"
+                  >
+                    👨‍💼 Открыть вид менеджера
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Active Question Card */
+              <div className="bg-slate-900/80 backdrop-blur border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className={`text-xs px-3 py-1 rounded-full font-bold ${MOCK_QUESTIONS[currentQ].subject === "russian" ? "bg-green-500/20 text-green-400 border border-green-500/30" : MOCK_QUESTIONS[currentQ].subject === "math" ? "bg-blue-500/20 text-blue-400 border border-blue-500/30" : "bg-purple-500/20 text-purple-400 border border-purple-500/30"}`}>
+                    {MOCK_QUESTIONS[currentQ].subject === "russian" ? "Русский язык" : MOCK_QUESTIONS[currentQ].subject === "math" ? "Математика" : "Логика"}
+                  </span>
+                  <span className="text-xs text-slate-400">{MOCK_QUESTIONS[currentQ].points} балла</span>
+                </div>
+
+                <h2 className="text-xl font-bold text-white mb-6 leading-relaxed">
+                  {MOCK_QUESTIONS[currentQ].text}
+                </h2>
+
+                <div className="space-y-3">
+                  {MOCK_QUESTIONS[currentQ].options.map((opt, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleAnswer(idx)}
+                      className="w-full text-left px-5 py-4 bg-slate-950/60 hover:bg-slate-800/80 border border-slate-800 hover:border-cyan-500/50 rounded-xl transition-all text-sm font-medium group flex items-center gap-3"
+                    >
+                      <span className="w-7 h-7 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold flex items-center justify-center group-hover:bg-cyan-500 group-hover:text-black transition">
+                        {String.fromCharCode(65 + idx)}
+                      </span>
+                      <span className="text-slate-200 group-hover:text-white transition">{opt}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════ */}
+      {/* MODE 3: ADMIN / MANAGER MONITORING VIEW */}
+      {/* ══════════════════════════════════════════════ */}
+      {mode === "admin" && (
+        <div className="flex flex-col lg:flex-row h-screen">
+          {/* LEFT: Video Canvas + Timeline (70%) */}
+          <div className="flex-1 lg:w-[70%] flex flex-col p-3 sm:p-4 gap-3">
+            {/* Header */}
+            <div className="flex items-center justify-between bg-slate-900/80 border border-slate-800 rounded-xl px-4 py-2.5">
+              <div className="flex items-center gap-3">
+                <h1 className="text-base font-black text-white flex items-center gap-2">
+                  <span>👨‍💼</span> Панель Наблюдения Менеджера
+                </h1>
+                <div className="flex items-center gap-1.5 bg-slate-950 rounded-full px-3 py-1 border border-slate-800">
+                  <div className={`w-2 h-2 rounded-full ${isSessionActive ? "bg-green-400 animate-pulse" : "bg-slate-600"}`} />
+                  <span className="text-xs text-slate-400 font-mono">{isSessionActive ? "LIVE" : "STOPPED"}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setMode("student")}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition"
+                >
+                  🎓 Вид ученика
+                </button>
+                {isSessionActive ? (
+                  <button
+                    onClick={stopSession}
+                    className="px-4 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 rounded-lg text-xs font-bold transition"
+                  >
+                    ⏹ Остановить
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => startSession("admin")}
+                    className="px-4 py-1.5 bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 rounded-lg text-xs font-bold transition"
+                  >
+                    ▶ Запустить
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Main Display Canvas */}
+            <div className="flex-1 relative bg-black rounded-2xl overflow-hidden border border-slate-800 shadow-2xl flex items-center justify-center">
+              <canvas
+                ref={canvasRef}
+                className="w-full h-full object-contain"
+              />
+
+              {/* Honesty Index Badge */}
+              <div className="absolute bottom-4 right-4 bg-slate-900/90 backdrop-blur rounded-xl px-4 py-2.5 border border-slate-700/60 shadow-xl">
+                <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-0.5">Индекс честности</div>
+                <div className={`text-2xl font-black ${engine.honestyIndex >= 80 ? "text-green-400" : engine.honestyIndex >= 50 ? "text-amber-400" : "text-red-400"}`}>
+                  {engine.honestyIndex}%
+                </div>
+              </div>
+            </div>
+
+            {/* Timeline Bar */}
+            <div className="bg-slate-900/80 rounded-xl p-3 border border-slate-800">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Timeline нарушений</span>
+                <span className="text-xs text-slate-400 font-mono">{formatTime(recorder.recordingDuration)}</span>
+              </div>
+              <div className="relative h-6 bg-slate-950 rounded-lg overflow-hidden border border-slate-800">
+                <div
+                  className="absolute top-0 left-0 h-full bg-cyan-500/20 border-r border-cyan-400 transition-all"
+                  style={{ width: `${Math.min(100, (recorder.recordingDuration / (90 * 60)) * 100)}%` }}
+                />
+
+                {engine.events.map((e) => {
+                  const totalDur = Math.max(recorder.recordingDuration, 1) * 1000;
+                  const pos = Math.min(100, (e.timestamp / totalDur) * 100);
+                  return (
+                    <div
+                      key={e.id}
+                      className="absolute top-0 h-full w-1.5 cursor-pointer group"
+                      style={{ left: `${pos}%` }}
+                    >
+                      <div className={`w-full h-full ${e.severity === "HIGH" ? "bg-red-500" : e.severity === "MEDIUM" ? "bg-amber-500" : "bg-blue-500"}`} />
+                      <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs whitespace-nowrap z-50 shadow-2xl">
+                        <div className="font-mono text-slate-400">[{formatEventTime(e.timestamp)}]</div>
+                        <div className={severityColor(e.severity)}>{e.description}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT: Telemetry + Simulation Panel (30%) */}
+          <div className="lg:w-[30%] bg-slate-900/90 border-l border-slate-800 flex flex-col overflow-hidden">
+            {/* Telemetry Gauges */}
+            <div className="p-4 border-b border-slate-800 space-y-3">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">📊 Телеметрия (Real-Time)</h3>
+
+              <div className="grid grid-cols-3 gap-2">
+                <TelemetryGauge label="Yaw" value={engine.telemetry.headPose.yaw} max={60} danger={20} unit="°" />
+                <TelemetryGauge label="Pitch" value={engine.telemetry.headPose.pitch} max={60} danger={45} unit="°" />
+                <TelemetryGauge label="Roll" value={engine.telemetry.headPose.roll} max={45} danger={25} unit="°" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <StatusBadge
+                  icon="👁"
+                  label="Взгляд"
+                  value={engine.telemetry.gazeDirection}
+                  isWarning={engine.telemetry.gazeDirection !== "CENTER" && engine.telemetry.gazeDirection !== "DOWN"}
+                />
+                <StatusBadge
+                  icon="✋"
+                  label="Руки"
+                  value={engine.telemetry.handStatus === "IN_FRAME" ? `В кадре (${engine.telemetry.handsDetected})` : engine.telemetry.handStatus === "BELOW_DESK" ? "Под столом!" : "Нет"}
+                  isWarning={engine.telemetry.handStatus === "BELOW_DESK"}
+                />
+                <StatusBadge
+                  icon="👤"
+                  label="Лица"
+                  value={String(engine.telemetry.facesDetected)}
+                  isWarning={engine.telemetry.facesDetected > 1}
+                />
+                <StatusBadge
+                  icon="💡"
+                  label="Свет"
+                  value={engine.telemetry.lightAnomaly ? "Аномалия!" : "Норма"}
+                  isWarning={engine.telemetry.lightAnomaly}
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-slate-400 font-mono pt-1">
+                <span>FPS: {engine.telemetry.fps}</span>
+                {engine.telemetry.isDraftWork && <span className="text-yellow-400">📝 Черновик</span>}
+                {engine.telemetry.isViolating && <span className="text-red-400 animate-pulse">⚠ Нарушение</span>}
+              </div>
+            </div>
+
+            {/* Test Simulation Controls */}
+            <div className="p-3 border-b border-slate-800 bg-slate-950/50">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">🧪 ТЕСТОВЫЕ СИМУЛЯЦИИ</div>
+              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                <button
+                  onClick={() => simulateEvent("GAZE_LEFT", "MEDIUM", "Взгляд отвлёкся влево (угол 28°)")}
+                  className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-slate-300 transition text-left"
+                >
+                  👁 Взгляд вбок
+                </button>
+                <button
+                  onClick={() => simulateEvent("HAND_BELOW", "MEDIUM", "Руки ушли под стол (работа с телефоном)")}
+                  className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-slate-300 transition text-left"
+                >
+                  🤚 Рука под столом
+                </button>
+                <button
+                  onClick={() => simulateEvent("EXTRA_FACE", "HIGH", "Обнаружено 2 лица в кадре!")}
+                  className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-slate-300 transition text-left"
+                >
+                  👥 Второе лицо
+                </button>
+                <button
+                  onClick={() => simulateEvent("LIGHT_ANOMALY", "HIGH", "Свечение от смартфона/планшета снизу")}
+                  className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-slate-300 transition text-left"
+                >
+                  💡 Свет телефона
+                </button>
+                <button
+                  onClick={() => simulateEvent("FAST_ANSWER", "HIGH", "Слишком быстрый ответ (0.8с)")}
+                  className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-slate-300 transition text-left"
+                >
+                  ⚡ Быстрый ответ
+                </button>
+                <button
+                  onClick={() => simulateEvent("TAB_SWITCH", "HIGH", "Пользователь сменил вкладку браузера")}
+                  className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-slate-300 transition text-left"
+                >
+                  🔀 Смена вкладки
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable Event Log */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="p-3 pb-1 flex items-center justify-between">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">📋 Журнал событий ({engine.events.length})</h3>
+              </div>
+
+              <div ref={eventLogRef} className="flex-1 overflow-y-auto px-3 pb-3 space-y-1.5">
+                {engine.events.length === 0 ? (
+                  <div className="text-center py-8 text-slate-500 text-xs">Нет зафиксированных нарушений 🟢</div>
+                ) : (
+                  engine.events.map((e) => (
+                    <div key={e.id} className={`text-xs p-2.5 rounded-lg border ${severityBg(e.severity)}`}>
+                      <div className="flex items-center gap-2">
+                        <span>{eventTypeIcon(e.type)}</span>
+                        <span className="font-mono text-slate-400">[{formatEventTime(e.timestamp)}]</span>
+                        <span className={`font-bold ${severityColor(e.severity)}`}>{eventTypeLabel(e.type)}</span>
+                      </div>
+                      <div className="text-slate-300 mt-1 pl-6 text-[11px] leading-tight">{e.description}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Download controls */}
+            <div className="p-3 border-t border-slate-800 space-y-2">
+              <button
+                onClick={stopSession}
+                className="w-full py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-xl text-xs font-bold text-white transition-all shadow-lg shadow-cyan-500/20"
+              >
+                ⬇ Остановить и скачать видеозапись
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── Sub-components ───
+// ── SUB-COMPONENTS ──
 
 function TelemetryGauge({ label, value, max, danger, unit }: { label: string; value: number; max: number; danger: number; unit: string }) {
   const absVal = Math.abs(value);
@@ -667,14 +722,14 @@ function TelemetryGauge({ label, value, max, danger, unit }: { label: string; va
   const isDanger = absVal > danger;
 
   return (
-    <div className="bg-slate-800/50 rounded-lg p-2 text-center">
-      <div className="text-[10px] text-slate-500 uppercase mb-1">{label}</div>
-      <div className={`text-sm font-bold font-mono ${isDanger ? "text-red-400" : "text-slate-300"}`}>
+    <div className="bg-slate-950/80 rounded-lg p-2 text-center border border-slate-800">
+      <div className="text-[10px] text-slate-400 uppercase font-mono">{label}</div>
+      <div className={`text-xs font-bold font-mono ${isDanger ? "text-red-400" : "text-slate-200"}`}>
         {value.toFixed(1)}{unit}
       </div>
-      <div className="mt-1 h-1 bg-slate-700/50 rounded-full overflow-hidden">
+      <div className="mt-1 h-1 bg-slate-800 rounded-full overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all ${isDanger ? "bg-red-500" : "bg-cyan-500/60"}`}
+          className={`h-full rounded-full transition-all ${isDanger ? "bg-red-500" : "bg-cyan-500"}`}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -684,10 +739,10 @@ function TelemetryGauge({ label, value, max, danger, unit }: { label: string; va
 
 function StatusBadge({ icon, label, value, isWarning }: { icon: string; label: string; value: string; isWarning: boolean }) {
   return (
-    <div className={`rounded-lg p-2 border text-center transition-colors ${isWarning ? "bg-red-500/10 border-red-500/30" : "bg-slate-800/50 border-slate-700/30"}`}>
-      <div className="text-sm mb-0.5">{icon}</div>
-      <div className="text-[10px] text-slate-500 uppercase">{label}</div>
-      <div className={`text-xs font-bold ${isWarning ? "text-red-400" : "text-slate-300"}`}>{value}</div>
+    <div className={`rounded-lg p-2 border text-center transition-colors ${isWarning ? "bg-red-500/10 border-red-500/40 text-red-300" : "bg-slate-950/80 border-slate-800 text-slate-300"}`}>
+      <div className="text-xs mb-0.5">{icon}</div>
+      <div className="text-[9px] text-slate-400 uppercase font-mono">{label}</div>
+      <div className={`text-[11px] font-bold ${isWarning ? "text-red-400" : "text-slate-200"}`}>{value}</div>
     </div>
   );
 }
