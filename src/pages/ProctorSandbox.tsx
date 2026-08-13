@@ -51,6 +51,7 @@ function eventTypeIcon(type: string): string {
     case "PHONE_DETECTED": return "📱";
     case "BOOK_DETECTED": return "📖";
     case "SPEECH_CHEAT_DETECTED": return "🗣";
+    case "GESTURE_SIGNAL_DETECTED": return "✌️";
     case "PASTE_DETECTED": return "📋";
     case "TAB_SWITCH": return "🔀";
     case "FACE_LOST": return "❌";
@@ -70,6 +71,7 @@ function eventTypeLabel(type: string): string {
     case "PHONE_DETECTED": return "Телефон в кадре!";
     case "BOOK_DETECTED": return "Книга / конспект";
     case "SPEECH_CHEAT_DETECTED": return "Речь / Попытка подсказки";
+    case "GESTURE_SIGNAL_DETECTED": return "Сигнализирование пальцами";
     case "PASTE_DETECTED": return "Вставка текста";
     case "TAB_SWITCH": return "Смена вкладки";
     case "FACE_LOST": return "Лицо потеряно";
@@ -96,7 +98,8 @@ export default function ProctorSandbox() {
   const eventLogRef = useRef<HTMLDivElement | null>(null);
 
   // ML & Recording Hooks
-  const engine = useProctoringEngine(videoRef, canvasRef, isSessionActive);
+  const currentQuestionText = mode === "student" && MOCK_QUESTIONS[currentQ] ? MOCK_QUESTIONS[currentQ].text : undefined;
+  const engine = useProctoringEngine(videoRef, canvasRef, isSessionActive, currentQuestionText);
   const recorder = useCompositeRecorder(canvasRef);
   const timing = useAnswerTiming();
 
@@ -270,6 +273,7 @@ export default function ProctorSandbox() {
           sessionStartTime={engine.sessionStartTime}
           faceLandmarks={engine.faceLandmarks}
           detectedObjects={engine.detectedObjects}
+          handLandmarks={engine.handLandmarks}
         />
       </Suspense>
 
@@ -647,6 +651,12 @@ export default function ProctorSandbox() {
                   value={engine.telemetry.speechIntentCategory === "AI_PROMPT" ? "ИИ-ЗАПРОС!" : engine.telemetry.speechIntentCategory === "EXAM_HELP_REQUEST" ? "ПОДСКАЗКА!" : engine.telemetry.speechIntentCategory === "DICTATION" ? "НИКДОВКА!" : "Норма"}
                   isWarning={engine.telemetry.speechIntentCategory === "AI_PROMPT" || engine.telemetry.speechIntentCategory === "EXAM_HELP_REQUEST"}
                 />
+                <StatusBadge
+                  icon="✌️"
+                  label="Жест пальцами"
+                  value={engine.telemetry.currentGesture?.label || "Нет жеста"}
+                  isWarning={Boolean(engine.telemetry.currentGesture?.signaledOption)}
+                />
               </div>
 
               <div className="flex items-center justify-between text-xs text-slate-400 font-mono pt-1">
@@ -685,10 +695,16 @@ export default function ProctorSandbox() {
                   💡 Свет телефона
                 </button>
                 <button
-                  onClick={() => simulateEvent("SPEECH_CHEAT_DETECTED", "HIGH", "🗣 Речь/подсказка (Вероятность 85%): \"подскажи какой ответ в третьем...\"")}
+                  onClick={() => simulateEvent("SPEECH_CHEAT_DETECTED", "HIGH", "🗣 Речь/подсказка (Вероятность 90%): \"сири что во втором...\"")}
                   className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-slate-300 transition text-left"
                 >
-                  🗣 Подсказка речи (85%)
+                  🗣 Запрос ответа (90%)
+                </button>
+                <button
+                  onClick={() => simulateEvent("GESTURE_SIGNAL_DETECTED", "HIGH", "✋ Сигнализирование пальцами: ✌️ 2 пальца (Вариант B)")}
+                  className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-slate-300 transition text-left"
+                >
+                  ✌️ Сигнал 2 пальца (B)
                 </button>
                 <button
                   onClick={() => simulateEvent("TAB_SWITCH", "HIGH", "Пользователь сменил вкладку браузера")}

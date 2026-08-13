@@ -12,12 +12,22 @@ export interface DetectedObject {
   };
 }
 
+export type HandGestureType = 'NONE' | 'ONE_FINGER' | 'TWO_FINGERS' | 'THREE_FINGERS' | 'FOUR_FINGERS' | 'THUMBS_UP' | 'THUMBS_DOWN' | 'PHONE_HAND_SIGNAL';
+
+export interface HandGestureResult {
+  gesture: HandGestureType;
+  label: string;
+  extendedFingers: number;
+  signaledOption?: string; // 'A', 'B', 'C', 'D'
+}
+
 export interface ProctoringTelemetry {
   headPose: { pitch: number; yaw: number; roll: number };
   gazeDirection: 'CENTER' | 'LEFT' | 'RIGHT' | 'DOWN';
   gazeRatio: number;
   handsDetected: number;
   handStatus: 'IN_FRAME' | 'BELOW_DESK' | 'NO_HANDS';
+  currentGesture: HandGestureResult;
   facesDetected: number;
   phoneDetected: boolean;
   bookDetected: boolean;
@@ -30,7 +40,7 @@ export interface ProctoringTelemetry {
   // Audio Telemetry
   audioLevel: number;           // 0 - 100 RMS volume
   audioStatus: 'SILENT' | 'NORMAL' | 'WHISPER' | 'TALKING';
-  zeroCrossingRate: number;     // ZCR (0.0 - 1.0) - High for whisper
+  zeroCrossingRate: number;     // ZCR (0.0 - 1.0)
   lastTranscript: string;       // Real-time transcribed text
   speechProbability: number;    // 0 - 100% probability of cheating/prompts
   speechIntentCategory: 'NORMAL_READING' | 'EXAM_HELP_REQUEST' | 'DICTATION' | 'AI_PROMPT' | 'BENIGN';
@@ -39,90 +49,163 @@ export interface ProctoringTelemetry {
 export interface ProctoringEvent {
   id: string;
   timestamp: number;
-  type: 'GAZE_LEFT' | 'GAZE_RIGHT' | 'EXTRA_FACE' | 'HAND_BELOW' | 'SWIPE' | 'LIGHT_ANOMALY' | 'FAST_ANSWER' | 'PASTE_DETECTED' | 'TAB_SWITCH' | 'FACE_LOST' | 'PHONE_DETECTED' | 'BOOK_DETECTED' | 'SPEECH_CHEAT_DETECTED';
+  type: 'GAZE_LEFT' | 'GAZE_RIGHT' | 'EXTRA_FACE' | 'HAND_BELOW' | 'SWIPE' | 'LIGHT_ANOMALY' | 'FAST_ANSWER' | 'PASTE_DETECTED' | 'TAB_SWITCH' | 'FACE_LOST' | 'PHONE_DETECTED' | 'BOOK_DETECTED' | 'SPEECH_CHEAT_DETECTED' | 'GESTURE_SIGNAL_DETECTED';
   severity: 'LOW' | 'MEDIUM' | 'HIGH';
   description: string;
 }
 
-// ── DYNAMIC SEMANTIC INTENT CLASSIFICATION MACHINE ──
-// Evaluates context and intent dynamically based on semantic structure and sentence function
-function evaluateSemanticIntent(text: string): {
+// ── 1. FINGER GESTURE CLASSIFIER (MediaPipe 3D Hand Landmarks) ──
+function classifyHandGesture(landmarks: { x: number; y: number; z: number }[]): HandGestureResult {
+  if (!landmarks || landmarks.length < 21) {
+    return { gesture: 'NONE', label: 'Нет жеста', extendedFingers: 0 };
+  }
+
+  const wrist = landmarks[0];
+  const thumbTip = landmarks[4];
+  const indexTip = landmarks[8];
+  const middleTip = landmarks[12];
+  const ringTip = landmarks[16];
+  const pinkyTip = landmarks[20];
+
+  const indexPip = landmarks[6];
+  const middlePip = landmarks[10];
+  const ringPip = landmarks[14];
+  const pinkyPip = landmarks[18];
+  const thumbMcp = landmarks[2];
+
+  const isIndexUp = indexTip.y < indexPip.y;
+  const isMiddleUp = middleTip.y < middlePip.y;
+  const isRingUp = ringTip.y < ringPip.y;
+  const isPinkyUp = pinkyTip.y < pinkyPip.y;
+
+  const isThumbOut = Math.hypot(thumbTip.x - wrist.x, thumbTip.y - wrist.y) > Math.hypot(thumbMcp.x - wrist.x, thumbMcp.y - wrist.y) * 1.20;
+
+  let count = 0;
+  if (isIndexUp) count++;
+  if (isMiddleUp) count++;
+  if (isRingUp) count++;
+  if (isPinkyUp) count++;
+
+  if (isThumbOut && !isIndexUp && !isMiddleUp && !isRingUp && !isPinkyUp) {
+    if (thumbTip.y < wrist.y - 0.08) {
+      return { gesture: 'THUMBS_UP', label: '👍 Большой палец вверх', extendedFingers: 1 };
+    } else if (thumbTip.y > wrist.y + 0.08) {
+      return { gesture: 'THUMBS_DOWN', label: '👎 Большой палец вниз', extendedFingers: 1 };
+    }
+  }
+
+  if (isThumbOut && isPinkyUp && !isIndexUp && !isMiddleUp && !isRingUp) {
+    return { gesture: 'PHONE_HAND_SIGNAL', label: '🤙 Жест "Телефон"', extendedFingers: 2 };
+  }
+
+  if (count === 1 && isIndexUp) {
+    return { gesture: 'ONE_FINGER', label: '☝️ 1 палец (Вариант А)', extendedFingers: 1, signaledOption: 'A' };
+  }
+
+  if (count === 2 && isIndexUp && isMiddleUp) {
+    return { gesture: 'TWO_FINGERS', label: '✌️ 2 пальца (Вариант B)', extendedFingers: 2, signaledOption: 'B' };
+  }
+
+  if (count === 3 && isIndexUp && isMiddleUp && isRingUp) {
+    return { gesture: 'THREE_FINGERS', label: '🤟 3 пальца (Вариант C)', extendedFingers: 3, signaledOption: 'C' };
+  }
+
+  if (count === 4 && isIndexUp && isMiddleUp && isRingUp && isPinkyUp) {
+    return { gesture: 'FOUR_FINGERS', label: '🖐 4 пальца (Вариант D)', extendedFingers: 4, signaledOption: 'D' };
+  }
+
+  return { gesture: 'NONE', label: 'Ладонь', extendedFingers: count + (isThumbOut ? 1 : 0) };
+}
+
+// ── 2. DYNAMIC SEMANTIC INTENT CLASSIFIER (With Question Text Overlap Verification) ──
+function evaluateSemanticIntent(text: string, currentQuestionText?: string): {
   probability: number;
   intentCategory: ProctoringTelemetry['speechIntentCategory'];
   reasoning: string;
 } {
   if (!text || text.trim().length === 0) {
-    return { probability: 0, intentCategory: 'BENIGN', reasoning: 'No speech detected' };
+    return { probability: 0, intentCategory: 'BENIGN', reasoning: 'Речь не обнаружена' };
   }
 
   const clean = text.toLowerCase().trim();
-  const words = clean.split(/\s+/);
+  const words = clean.split(/\s+/).filter(w => w.length > 2);
   const wordCount = words.length;
 
-  // Intent vectors (structural & semantic triggers)
-  const isQuestionOrRequest = /(?:кто|что|где|когда|какой|какие|как|сколько|почему|зачем|выбери|скажи|подскажи|помоги|ответ|верно|правильно|\?)/i.test(clean);
-  const hasChoiceOrOption = /(?:первый|второй|третий|четвертый|пятый|вариант|буква|один|два|три|четыре|пять|а|б|в|г|a|b|c|d)\b/i.test(clean);
-  const hasAiAssistant = /(?:гугл|яндекс|алиса|сири|сафари|гпт|gpt|chat|джипити|поиск|найди)/i.test(clean);
-  const hasDictationPointers = /(?:вопрос|уравнение|текст|задача|пример|читать|напиши|сфотай|смотри)/i.test(clean);
+  // STEP 0: Context Overlap Verification against the current active question on screen
+  if (currentQuestionText && currentQuestionText.trim().length > 0) {
+    const qClean = currentQuestionText.toLowerCase();
+    
+    let matchedInQuestionCount = 0;
+    for (const word of words) {
+      if (qClean.includes(word)) {
+        matchedInQuestionCount++;
+      }
+    }
 
-  // Dynamic Intent Categorization
-  if (hasAiAssistant) {
+    const overlapRatio = wordCount > 0 ? matchedInQuestionCount / wordCount : 0;
+
+    // If > 45% of significant words match the question text on screen (and no Siri/AI calls),
+    // the student is just reading the question text out loud!
+    if (overlapRatio > 0.45 && !/(?:сири|siri|эй чувак|чувак|эй брат|гугл|яндекс|алиса|гпт|gpt)/i.test(clean)) {
+      return {
+        probability: 5, // 5% BENIGN - NOT A VIOLATION!
+        intentCategory: 'NORMAL_READING',
+        reasoning: `Ученик читает текст текущего задания на экране (Совпадение слов ${Math.round(overlapRatio * 100)}%)`
+      };
+    }
+  }
+
+  // 1. Direct AI/Device Assistance Call ("сири", "эй чувак", "гугл", "алиса", "гпт") -> 95-100%
+  const hasAiOrDeviceCall = /(?:сири|siri|эй чувак|чувак|эй|эй брат|гугл|яндекс|алиса|сафари|гпт|gpt|chat|джипити|поиск|найди)/i.test(clean);
+  if (hasAiOrDeviceCall) {
     return {
       probability: 95,
       intentCategory: 'AI_PROMPT',
-      reasoning: 'Обращение к ИИ-ассистенту или поисковой системе'
+      reasoning: 'Обращение к ИИ-ассистенту или помощнику ("сири", "эй чувак", "гугл")'
     };
   }
 
-  if (isQuestionOrRequest && hasChoiceOrOption) {
+  // 2. Conversational Answer Inquiries ("что во втором", "третье", "что в первом", "какой ответ", "какая буква", "че там в...") -> 90%
+  const hasConversationalAnswerPrompt = /(?:что в|что во|какой|какая|какое|че там|чо там|подскажи|помоги|скажи|выбери)\s*(?:первом|втором|третьем|четвертом|пятом|шестом|седьмом|восьмом|варианте|букве|ответ)?/i.test(clean)
+    || /(?:первое|второе|третье|четвертое|пятое|первый|второй|третий|четвертый|пятый)\b/i.test(clean);
+
+  if (hasConversationalAnswerPrompt) {
     return {
       probability: 90,
       intentCategory: 'EXAM_HELP_REQUEST',
-      reasoning: 'Запрос выбора варианта ответа у третьего лица'
+      reasoning: 'Разговорный запрос ответа на вопрос ("что во втором", "третье")'
     };
   }
 
-  if (isQuestionOrRequest && (hasDictationPointers || wordCount >= 3)) {
+  // 3. Dictation or third-party help -> 80%
+  const isQuestionOrRequest = /(?:кто|что|где|когда|как|сколько|почему|зачем|верно|правильно)/i.test(clean);
+  const hasDictationPointers = /(?:вопрос|уравнение|текст|задача|пример|читать|напиши|сфотай|смотри)/i.test(clean);
+
+  if (isQuestionOrRequest && hasDictationPointers) {
     return {
       probability: 80,
-      intentCategory: 'EXAM_HELP_REQUEST',
-      reasoning: 'Запрос решения задачи или подсказки'
-    };
-  }
-
-  if (hasDictationPointers && hasChoiceOrOption) {
-    return {
-      probability: 75,
       intentCategory: 'DICTATION',
-      reasoning: 'Надиктовка условий теста третьим лицом'
+      reasoning: 'Надиктовка текста вопроса третьим лицом'
     };
   }
 
-  if (hasChoiceOrOption && wordCount <= 4) {
+  // 4. Normal Reading Aloud -> 15% (BENIGN, NOT A VIOLATION!)
+  if (wordCount >= 4 && !hasConversationalAnswerPrompt && !hasAiOrDeviceCall) {
     return {
-      probability: 60,
-      intentCategory: 'EXAM_HELP_REQUEST',
-      reasoning: 'Диктовка варианта ответа'
-    };
-  }
-
-  if (wordCount >= 6 && isQuestionOrRequest) {
-    return {
-      probability: 50,
+      probability: 15,
       intentCategory: 'NORMAL_READING',
-      reasoning: 'Чтение вопроса вслух или размышления'
+      reasoning: 'Чтение задания вслух (безвредное размышление)'
     };
   }
 
   return {
     probability: 10,
     intentCategory: 'BENIGN',
-    reasoning: 'Обычная речь / беседа не по тесту'
+    reasoning: 'Обычная речь / беседа'
   };
 }
 
-// ── ACOUSTIC WHISPER & DSP CLASSIFIER ──
-// Classifies whisper via Zero-Crossing Rate (ZCR) and High-Frequency Energy Ratio
+// ── 3. ACOUSTIC WHISPER & DSP CLASSIFIER ──
 function classifyAcousticState(timeData: Float32Array, freqData: Uint8Array, rmsVolume: number): {
   status: ProctoringTelemetry['audioStatus'];
   zcr: number;
@@ -131,7 +214,6 @@ function classifyAcousticState(timeData: Float32Array, freqData: Uint8Array, rms
     return { status: 'SILENT', zcr: 0 };
   }
 
-  // 1. Calculate Zero-Crossing Rate (ZCR)
   let zeroCrossings = 0;
   for (let i = 1; i < timeData.length; i++) {
     if ((timeData[i] >= 0 && timeData[i - 1] < 0) || (timeData[i] < 0 && timeData[i - 1] >= 0)) {
@@ -140,12 +222,11 @@ function classifyAcousticState(timeData: Float32Array, freqData: Uint8Array, rms
   }
   const zcr = zeroCrossings / timeData.length;
 
-  // 2. Calculate High-Frequency Energy Ratio (2kHz to 8kHz) vs Low-Frequency Energy (< 1kHz)
   let lowEnergy = 0;
   let highEnergy = 0;
   const binSize = freqData.length;
-  const lowCut = Math.floor(binSize * 0.15); // ~1kHz
-  const highCut = Math.floor(binSize * 0.40); // ~3kHz
+  const lowCut = Math.floor(binSize * 0.15);
+  const highCut = Math.floor(binSize * 0.40);
 
   for (let i = 0; i < lowCut; i++) lowEnergy += freqData[i];
   for (let i = highCut; i < binSize; i++) highEnergy += freqData[i];
@@ -153,10 +234,6 @@ function classifyAcousticState(timeData: Float32Array, freqData: Uint8Array, rms
   const totalEnergy = lowEnergy + highEnergy;
   const highRatio = totalEnergy > 0 ? highEnergy / totalEnergy : 0;
 
-  // Whisper characteristics:
-  // - RMS volume is medium-low (10 to 35 dB)
-  // - High Zero-Crossing Rate (ZCR > 0.28)
-  // - High-frequency noise energy dominates over vocal cord harmonics (highRatio > 0.45)
   if (rmsVolume >= 10 && rmsVolume <= 38 && (zcr > 0.26 || highRatio > 0.42)) {
     return { status: 'WHISPER', zcr };
   }
@@ -184,7 +261,8 @@ function getLightCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingCont
 export function useProctoringEngine(
   videoRef: RefObject<HTMLVideoElement | null>,
   canvasRef: RefObject<HTMLCanvasElement | null>,
-  isActive: boolean
+  isActive: boolean,
+  currentQuestionText?: string
 ) {
   const [telemetry, setTelemetry] = useState<ProctoringTelemetry>({
     headPose: { pitch: 0, yaw: 0, roll: 0 },
@@ -192,6 +270,7 @@ export function useProctoringEngine(
     gazeRatio: 0.5,
     handsDetected: 0,
     handStatus: 'NO_HANDS',
+    currentGesture: { gesture: 'NONE', label: 'Нет жеста', extendedFingers: 0 },
     facesDetected: 0,
     phoneDetected: false,
     bookDetected: false,
@@ -244,6 +323,7 @@ export function useProctoringEngine(
   const lastPhoneEvent = useRef<number>(0);
   const lastBookEvent = useRef<number>(0);
   const lastSpeechEvent = useRef<number>(0);
+  const lastGestureEvent = useRef<number>(0);
   const EVENT_COOLDOWN = 3000;
 
   // Hand tracking
@@ -253,10 +333,13 @@ export function useProctoringEngine(
   // Overlay refs
   const faceLandmarksRef = useRef<any[][] | null>(null);
   const detectedObjectsRef = useRef<DetectedObject[]>([]);
+  const handLandmarksRef = useRef<any[][] | null>(null);
 
   // Speech & Audio refs
   const speechRecognitionRef = useRef<any | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const currentQuestionTextRef = useRef<string | undefined>(currentQuestionText);
+  currentQuestionTextRef.current = currentQuestionText;
 
   const addEvent = useCallback((eventInit: Omit<ProctoringEvent, 'id' | 'timestamp'>) => {
     const newEvent: ProctoringEvent = {
@@ -279,11 +362,10 @@ export function useProctoringEngine(
   const addEventRef = useRef(addEvent);
   addEventRef.current = addEvent;
 
-  // Initialize Web Speech Recognition & Acoustic DSP Whisper Analyzer
+  // Initialize Web Speech Recognition with Question Text Overlap Verification
   useEffect(() => {
     if (!isActive) return;
 
-    // 1. Web Speech API (Russian language continuous transcription)
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       try {
@@ -299,7 +381,10 @@ export function useProctoringEngine(
           }
 
           if (currentTranscript.trim().length > 0) {
-            const { probability, intentCategory, reasoning } = evaluateSemanticIntent(currentTranscript);
+            const { probability, intentCategory, reasoning } = evaluateSemanticIntent(
+              currentTranscript,
+              currentQuestionTextRef.current
+            );
 
             setTelemetry(prev => ({
               ...prev,
@@ -308,11 +393,11 @@ export function useProctoringEngine(
               speechIntentCategory: intentCategory,
             }));
 
-            // Trigger event if probability >= 60%
+            // Only trigger event if probability >= 60% (meaning NOT reading current question)
             if (probability >= 60 && Date.now() - lastSpeechEvent.current > EVENT_COOLDOWN) {
               addEventRef.current({
                 type: 'SPEECH_CHEAT_DETECTED',
-                severity: probability >= 80 ? 'HIGH' : 'MEDIUM',
+                severity: probability >= 85 ? 'HIGH' : 'MEDIUM',
                 description: `🗣 [${intentCategory}] ${reasoning}: "${currentTranscript.slice(0, 55)}..." (${probability}%)`
               });
               lastSpeechEvent.current = Date.now();
@@ -321,9 +406,7 @@ export function useProctoringEngine(
         };
 
         recognition.onerror = (e: any) => {
-          if (e.error !== 'no-speech') {
-            console.warn('Speech recognition error:', e.error);
-          }
+          if (e.error !== 'no-speech') console.warn('Speech recognition error:', e.error);
         };
 
         recognition.onend = () => {
@@ -339,7 +422,7 @@ export function useProctoringEngine(
       }
     }
 
-    // 2. AudioContext DSP Analyzer for Whisper (ZCR + High-Frequency Ratio + RMS)
+    // AudioContext DSP Analyzer
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
       try {
         const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -358,7 +441,6 @@ export function useProctoringEngine(
           analyser.getByteFrequencyData(freqData);
           analyser.getFloatTimeDomainData(timeData);
 
-          // Calculate RMS volume
           let sumSquares = 0;
           for (let i = 0; i < timeData.length; i++) {
             sumSquares += timeData[i] * timeData[i];
@@ -366,7 +448,6 @@ export function useProctoringEngine(
           const rmsRaw = Math.sqrt(sumSquares / timeData.length);
           const rmsVolume = Math.min(100, Math.round(rmsRaw * 400));
 
-          // Classify via DSP
           const { status, zcr } = classifyAcousticState(timeData, freqData, rmsVolume);
 
           setTelemetry(prev => ({
@@ -691,7 +772,7 @@ export function useProctoringEngine(
       }
     }
 
-    // ── 2. HAND PROCESSING (~5 FPS / every ~200ms) ──
+    // ── 2. HAND PROCESSING & GESTURE CLASSIFIER (~5 FPS / every ~200ms) ──
     if (now - lastHandProcessTime.current >= 200 && handLandmarkerRef.current) {
       try {
         const handResult = handLandmarkerRef.current.detectForVideo(video, now);
@@ -699,19 +780,39 @@ export function useProctoringEngine(
 
         const handsCount = handResult.handLandmarks.length;
         updates.handsDetected = handsCount;
+        handLandmarksRef.current = handResult.handLandmarks;
 
         if (handsCount === 0) {
           updates.handStatus = 'NO_HANDS';
+          updates.currentGesture = { gesture: 'NONE', label: 'Нет жеста', extendedFingers: 0 };
           handBelowStart.current = null;
           previousWristX.current = null;
         } else {
           let isBelow = false;
-          
+          let activeGesture: HandGestureResult = { gesture: 'NONE', label: 'Ладонь', extendedFingers: 0 };
+
           for (const handLandmarks of handResult.handLandmarks) {
             const wrist = handLandmarks[0];
             
             if (wrist.y > 0.72) {
               isBelow = true;
+            }
+
+            const gestureRes = classifyHandGesture(handLandmarks);
+            if (gestureRes.gesture !== 'NONE') {
+              activeGesture = gestureRes;
+              
+              if (gestureRes.signaledOption || gestureRes.gesture === 'PHONE_HAND_SIGNAL') {
+                if (now - lastGestureEvent.current > EVENT_COOLDOWN) {
+                  addEventRef.current({
+                    type: 'GESTURE_SIGNAL_DETECTED',
+                    severity: 'HIGH',
+                    description: `✋ Сигнализирование пальцами: ${gestureRes.label}`
+                  });
+                  lastGestureEvent.current = now;
+                }
+                isViolatingThisFrame = true;
+              }
             }
 
             if (previousWristX.current !== null) {
@@ -732,6 +833,8 @@ export function useProctoringEngine(
             previousWristX.current = wrist.x;
             lastWristTime.current = now;
           }
+
+          updates.currentGesture = activeGesture;
 
           if (isBelow) {
             updates.handStatus = 'BELOW_DESK';
@@ -884,5 +987,6 @@ export function useProctoringEngine(
     honestyIndex,
     faceLandmarks: faceLandmarksRef.current,
     detectedObjects: detectedObjectsRef.current,
+    handLandmarks: handLandmarksRef.current,
   };
 }

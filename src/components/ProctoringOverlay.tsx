@@ -7,6 +7,12 @@ interface ProctoringTelemetry {
   gazeRatio: number;
   handsDetected: number;
   handStatus: "IN_FRAME" | "BELOW_DESK" | "NO_HANDS";
+  currentGesture?: {
+    gesture: string;
+    label: string;
+    extendedFingers: number;
+    signaledOption?: string;
+  };
   facesDetected: number;
   phoneDetected?: boolean;
   bookDetected?: boolean;
@@ -30,7 +36,7 @@ interface ProctoringEvent {
   description: string;
 }
 
-interface FaceLandmark {
+interface Point3D {
   x: number;
   y: number;
   z: number;
@@ -55,14 +61,16 @@ interface ProctoringOverlayProps {
   isRecording: boolean;
   recordingDuration: number;
   sessionStartTime: number;
-  faceLandmarks?: FaceLandmark[][] | null;
+  faceLandmarks?: Point3D[][] | null;
   detectedObjects?: DetectedObject[] | null;
+  handLandmarks?: Point3D[][] | null;
 }
 
 // Colors
 const NEON_CYAN = "#00E5FF";
 const NEON_RED = "#FF2A6D";
 const NEON_PURPLE = "#A855F7";
+const NEON_YELLOW = "#FACC15";
 const GREEN_OK = "#10B981";
 const HUD_BG = "rgba(15, 23, 42, 0.82)";
 const HUD_TEXT = "#E2E8F0";
@@ -90,6 +98,7 @@ export default function ProctoringOverlay({
   sessionStartTime,
   faceLandmarks,
   detectedObjects,
+  handLandmarks,
 }: ProctoringOverlayProps) {
   const animFrameRef = useRef<number>(0);
   const recentEventsRef = useRef<ProctoringEvent[]>([]);
@@ -224,7 +233,58 @@ export default function ProctoringOverlay({
       }
     }
 
-    // 3. Draw Detected Objects (Phones, Books, Laptops)
+    // 3. Draw Hand Landmarks & Finger Gesture Badges
+    if (handLandmarks && handLandmarks.length > 0) {
+      for (const hand of handLandmarks) {
+        if (!hand || hand.length < 21) continue;
+
+        let minX = 1, minY = 1, maxX = 0, maxY = 0;
+
+        // Draw 21 hand landmark points & skeletal lines
+        ctx.fillStyle = NEON_CYAN;
+        for (const pt of hand) {
+          const px = pt.x * w;
+          const py = pt.y * h;
+          if (pt.x < minX) minX = pt.x;
+          if (pt.y < minY) minY = pt.y;
+          if (pt.x > maxX) maxX = pt.x;
+          if (pt.y > maxY) maxY = pt.y;
+
+          ctx.beginPath();
+          ctx.arc(px, py, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        const hbx = minX * w;
+        const hby = minY * h;
+        const hbw = (maxX - minX) * w;
+        const hbh = (maxY - minY) * h;
+
+        // Hand bounding box
+        ctx.strokeStyle = telemetry.currentGesture?.signaledOption ? NEON_YELLOW : "rgba(0, 229, 255, 0.5)";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(hbx, hby, hbw, hbh);
+        ctx.setLineDash([]);
+
+        // Gesture label above hand
+        if (telemetry.currentGesture && telemetry.currentGesture.gesture !== 'NONE') {
+          const gText = telemetry.currentGesture.label;
+          const gW = ctx.measureText(gText).width + 16;
+          const gy = Math.max(0, hby - 24);
+
+          ctx.fillStyle = telemetry.currentGesture.signaledOption ? "rgba(250, 204, 21, 0.92)" : "rgba(15, 23, 42, 0.85)";
+          roundRect(ctx, hbx, gy, gW, 22, 4);
+          ctx.fill();
+
+          ctx.fillStyle = telemetry.currentGesture.signaledOption ? "#000000" : "#FFFFFF";
+          ctx.font = "bold 11px sans-serif";
+          ctx.fillText(gText, hbx + 8, gy + 15);
+        }
+      }
+    }
+
+    // 4. Draw Detected Objects (Phones, Books, Laptops)
     if (detectedObjects && detectedObjects.length > 0) {
       for (const obj of detectedObjects) {
         const bbox = obj.boundingBox;
@@ -254,7 +314,7 @@ export default function ProctoringOverlay({
       }
     }
 
-    // 4. HUD Telemetry Panel (top-left)
+    // 5. HUD Telemetry Panel (top-left)
     const hudX = 10;
     const hudY = 10;
     const hudW = 330;
@@ -291,7 +351,6 @@ export default function ProctoringOverlay({
     ctx.fillStyle = telemetry.facesDetected > 1 ? NEON_RED : "#94A3B8";
     ctx.fillText(`Faces: ${telemetry.facesDetected}`, hudX + 12, y3);
 
-    // Audio status in HUD
     ctx.fillStyle = (telemetry.speechProbability || 0) > 50 ? NEON_RED : "#64748B";
     ctx.fillText(`Mic: ${telemetry.audioStatus || 'SILENT'} (${telemetry.audioLevel || 0}dB)`, hudX + 130, y3);
 
@@ -307,7 +366,7 @@ export default function ProctoringOverlay({
       ctx.fillText("⚡ LIGHT ANOMALY DETECTED", hudX + 12, y4);
     }
 
-    // 5. Live Speech Transcript Box (Bottom-Left Canvas Overlay)
+    // 6. Live Speech Transcript Box (Bottom-Left Canvas Overlay)
     if (telemetry.lastTranscript && telemetry.lastTranscript.length > 0) {
       const trText = `🗣 "${telemetry.lastTranscript.slice(-45)}"`;
       const probText = `[Вероятность: ${telemetry.speechProbability || 0}%]`;
@@ -336,7 +395,7 @@ export default function ProctoringOverlay({
       ctx.fillText(probText, trBoxX + trBoxW - 135, trBoxY + 21);
     }
 
-    // 6. Recording Indicator (top-right)
+    // 7. Recording Indicator
     if (isRecording) {
       const recX = w - 150;
       const recY = 10;
@@ -361,7 +420,7 @@ export default function ProctoringOverlay({
       ctx.fillText(formatTime(recordingDuration), recX + 68, recY + 19);
     }
 
-    // 7. Draft work indicator
+    // 8. Draft work indicator
     if (telemetry.isDraftWork && !isViolating) {
       const draftText = "📝 Работа с черновиком";
       const tw = ctx.measureText(draftText).width + 24;
@@ -376,7 +435,7 @@ export default function ProctoringOverlay({
     }
 
     animFrameRef.current = requestAnimationFrame(draw);
-  }, [videoRef, canvasRef, telemetry, events, isRecording, recordingDuration, sessionStartTime, faceLandmarks, detectedObjects]);
+  }, [videoRef, canvasRef, telemetry, events, isRecording, recordingDuration, sessionStartTime, faceLandmarks, detectedObjects, handLandmarks]);
 
   useEffect(() => {
     animFrameRef.current = requestAnimationFrame(draw);
