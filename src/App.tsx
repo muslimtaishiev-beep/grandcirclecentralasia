@@ -29,6 +29,7 @@ const Receipt = lazy(() => import("./pages/Receipt"));
 const PsychologistForm = lazy(() => import("./pages/PsychologistForm"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsOfUse = lazy(() => import("./pages/TermsOfUse"));
+const ProctorSandbox = lazy(() => import("./pages/ProctorSandbox"));
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 import { PublicData } from "./types";
@@ -93,7 +94,7 @@ export default function App() {
     <div className="min-h-screen bg-[#EDE9FE] text-slate-800 antialiased font-sans flex flex-col justify-between" id="main_app_wrapper">
       
       {/* Header is global */}
-      {!isAdminPath && !currentPath.startsWith("/admission") && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && (
+      {!isAdminPath && !currentPath.startsWith("/admission") && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && !currentPath.startsWith("/sandbox") && (
         <Header 
           lang={lang} 
           setLang={setLang} 
@@ -156,6 +157,7 @@ export default function App() {
           <Route path="/psychologist/:shortId" element={<PsychologistForm />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/terms" element={<TermsOfUse />} />
+          <Route path="/sandbox/proctor" element={<ProctorSandbox />} />
 
           {/* Main Forum Route */}
           <Route path="/" element={
