@@ -418,33 +418,36 @@ export default function ProctoringOverlay({
       ctx.fillText("⚡ LIGHT ANOMALY DETECTED", hudX + 12, y4);
     }
 
-    // 6. Live Speech Transcript Box
-    if (telemetry.lastTranscript && telemetry.lastTranscript.length > 0) {
-      const trText = `🗣 "${telemetry.lastTranscript.slice(-45)}"`;
-      const probText = `[Вероятность: ${telemetry.speechProbability || 0}%]`;
-      const trBoxW = 420;
+    // 6. Live VSR Lip Reading Transcript Box & Audio Speech Transcript Box
+    if (telemetry.decodedLipWord || (telemetry.lastTranscript && telemetry.lastTranscript.length > 0)) {
+      const displayText = telemetry.decodedLipWord
+        ? `👄 [VSR Губы]: "${telemetry.decodedLipWord}"`
+        : `🗣 "${telemetry.lastTranscript.slice(-45)}"`;
+
+      const probText = `[Угроза: ${telemetry.speechProbability || 0}%]`;
+      const trBoxW = 440;
       const trBoxH = 34;
       const trBoxX = 10;
       const trBoxY = h - 45;
 
       const isHighRisk = (telemetry.speechProbability || 0) > 55;
 
-      ctx.fillStyle = isHighRisk ? "rgba(239, 68, 68, 0.90)" : "rgba(15, 23, 42, 0.85)";
+      ctx.fillStyle = telemetry.decodedLipWord ? "rgba(236, 72, 153, 0.92)" : isHighRisk ? "rgba(239, 68, 68, 0.90)" : "rgba(15, 23, 42, 0.85)";
       roundRect(ctx, trBoxX, trBoxY, trBoxW, trBoxH, 6);
       ctx.fill();
 
-      ctx.strokeStyle = isHighRisk ? "#FF2A6D" : "#3B82F6";
+      ctx.strokeStyle = telemetry.decodedLipWord ? "#EC4899" : isHighRisk ? "#FF2A6D" : "#3B82F6";
       ctx.lineWidth = 1.5;
       roundRect(ctx, trBoxX, trBoxY, trBoxW, trBoxH, 6);
       ctx.stroke();
 
       ctx.fillStyle = "#FFFFFF";
-      ctx.font = "12px sans-serif";
-      ctx.fillText(trText, trBoxX + 10, trBoxY + 21);
+      ctx.font = "bold 12px sans-serif";
+      ctx.fillText(displayText, trBoxX + 10, trBoxY + 21);
 
       ctx.fillStyle = isHighRisk ? "#FEF08A" : "#93C5FD";
       ctx.font = "bold 11px monospace";
-      ctx.fillText(probText, trBoxX + trBoxW - 135, trBoxY + 21);
+      ctx.fillText(probText, trBoxX + trBoxW - 130, trBoxY + 21);
     }
 
     // 7. Recording Indicator
