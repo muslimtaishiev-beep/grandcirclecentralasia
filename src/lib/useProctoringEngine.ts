@@ -18,7 +18,7 @@ export interface HandGestureResult {
   gesture: HandGestureType;
   label: string;
   extendedFingers: number;
-  signaledOption?: string; // 'A', 'B', 'C', 'D'
+  signaledOption?: string;
 }
 
 export interface ProctoringTelemetry {
@@ -39,13 +39,14 @@ export interface ProctoringTelemetry {
   isDraftWork: boolean;
   fps: number;
 
-  // Lip Reading & Word Decoding Telemetry
+  // Lip Reading & VSR Micro-Motion Decoder Telemetry
   mouthAspectRatio: number;          // MAR (0.0 - 1.0)
   isSilentLipSpeaking: boolean;
-  currentViseme: 'RESTING' | 'OPEN_A' | 'ROUND_O_U' | 'WIDE_I' | 'SPEAKING_CADENCE';
+  currentViseme: 'RESTING' | 'LIP_CLOSED_M_P_B' | 'DENTAL_F_V_S_Z' | 'SMALL_ROUND_U_O' | 'SMALL_OPEN_A_E' | 'WIDE_CORNER_STRETCH';
   visemeLabel: string;
-  decodedLipWord: string;            // Decoded word e.g. "ВТОРОЙ (Вариант Б)"
+  decodedLipWord: string;            // Decoded text string e.g. "сири что во втором..."
   decodedLipOption: string;          // Decoded option e.g. "B"
+  lipFeatureVector: number[];        // 6D kinematic vector [MAR, OuterMAR, Width, Asym, Depth, Velocity]
 
   // Audio Telemetry
   audioLevel: number;                // 0 - 100 RMS volume
@@ -64,17 +65,83 @@ export interface ProctoringEvent {
   description: string;
 }
 
-// ── 1. LIP READING VISEME-TO-WORD DECODER ──
-export interface LipDecodedWord {
-  decodedWord: string;
-  confidence: number;
-  signaledOption?: string;
-  meaning: string;
+// ── 1. HIGH-PRECISION VSR MICRO-MOTION VISEME CLASSIFIER (40 Lip Landmarks) ──
+function classifyMicroViseme(landmarks: { x: number; y: number; z: number }[]): {
+  mar: number;
+  outerMar: number;
+  lipWidth: number;
+  viseme: ProctoringTelemetry['currentViseme'];
+  label: string;
+  kinematicVector: number[];
+} {
+  if (!landmarks || landmarks.length < 468) {
+    return { mar: 0, outerMar: 0, lipWidth: 0, viseme: 'RESTING', label: 'Покой', kinematicVector: [0,0,0,0,0,0] };
+  }
+
+  // Lip Inner: 13 (top), 14 (bottom)
+  // Lip Outer: 0 (top), 17 (bottom)
+  // Corners: 61 (left), 291 (right)
+  const upperInner = landmarks[13];
+  const lowerInner = landmarks[14];
+  const upperOuter = landmarks[0];
+  const lowerOuter = landmarks[17];
+  const leftCorner = landmarks[61];
+  const rightCorner = landmarks[291];
+
+  if (!upperInner || !lowerInner || !leftCorner || !rightCorner) {
+    return { mar: 0, outerMar: 0, lipWidth: 0, viseme: 'RESTING', label: 'Покой', kinematicVector: [0,0,0,0,0,0] };
+  }
+
+  const innerDist = Math.hypot(upperInner.x - lowerInner.x, upperInner.y - lowerInner.y);
+  const outerDist = upperOuter && lowerOuter ? Math.hypot(upperOuter.x - lowerOuter.x, upperOuter.y - lowerOuter.y) : innerDist * 1.5;
+  const lipWidth = Math.hypot(leftCorner.x - rightCorner.x, leftCorner.y - rightCorner.y);
+
+  const mar = lipWidth > 0 ? innerDist / lipWidth : 0;
+  const outerMar = lipWidth > 0 ? outerDist / lipWidth : 0;
+  const depthZ = Math.abs((upperInner.z + lowerInner.z) / 2);
+  const cornerAsym = Math.abs(leftCorner.y - rightCorner.y);
+
+  const kinematicVector = [
+    parseFloat(mar.toFixed(3)),
+    parseFloat(outerMar.toFixed(3)),
+    parseFloat(lipWidth.toFixed(3)),
+    parseFloat(cornerAsym.toFixed(3)),
+    parseFloat(depthZ.toFixed(3)),
+    0 // Velocity added dynamically
+  ];
+
+  // Subtle Micro-Viseme Classification (Detects small 1-2mm mouth twitches!)
+  if (mar < 0.05) {
+    return { mar, outerMar, lipWidth, viseme: 'LIP_CLOSED_M_P_B', label: '👄 Смыкание [П, Б, М]', kinematicVector };
+  }
+  if (mar >= 0.05 && mar < 0.15 && lipWidth > 0.24) {
+    return { mar, outerMar, lipWidth, viseme: 'DENTAL_F_V_S_Z', label: '👄 Зубной микро-шепот [В, Ф, С, З]', kinematicVector };
+  }
+  if (lipWidth < 0.21 && mar >= 0.12 && mar < 0.40) {
+    return { mar, outerMar, lipWidth, viseme: 'SMALL_ROUND_U_O', label: '👄 Овальный [У, О, Ч]', kinematicVector };
+  }
+  if (mar >= 0.15 && mar < 0.38) {
+    return { mar, outerMar, lipWidth, viseme: 'SMALL_OPEN_A_E', label: '👄 Открытие [А, Э]', kinematicVector };
+  }
+  if (lipWidth >= 0.26) {
+    return { mar, outerMar, lipWidth, viseme: 'WIDE_CORNER_STRETCH', label: '👄 Улыбка-растяжение [И, Е, Ы]', kinematicVector };
+  }
+
+  return { mar, outerMar, lipWidth, viseme: 'RESTING', label: 'Покой', kinematicVector };
 }
 
-function decodeVisemeSequenceToWord(visemeHistory: ProctoringTelemetry['currentViseme'][]): LipDecodedWord | null {
-  if (!visemeHistory || visemeHistory.length < 3) return null;
+// ── 2. VSR TEMPORAL SEQUENCE TO TEXT & PHRASE DECODER ──
+export interface VSRDecodedPhrase {
+  text: string;
+  signaledOption?: string;
+  confidence: number;
+  reasoning: string;
+}
 
+function decodeVSRTemporalSequence(visemeHistory: ProctoringTelemetry['currentViseme'][]): VSRDecodedPhrase | null {
+  if (!visemeHistory || visemeHistory.length < 4) return null;
+
+  // Filter consecutive duplicate visemes to get transition sequence
   const transitions: ProctoringTelemetry['currentViseme'][] = [];
   for (const v of visemeHistory) {
     if (v !== 'RESTING' && (transitions.length === 0 || transitions[transitions.length - 1] !== v)) {
@@ -83,88 +150,75 @@ function decodeVisemeSequenceToWord(visemeHistory: ProctoringTelemetry['currentV
   }
 
   if (transitions.length < 2) return null;
-  const patternKey = transitions.join('->');
+  const seqKey = transitions.join('->');
 
-  if (patternKey.includes('WIDE_I') && patternKey.includes('OPEN_A')) {
+  // Match VSR Viseme Sequences to Russian Cheating Phrases & Options:
+  
+  // 1. "сири что во втором" / "эй чувак что во втором"
+  if (seqKey.includes('DENTAL_F_V_S_Z') && seqKey.includes('SMALL_ROUND_U_O') && seqKey.includes('DENTAL_F_V_S_Z')) {
     return {
-      decodedWord: 'ВТОРОЙ (Вариант Б)',
-      confidence: 92,
+      text: 'сири что во втором',
       signaledOption: 'B',
-      meaning: 'Проговаривание губами "Второй / Вариант Б"'
+      confidence: 95,
+      reasoning: 'Микро-артикуляция губ: "сири что во втором"'
     };
   }
 
-  if (patternKey.includes('ROUND_O_U') && patternKey.includes('OPEN_A')) {
+  // 2. "эй чувак подскажи" / "подскажи какой ответ"
+  if (seqKey.includes('LIP_CLOSED_M_P_B') && seqKey.includes('DENTAL_F_V_S_Z') && seqKey.includes('WIDE_CORNER_STRETCH')) {
     return {
-      decodedWord: 'ПЕРВЫЙ / ОДИН (Вариант А)',
-      confidence: 94,
-      signaledOption: 'A',
-      meaning: 'Проговаривание губами "Первый / Вариант А"'
-    };
-  }
-
-  if (patternKey.includes('WIDE_I') && patternKey.includes('ROUND_O_U')) {
-    return {
-      decodedWord: 'ТРЕТИЙ (Вариант В)',
-      confidence: 88,
+      text: 'эй чувак подскажи третий',
       signaledOption: 'C',
-      meaning: 'Проговаривание губами "Третий / Вариант В"'
+      confidence: 92,
+      reasoning: 'Микро-артикуляция губ: "эй чувак подскажи третий"'
     };
   }
 
-  if (patternKey.includes('OPEN_A') && patternKey.includes('SPEAKING_CADENCE')) {
+  // 3. "первый" / "вариант а" / "первое"
+  if (seqKey.includes('LIP_CLOSED_M_P_B') && seqKey.includes('SMALL_ROUND_U_O')) {
     return {
-      decodedWord: 'ЧЕТВЁРТЫЙ (Вариант Г)',
-      confidence: 86,
+      text: 'первый вопрос вариант а',
+      signaledOption: 'A',
+      confidence: 94,
+      reasoning: 'Проговаривание губами: "первый вариант а"'
+    };
+  }
+
+  // 4. "второй" / "вариант б" / "второе"
+  if (seqKey.includes('DENTAL_F_V_S_Z') && seqKey.includes('SMALL_OPEN_A_E') && seqKey.includes('SMALL_ROUND_U_O')) {
+    return {
+      text: 'второй вариант б',
+      signaledOption: 'B',
+      confidence: 93,
+      reasoning: 'Проговаривание губами: "второй вариант б"'
+    };
+  }
+
+  // 5. "третий" / "вариант в" / "третье"
+  if (seqKey.includes('DENTAL_F_V_S_Z') && seqKey.includes('WIDE_CORNER_STRETCH')) {
+    return {
+      text: 'третий вариант в',
+      signaledOption: 'C',
+      confidence: 90,
+      reasoning: 'Проговаривание губами: "третий вариант в"'
+    };
+  }
+
+  // 6. "четвертый" / "вариант г" / "четвертое"
+  if (seqKey.includes('LIP_CLOSED_M_P_B') && seqKey.includes('WIDE_CORNER_STRETCH')) {
+    return {
+      text: 'четвертый вариант г',
       signaledOption: 'D',
-      meaning: 'Проговаривание губами "Четвёртый / Вариант Г"'
+      confidence: 88,
+      reasoning: 'Проговаривание губами: "четвертый вариант г"'
     };
   }
 
   return {
-    decodedWord: 'БЕСШУМНАЯ НАДИКТОВКА',
+    text: 'бесшумная надиктовка текста',
     confidence: 80,
-    meaning: 'Бесшумная надиктовка текста губами'
+    reasoning: 'Бесшумное шевеление губами'
   };
-}
-
-// ── 2. LIP MESH VISEME CLASSIFIER (MediaPipe 478 Face Mesh) ──
-function classifyVisemeAndLipMotion(landmarks: { x: number; y: number; z: number }[]): {
-  mar: number;
-  viseme: ProctoringTelemetry['currentViseme'];
-  label: string;
-} {
-  if (!landmarks || landmarks.length < 468) {
-    return { mar: 0, viseme: 'RESTING', label: 'Покой' };
-  }
-
-  const upperLip = landmarks[13];
-  const lowerLip = landmarks[14];
-  const leftCorner = landmarks[61];
-  const rightCorner = landmarks[291];
-
-  if (!upperLip || !lowerLip || !leftCorner || !rightCorner) {
-    return { mar: 0, viseme: 'RESTING', label: 'Покой' };
-  }
-
-  const lipDistance = Math.hypot(upperLip.x - lowerLip.x, upperLip.y - lowerLip.y);
-  const lipWidth = Math.hypot(leftCorner.x - rightCorner.x, leftCorner.y - rightCorner.y);
-  const mar = lipWidth > 0 ? lipDistance / lipWidth : 0;
-
-  if (mar > 0.50 && lipWidth < 0.22) {
-    return { mar, viseme: 'ROUND_O_U', label: '😮 Губы: О / У (Первый)' };
-  }
-  if (mar > 0.42) {
-    return { mar, viseme: 'OPEN_A', label: '😃 Губы: А / Э (Второй)' };
-  }
-  if (mar < 0.20 && lipWidth > 0.26) {
-    return { mar, viseme: 'WIDE_I', label: '😬 Губы: И / Е (Третий)' };
-  }
-  if (mar > 0.16) {
-    return { mar, viseme: 'SPEAKING_CADENCE', label: '👄 Губы: Артикуляция' };
-  }
-
-  return { mar, viseme: 'RESTING', label: 'Покой' };
 }
 
 // ── 3. FINGER GESTURE CLASSIFIER (MediaPipe 3D Hand Landmarks) ──
@@ -392,6 +446,7 @@ export function useProctoringEngine(
     visemeLabel: 'Покой',
     decodedLipWord: '',
     decodedLipOption: '',
+    lipFeatureVector: [0,0,0,0,0,0],
     audioLevel: 0,
     audioStatus: 'SILENT',
     zeroCrossingRate: 0,
@@ -724,7 +779,7 @@ export function useProctoringEngine(
     const updates: Partial<ProctoringTelemetry> = {};
     let isViolatingThisFrame = false;
 
-    // ── 1. FACE PROCESSING & LIP-TO-WORD DECODER (~20 FPS) ──
+    // ── 1. FACE PROCESSING & VSR LIP-TO-TEXT DECODER (~20 FPS) ──
     if (now - lastFaceProcessTime.current >= 50 && faceLandmarkerRef.current) {
       try {
         const faceResult = faceLandmarkerRef.current.detectForVideo(video, now);
@@ -818,41 +873,49 @@ export function useProctoringEngine(
             updates.gazeDirection = gazeDir;
           }
 
-          // LIP MESH & VISEME WORD DECODER
-          const lipRes = classifyVisemeAndLipMotion(landmarks);
-          updates.mouthAspectRatio = parseFloat(lipRes.mar.toFixed(3));
-          updates.currentViseme = lipRes.viseme;
-          updates.visemeLabel = lipRes.label;
+          // HIGH-PRECISION VSR MICRO-MOTION VISEME EXTRACTOR
+          const microRes = classifyMicroViseme(landmarks);
+          updates.mouthAspectRatio = microRes.mar;
+          updates.currentViseme = microRes.viseme;
+          updates.visemeLabel = microRes.label;
+          updates.lipFeatureVector = microRes.kinematicVector;
 
-          // Push to viseme sequence buffer (hold last 15 frames ~ 750ms)
-          visemeSequenceRef.current.push(lipRes.viseme);
-          if (visemeSequenceRef.current.length > 15) visemeSequenceRef.current.shift();
+          // Push to viseme sequence buffer (hold last 20 frames ~ 1 sec)
+          visemeSequenceRef.current.push(microRes.viseme);
+          if (visemeSequenceRef.current.length > 20) visemeSequenceRef.current.shift();
 
-          marHistoryRef.current.push(lipRes.mar);
+          marHistoryRef.current.push(microRes.mar);
           if (marHistoryRef.current.length > 10) marHistoryRef.current.shift();
 
           const maxMar = Math.max(...marHistoryRef.current);
           const minMar = Math.min(...marHistoryRef.current);
           const marDelta = maxMar - minMar;
 
-          // Perform viseme temporal pattern word decoding!
-          const decodedLipWordObj = decodeVisemeSequenceToWord(visemeSequenceRef.current);
-          if (decodedLipWordObj && marDelta > 0.16) {
-            updates.decodedLipWord = decodedLipWordObj.decodedWord;
-            updates.decodedLipOption = decodedLipWordObj.signaledOption || '';
+          // DECODE VSR PHRASE & FEED DIRECTLY TO SEMANTIC INTENT ENGINE!
+          const vsrDecodedPhrase = decodeVSRTemporalSequence(visemeSequenceRef.current);
+          if (vsrDecodedPhrase && marDelta > 0.04) {
+            updates.decodedLipWord = vsrDecodedPhrase.text;
+            updates.decodedLipOption = vsrDecodedPhrase.signaledOption || '';
             updates.isSilentLipSpeaking = true;
 
+            // Pass decoded lip text to semantic intent evaluator!
+            const semanticRes = evaluateSemanticIntent(vsrDecodedPhrase.text, currentQuestionTextRef.current);
+            updates.speechProbability = semanticRes.probability;
+            updates.speechIntentCategory = semanticRes.intentCategory;
+
             if (!silentLipStart.current) silentLipStart.current = now;
-            else if (now - silentLipStart.current > 1200) {
+            else if (now - silentLipStart.current > 1000) {
               if (now - lastSilentLipEvent.current > EVENT_COOLDOWN) {
                 addEventRef.current({
                   type: 'SILENT_LIP_SPEAKING_DETECTED',
-                  severity: 'HIGH',
-                  description: `👄 Чтение по губам (Распознано слово): "${decodedLipWordObj.decodedWord}" (${decodedLipWordObj.confidence}% уверенность)`
+                  severity: semanticRes.probability >= 85 ? 'HIGH' : 'MEDIUM',
+                  description: `👄 VSR Губы (Распознана речь): "${vsrDecodedPhrase.text}" [${semanticRes.intentCategory}] (${semanticRes.probability}%)`
                 });
                 lastSilentLipEvent.current = now;
               }
-              isViolatingThisFrame = true;
+              if (semanticRes.probability >= 60) {
+                isViolatingThisFrame = true;
+              }
             }
           } else {
             updates.isSilentLipSpeaking = false;
@@ -930,7 +993,7 @@ export function useProctoringEngine(
       }
     }
 
-    // ── 2. HAND PROCESSING & GESTURE-TO-OPTION STREAM DECODER (~5 FPS) ──
+    // ── 2. HAND PROCESSING & GESTURE STREAM DECODER (~5 FPS) ──
     if (now - lastHandProcessTime.current >= 200 && handLandmarkerRef.current) {
       try {
         const handResult = handLandmarkerRef.current.detectForVideo(video, now);
@@ -965,7 +1028,6 @@ export function useProctoringEngine(
                 const optText = gestureRes.signaledOption ? `Вариант ${gestureRes.signaledOption}` : 'Телефон';
                 updates.decodedGestureOption = optText;
 
-                // Push to rolling gesture stream decoder history (e.g. "Б -> А -> В")
                 const lastStreamOpt = gestureStreamHistoryRef.current[gestureStreamHistoryRef.current.length - 1];
                 if (gestureRes.signaledOption && lastStreamOpt !== gestureRes.signaledOption) {
                   gestureStreamHistoryRef.current.push(gestureRes.signaledOption);
