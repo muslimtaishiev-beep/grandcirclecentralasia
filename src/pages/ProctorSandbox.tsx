@@ -655,14 +655,14 @@ export default function ProctorSandbox() {
                 />
                 <StatusBadge
                   icon="✌️"
-                  label="Жест пальцами"
-                  value={engine.telemetry.currentGesture?.label || "Нет жеста"}
+                  label="Декодер жестов"
+                  value={engine.telemetry.decodedGestureStream ? `Поток: ${engine.telemetry.decodedGestureStream}` : engine.telemetry.currentGesture?.label || "Нет жеста"}
                   isWarning={Boolean(engine.telemetry.currentGesture?.signaledOption)}
                 />
                 <StatusBadge
                   icon="👄"
-                  label="Чтение по губам"
-                  value={engine.telemetry.isSilentLipSpeaking ? `БЕСШУМНЫЙ РАЗГОВОР (${engine.telemetry.visemeLabel})` : engine.telemetry.visemeLabel || "Покой"}
+                  label="Декодер губ"
+                  value={engine.telemetry.isSilentLipSpeaking ? `СЛОВО: "${engine.telemetry.decodedLipWord || engine.telemetry.visemeLabel}"` : engine.telemetry.visemeLabel || "Покой"}
                   isWarning={engine.telemetry.isSilentLipSpeaking}
                 />
               </div>
@@ -709,16 +709,16 @@ export default function ProctorSandbox() {
                   🗣 Запрос ответа (90%)
                 </button>
                 <button
-                  onClick={() => simulateEvent("GESTURE_SIGNAL_DETECTED", "HIGH", "✋ Сигнализирование пальцами: ✌️ 2 пальца (Вариант B)")}
+                  onClick={() => simulateEvent("GESTURE_SIGNAL_DETECTED", "HIGH", "✋ Декодер жестов: Передан сигнал \"Вариант B\" (✌️ 2 пальца)")}
                   className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-slate-300 transition text-left"
                 >
-                  ✌️ Сигнал 2 пальца (B)
+                  ✌️ Декодер жеста (Вариант B)
                 </button>
                 <button
-                  onClick={() => simulateEvent("SILENT_LIP_SPEAKING_DETECTED", "HIGH", "👄 Чтение по губам: Бесшумная артикуляция без звука микрофона")}
+                  onClick={() => simulateEvent("SILENT_LIP_SPEAKING_DETECTED", "HIGH", "👄 Чтение по губам (Распознано слово): \"ВТОРОЙ (Вариант Б)\" (92% уверенность)")}
                   className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-slate-300 transition text-left"
                 >
-                  👄 Чтение по губам
+                  👄 Чтение губ ("ВТОРОЙ (Б)")
                 </button>
                 <button
                   onClick={() => simulateEvent("TAB_SWITCH", "HIGH", "Пользователь сменил вкладку браузера")}

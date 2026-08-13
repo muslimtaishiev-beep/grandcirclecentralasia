@@ -18,7 +18,7 @@ export interface HandGestureResult {
   gesture: HandGestureType;
   label: string;
   extendedFingers: number;
-  signaledOption?: string;
+  signaledOption?: string; // 'A', 'B', 'C', 'D'
 }
 
 export interface ProctoringTelemetry {
@@ -28,6 +28,8 @@ export interface ProctoringTelemetry {
   handsDetected: number;
   handStatus: 'IN_FRAME' | 'BELOW_DESK' | 'NO_HANDS';
   currentGesture: HandGestureResult;
+  decodedGestureOption: string;       // E.g. "Ответ Б (2 пальца)"
+  decodedGestureStream: string;       // Rolling history: "Б -> В -> А"
   facesDetected: number;
   phoneDetected: boolean;
   bookDetected: boolean;
@@ -37,18 +39,20 @@ export interface ProctoringTelemetry {
   isDraftWork: boolean;
   fps: number;
 
-  // Lip Reading Telemetry
-  mouthAspectRatio: number;     // MAR (0.0 - 1.0)
+  // Lip Reading & Word Decoding Telemetry
+  mouthAspectRatio: number;          // MAR (0.0 - 1.0)
   isSilentLipSpeaking: boolean;
   currentViseme: 'RESTING' | 'OPEN_A' | 'ROUND_O_U' | 'WIDE_I' | 'SPEAKING_CADENCE';
   visemeLabel: string;
+  decodedLipWord: string;            // Decoded word e.g. "ВТОРОЙ (Вариант Б)"
+  decodedLipOption: string;          // Decoded option e.g. "B"
 
   // Audio Telemetry
-  audioLevel: number;           // 0 - 100 RMS volume
+  audioLevel: number;                // 0 - 100 RMS volume
   audioStatus: 'SILENT' | 'NORMAL' | 'WHISPER' | 'TALKING';
-  zeroCrossingRate: number;     // ZCR (0.0 - 1.0)
-  lastTranscript: string;       // Real-time transcribed text
-  speechProbability: number;    // 0 - 100% probability of cheating/prompts
+  zeroCrossingRate: number;          // ZCR (0.0 - 1.0)
+  lastTranscript: string;            // Real-time transcribed text
+  speechProbability: number;         // 0 - 100% probability of cheating/prompts
   speechIntentCategory: 'NORMAL_READING' | 'EXAM_HELP_REQUEST' | 'DICTATION' | 'AI_PROMPT' | 'BENIGN';
 }
 
@@ -60,7 +64,71 @@ export interface ProctoringEvent {
   description: string;
 }
 
-// ── 1. LIP READING & VISEME ANALYZER (MediaPipe 478 Face Mesh) ──
+// ── 1. LIP READING VISEME-TO-WORD DECODER ──
+export interface LipDecodedWord {
+  decodedWord: string;
+  confidence: number;
+  signaledOption?: string;
+  meaning: string;
+}
+
+function decodeVisemeSequenceToWord(visemeHistory: ProctoringTelemetry['currentViseme'][]): LipDecodedWord | null {
+  if (!visemeHistory || visemeHistory.length < 3) return null;
+
+  const transitions: ProctoringTelemetry['currentViseme'][] = [];
+  for (const v of visemeHistory) {
+    if (v !== 'RESTING' && (transitions.length === 0 || transitions[transitions.length - 1] !== v)) {
+      transitions.push(v);
+    }
+  }
+
+  if (transitions.length < 2) return null;
+  const patternKey = transitions.join('->');
+
+  if (patternKey.includes('WIDE_I') && patternKey.includes('OPEN_A')) {
+    return {
+      decodedWord: 'ВТОРОЙ (Вариант Б)',
+      confidence: 92,
+      signaledOption: 'B',
+      meaning: 'Проговаривание губами "Второй / Вариант Б"'
+    };
+  }
+
+  if (patternKey.includes('ROUND_O_U') && patternKey.includes('OPEN_A')) {
+    return {
+      decodedWord: 'ПЕРВЫЙ / ОДИН (Вариант А)',
+      confidence: 94,
+      signaledOption: 'A',
+      meaning: 'Проговаривание губами "Первый / Вариант А"'
+    };
+  }
+
+  if (patternKey.includes('WIDE_I') && patternKey.includes('ROUND_O_U')) {
+    return {
+      decodedWord: 'ТРЕТИЙ (Вариант В)',
+      confidence: 88,
+      signaledOption: 'C',
+      meaning: 'Проговаривание губами "Третий / Вариант В"'
+    };
+  }
+
+  if (patternKey.includes('OPEN_A') && patternKey.includes('SPEAKING_CADENCE')) {
+    return {
+      decodedWord: 'ЧЕТВЁРТЫЙ (Вариант Г)',
+      confidence: 86,
+      signaledOption: 'D',
+      meaning: 'Проговаривание губами "Четвёртый / Вариант Г"'
+    };
+  }
+
+  return {
+    decodedWord: 'БЕСШУМНАЯ НАДИКТОВКА',
+    confidence: 80,
+    meaning: 'Бесшумная надиктовка текста губами'
+  };
+}
+
+// ── 2. LIP MESH VISEME CLASSIFIER (MediaPipe 478 Face Mesh) ──
 function classifyVisemeAndLipMotion(landmarks: { x: number; y: number; z: number }[]): {
   mar: number;
   viseme: ProctoringTelemetry['currentViseme'];
@@ -70,8 +138,6 @@ function classifyVisemeAndLipMotion(landmarks: { x: number; y: number; z: number
     return { mar: 0, viseme: 'RESTING', label: 'Покой' };
   }
 
-  // Landmark 13: Upper inner lip, 14: Lower inner lip
-  // Landmark 61: Left mouth corner, 291: Right mouth corner
   const upperLip = landmarks[13];
   const lowerLip = landmarks[14];
   const leftCorner = landmarks[61];
@@ -86,13 +152,13 @@ function classifyVisemeAndLipMotion(landmarks: { x: number; y: number; z: number
   const mar = lipWidth > 0 ? lipDistance / lipWidth : 0;
 
   if (mar > 0.50 && lipWidth < 0.22) {
-    return { mar, viseme: 'ROUND_O_U', label: '😮 Губы: О / У (Вариант 1)' };
+    return { mar, viseme: 'ROUND_O_U', label: '😮 Губы: О / У (Первый)' };
   }
   if (mar > 0.42) {
-    return { mar, viseme: 'OPEN_A', label: '😃 Губы: А / Э' };
+    return { mar, viseme: 'OPEN_A', label: '😃 Губы: А / Э (Второй)' };
   }
   if (mar < 0.20 && lipWidth > 0.26) {
-    return { mar, viseme: 'WIDE_I', label: '😬 Губы: И / Е (Вариант 2)' };
+    return { mar, viseme: 'WIDE_I', label: '😬 Губы: И / Е (Третий)' };
   }
   if (mar > 0.16) {
     return { mar, viseme: 'SPEAKING_CADENCE', label: '👄 Губы: Артикуляция' };
@@ -101,7 +167,7 @@ function classifyVisemeAndLipMotion(landmarks: { x: number; y: number; z: number
   return { mar, viseme: 'RESTING', label: 'Покой' };
 }
 
-// ── 2. FINGER GESTURE CLASSIFIER (MediaPipe 3D Hand Landmarks) ──
+// ── 3. FINGER GESTURE CLASSIFIER (MediaPipe 3D Hand Landmarks) ──
 function classifyHandGesture(landmarks: { x: number; y: number; z: number }[]): HandGestureResult {
   if (!landmarks || landmarks.length < 21) {
     return { gesture: 'NONE', label: 'Нет жеста', extendedFingers: 0 };
@@ -135,9 +201,9 @@ function classifyHandGesture(landmarks: { x: number; y: number; z: number }[]): 
 
   if (isThumbOut && !isIndexUp && !isMiddleUp && !isRingUp && !isPinkyUp) {
     if (thumbTip.y < wrist.y - 0.08) {
-      return { gesture: 'THUMBS_UP', label: '👍 Большой палец вверх', extendedFingers: 1 };
+      return { gesture: 'THUMBS_UP', label: '👍 Палец вверх (Да / Верно)', extendedFingers: 1 };
     } else if (thumbTip.y > wrist.y + 0.08) {
-      return { gesture: 'THUMBS_DOWN', label: '👎 Большой палец вниз', extendedFingers: 1 };
+      return { gesture: 'THUMBS_DOWN', label: '👎 Палец вниз (Нет / Ошибка)', extendedFingers: 1 };
     }
   }
 
@@ -164,7 +230,7 @@ function classifyHandGesture(landmarks: { x: number; y: number; z: number }[]): 
   return { gesture: 'NONE', label: 'Ладонь', extendedFingers: count + (isThumbOut ? 1 : 0) };
 }
 
-// ── 3. DYNAMIC SEMANTIC INTENT CLASSIFIER (With Question Text Overlap Verification) ──
+// ── 4. DYNAMIC SEMANTIC INTENT CLASSIFIER ──
 function evaluateSemanticIntent(text: string, currentQuestionText?: string): {
   probability: number;
   intentCategory: ProctoringTelemetry['speechIntentCategory'];
@@ -245,7 +311,7 @@ function evaluateSemanticIntent(text: string, currentQuestionText?: string): {
   };
 }
 
-// ── 4. ACOUSTIC WHISPER & DSP CLASSIFIER ──
+// ── 5. ACOUSTIC WHISPER & DSP CLASSIFIER ──
 function classifyAcousticState(timeData: Float32Array, freqData: Uint8Array, rmsVolume: number): {
   status: ProctoringTelemetry['audioStatus'];
   zcr: number;
@@ -285,7 +351,6 @@ function classifyAcousticState(timeData: Float32Array, freqData: Uint8Array, rms
   return { status: 'NORMAL', zcr };
 }
 
-// Dedicated offscreen canvas for light anomaly sampling
 let _lightCanvas: HTMLCanvasElement | null = null;
 let _lightCtx: CanvasRenderingContext2D | null = null;
 function getLightCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null {
@@ -311,6 +376,8 @@ export function useProctoringEngine(
     handsDetected: 0,
     handStatus: 'NO_HANDS',
     currentGesture: { gesture: 'NONE', label: 'Нет жеста', extendedFingers: 0 },
+    decodedGestureOption: '',
+    decodedGestureStream: '',
     facesDetected: 0,
     phoneDetected: false,
     bookDetected: false,
@@ -323,6 +390,8 @@ export function useProctoringEngine(
     isSilentLipSpeaking: false,
     currentViseme: 'RESTING',
     visemeLabel: 'Покой',
+    decodedLipWord: '',
+    decodedLipOption: '',
     audioLevel: 0,
     audioStatus: 'SILENT',
     zeroCrossingRate: 0,
@@ -351,13 +420,17 @@ export function useProctoringEngine(
   const fpsFrameCount = useRef(0);
   const lastFpsTime = useRef(0);
 
+  // Lip & Gesture sequence buffers
+  const visemeSequenceRef = useRef<ProctoringTelemetry['currentViseme'][]>([]);
+  const gestureStreamHistoryRef = useRef<string[]>([]);
+  const marHistoryRef = useRef<number[]>([]);
+
   // Anomaly duration tracking
   const gazeViolationStart = useRef<number | null>(null);
   const handBelowStart = useRef<number | null>(null);
   const lightAnomalyStart = useRef<number | null>(null);
   const faceLostStart = useRef<number | null>(null);
   const silentLipStart = useRef<number | null>(null);
-  const marHistoryRef = useRef<number[]>([]);
   
   // Event cooldown refs
   const lastExtraFaceEvent = useRef<number>(0);
@@ -409,7 +482,7 @@ export function useProctoringEngine(
   const addEventRef = useRef(addEvent);
   addEventRef.current = addEvent;
 
-  // Initialize Speech Recognition & AudioContext DSP
+  // Speech Recognition & AudioContext
   useEffect(() => {
     if (!isActive) return;
 
@@ -522,7 +595,7 @@ export function useProctoringEngine(
     };
   }, [isActive]);
 
-  // Initialize MediaPipe Models
+  // MediaPipe initialization
   useEffect(() => {
     let active = true;
 
@@ -630,7 +703,7 @@ export function useProctoringEngine(
     return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
   };
 
-  // Processing loop
+  // Processing Loop
   const processFrame = useCallback(() => {
     const video = videoRef.current;
     if (!video || video.readyState < 2 || video.videoWidth === 0) {
@@ -640,7 +713,6 @@ export function useProctoringEngine(
 
     const now = performance.now();
     
-    // FPS counter
     fpsFrameCount.current++;
     let currentFps: number | undefined;
     if (now - lastFpsTime.current >= 1000) {
@@ -652,7 +724,7 @@ export function useProctoringEngine(
     const updates: Partial<ProctoringTelemetry> = {};
     let isViolatingThisFrame = false;
 
-    // ── 1. FACE PROCESSING & LIP READING (~20 FPS / every ~50ms) ──
+    // ── 1. FACE PROCESSING & LIP-TO-WORD DECODER (~20 FPS) ──
     if (now - lastFaceProcessTime.current >= 50 && faceLandmarkerRef.current) {
       try {
         const faceResult = faceLandmarkerRef.current.detectForVideo(video, now);
@@ -691,7 +763,6 @@ export function useProctoringEngine(
           const landmarks = faceResult.faceLandmarks[0];
           const matrices = faceResult.facialTransformationMatrixes?.[0];
 
-          // Head Pose
           if (matrices) {
             const m = matrices.data;
             const pitch = Math.atan2(m[9], m[10]) * (180 / Math.PI);
@@ -721,7 +792,6 @@ export function useProctoringEngine(
             }
           }
 
-          // Iris gaze
           if (landmarks[468] && landmarks[33] && landmarks[133]) {
             const leftIris = landmarks[468];
             const leftOuter = landmarks[33];
@@ -748,13 +818,16 @@ export function useProctoringEngine(
             updates.gazeDirection = gazeDir;
           }
 
-          // LIP READING & VISEME ANALYZER
+          // LIP MESH & VISEME WORD DECODER
           const lipRes = classifyVisemeAndLipMotion(landmarks);
           updates.mouthAspectRatio = parseFloat(lipRes.mar.toFixed(3));
           updates.currentViseme = lipRes.viseme;
           updates.visemeLabel = lipRes.label;
 
-          // Track MAR history over 500ms sliding window (10 samples)
+          // Push to viseme sequence buffer (hold last 15 frames ~ 750ms)
+          visemeSequenceRef.current.push(lipRes.viseme);
+          if (visemeSequenceRef.current.length > 15) visemeSequenceRef.current.shift();
+
           marHistoryRef.current.push(lipRes.mar);
           if (marHistoryRef.current.length > 10) marHistoryRef.current.shift();
 
@@ -762,17 +835,20 @@ export function useProctoringEngine(
           const minMar = Math.min(...marHistoryRef.current);
           const marDelta = maxMar - minMar;
 
-          // Silent Lip Speaking Detection:
-          // If audio is silent (level < 10 dB) BUT lips are oscillating dynamically (marDelta > 0.16) for > 1.2s
-          if (marDelta > 0.16) {
+          // Perform viseme temporal pattern word decoding!
+          const decodedLipWordObj = decodeVisemeSequenceToWord(visemeSequenceRef.current);
+          if (decodedLipWordObj && marDelta > 0.16) {
+            updates.decodedLipWord = decodedLipWordObj.decodedWord;
+            updates.decodedLipOption = decodedLipWordObj.signaledOption || '';
             updates.isSilentLipSpeaking = true;
+
             if (!silentLipStart.current) silentLipStart.current = now;
             else if (now - silentLipStart.current > 1200) {
               if (now - lastSilentLipEvent.current > EVENT_COOLDOWN) {
                 addEventRef.current({
                   type: 'SILENT_LIP_SPEAKING_DETECTED',
                   severity: 'HIGH',
-                  description: `👄 Чтение по губам: Бесшумное артикулирование губами без звука микрофона (${lipRes.label})`
+                  description: `👄 Чтение по губам (Распознано слово): "${decodedLipWordObj.decodedWord}" (${decodedLipWordObj.confidence}% уверенность)`
                 });
                 lastSilentLipEvent.current = now;
               }
@@ -783,7 +859,7 @@ export function useProctoringEngine(
             silentLipStart.current = null;
           }
 
-          // STRICT LIGHT ANOMALY DETECTION
+          // LIGHT ANOMALY DETECTION
           const lc = getLightCanvas();
           if (lc) {
             lc.ctx.drawImage(video, 0, 0, 160, 120);
@@ -854,7 +930,7 @@ export function useProctoringEngine(
       }
     }
 
-    // ── 2. HAND PROCESSING & GESTURE CLASSIFIER (~5 FPS / every ~200ms) ──
+    // ── 2. HAND PROCESSING & GESTURE-TO-OPTION STREAM DECODER (~5 FPS) ──
     if (now - lastHandProcessTime.current >= 200 && handLandmarkerRef.current) {
       try {
         const handResult = handLandmarkerRef.current.detectForVideo(video, now);
@@ -867,6 +943,7 @@ export function useProctoringEngine(
         if (handsCount === 0) {
           updates.handStatus = 'NO_HANDS';
           updates.currentGesture = { gesture: 'NONE', label: 'Нет жеста', extendedFingers: 0 };
+          updates.decodedGestureOption = '';
           handBelowStart.current = null;
           previousWristX.current = null;
         } else {
@@ -885,11 +962,22 @@ export function useProctoringEngine(
               activeGesture = gestureRes;
               
               if (gestureRes.signaledOption || gestureRes.gesture === 'PHONE_HAND_SIGNAL') {
+                const optText = gestureRes.signaledOption ? `Вариант ${gestureRes.signaledOption}` : 'Телефон';
+                updates.decodedGestureOption = optText;
+
+                // Push to rolling gesture stream decoder history (e.g. "Б -> А -> В")
+                const lastStreamOpt = gestureStreamHistoryRef.current[gestureStreamHistoryRef.current.length - 1];
+                if (gestureRes.signaledOption && lastStreamOpt !== gestureRes.signaledOption) {
+                  gestureStreamHistoryRef.current.push(gestureRes.signaledOption);
+                  if (gestureStreamHistoryRef.current.length > 5) gestureStreamHistoryRef.current.shift();
+                }
+                updates.decodedGestureStream = gestureStreamHistoryRef.current.join(' ➔ ');
+
                 if (now - lastGestureEvent.current > EVENT_COOLDOWN) {
                   addEventRef.current({
                     type: 'GESTURE_SIGNAL_DETECTED',
                     severity: 'HIGH',
-                    description: `✋ Сигнализирование пальцами: ${gestureRes.label}`
+                    description: `✋ Декодер жестов: Передан сигнал "${optText}" (${gestureRes.label})`
                   });
                   lastGestureEvent.current = now;
                 }
@@ -942,7 +1030,7 @@ export function useProctoringEngine(
       }
     }
 
-    // ── 3. OBJECT DETECTION (~4 FPS / every ~250ms) ──
+    // ── 3. OBJECT DETECTION (~4 FPS) ──
     if (now - lastObjectProcessTime.current >= 250 && objectDetectorRef.current) {
       try {
         const objResult = objectDetectorRef.current.detectForVideo(video, now);

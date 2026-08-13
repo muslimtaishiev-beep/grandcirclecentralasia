@@ -13,6 +13,8 @@ interface ProctoringTelemetry {
     extendedFingers: number;
     signaledOption?: string;
   };
+  decodedGestureOption?: string;
+  decodedGestureStream?: string;
   facesDetected: number;
   phoneDetected?: boolean;
   bookDetected?: boolean;
@@ -26,6 +28,8 @@ interface ProctoringTelemetry {
   isSilentLipSpeaking?: boolean;
   currentViseme?: string;
   visemeLabel?: string;
+  decodedLipWord?: string;
+  decodedLipOption?: string;
 
   // Audio telemetry
   audioLevel?: number;
@@ -79,7 +83,7 @@ const NEON_PURPLE = "#A855F7";
 const NEON_PINK = "#EC4899";
 const NEON_YELLOW = "#FACC15";
 const GREEN_OK = "#10B981";
-const HUD_BG = "rgba(15, 23, 42, 0.82)";
+const HUD_BG = "rgba(15, 23, 42, 0.86)";
 const HUD_TEXT = "#E2E8F0";
 
 // Lip landmark indices for Face Mesh
@@ -183,7 +187,7 @@ export default function ProctoringOverlay({
           ctx.fillText("⚠ EXTRA PERSON", bx + 4, by - 7);
         }
 
-        // Draw Lip Mesh Contour & Viseme Label on Primary Face
+        // Draw Lip Mesh Contour & Decoded Word Badge
         if (faceIdx === 0) {
           ctx.beginPath();
           for (let i = 0; i < LIP_OUTER_INDICES.length; i++) {
@@ -197,22 +201,23 @@ export default function ProctoringOverlay({
           }
           ctx.closePath();
           ctx.strokeStyle = telemetry.isSilentLipSpeaking ? NEON_PINK : "rgba(236, 72, 153, 0.4)";
-          ctx.lineWidth = telemetry.isSilentLipSpeaking ? 2.5 : 1;
+          ctx.lineWidth = telemetry.isSilentLipSpeaking ? 3 : 1;
           ctx.stroke();
 
-          // If silent speaking is active, show lip reading badge above mouth (landmark 13)
+          // Render Decoded Lip Word Badge directly over mouth
           if (telemetry.isSilentLipSpeaking && face[13]) {
             const mx = face[13].x * w;
             const my = face[13].y * h;
-            const lipBadgeText = `👄 ${telemetry.visemeLabel || 'Чтение по губам'}`;
-            const lbW = ctx.measureText(lipBadgeText).width + 16;
+            const decodedWord = telemetry.decodedLipWord || telemetry.visemeLabel || 'Бесшумная речь';
+            const lipBadgeText = `👄 РАСШИФРОВАНО: "${decodedWord}"`;
+            const lbW = ctx.measureText(lipBadgeText).width + 20;
 
-            ctx.fillStyle = "rgba(236, 72, 153, 0.92)";
-            roundRect(ctx, mx - lbW / 2, my + 15, lbW, 22, 5);
+            ctx.fillStyle = "rgba(236, 72, 153, 0.95)";
+            roundRect(ctx, mx - lbW / 2, my + 15, lbW, 26, 6);
             ctx.fill();
             ctx.fillStyle = "#FFFFFF";
-            ctx.font = "bold 11px sans-serif";
-            ctx.fillText(lipBadgeText, mx - lbW / 2 + 8, my + 30);
+            ctx.font = "bold 12px sans-serif";
+            ctx.fillText(lipBadgeText, mx - lbW / 2 + 10, my + 32);
           }
         }
 
@@ -276,7 +281,7 @@ export default function ProctoringOverlay({
       }
     }
 
-    // 3. Draw Hand Landmarks & Finger Gesture Badges
+    // 3. Draw Hand Landmarks & Decoded Option Badges
     if (handLandmarks && handLandmarks.length > 0) {
       for (const hand of handLandmarks) {
         if (!hand || hand.length < 21) continue;
@@ -309,22 +314,22 @@ export default function ProctoringOverlay({
         ctx.setLineDash([]);
 
         if (telemetry.currentGesture && telemetry.currentGesture.gesture !== 'NONE') {
-          const gText = telemetry.currentGesture.label;
-          const gW = ctx.measureText(gText).width + 16;
-          const gy = Math.max(0, hby - 24);
+          const gText = telemetry.decodedGestureOption ? `✌️ ДЕКОДИРОВАНО: ${telemetry.decodedGestureOption}` : telemetry.currentGesture.label;
+          const gW = ctx.measureText(gText).width + 20;
+          const gy = Math.max(0, hby - 26);
 
-          ctx.fillStyle = telemetry.currentGesture.signaledOption ? "rgba(250, 204, 21, 0.92)" : "rgba(15, 23, 42, 0.85)";
-          roundRect(ctx, hbx, gy, gW, 22, 4);
+          ctx.fillStyle = telemetry.currentGesture.signaledOption ? "rgba(250, 204, 21, 0.95)" : "rgba(15, 23, 42, 0.85)";
+          roundRect(ctx, hbx, gy, gW, 24, 5);
           ctx.fill();
 
           ctx.fillStyle = telemetry.currentGesture.signaledOption ? "#000000" : "#FFFFFF";
-          ctx.font = "bold 11px sans-serif";
-          ctx.fillText(gText, hbx + 8, gy + 15);
+          ctx.font = "bold 12px sans-serif";
+          ctx.fillText(gText, hbx + 10, gy + 16);
         }
       }
     }
 
-    // 4. Draw Detected Objects
+    // 4. Draw Objects
     if (detectedObjects && detectedObjects.length > 0) {
       for (const obj of detectedObjects) {
         const bbox = obj.boundingBox;
@@ -357,8 +362,8 @@ export default function ProctoringOverlay({
     // 5. HUD Telemetry Panel
     const hudX = 10;
     const hudY = 10;
-    const hudW = 330;
-    const hudH = telemetry.phoneDetected || telemetry.lightAnomaly || telemetry.isSilentLipSpeaking ? 130 : 105;
+    const hudW = 340;
+    const hudH = 125;
 
     ctx.fillStyle = HUD_BG;
     roundRect(ctx, hudX, hudY, hudW, hudH, 8);
@@ -371,7 +376,7 @@ export default function ProctoringOverlay({
 
     ctx.fillStyle = HUD_TEXT;
     ctx.font = "bold 11px monospace";
-    ctx.fillText("PROCTORING TELEMETRY", hudX + 12, hudY + 18);
+    ctx.fillText("PROCTORING REALTIME DECODER", hudX + 12, hudY + 18);
 
     ctx.font = "11px monospace";
     const y1 = hudY + 36;
@@ -394,24 +399,26 @@ export default function ProctoringOverlay({
     ctx.fillStyle = (telemetry.speechProbability || 0) > 50 ? NEON_RED : "#64748B";
     ctx.fillText(`Mic: ${telemetry.audioStatus || 'SILENT'} (${telemetry.audioLevel || 0}dB)`, hudX + 130, y3);
 
+    const y4 = y3 + 18;
     if (telemetry.isSilentLipSpeaking) {
-      const y4 = y3 + 18;
       ctx.fillStyle = NEON_PINK;
       ctx.font = "bold 11px monospace";
-      ctx.fillText(`👄 LIP READING: ${telemetry.visemeLabel || 'SILENT SPEAKING'}`, hudX + 12, y4);
+      ctx.fillText(`👄 LIP DECODED: ${telemetry.decodedLipWord || telemetry.visemeLabel}`, hudX + 12, y4);
+    } else if (telemetry.decodedGestureStream) {
+      ctx.fillStyle = NEON_YELLOW;
+      ctx.font = "bold 11px monospace";
+      ctx.fillText(`✌️ GESTURES: ${telemetry.decodedGestureStream}`, hudX + 12, y4);
     } else if (telemetry.phoneDetected) {
-      const y4 = y3 + 18;
       ctx.fillStyle = NEON_RED;
       ctx.font = "bold 11px monospace";
       ctx.fillText("📱 PHONE DETECTED IN FRAME!", hudX + 12, y4);
     } else if (telemetry.lightAnomaly) {
-      const y4 = y3 + 18;
       ctx.fillStyle = NEON_RED;
       ctx.font = "bold 11px monospace";
       ctx.fillText("⚡ LIGHT ANOMALY DETECTED", hudX + 12, y4);
     }
 
-    // 6. Live Speech Transcript Box (Bottom-Left Canvas Overlay)
+    // 6. Live Speech Transcript Box
     if (telemetry.lastTranscript && telemetry.lastTranscript.length > 0) {
       const trText = `🗣 "${telemetry.lastTranscript.slice(-45)}"`;
       const probText = `[Вероятность: ${telemetry.speechProbability || 0}%]`;
