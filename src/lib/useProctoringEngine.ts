@@ -129,7 +129,7 @@ function classifyMicroViseme(landmarks: { x: number; y: number; z: number }[]): 
   return { mar, outerMar, lipWidth, viseme: 'RESTING', label: 'Покой', phonemeChar: '', kinematicVector };
 }
 
-// ── 2. SYNTHESIZE PHRASES FROM STRICT ORDERED VISEME TRANSITIONS ──
+// ── 2. FUZZY MATCHING VSR STREAM SYNTHESIZER (REGEX PATTERNS) ──
 export interface VSRDecodedPhrase {
   text: string;
   signaledOption?: string;
@@ -137,44 +137,65 @@ export interface VSRDecodedPhrase {
   reasoning: string;
 }
 
-function synthesizeLipPhonemesToText(
-  visemeHistory: string[],
-  phonemeStream: string[]
-): VSRDecodedPhrase {
-  // 1. Оставляем только значимые переходы (убираем RESTING и дубли)
-  const transitions: string[] = [];
-  for (const v of visemeHistory) {
-    if (v !== 'RESTING' && (transitions.length === 0 || transitions[transitions.length - 1] !== v)) {
-      transitions.push(v);
-    }
+function synthesizeLipPhonemesToText(visemeHistory: string[]): VSRDecodedPhrase {
+  // 1. Словарь конвертации длинных названий в простые буквы (якоря)
+  const vMap: Record<string, string> = {
+    'CLOSED_P_B_M': 'П', // Смыкание
+    'STRETCH_I_E': 'И',  // Растяжение (Улыбка)
+    'ROUND_O_U': 'О',    // Трубочка / Овал
+    'OPEN_A_E': 'А',     // Широко открыт
+    'DENTAL_F_V': 'В',   // Шепот / Зубной
+    'RESTING': '_'       // Покой
+  };
+
+  // 2. Превращаем историю (45 кадров) в массив букв и выкидываем паузы ('_')
+  const rawStream = visemeHistory.map(v => vMap[v] || '_').filter(char => char !== '_');
+
+  // 3. Сжимаем дубликаты (например, ['П', 'П', 'П', 'О', 'О'] превращается в "ПО")
+  const compressedStream = rawStream.filter((char, index, arr) => index === 0 || char !== arr[index - 1]).join('');
+
+  if (compressedStream.length < 2) {
+    return { text: '', confidence: 0, reasoning: 'Недостаточно кинематических движений' };
   }
 
-  // Склеиваем историю в строку вида: "CLOSED_P_B_M-ROUND_O_U-STRETCH_I_E"
-  const seqKey = transitions.join('-');
+  // 4. НЕЧЕТКИЙ ПОИСК (Fuzzy Matching через Regex)
+  // .* означает "любые другие микро-движения между нужными звуками"
 
-  // 2. Ищем СТРОГУЮ последовательность движений
-  if (seqKey.includes('STRETCH_I_E-ROUND_O_U-DENTAL_F_V')) {
-    return { text: 'сири что во втором', signaledOption: 'B', confidence: 95, reasoning: 'Последовательность губ: "сири что во втором"' };
-  }
-  
-  if (seqKey.includes('CLOSED_P_B_M-ROUND_O_U')) {
-    return { text: 'первый вариант а', signaledOption: 'A', confidence: 94, reasoning: 'Последовательность губ: "первый вариант а"' };
-  }
-  
-  if (seqKey.includes('DENTAL_F_V-ROUND_O_U')) {
-    return { text: 'второй вариант б', signaledOption: 'B', confidence: 93, reasoning: 'Последовательность губ: "второй вариант б"' };
-  }
-  
-  if (seqKey.includes('DENTAL_F_V-STRETCH_I_E')) {
-    return { text: 'третий вариант в', signaledOption: 'C', confidence: 90, reasoning: 'Последовательность губ: "третий вариант в"' };
-  }
-  
-  if (seqKey.includes('CLOSED_P_B_M-STRETCH_I_E')) {
-    return { text: 'четвертый вариант г', signaledOption: 'D', confidence: 88, reasoning: 'Последовательность губ: "четвертый вариант г"' };
+  // Паттерн "Первый вариант (А)" (П -> И/Е -> В/Ф)
+  if (/П.*И.*В/.test(compressedStream) || /П.*О.*В/.test(compressedStream)) {
+    return { text: 'первый вариант (А)', signaledOption: 'A', confidence: 85, reasoning: 'Якоря "П-И-В": первый вариант (А)' };
   }
 
-  const phonemes = phonemeStream.filter(Boolean).slice(-6).join('-');
-  return { text: phonemes ? `шепот: [${phonemes}]` : 'артикуляция губами', confidence: 60, reasoning: 'Артикуляция без фразового паттерна' };
+  // Паттерн "Второй вариант (Б)" (В/Ф -> О -> И)
+  if (/В.*О.*И/.test(compressedStream) || /В.*А.*О/.test(compressedStream)) {
+    return { text: 'второй вариант (Б)', signaledOption: 'B', confidence: 85, reasoning: 'Якоря "В-О-И": второй вариант (Б)' };
+  }
+
+  // Паттерн "Третий вариант (В)" (В/Т -> И -> И)
+  if (/В.*И.*И/.test(compressedStream) || /И.*В.*И/.test(compressedStream)) {
+    return { text: 'третий вариант (В)', signaledOption: 'C', confidence: 80, reasoning: 'Якоря "В-И-И": третий вариант (В)' };
+  }
+
+  // Паттерн "Четвертый вариант (Г)" (Ч/О/А -> В -> О)
+  if (/О.*В.*О/.test(compressedStream) || /А.*В.*О/.test(compressedStream)) {
+    return { text: 'четвертый вариант (Г)', signaledOption: 'D', confidence: 80, reasoning: 'Якоря "О-В-О": четвертый вариант (Г)' };
+  }
+
+  // Паттерн "Сири / Гугл / Помоги"
+  if (/О.*У.*О/.test(compressedStream)) {
+    return { text: 'окей гугл', confidence: 90, reasoning: 'Якоря "О-У-О": окей гугл' };
+  }
+
+  if (/П.*О.*П/.test(compressedStream) || /П.*О.*В/.test(compressedStream)) {
+    return { text: 'помоги что во втором', signaledOption: 'B', confidence: 90, reasoning: 'Якоря "П-О-П": помоги что во втором' };
+  }
+
+  if (/И.*И/.test(compressedStream) && compressedStream.length <= 4) {
+    return { text: 'сири', confidence: 70, reasoning: 'Якоря "И-И": сири' };
+  }
+
+  // Если ни одно слово не подошло, возвращаем сжатый поток букв для живой отладки
+  return { text: `бормочет: [${compressedStream}]`, confidence: 50, reasoning: `Поток висем: [${compressedStream}]` };
 }
 
 // ── 3. FINGER GESTURE CLASSIFIER ──
@@ -830,7 +851,7 @@ export function useProctoringEngine(
             updates.gazeDirection = gazeDir;
           }
 
-          // HIGH-PRECISION VSR MICRO-MOTION VISEME & CONTINUOUS PHONEME TRANSCRIPTER
+          // HIGH-PRECISION VSR MICRO-MOTION VISEME & FUZZY REGEX SYNTHESIZER
           const microRes = classifyMicroViseme(landmarks);
           updates.mouthAspectRatio = microRes.mar;
           updates.currentViseme = microRes.viseme;
@@ -860,13 +881,10 @@ export function useProctoringEngine(
           const minMar = Math.min(...marHistoryRef.current);
           const marDelta = maxMar - minMar;
 
-          // CONTINUOUS REAL-TIME LIP SYNTHESIS (STRICT SEQUENCE MATCHING)
-          const vsrPhrase = synthesizeLipPhonemesToText(
-            visemeSequenceRef.current,
-            phonemeStreamRef.current
-          );
+          // FUZZY REGEX MATCHING SYNTHESIZER
+          const vsrPhrase = synthesizeLipPhonemesToText(visemeSequenceRef.current);
 
-          if (vsrPhrase.confidence > 80 && (marDelta > 0.03 || microRes.viseme !== 'RESTING')) {
+          if (vsrPhrase.text && (vsrPhrase.confidence >= 50 || marDelta > 0.03 || microRes.viseme !== 'RESTING')) {
             updates.decodedLipWord = vsrPhrase.text;
             updates.decodedLipOption = vsrPhrase.signaledOption || '';
             updates.isSilentLipSpeaking = true;
