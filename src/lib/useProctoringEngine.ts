@@ -932,6 +932,7 @@ export function useProctoringEngine(
           // Trigger silent speech check if lips move (delta > 0.03 or viseme is active)
           if (marDelta > 0.03 || microRes.viseme !== 'RESTING') {
             updates.isSilentLipSpeaking = true;
+            updates.lastTranscript = `👄 [ГУБЫ]: "${vsrPhrase.text}"`;
 
             const semanticRes = evaluateSemanticIntent(vsrPhrase.text, currentQuestionTextRef.current);
             updates.speechProbability = semanticRes.probability;

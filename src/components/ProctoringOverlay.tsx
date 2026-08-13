@@ -418,25 +418,24 @@ export default function ProctoringOverlay({
       ctx.fillText("⚡ LIGHT ANOMALY DETECTED", hudX + 12, y4);
     }
 
-    // 6. Live VSR Lip Reading Transcript Box & Audio Speech Transcript Box
-    if (telemetry.decodedLipWord || (telemetry.lastTranscript && telemetry.lastTranscript.length > 0)) {
-      const displayText = telemetry.decodedLipWord
-        ? `👄 [VSR Губы]: "${telemetry.decodedLipWord}"`
-        : `🗣 "${telemetry.lastTranscript.slice(-45)}"`;
-
+    // 6. Live Speech & VSR Lip Reading Transcript Box
+    if (telemetry.lastTranscript && telemetry.lastTranscript.length > 0) {
+      const displayText = telemetry.lastTranscript;
       const probText = `[Угроза: ${telemetry.speechProbability || 0}%]`;
-      const trBoxW = 440;
+      const textWidth = ctx.measureText(displayText).width;
+      const trBoxW = Math.max(380, Math.min(textWidth + 140, 520));
       const trBoxH = 34;
       const trBoxX = 10;
       const trBoxY = h - 45;
 
+      const isLip = telemetry.lastTranscript.includes("👄");
       const isHighRisk = (telemetry.speechProbability || 0) > 55;
 
-      ctx.fillStyle = telemetry.decodedLipWord ? "rgba(236, 72, 153, 0.92)" : isHighRisk ? "rgba(239, 68, 68, 0.90)" : "rgba(15, 23, 42, 0.85)";
+      ctx.fillStyle = isLip ? "rgba(236, 72, 153, 0.92)" : isHighRisk ? "rgba(239, 68, 68, 0.90)" : "rgba(15, 23, 42, 0.85)";
       roundRect(ctx, trBoxX, trBoxY, trBoxW, trBoxH, 6);
       ctx.fill();
 
-      ctx.strokeStyle = telemetry.decodedLipWord ? "#EC4899" : isHighRisk ? "#FF2A6D" : "#3B82F6";
+      ctx.strokeStyle = isLip ? "#EC4899" : isHighRisk ? "#FF2A6D" : "#3B82F6";
       ctx.lineWidth = 1.5;
       roundRect(ctx, trBoxX, trBoxY, trBoxW, trBoxH, 6);
       ctx.stroke();
