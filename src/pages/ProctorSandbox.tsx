@@ -50,6 +50,7 @@ function eventTypeIcon(type: string): string {
     case "FAST_ANSWER": return "⚡";
     case "PHONE_DETECTED": return "📱";
     case "BOOK_DETECTED": return "📖";
+    case "SPEECH_CHEAT_DETECTED": return "🗣";
     case "PASTE_DETECTED": return "📋";
     case "TAB_SWITCH": return "🔀";
     case "FACE_LOST": return "❌";
@@ -68,6 +69,7 @@ function eventTypeLabel(type: string): string {
     case "FAST_ANSWER": return "Быстрый ответ";
     case "PHONE_DETECTED": return "Телефон в кадре!";
     case "BOOK_DETECTED": return "Книга / конспект";
+    case "SPEECH_CHEAT_DETECTED": return "Речь / Попытка подсказки";
     case "PASTE_DETECTED": return "Вставка текста";
     case "TAB_SWITCH": return "Смена вкладки";
     case "FACE_LOST": return "Лицо потеряно";
@@ -671,10 +673,10 @@ export default function ProctorSandbox() {
                   💡 Свет телефона
                 </button>
                 <button
-                  onClick={() => simulateEvent("FAST_ANSWER", "HIGH", "Слишком быстрый ответ (0.8с)")}
+                  onClick={() => simulateEvent("SPEECH_CHEAT_DETECTED", "HIGH", "🗣 Речь/подсказка (Вероятность 85%): \"подскажи какой ответ в третьем...\"")}
                   className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-slate-300 transition text-left"
                 >
-                  ⚡ Быстрый ответ
+                  🗣 Подсказка речи (85%)
                 </button>
                 <button
                   onClick={() => simulateEvent("TAB_SWITCH", "HIGH", "Пользователь сменил вкладку браузера")}

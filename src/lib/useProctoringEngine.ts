@@ -26,14 +26,57 @@ export interface ProctoringTelemetry {
   isViolating: boolean;
   isDraftWork: boolean;
   fps: number;
+
+  // Audio Telemetry
+  audioLevel: number;           // 0 - 100 RMS volume
+  audioStatus: 'SILENT' | 'NORMAL' | 'WHISPER' | 'TALKING';
+  lastTranscript: string;       // Real-time transcribed text
+  speechProbability: number;    // 0 - 100% probability of cheating/prompts
 }
 
 export interface ProctoringEvent {
   id: string;
   timestamp: number;
-  type: 'GAZE_LEFT' | 'GAZE_RIGHT' | 'EXTRA_FACE' | 'HAND_BELOW' | 'SWIPE' | 'LIGHT_ANOMALY' | 'FAST_ANSWER' | 'PASTE_DETECTED' | 'TAB_SWITCH' | 'FACE_LOST' | 'PHONE_DETECTED' | 'BOOK_DETECTED';
+  type: 'GAZE_LEFT' | 'GAZE_RIGHT' | 'EXTRA_FACE' | 'HAND_BELOW' | 'SWIPE' | 'LIGHT_ANOMALY' | 'FAST_ANSWER' | 'PASTE_DETECTED' | 'TAB_SWITCH' | 'FACE_LOST' | 'PHONE_DETECTED' | 'BOOK_DETECTED' | 'SPEECH_CHEAT_DETECTED';
   severity: 'LOW' | 'MEDIUM' | 'HIGH';
   description: string;
+}
+
+// ── SEMANTIC PROBABILITY ENGINE FOR CHEATING / HINTS ──
+const CHEAT_KEYWORDS = [
+  // Direct requests for help
+  { pattern: /подскажи|помоги|скажи|какой|какая|какое|выбери/i, weight: 30 },
+  // Options / choices
+  { pattern: /первый|второй|третий|четвертый|пятый|вариант|буква|цифра/i, weight: 35 },
+  // Letters A, B, C, D in Russian/English context
+  { pattern: /\b(а|б|в|г|a|b|c|d)\b/i, weight: 15 },
+  // AI assistant calls
+  { pattern: /гугл|яндекс|сири|алиса|сафари|гпт|gpt|chat|чат|джипити/i, weight: 45 },
+  // Dictation of test text
+  { pattern: /вопрос|уравнение|текст|задача|ответ|правильно/i, weight: 25 },
+  // Relatives / tutors
+  { pattern: /мама|папа|брат|сестра|друг|э|слышишь/i, weight: 35 },
+];
+
+function calculateSpeechCheatProbability(text: string): { probability: number; matchedKeywords: string[] } {
+  if (!text || text.trim().length === 0) {
+    return { probability: 0, matchedKeywords: [] };
+  }
+
+  let score = 0;
+  const matched: string[] = [];
+
+  for (const item of CHEAT_KEYWORDS) {
+    if (item.pattern.test(text)) {
+      score += item.weight;
+      const match = text.match(item.pattern);
+      if (match) matched.push(match[0]);
+    }
+  }
+
+  // Cap probability at 98%
+  const probability = Math.min(98, score);
+  return { probability, matchedKeywords: matched };
 }
 
 // Dedicated offscreen canvas for light anomaly sampling
@@ -68,6 +111,10 @@ export function useProctoringEngine(
     isViolating: false,
     isDraftWork: false,
     fps: 0,
+    audioLevel: 0,
+    audioStatus: 'SILENT',
+    lastTranscript: '',
+    speechProbability: 0,
   });
 
   const [events, setEvents] = useState<ProctoringEvent[]>([]);
@@ -96,7 +143,7 @@ export function useProctoringEngine(
   const lightAnomalyStart = useRef<number | null>(null);
   const faceLostStart = useRef<number | null>(null);
   
-  // Cooldown refs (prevent event spam)
+  // Event cooldown refs
   const lastExtraFaceEvent = useRef<number>(0);
   const lastFaceLostEvent = useRef<number>(0);
   const lastGazeEvent = useRef<number>(0);
@@ -105,15 +152,20 @@ export function useProctoringEngine(
   const lastLightEvent = useRef<number>(0);
   const lastPhoneEvent = useRef<number>(0);
   const lastBookEvent = useRef<number>(0);
-  const EVENT_COOLDOWN = 3000; // 3 seconds between duplicate event logs
+  const lastSpeechEvent = useRef<number>(0);
+  const EVENT_COOLDOWN = 3000;
 
   // Hand tracking
   const previousWristX = useRef<number | null>(null);
   const lastWristTime = useRef<number>(0);
   
-  // Face landmarks & detected objects refs for canvas overlay
+  // Refs for overlay
   const faceLandmarksRef = useRef<any[][] | null>(null);
   const detectedObjectsRef = useRef<DetectedObject[]>([]);
+
+  // Speech Recognition instance ref
+  const speechRecognitionRef = useRef<any | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   const addEvent = useCallback((eventInit: Omit<ProctoringEvent, 'id' | 'timestamp'>) => {
     const newEvent: ProctoringEvent = {
@@ -136,7 +188,117 @@ export function useProctoringEngine(
   const addEventRef = useRef(addEvent);
   addEventRef.current = addEvent;
 
-  // Initialize MediaPipe Models (Face + Hand + ObjectDetector)
+  // Initialize Web Speech Recognition & Audio Meter
+  useEffect(() => {
+    if (!isActive) return;
+
+    // 1. Initialize Speech Recognition
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      try {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'ru-RU';
+
+        recognition.onresult = (event: any) => {
+          let currentTranscript = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            currentTranscript += event.results[i][0].transcript;
+          }
+
+          if (currentTranscript.trim().length > 0) {
+            const { probability, matchedKeywords } = calculateSpeechCheatProbability(currentTranscript);
+
+            setTelemetry(prev => ({
+              ...prev,
+              lastTranscript: currentTranscript,
+              speechProbability: probability,
+            }));
+
+            // If probability of cheating prompt > 55% -> Trigger Event!
+            if (probability >= 55 && Date.now() - lastSpeechEvent.current > EVENT_COOLDOWN) {
+              addEventRef.current({
+                type: 'SPEECH_CHEAT_DETECTED',
+                severity: 'HIGH',
+                description: `🗣 Речь/подсказка (Вероятность ${probability}%): "${currentTranscript.slice(0, 60)}..."`
+              });
+              lastSpeechEvent.current = Date.now();
+            }
+          }
+        };
+
+        recognition.onerror = (e: any) => {
+          if (e.error !== 'no-speech') {
+            console.warn('Speech recognition error:', e.error);
+          }
+        };
+
+        recognition.onend = () => {
+          // Restart recognition continuously
+          if (speechRecognitionRef.current) {
+            try { speechRecognitionRef.current.start(); } catch (err) {}
+          }
+        };
+
+        recognition.start();
+        speechRecognitionRef.current = recognition;
+      } catch (err) {
+        console.warn('Speech recognition init failed:', err);
+      }
+    }
+
+    // 2. Initialize Audio Context for RMS Volume Metering
+    navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        const ctx = new AudioCtx();
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        audioContextRef.current = ctx;
+
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const checkAudio = () => {
+          if (!audioContextRef.current) return;
+          analyser.getByteFrequencyData(dataArray);
+
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            sum += dataArray[i];
+          }
+          const avg = sum / dataArray.length;
+          const rms = Math.min(100, Math.round((avg / 128) * 100));
+
+          let audioStatus: ProctoringTelemetry['audioStatus'] = 'SILENT';
+          if (rms > 40) audioStatus = 'TALKING';
+          else if (rms > 18) audioStatus = 'WHISPER';
+          else if (rms > 8) audioStatus = 'NORMAL';
+
+          setTelemetry(prev => ({ ...prev, audioLevel: rms, audioStatus }));
+        };
+
+        const interval = setInterval(checkAudio, 250);
+        return () => clearInterval(interval);
+      } catch (e) {
+        console.warn('Audio Context init error:', e);
+      }
+    }).catch(() => {});
+
+    return () => {
+      if (speechRecognitionRef.current) {
+        try { speechRecognitionRef.current.stop(); } catch (e) {}
+        speechRecognitionRef.current = null;
+      }
+      if (audioContextRef.current) {
+        try { audioContextRef.current.close(); } catch (e) {}
+        audioContextRef.current = null;
+      }
+    };
+  }, [isActive]);
+
+  // Initialize MediaPipe Models
   useEffect(() => {
     let active = true;
 
@@ -194,7 +356,7 @@ export function useProctoringEngine(
           });
         }
 
-        setLoadingProgress('3/3 Загрузка нейросети распознавания предметов (EfficientDet)...');
+        setLoadingProgress('3/3 Загрузка нейросети предмета (EfficientDet)...');
         try {
           objectDetectorRef.current = await ObjectDetector.createFromOptions(vision, {
             baseOptions: {
@@ -205,7 +367,6 @@ export function useProctoringEngine(
             runningMode: 'VIDEO'
           });
         } catch (e) {
-          console.warn('ObjectDetector GPU failed, fallback to CPU:', e);
           try {
             objectDetectorRef.current = await ObjectDetector.createFromOptions(vision, {
               baseOptions: {
@@ -215,9 +376,7 @@ export function useProctoringEngine(
               scoreThreshold: 0.30,
               runningMode: 'VIDEO'
             });
-          } catch (e2) {
-            console.warn('ObjectDetector load failed completely:', e2);
-          }
+          } catch (e2) {}
         }
 
         if (active) {
@@ -247,7 +406,7 @@ export function useProctoringEngine(
     return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
   };
 
-  // Processing loop - completely ref-based with zero re-render triggers in requestAnimationFrame
+  // Processing loop
   const processFrame = useCallback(() => {
     const video = videoRef.current;
     if (!video || video.readyState < 2 || video.videoWidth === 0) {
@@ -363,7 +522,7 @@ export function useProctoringEngine(
             updates.gazeDirection = gazeDir;
           }
 
-          // Light Anomaly Detection
+          // STRICT LIGHT ANOMALY DETECTION (Fixed false positives: requires >1.75x ratio AND >45px absolute diff for >3.5s)
           const lc = getLightCanvas();
           if (lc) {
             lc.ctx.drawImage(video, 0, 0, 160, 120);
@@ -406,16 +565,18 @@ export function useProctoringEngine(
                 
                 const topAvg = topPixels > 0 ? topSum / topPixels : 1;
                 const bottomAvg = bottomPixels > 0 ? bottomSum / bottomPixels : 0;
+                const diff = bottomAvg - topAvg;
 
-                if (topAvg > 0 && bottomAvg > topAvg * 1.30) {
+                // STRICT: ratio > 1.75 AND absolute luminance diff > 45
+                if (topAvg > 0 && bottomAvg > topAvg * 1.75 && diff > 45) {
                   updates.lightAnomaly = true;
                   if (!lightAnomalyStart.current) lightAnomalyStart.current = now;
-                  else if (now - lightAnomalyStart.current > 1500) {
+                  else if (now - lightAnomalyStart.current > 3500) {
                     if (now - lastLightEvent.current > EVENT_COOLDOWN) {
                       addEventRef.current({
                         type: 'LIGHT_ANOMALY',
                         severity: 'HIGH',
-                        description: 'Свечение от смартфона/планшета снизу (подсветка подбородка).'
+                        description: 'Свечение от смартфона/планшета снизу (яркий холодный свет).'
                       });
                       lastLightEvent.current = now;
                     }
@@ -424,9 +585,7 @@ export function useProctoringEngine(
                   updates.lightAnomaly = false;
                   lightAnomalyStart.current = null;
                 }
-              } catch (e) {
-                // Ignore crop error
-              }
+              } catch (e) {}
             }
           }
         }
@@ -532,7 +691,6 @@ export function useProctoringEngine(
               }
             });
 
-            // Check specific prohibited objects
             if (label.includes('phone') || label.includes('mobile') || label.includes('cell')) {
               hasPhone = true;
               if (now - lastPhoneEvent.current > EVENT_COOLDOWN) {
@@ -573,7 +731,6 @@ export function useProctoringEngine(
       updates.fps = currentFps;
     }
 
-    // Update state
     if (Object.keys(updates).length > 0) {
       setTelemetry(prev => ({ ...prev, ...updates }));
     }
@@ -609,7 +766,6 @@ export function useProctoringEngine(
     };
   }, [isActive, addEvent]);
 
-  // Animation frame loop control
   useEffect(() => {
     if (isActive && isReady) {
       requestRef.current = requestAnimationFrame(processFrame);

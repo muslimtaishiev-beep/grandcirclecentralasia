@@ -14,6 +14,12 @@ interface ProctoringTelemetry {
   isViolating: boolean;
   isDraftWork: boolean;
   fps: number;
+
+  // Audio telemetry
+  audioLevel?: number;
+  audioStatus?: 'SILENT' | 'NORMAL' | 'WHISPER' | 'TALKING';
+  lastTranscript?: string;
+  speechProbability?: number;
 }
 
 interface ProctoringEvent {
@@ -218,7 +224,7 @@ export default function ProctoringOverlay({
       }
     }
 
-    // 3. Draw Detected Objects (Phones, Books, Laptops, etc.)
+    // 3. Draw Detected Objects (Phones, Books, Laptops)
     if (detectedObjects && detectedObjects.length > 0) {
       for (const obj of detectedObjects) {
         const bbox = obj.boundingBox;
@@ -251,7 +257,7 @@ export default function ProctoringOverlay({
     // 4. HUD Telemetry Panel (top-left)
     const hudX = 10;
     const hudY = 10;
-    const hudW = 320;
+    const hudW = 330;
     const hudH = telemetry.phoneDetected || telemetry.lightAnomaly ? 130 : 105;
 
     ctx.fillStyle = HUD_BG;
@@ -285,13 +291,9 @@ export default function ProctoringOverlay({
     ctx.fillStyle = telemetry.facesDetected > 1 ? NEON_RED : "#94A3B8";
     ctx.fillText(`Faces: ${telemetry.facesDetected}`, hudX + 12, y3);
 
-    ctx.fillStyle = "#64748B";
-    ctx.fillText(`FPS: ${telemetry.fps}`, hudX + 130, y3);
-
-    if (telemetry.isDraftWork) {
-      ctx.fillStyle = "#FCD34D";
-      ctx.fillText("📝 Draft", hudX + 220, y3);
-    }
+    // Audio status in HUD
+    ctx.fillStyle = (telemetry.speechProbability || 0) > 50 ? NEON_RED : "#64748B";
+    ctx.fillText(`Mic: ${telemetry.audioStatus || 'SILENT'} (${telemetry.audioLevel || 0}dB)`, hudX + 130, y3);
 
     if (telemetry.phoneDetected) {
       const y4 = y3 + 18;
@@ -305,7 +307,36 @@ export default function ProctoringOverlay({
       ctx.fillText("⚡ LIGHT ANOMALY DETECTED", hudX + 12, y4);
     }
 
-    // 5. Recording indicator (top-right)
+    // 5. Live Speech Transcript Box (Bottom-Left Canvas Overlay)
+    if (telemetry.lastTranscript && telemetry.lastTranscript.length > 0) {
+      const trText = `🗣 "${telemetry.lastTranscript.slice(-45)}"`;
+      const probText = `[Вероятность: ${telemetry.speechProbability || 0}%]`;
+      const trBoxW = 420;
+      const trBoxH = 34;
+      const trBoxX = 10;
+      const trBoxY = h - 45;
+
+      const isHighRisk = (telemetry.speechProbability || 0) > 55;
+
+      ctx.fillStyle = isHighRisk ? "rgba(239, 68, 68, 0.90)" : "rgba(15, 23, 42, 0.85)";
+      roundRect(ctx, trBoxX, trBoxY, trBoxW, trBoxH, 6);
+      ctx.fill();
+
+      ctx.strokeStyle = isHighRisk ? "#FF2A6D" : "#3B82F6";
+      ctx.lineWidth = 1.5;
+      roundRect(ctx, trBoxX, trBoxY, trBoxW, trBoxH, 6);
+      ctx.stroke();
+
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = "12px sans-serif";
+      ctx.fillText(trText, trBoxX + 10, trBoxY + 21);
+
+      ctx.fillStyle = isHighRisk ? "#FEF08A" : "#93C5FD";
+      ctx.font = "bold 11px monospace";
+      ctx.fillText(probText, trBoxX + trBoxW - 135, trBoxY + 21);
+    }
+
+    // 6. Recording Indicator (top-right)
     if (isRecording) {
       const recX = w - 150;
       const recY = 10;
@@ -330,7 +361,7 @@ export default function ProctoringOverlay({
       ctx.fillText(formatTime(recordingDuration), recX + 68, recY + 19);
     }
 
-    // 6. Draft work indicator
+    // 7. Draft work indicator
     if (telemetry.isDraftWork && !isViolating) {
       const draftText = "📝 Работа с черновиком";
       const tw = ctx.measureText(draftText).width + 24;
