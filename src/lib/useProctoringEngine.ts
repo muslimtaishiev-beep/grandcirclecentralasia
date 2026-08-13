@@ -30,8 +30,10 @@ export interface ProctoringTelemetry {
   // Audio Telemetry
   audioLevel: number;           // 0 - 100 RMS volume
   audioStatus: 'SILENT' | 'NORMAL' | 'WHISPER' | 'TALKING';
+  zeroCrossingRate: number;     // ZCR (0.0 - 1.0) - High for whisper
   lastTranscript: string;       // Real-time transcribed text
   speechProbability: number;    // 0 - 100% probability of cheating/prompts
+  speechIntentCategory: 'NORMAL_READING' | 'EXAM_HELP_REQUEST' | 'DICTATION' | 'AI_PROMPT' | 'BENIGN';
 }
 
 export interface ProctoringEvent {
@@ -42,41 +44,128 @@ export interface ProctoringEvent {
   description: string;
 }
 
-// ── SEMANTIC PROBABILITY ENGINE FOR CHEATING / HINTS ──
-const CHEAT_KEYWORDS = [
-  // Direct requests for help
-  { pattern: /подскажи|помоги|скажи|какой|какая|какое|выбери/i, weight: 30 },
-  // Options / choices
-  { pattern: /первый|второй|третий|четвертый|пятый|вариант|буква|цифра/i, weight: 35 },
-  // Letters A, B, C, D in Russian/English context
-  { pattern: /\b(а|б|в|г|a|b|c|d)\b/i, weight: 15 },
-  // AI assistant calls
-  { pattern: /гугл|яндекс|сири|алиса|сафари|гпт|gpt|chat|чат|джипити/i, weight: 45 },
-  // Dictation of test text
-  { pattern: /вопрос|уравнение|текст|задача|ответ|правильно/i, weight: 25 },
-  // Relatives / tutors
-  { pattern: /мама|папа|брат|сестра|друг|э|слышишь/i, weight: 35 },
-];
-
-function calculateSpeechCheatProbability(text: string): { probability: number; matchedKeywords: string[] } {
+// ── DYNAMIC SEMANTIC INTENT CLASSIFICATION MACHINE ──
+// Evaluates context and intent dynamically based on semantic structure and sentence function
+function evaluateSemanticIntent(text: string): {
+  probability: number;
+  intentCategory: ProctoringTelemetry['speechIntentCategory'];
+  reasoning: string;
+} {
   if (!text || text.trim().length === 0) {
-    return { probability: 0, matchedKeywords: [] };
+    return { probability: 0, intentCategory: 'BENIGN', reasoning: 'No speech detected' };
   }
 
-  let score = 0;
-  const matched: string[] = [];
+  const clean = text.toLowerCase().trim();
+  const words = clean.split(/\s+/);
+  const wordCount = words.length;
 
-  for (const item of CHEAT_KEYWORDS) {
-    if (item.pattern.test(text)) {
-      score += item.weight;
-      const match = text.match(item.pattern);
-      if (match) matched.push(match[0]);
+  // Intent vectors (structural & semantic triggers)
+  const isQuestionOrRequest = /(?:кто|что|где|когда|какой|какие|как|сколько|почему|зачем|выбери|скажи|подскажи|помоги|ответ|верно|правильно|\?)/i.test(clean);
+  const hasChoiceOrOption = /(?:первый|второй|третий|четвертый|пятый|вариант|буква|один|два|три|четыре|пять|а|б|в|г|a|b|c|d)\b/i.test(clean);
+  const hasAiAssistant = /(?:гугл|яндекс|алиса|сири|сафари|гпт|gpt|chat|джипити|поиск|найди)/i.test(clean);
+  const hasDictationPointers = /(?:вопрос|уравнение|текст|задача|пример|читать|напиши|сфотай|смотри)/i.test(clean);
+
+  // Dynamic Intent Categorization
+  if (hasAiAssistant) {
+    return {
+      probability: 95,
+      intentCategory: 'AI_PROMPT',
+      reasoning: 'Обращение к ИИ-ассистенту или поисковой системе'
+    };
+  }
+
+  if (isQuestionOrRequest && hasChoiceOrOption) {
+    return {
+      probability: 90,
+      intentCategory: 'EXAM_HELP_REQUEST',
+      reasoning: 'Запрос выбора варианта ответа у третьего лица'
+    };
+  }
+
+  if (isQuestionOrRequest && (hasDictationPointers || wordCount >= 3)) {
+    return {
+      probability: 80,
+      intentCategory: 'EXAM_HELP_REQUEST',
+      reasoning: 'Запрос решения задачи или подсказки'
+    };
+  }
+
+  if (hasDictationPointers && hasChoiceOrOption) {
+    return {
+      probability: 75,
+      intentCategory: 'DICTATION',
+      reasoning: 'Надиктовка условий теста третьим лицом'
+    };
+  }
+
+  if (hasChoiceOrOption && wordCount <= 4) {
+    return {
+      probability: 60,
+      intentCategory: 'EXAM_HELP_REQUEST',
+      reasoning: 'Диктовка варианта ответа'
+    };
+  }
+
+  if (wordCount >= 6 && isQuestionOrRequest) {
+    return {
+      probability: 50,
+      intentCategory: 'NORMAL_READING',
+      reasoning: 'Чтение вопроса вслух или размышления'
+    };
+  }
+
+  return {
+    probability: 10,
+    intentCategory: 'BENIGN',
+    reasoning: 'Обычная речь / беседа не по тесту'
+  };
+}
+
+// ── ACOUSTIC WHISPER & DSP CLASSIFIER ──
+// Classifies whisper via Zero-Crossing Rate (ZCR) and High-Frequency Energy Ratio
+function classifyAcousticState(timeData: Float32Array, freqData: Uint8Array, rmsVolume: number): {
+  status: ProctoringTelemetry['audioStatus'];
+  zcr: number;
+} {
+  if (rmsVolume < 6) {
+    return { status: 'SILENT', zcr: 0 };
+  }
+
+  // 1. Calculate Zero-Crossing Rate (ZCR)
+  let zeroCrossings = 0;
+  for (let i = 1; i < timeData.length; i++) {
+    if ((timeData[i] >= 0 && timeData[i - 1] < 0) || (timeData[i] < 0 && timeData[i - 1] >= 0)) {
+      zeroCrossings++;
     }
   }
+  const zcr = zeroCrossings / timeData.length;
 
-  // Cap probability at 98%
-  const probability = Math.min(98, score);
-  return { probability, matchedKeywords: matched };
+  // 2. Calculate High-Frequency Energy Ratio (2kHz to 8kHz) vs Low-Frequency Energy (< 1kHz)
+  let lowEnergy = 0;
+  let highEnergy = 0;
+  const binSize = freqData.length;
+  const lowCut = Math.floor(binSize * 0.15); // ~1kHz
+  const highCut = Math.floor(binSize * 0.40); // ~3kHz
+
+  for (let i = 0; i < lowCut; i++) lowEnergy += freqData[i];
+  for (let i = highCut; i < binSize; i++) highEnergy += freqData[i];
+
+  const totalEnergy = lowEnergy + highEnergy;
+  const highRatio = totalEnergy > 0 ? highEnergy / totalEnergy : 0;
+
+  // Whisper characteristics:
+  // - RMS volume is medium-low (10 to 35 dB)
+  // - High Zero-Crossing Rate (ZCR > 0.28)
+  // - High-frequency noise energy dominates over vocal cord harmonics (highRatio > 0.45)
+  if (rmsVolume >= 10 && rmsVolume <= 38 && (zcr > 0.26 || highRatio > 0.42)) {
+    return { status: 'WHISPER', zcr };
+  }
+
+  if (rmsVolume > 35) {
+    return { status: 'TALKING', zcr };
+  }
+
+  return { status: 'NORMAL', zcr };
 }
 
 // Dedicated offscreen canvas for light anomaly sampling
@@ -113,8 +202,10 @@ export function useProctoringEngine(
     fps: 0,
     audioLevel: 0,
     audioStatus: 'SILENT',
+    zeroCrossingRate: 0,
     lastTranscript: '',
     speechProbability: 0,
+    speechIntentCategory: 'BENIGN',
   });
 
   const [events, setEvents] = useState<ProctoringEvent[]>([]);
@@ -159,11 +250,11 @@ export function useProctoringEngine(
   const previousWristX = useRef<number | null>(null);
   const lastWristTime = useRef<number>(0);
   
-  // Refs for overlay
+  // Overlay refs
   const faceLandmarksRef = useRef<any[][] | null>(null);
   const detectedObjectsRef = useRef<DetectedObject[]>([]);
 
-  // Speech Recognition instance ref
+  // Speech & Audio refs
   const speechRecognitionRef = useRef<any | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
@@ -188,11 +279,11 @@ export function useProctoringEngine(
   const addEventRef = useRef(addEvent);
   addEventRef.current = addEvent;
 
-  // Initialize Web Speech Recognition & Audio Meter
+  // Initialize Web Speech Recognition & Acoustic DSP Whisper Analyzer
   useEffect(() => {
     if (!isActive) return;
 
-    // 1. Initialize Speech Recognition
+    // 1. Web Speech API (Russian language continuous transcription)
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       try {
@@ -208,20 +299,21 @@ export function useProctoringEngine(
           }
 
           if (currentTranscript.trim().length > 0) {
-            const { probability, matchedKeywords } = calculateSpeechCheatProbability(currentTranscript);
+            const { probability, intentCategory, reasoning } = evaluateSemanticIntent(currentTranscript);
 
             setTelemetry(prev => ({
               ...prev,
               lastTranscript: currentTranscript,
               speechProbability: probability,
+              speechIntentCategory: intentCategory,
             }));
 
-            // If probability of cheating prompt > 55% -> Trigger Event!
-            if (probability >= 55 && Date.now() - lastSpeechEvent.current > EVENT_COOLDOWN) {
+            // Trigger event if probability >= 60%
+            if (probability >= 60 && Date.now() - lastSpeechEvent.current > EVENT_COOLDOWN) {
               addEventRef.current({
                 type: 'SPEECH_CHEAT_DETECTED',
-                severity: 'HIGH',
-                description: `🗣 Речь/подсказка (Вероятность ${probability}%): "${currentTranscript.slice(0, 60)}..."`
+                severity: probability >= 80 ? 'HIGH' : 'MEDIUM',
+                description: `🗣 [${intentCategory}] ${reasoning}: "${currentTranscript.slice(0, 55)}..." (${probability}%)`
               });
               lastSpeechEvent.current = Date.now();
             }
@@ -235,7 +327,6 @@ export function useProctoringEngine(
         };
 
         recognition.onend = () => {
-          // Restart recognition continuously
           if (speechRecognitionRef.current) {
             try { speechRecognitionRef.current.start(); } catch (err) {}
           }
@@ -248,38 +339,45 @@ export function useProctoringEngine(
       }
     }
 
-    // 2. Initialize Audio Context for RMS Volume Metering
+    // 2. AudioContext DSP Analyzer for Whisper (ZCR + High-Frequency Ratio + RMS)
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
       try {
         const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
         const ctx = new AudioCtx();
         const source = ctx.createMediaStreamSource(stream);
         const analyser = ctx.createAnalyser();
-        analyser.fftSize = 256;
+        analyser.fftSize = 512;
         source.connect(analyser);
         audioContextRef.current = ctx;
 
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-        const checkAudio = () => {
+        const freqData = new Uint8Array(analyser.frequencyBinCount);
+        const timeData = new Float32Array(analyser.fftSize);
+
+        const checkAudioDSP = () => {
           if (!audioContextRef.current) return;
-          analyser.getByteFrequencyData(dataArray);
+          analyser.getByteFrequencyData(freqData);
+          analyser.getFloatTimeDomainData(timeData);
 
-          let sum = 0;
-          for (let i = 0; i < dataArray.length; i++) {
-            sum += dataArray[i];
+          // Calculate RMS volume
+          let sumSquares = 0;
+          for (let i = 0; i < timeData.length; i++) {
+            sumSquares += timeData[i] * timeData[i];
           }
-          const avg = sum / dataArray.length;
-          const rms = Math.min(100, Math.round((avg / 128) * 100));
+          const rmsRaw = Math.sqrt(sumSquares / timeData.length);
+          const rmsVolume = Math.min(100, Math.round(rmsRaw * 400));
 
-          let audioStatus: ProctoringTelemetry['audioStatus'] = 'SILENT';
-          if (rms > 40) audioStatus = 'TALKING';
-          else if (rms > 18) audioStatus = 'WHISPER';
-          else if (rms > 8) audioStatus = 'NORMAL';
+          // Classify via DSP
+          const { status, zcr } = classifyAcousticState(timeData, freqData, rmsVolume);
 
-          setTelemetry(prev => ({ ...prev, audioLevel: rms, audioStatus }));
+          setTelemetry(prev => ({
+            ...prev,
+            audioLevel: rmsVolume,
+            audioStatus: status,
+            zeroCrossingRate: parseFloat(zcr.toFixed(3)),
+          }));
         };
 
-        const interval = setInterval(checkAudio, 250);
+        const interval = setInterval(checkAudioDSP, 200);
         return () => clearInterval(interval);
       } catch (e) {
         console.warn('Audio Context init error:', e);
@@ -522,7 +620,7 @@ export function useProctoringEngine(
             updates.gazeDirection = gazeDir;
           }
 
-          // STRICT LIGHT ANOMALY DETECTION (Fixed false positives: requires >1.75x ratio AND >45px absolute diff for >3.5s)
+          // STRICT LIGHT ANOMALY DETECTION
           const lc = getLightCanvas();
           if (lc) {
             lc.ctx.drawImage(video, 0, 0, 160, 120);
@@ -567,7 +665,6 @@ export function useProctoringEngine(
                 const bottomAvg = bottomPixels > 0 ? bottomSum / bottomPixels : 0;
                 const diff = bottomAvg - topAvg;
 
-                // STRICT: ratio > 1.75 AND absolute luminance diff > 45
                 if (topAvg > 0 && bottomAvg > topAvg * 1.75 && diff > 45) {
                   updates.lightAnomaly = true;
                   if (!lightAnomalyStart.current) lightAnomalyStart.current = now;

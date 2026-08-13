@@ -635,6 +635,18 @@ export default function ProctorSandbox() {
                   value={engine.telemetry.lightAnomaly ? "Аномалия!" : "Норма"}
                   isWarning={engine.telemetry.lightAnomaly}
                 />
+                <StatusBadge
+                  icon="🎤"
+                  label="Звук / Шёпот"
+                  value={engine.telemetry.audioStatus === "WHISPER" ? `ШЁПОТ (ZCR ${engine.telemetry.zeroCrossingRate})` : engine.telemetry.audioStatus === "TALKING" ? `Разговор (${engine.telemetry.audioLevel}dB)` : "Тишина"}
+                  isWarning={engine.telemetry.audioStatus === "WHISPER"}
+                />
+                <StatusBadge
+                  icon="🧠"
+                  label="Смысл речи"
+                  value={engine.telemetry.speechIntentCategory === "AI_PROMPT" ? "ИИ-ЗАПРОС!" : engine.telemetry.speechIntentCategory === "EXAM_HELP_REQUEST" ? "ПОДСКАЗКА!" : engine.telemetry.speechIntentCategory === "DICTATION" ? "НИКДОВКА!" : "Норма"}
+                  isWarning={engine.telemetry.speechIntentCategory === "AI_PROMPT" || engine.telemetry.speechIntentCategory === "EXAM_HELP_REQUEST"}
+                />
               </div>
 
               <div className="flex items-center justify-between text-xs text-slate-400 font-mono pt-1">
