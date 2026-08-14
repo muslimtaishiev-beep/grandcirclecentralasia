@@ -31,6 +31,22 @@ def load_vsr_model():
     device_str = "cuda:0" if torch.cuda.is_available() else "cpu"
     device = torch.device(device_str)
     print(f"🧠 Loading Chaplin VSR (Auto-AVSR LRS3) neural network on {device_str}...")
+    
+    # Auto-ensure benchmarks directory structure & json files
+    import urllib.request
+    os.makedirs("benchmarks/LRS3/language_models/lm_en_subword/", exist_ok=True)
+    os.makedirs("benchmarks/LRS3/models/LRS3_V_WER19.1/", exist_ok=True)
+    
+    lm_json = "benchmarks/LRS3/language_models/lm_en_subword/model.json"
+    model_json = "benchmarks/LRS3/models/LRS3_V_WER19.1/model.json"
+
+    if not os.path.exists(lm_json) or os.path.getsize(lm_json) < 10:
+        print("📥 Fetching missing lm_en_subword/model.json...")
+        urllib.request.urlretrieve("https://huggingface.co/Amanvir/lm_en_subword/resolve/main/model.json", lm_json)
+    if not os.path.exists(model_json) or os.path.getsize(model_json) < 10:
+        print("📥 Fetching missing LRS3_V_WER19.1/model.json...")
+        urllib.request.urlretrieve("https://huggingface.co/Amanvir/LRS3_V_WER19.1/resolve/main/model.json", model_json)
+
     config_filename = "./configs/LRS3_V_WER19.1.ini"
     
     try:
