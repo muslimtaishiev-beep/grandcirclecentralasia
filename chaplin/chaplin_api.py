@@ -2,16 +2,16 @@ import os
 import sys
 import time
 import tempfile
-import torch
+import traceback
 
 # Fix working directory so config and model files are found regardless of launch location
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(BASE_DIR)
 sys.path.insert(0, BASE_DIR)
 
+import torch
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pipelines.pipeline import InferencePipeline
 
 app = FastAPI(title="Chaplin Visual Speech Recognition API")
 
@@ -24,60 +24,92 @@ app.add_middleware(
 )
 
 vsr_pipeline = None
+startup_error = None
+startup_info = {}
 
 @app.on_event("startup")
 def load_vsr_model():
-    global vsr_pipeline
+    global vsr_pipeline, startup_error, startup_info
+    import subprocess
+    import urllib.request
+
     device_str = "cuda:0" if torch.cuda.is_available() else "cpu"
     device = torch.device(device_str)
-    print(f"🧠 [STARTUP] Initializing Chaplin VSR (Auto-AVSR LRS3) on {device_str}...")
-    
-    # Auto-ensure benchmarks directory structure & json files
-    import urllib.request
-    import subprocess
+    startup_info["device"] = device_str
+    startup_info["cwd"] = os.getcwd()
+    print(f"🧠 [STARTUP] cwd={os.getcwd()}, device={device_str}")
+
+    # Ensure directories
     os.makedirs("benchmarks/LRS3/language_models/lm_en_subword/", exist_ok=True)
     os.makedirs("benchmarks/LRS3/models/LRS3_V_WER19.1/", exist_ok=True)
-    
+
     lm_json = "benchmarks/LRS3/language_models/lm_en_subword/model.json"
     model_json = "benchmarks/LRS3/models/LRS3_V_WER19.1/model.json"
     lm_pth = "benchmarks/LRS3/language_models/lm_en_subword/model.pth"
     lrs3_pth = "benchmarks/LRS3/models/LRS3_V_WER19.1/model.pth"
 
-    if not os.path.exists(lm_json) or os.path.getsize(lm_json) < 10:
-        print("📥 Fetching missing lm_en_subword/model.json...")
-        urllib.request.urlretrieve("https://huggingface.co/Amanvir/lm_en_subword/resolve/main/model.json", lm_json)
-    if not os.path.exists(model_json) or os.path.getsize(model_json) < 10:
-        print("📥 Fetching missing LRS3_V_WER19.1/model.json...")
-        urllib.request.urlretrieve("https://huggingface.co/Amanvir/LRS3_V_WER19.1/resolve/main/model.json", model_json)
+    # Auto-fetch missing config json files
+    for path, url in [
+        (lm_json, "https://huggingface.co/Amanvir/lm_en_subword/resolve/main/model.json"),
+        (model_json, "https://huggingface.co/Amanvir/LRS3_V_WER19.1/resolve/main/model.json"),
+    ]:
+        if not os.path.exists(path) or os.path.getsize(path) < 10:
+            print(f"📥 Fetching {path}...")
+            try:
+                urllib.request.urlretrieve(url, path)
+            except Exception as e:
+                print(f"⚠️ Failed to fetch {path}: {e}")
 
-    if not os.path.exists(lm_pth) or os.path.getsize(lm_pth) < 10 * 1024 * 1024:
-        print("📥 Fetching valid lm_en_subword/model.pth (205MB)...")
-        subprocess.run(["curl", "-L", "https://huggingface.co/Amanvir/lm_en_subword/resolve/main/model.pth", "-o", lm_pth])
-
-    if not os.path.exists(lrs3_pth) or os.path.getsize(lrs3_pth) < 50 * 1024 * 1024:
-        print("📥 Fetching valid LRS3_V_WER19.1/model.pth (955MB)...")
-        subprocess.run(["curl", "-L", "https://huggingface.co/Amanvir/LRS3_V_WER19.1/resolve/main/model.pth", "-o", lrs3_pth])
+    # Auto-fetch missing weight files
+    for path, url, min_mb in [
+        (lm_pth, "https://huggingface.co/Amanvir/lm_en_subword/resolve/main/model.pth", 10),
+        (lrs3_pth, "https://huggingface.co/Amanvir/LRS3_V_WER19.1/resolve/main/model.pth", 50),
+    ]:
+        exists = os.path.exists(path)
+        size_mb = os.path.getsize(path) / (1024*1024) if exists else 0
+        startup_info[path] = f"exists={exists}, size={size_mb:.1f}MB"
+        if not exists or size_mb < min_mb:
+            print(f"📥 Fetching {path} (need >{min_mb}MB, have {size_mb:.1f}MB)...")
+            subprocess.run(["curl", "-L", url, "-o", path])
+            size_mb = os.path.getsize(path) / (1024*1024) if os.path.exists(path) else 0
+            startup_info[path] = f"exists=True, size={size_mb:.1f}MB (after download)"
 
     config_filename = "./configs/LRS3_V_WER19.1.ini"
-    
+    startup_info["config_exists"] = os.path.exists(config_filename)
+
     try:
+        from pipelines.pipeline import InferencePipeline
         vsr_pipeline = InferencePipeline(
-          config_filename,
-          device=device,
-          detector="mediapipe",
-          face_track=True
+            config_filename,
+            device=device,
+            detector="mediapipe",
+            face_track=True
         )
-        print(f"✅ [SUCCESS] Chaplin VSR Neural Model Loaded Successfully on {device_str}!")
+        startup_info["status"] = "SUCCESS"
+        print(f"✅ [SUCCESS] Chaplin VSR loaded on {device_str}!")
     except Exception as e:
-        import traceback
-        print("⚠️ [ERROR] Failed to load Chaplin model:", e)
+        startup_error = traceback.format_exc()
+        startup_info["status"] = "FAILED"
+        startup_info["error"] = str(e)
+        print(f"⚠️ [ERROR] {e}")
         traceback.print_exc()
+
+
+@app.get("/api/vsr/status")
+def get_status():
+    """Diagnostic endpoint — open this URL in your browser to see exactly what went wrong."""
+    return {
+        "model_loaded": vsr_pipeline is not None,
+        "startup_info": startup_info,
+        "startup_error": startup_error,
+    }
+
 
 @app.post("/api/vsr/decode")
 async def decode_video(video: UploadFile = File(...)):
     if vsr_pipeline is None:
-        return {"success": False, "error": "VSR Model not initialized", "text": ""}
-    
+        return {"success": False, "error": "VSR Model not initialized", "text": "", "debug": startup_error or "unknown"}
+
     try:
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
             content = await video.read()
@@ -85,7 +117,7 @@ async def decode_video(video: UploadFile = File(...)):
             tmp_path = tmp.name
 
         raw_text = vsr_pipeline(tmp_path)
-        
+
         try:
             os.remove(tmp_path)
         except Exception:
@@ -98,6 +130,7 @@ async def decode_video(video: UploadFile = File(...)):
         }
     except Exception as e:
         return {"success": False, "error": str(e), "text": ""}
+
 
 if __name__ == "__main__":
     import uvicorn
