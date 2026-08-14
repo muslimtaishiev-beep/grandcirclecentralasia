@@ -34,11 +34,14 @@ def load_vsr_model():
     
     # Auto-ensure benchmarks directory structure & json files
     import urllib.request
+    import subprocess
     os.makedirs("benchmarks/LRS3/language_models/lm_en_subword/", exist_ok=True)
     os.makedirs("benchmarks/LRS3/models/LRS3_V_WER19.1/", exist_ok=True)
     
     lm_json = "benchmarks/LRS3/language_models/lm_en_subword/model.json"
     model_json = "benchmarks/LRS3/models/LRS3_V_WER19.1/model.json"
+    lm_pth = "benchmarks/LRS3/language_models/lm_en_subword/model.pth"
+    lrs3_pth = "benchmarks/LRS3/models/LRS3_V_WER19.1/model.pth"
 
     if not os.path.exists(lm_json) or os.path.getsize(lm_json) < 10:
         print("📥 Fetching missing lm_en_subword/model.json...")
@@ -46,6 +49,14 @@ def load_vsr_model():
     if not os.path.exists(model_json) or os.path.getsize(model_json) < 10:
         print("📥 Fetching missing LRS3_V_WER19.1/model.json...")
         urllib.request.urlretrieve("https://huggingface.co/Amanvir/LRS3_V_WER19.1/resolve/main/model.json", model_json)
+
+    if not os.path.exists(lm_pth) or os.path.getsize(lm_pth) < 10 * 1024 * 1024:
+        print("📥 Fetching valid lm_en_subword/model.pth (205MB)...")
+        subprocess.run(["curl", "-L", "https://huggingface.co/Amanvir/lm_en_subword/resolve/main/model.pth", "-o", lm_pth])
+
+    if not os.path.exists(lrs3_pth) or os.path.getsize(lrs3_pth) < 50 * 1024 * 1024:
+        print("📥 Fetching valid LRS3_V_WER19.1/model.pth (955MB)...")
+        subprocess.run(["curl", "-L", "https://huggingface.co/Amanvir/LRS3_V_WER19.1/resolve/main/model.pth", "-o", lrs3_pth])
 
     config_filename = "./configs/LRS3_V_WER19.1.ini"
     
