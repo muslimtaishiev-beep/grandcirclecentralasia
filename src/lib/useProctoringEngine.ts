@@ -907,9 +907,9 @@ export function useProctoringEngine(
                       fd.append('video', blob, 'lips.webm');
                       try {
                         const renderUrls = [
+                          'https://trackback-sea-herb-poker.trycloudflare.com/api/vsr/decode',
                           (import.meta as any).env?.VITE_CHAPLIN_VSR_API_URL,
                           'https://chaplin-vsr-api-d9vdq0ojo6nc73flpkag.onrender.com/api/vsr/decode',
-                          'https://chaplin-vsr-api.onrender.com/api/vsr/decode',
                           'http://localhost:8000/api/vsr/decode'
                         ].filter(Boolean);
 
