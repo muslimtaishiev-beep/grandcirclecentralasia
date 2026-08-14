@@ -905,13 +905,13 @@ export function useProctoringEngine(
                     const fd = new FormData();
                     fd.append('video', blob, 'lips.webm');
                     try {
+                      const customUrl = typeof window !== 'undefined' ? localStorage.getItem('CHAPLIN_VSR_URL') : null;
                       const renderUrls = [
+                        customUrl,
                         'https://trackback-sea-herb-poker.trycloudflare.com/api/vsr/decode',
                         (import.meta as any).env?.VITE_CHAPLIN_VSR_API_URL,
-                        'https://chaplin-vsr-api-d9vdq0ojo6nc73flpkag.onrender.com/api/vsr/decode',
-                        'http://localhost:8000/api/vsr/decode'
-                      ].filter(url => {
-                        if (!url) return false;
+                      ].filter((url): url is string => {
+                        if (!url || typeof url !== 'string') return false;
                         if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url.startsWith('http:')) {
                           return false;
                         }
@@ -920,10 +920,10 @@ export function useProctoringEngine(
 
                       for (const url of renderUrls) {
                         try {
-                          const res = await fetch(url, { method: 'POST', body: fd });
-                          if (res.ok) {
-                            const json = await res.json();
-                            if (json.text && json.text.trim().length > 0) {
+                          const res = await fetch(url, { method: 'POST', body: fd, mode: 'cors' }).catch(() => null);
+                          if (res && res.ok) {
+                            const json = await res.json().catch(() => null);
+                            if (json && json.text && json.text.trim().length > 0) {
                               const semanticRes = evaluateSemanticIntent(json.text, currentQuestionTextRef.current);
                               setTelemetry(prev => ({
                                 ...prev,
