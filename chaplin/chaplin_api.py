@@ -1,7 +1,14 @@
 import os
+import sys
 import time
 import tempfile
 import torch
+
+# Fix working directory so config and model files are found regardless of launch location
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(BASE_DIR)
+sys.path.insert(0, BASE_DIR)
+
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pipelines.pipeline import InferencePipeline
@@ -35,7 +42,9 @@ def load_vsr_model():
         )
         print(f"✅ Chaplin VSR Neural Model Loaded Successfully on {device_str}!")
     except Exception as e:
+        import traceback
         print("⚠️ Warning: Failed to load Chaplin model:", e)
+        traceback.print_exc()
 
 @app.post("/api/vsr/decode")
 async def decode_video(video: UploadFile = File(...)):
