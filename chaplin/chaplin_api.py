@@ -1,14 +1,7 @@
 import os
 import time
-import gc
 import tempfile
 import torch
-
-# Strict Low-RAM Memory Optimizations for PyTorch on Free Cloud Tiers
-torch.set_num_threads(1)
-torch.set_num_interop_threads(1)
-torch.set_grad_enabled(False)
-
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pipelines.pipeline import InferencePipeline
@@ -28,23 +21,23 @@ vsr_pipeline = None
 @app.on_event("startup")
 def load_vsr_model():
     global vsr_pipeline
-    print("🧠 Loading Chaplin VSR in Ultra-Low-RAM Mode (<350MB)...")
+    device_str = "cuda:0" if torch.cuda.is_available() else "cpu"
+    device = torch.device(device_str)
+    print(f"🧠 Loading Chaplin VSR (Auto-AVSR LRS3) neural network on {device_str}...")
     config_filename = "./configs/LRS3_V_WER19.1.ini"
     
     try:
         vsr_pipeline = InferencePipeline(
           config_filename,
-          device=torch.device("cpu"),
+          device=device,
           detector="mediapipe",
           face_track=True
         )
-        gc.collect()
-        print("✅ Chaplin VSR Neural Model Loaded Successfully in Low-RAM Mode!")
+        print(f"✅ Chaplin VSR Neural Model Loaded Successfully on {device_str}!")
     except Exception as e:
         print("⚠️ Warning: Failed to load Chaplin model:", e)
 
 @app.post("/api/vsr/decode")
-@torch.no_grad()
 async def decode_video(video: UploadFile = File(...)):
     if vsr_pipeline is None:
         return {"success": False, "error": "VSR Model not initialized", "text": ""}
@@ -62,17 +55,15 @@ async def decode_video(video: UploadFile = File(...)):
         except Exception:
             pass
 
-        gc.collect()
         return {
             "success": True,
             "text": raw_text.strip() if raw_text else "",
             "confidence": 90 if raw_text else 0
         }
     except Exception as e:
-        gc.collect()
         return {"success": False, "error": str(e), "text": ""}
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
