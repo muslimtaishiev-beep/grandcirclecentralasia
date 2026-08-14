@@ -906,16 +906,28 @@ export function useProctoringEngine(
                       const fd = new FormData();
                       fd.append('video', blob, 'lips.webm');
                       try {
-                        const res = await fetch('http://localhost:8000/api/vsr/decode', { method: 'POST', body: fd });
-                        if (res.ok) {
-                          const json = await res.json();
-                          if (json.text) {
-                            setTelemetry(prev => ({
-                              ...prev,
-                              decodedLipWord: json.text,
-                              lastTranscript: `👄 [CHAPLIN VSR]: "${json.text}"`
-                            }));
-                          }
+                        const renderUrls = [
+                          (import.meta as any).env?.VITE_CHAPLIN_VSR_API_URL,
+                          'https://chaplin-vsr-api-d9vdq0ojo6nc73flpkag.onrender.com/api/vsr/decode',
+                          'https://chaplin-vsr-api.onrender.com/api/vsr/decode',
+                          'http://localhost:8000/api/vsr/decode'
+                        ].filter(Boolean);
+
+                        for (const url of renderUrls) {
+                          try {
+                            const res = await fetch(url, { method: 'POST', body: fd });
+                            if (res.ok) {
+                              const json = await res.json();
+                              if (json.text) {
+                                setTelemetry(prev => ({
+                                  ...prev,
+                                  decodedLipWord: json.text,
+                                  lastTranscript: `👄 [CHAPLIN VSR]: "${json.text}"`
+                                }));
+                                break;
+                              }
+                            }
+                          } catch (e) {}
                         }
                       } catch (err) {}
                       (window as any)._chaplinBusy = false;
