@@ -143,7 +143,21 @@ async def decode_video(video: UploadFile = File(...)):
         return {"success": False, "error": str(e), "text": ""}
 
 
+def find_free_port():
+    import socket
+    for p in [8088, 8090, 8999, 9090, 9500, 9999]:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(('127.0.0.1', p)) != 0:
+                return p
+    return 8088
+
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    active_port = find_free_port()
+    print(f"🚀 Binding Chaplin VSR API Server on free port {active_port}...")
+    try:
+        with open("/tmp/chaplin_port.txt", "w") as f:
+            f.write(str(active_port))
+    except Exception:
+        pass
+    uvicorn.run(app, host="0.0.0.0", port=active_port)
