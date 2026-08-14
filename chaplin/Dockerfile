@@ -11,6 +11,9 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY . .
+
+# Install CPU-Only PyTorch (reduces RAM usage from 650MB down to ~150MB!)
+RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt uvicorn fastapi python-multipart
 
 RUN mkdir -p benchmarks/LRS3/language_models/lm_en_subword/ benchmarks/LRS3/models/LRS3_V_WER19.1/ && \
@@ -21,4 +24,4 @@ RUN mkdir -p benchmarks/LRS3/language_models/lm_en_subword/ benchmarks/LRS3/mode
 
 EXPOSE 7860
 
-CMD ["uvicorn", "chaplin_api:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["python3", "-m", "uvicorn", "chaplin_api:app", "--host", "0.0.0.0", "--port", "7860"]
