@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 
 # Simple center-crop face detector for webcam proctoring
-# In a webcam selfie, the face is always centered - no detection needed
 
+import os
+import cv2
 import numpy as np
 
 
@@ -12,7 +13,6 @@ class LandmarksDetector:
         pass
 
     def __call__(self, filename):
-        # Read video frames using imageio (always available) or raw cv2.VideoCapture
         frames = self._read_frames(filename)
         landmarks = []
         for frame in frames:
@@ -29,16 +29,7 @@ class LandmarksDetector:
         return landmarks
 
     def _read_frames(self, filename):
-        # Try torchvision first
         try:
-            import torchvision
-            return torchvision.io.read_video(filename, pts_unit='sec')[0].numpy()
-        except Exception:
-            pass
-
-        # Try cv2.VideoCapture
-        try:
-            import cv2
             cap = cv2.VideoCapture(filename)
             frames = []
             while cap.isOpened():
@@ -52,12 +43,11 @@ class LandmarksDetector:
         except Exception:
             pass
 
-        # Try imageio
         try:
-            import imageio.v3 as iio
-            return np.array(list(iio.imiter(filename)))
+            import torchvision
+            if hasattr(torchvision.io, 'read_video'):
+                return torchvision.io.read_video(filename, pts_unit='sec')[0].numpy()
         except Exception:
             pass
 
-        # Absolute fallback
         return np.zeros((10, 240, 320, 3), dtype=np.uint8)
