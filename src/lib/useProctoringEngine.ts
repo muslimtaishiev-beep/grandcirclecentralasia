@@ -482,6 +482,8 @@ export function useProctoringEngine(
   // Hand tracking
   const previousWristX = useRef<number | null>(null);
   const lastWristTime = useRef<number>(0);
+  const gestureHoldStart = useRef<number | null>(null);
+  const activeGestureNameRef = useRef<string | null>(null);
   
   // Overlay refs
   const faceLandmarksRef = useRef<any[][] | null>(null);
@@ -1082,27 +1084,39 @@ export function useProctoringEngine(
             if (gestureRes.gesture !== 'NONE') {
               activeGesture = gestureRes;
               
-              if (gestureRes.signaledOption || gestureRes.gesture === 'PHONE_HAND_SIGNAL') {
+              if ((gestureRes.signaledOption || gestureRes.gesture === 'PHONE_HAND_SIGNAL') && wrist.y < 0.65) {
                 const optText = gestureRes.signaledOption ? `Вариант ${gestureRes.signaledOption}` : 'Телефон';
                 updates.decodedGestureOption = optText;
 
-                const lastStreamOpt = gestureStreamHistoryRef.current[gestureStreamHistoryRef.current.length - 1];
-                if (gestureRes.signaledOption && lastStreamOpt !== gestureRes.signaledOption) {
-                  gestureStreamHistoryRef.current.push(gestureRes.signaledOption);
-                  if (gestureStreamHistoryRef.current.length > 5) gestureStreamHistoryRef.current.shift();
-                }
-                updates.decodedGestureStream = gestureStreamHistoryRef.current.join(' ➔ ');
+                // Require holding the gesture continuously for at least 1.5 seconds before triggering violation
+                if (!gestureHoldStart.current || activeGestureNameRef.current !== gestureRes.gesture) {
+                  gestureHoldStart.current = now;
+                  activeGestureNameRef.current = gestureRes.gesture;
+                } else if (now - gestureHoldStart.current >= 1500) {
+                  const lastStreamOpt = gestureStreamHistoryRef.current[gestureStreamHistoryRef.current.length - 1];
+                  if (gestureRes.signaledOption && lastStreamOpt !== gestureRes.signaledOption) {
+                    gestureStreamHistoryRef.current.push(gestureRes.signaledOption);
+                    if (gestureStreamHistoryRef.current.length > 5) gestureStreamHistoryRef.current.shift();
+                  }
+                  updates.decodedGestureStream = gestureStreamHistoryRef.current.join(' ➔ ');
 
-                if (now - lastGestureEvent.current > EVENT_COOLDOWN) {
-                  addEventRef.current({
-                    type: 'GESTURE_SIGNAL_DETECTED',
-                    severity: 'HIGH',
-                    description: `✋ Декодер жестов: Передан сигнал "${optText}" (${gestureRes.label})`
-                  });
-                  lastGestureEvent.current = now;
+                  if (now - lastGestureEvent.current > EVENT_COOLDOWN) {
+                    addEventRef.current({
+                      type: 'GESTURE_SIGNAL_DETECTED',
+                      severity: 'HIGH',
+                      description: `✋ Удержание жеста (1.5с): Передан сигнал "${optText}" (${gestureRes.label})`
+                    });
+                    lastGestureEvent.current = now;
+                  }
+                  isViolatingThisFrame = true;
                 }
-                isViolatingThisFrame = true;
+              } else {
+                gestureHoldStart.current = null;
+                activeGestureNameRef.current = null;
               }
+            } else {
+              gestureHoldStart.current = null;
+              activeGestureNameRef.current = null;
             }
 
             if (previousWristX.current !== null) {
