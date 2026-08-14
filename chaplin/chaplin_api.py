@@ -30,7 +30,7 @@ def load_vsr_model():
     global vsr_pipeline
     device_str = "cuda:0" if torch.cuda.is_available() else "cpu"
     device = torch.device(device_str)
-    print(f"🧠 Loading Chaplin VSR (Auto-AVSR LRS3) neural network on {device_str}...")
+    print(f"🧠 [STARTUP] Initializing Chaplin VSR (Auto-AVSR LRS3) on {device_str}...")
     
     # Auto-ensure benchmarks directory structure & json files
     import urllib.request
@@ -56,10 +56,10 @@ def load_vsr_model():
           detector="mediapipe",
           face_track=True
         )
-        print(f"✅ Chaplin VSR Neural Model Loaded Successfully on {device_str}!")
+        print(f"✅ [SUCCESS] Chaplin VSR Neural Model Loaded Successfully on {device_str}!")
     except Exception as e:
         import traceback
-        print("⚠️ Warning: Failed to load Chaplin model:", e)
+        print("⚠️ [ERROR] Failed to load Chaplin model:", e)
         traceback.print_exc()
 
 @app.post("/api/vsr/decode")
