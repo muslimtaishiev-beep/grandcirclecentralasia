@@ -890,6 +890,43 @@ export function useProctoringEngine(
             updates.isSilentLipSpeaking = true;
             updates.lastTranscript = `👄 [ГУБЫ]: "${vsrPhrase.text}"`;
 
+            // Trigger background Chaplin deep neural network clip send (if active)
+            if (canvasRef.current && (vsrPhrase.confidence >= 80 || marDelta > 0.05)) {
+              const canvasEl = canvasRef.current;
+              setTimeout(() => {
+                try {
+                  const stream = canvasEl.captureStream ? canvasEl.captureStream(16) : null;
+                  if (stream && !(window as any)._chaplinBusy) {
+                    (window as any)._chaplinBusy = true;
+                    const rec = new MediaRecorder(stream, { mimeType: 'video/webm' });
+                    const chunks: Blob[] = [];
+                    rec.ondataavailable = (e) => chunks.push(e.data);
+                    rec.onstop = async () => {
+                      const blob = new Blob(chunks, { type: 'video/webm' });
+                      const fd = new FormData();
+                      fd.append('video', blob, 'lips.webm');
+                      try {
+                        const res = await fetch('http://localhost:8000/api/vsr/decode', { method: 'POST', body: fd });
+                        if (res.ok) {
+                          const json = await res.json();
+                          if (json.text) {
+                            setTelemetry(prev => ({
+                              ...prev,
+                              decodedLipWord: json.text,
+                              lastTranscript: `👄 [CHAPLIN VSR]: "${json.text}"`
+                            }));
+                          }
+                        }
+                      } catch (err) {}
+                      (window as any)._chaplinBusy = false;
+                    };
+                    rec.start();
+                    setTimeout(() => { if (rec.state === 'recording') rec.stop(); }, 1500);
+                  }
+                } catch (e) { (window as any)._chaplinBusy = false; }
+              }, 10);
+            }
+
             const semanticRes = evaluateSemanticIntent(vsrPhrase.text, currentQuestionTextRef.current);
             updates.speechProbability = semanticRes.probability;
             updates.speechIntentCategory = semanticRes.intentCategory;
