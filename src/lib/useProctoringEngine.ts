@@ -888,10 +888,96 @@ export function useProctoringEngine(
           const minMar = Math.min(...marHistoryRef.current);
           const marDelta = maxMar - minMar;
 
-          // Lip decoding disabled per user instruction
-          updates.isSilentLipSpeaking = false;
-          updates.decodedLipWord = '';
-          updates.decodedLipOption = '';
+          // 🧠 ONLY Chaplin VSR Neural Network (Google Colab T4 GPU)
+          if ((marDelta > 0.02 || microRes.viseme !== 'RESTING') && !(window as any)._chaplinBusy) {
+            (window as any)._chaplinBusy = true;
+            updates.isSilentLipSpeaking = true;
+
+            const videoEl = videoRef.current;
+            const canvasEl = canvasRef.current;
+            const mediaStream = (videoEl && (videoEl as any).srcObject) || (canvasEl && canvasEl.captureStream ? canvasEl.captureStream(16) : null);
+
+            if (mediaStream) {
+              try {
+                const rec = new MediaRecorder(mediaStream, { mimeType: 'video/webm' });
+                const chunks: Blob[] = [];
+                rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+                rec.onstop = async () => {
+                  if (chunks.length === 0) {
+                    (window as any)._chaplinBusy = false;
+                    return;
+                  }
+                  const blob = new Blob(chunks, { type: 'video/webm' });
+                  const fd = new FormData();
+                  fd.append('video', blob, 'lips.webm');
+
+                  try {
+                    const customUrl = typeof window !== 'undefined' ? localStorage.getItem('CHAPLIN_VSR_URL') : null;
+                    const urls = [
+                      customUrl,
+                      'https://trackback-sea-herb-poker.trycloudflare.com/api/vsr/decode',
+                      (import.meta as any).env?.VITE_CHAPLIN_VSR_API_URL,
+                    ].filter((u): u is string => {
+                      if (!u || typeof u !== 'string') return false;
+                      if (typeof window !== 'undefined' && window.location.protocol === 'https:' && u.startsWith('http:')) return false;
+                      return true;
+                    });
+
+                    for (const targetUrl of urls) {
+                      console.log('🎥 [CHAPLIN VSR] Отправка видеоклипа рта на GPU сервер:', targetUrl);
+                      try {
+                        const res = await fetch(targetUrl, { method: 'POST', body: fd, mode: 'cors' });
+                        if (res.ok) {
+                          const json = await res.json();
+                          console.log('👄 [CHAPLIN VSR] Ответ от нейросети:', json);
+                          if (json && json.text && json.text.trim().length > 0) {
+                            const vsrText = json.text.trim();
+                            const semanticRes = evaluateSemanticIntent(vsrText, currentQuestionTextRef.current);
+
+                            setTelemetry(prev => ({
+                              ...prev,
+                              decodedLipWord: vsrText,
+                              speechProbability: semanticRes.probability,
+                              speechIntentCategory: semanticRes.intentCategory,
+                              lastTranscript: `👄 [CHAPLIN VSR]: "${vsrText}"`
+                            }));
+
+                            if (semanticRes.probability >= 40 && Date.now() - lastSilentLipEvent.current > EVENT_COOLDOWN) {
+                              addEventRef.current({
+                                type: 'SILENT_LIP_SPEAKING_DETECTED',
+                                severity: semanticRes.probability >= 85 ? 'HIGH' : 'MEDIUM',
+                                description: `👄 Chaplin VSR Распознана речь с губ: "${vsrText}" [${semanticRes.intentCategory}] (${semanticRes.probability}%)`
+                              });
+                              lastSilentLipEvent.current = Date.now();
+                            }
+                            break;
+                          }
+                        }
+                      } catch (err) {
+                        console.warn('⚠️ Chaplin VSR Ошибка сети:', err);
+                      }
+                    }
+                  } catch (e) {
+                    console.warn('⚠️ Chaplin VSR Ошибка обращения к API:', e);
+                  }
+                  
+                  // Охлаждение 2 секунды перед следующим запросом к Chaplin
+                  setTimeout(() => {
+                    (window as any)._chaplinBusy = false;
+                  }, 2000);
+                };
+
+                rec.start();
+                setTimeout(() => { if (rec.state === 'recording') rec.stop(); }, 1500);
+              } catch (e) {
+                (window as any)._chaplinBusy = false;
+              }
+            } else {
+              (window as any)._chaplinBusy = false;
+            }
+          } else {
+            updates.isSilentLipSpeaking = false;
+          }
 
           // LIGHT ANOMALY DETECTION
           const lc = getLightCanvas();
