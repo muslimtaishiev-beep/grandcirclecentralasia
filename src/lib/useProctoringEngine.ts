@@ -917,7 +917,7 @@ export function useProctoringEngine(
                     const customUrl = typeof window !== 'undefined' ? localStorage.getItem('CHAPLIN_VSR_URL') : null;
                     const urls = [
                       customUrl,
-                      'https://far-reliability-dropped-salt.trycloudflare.com/api/vsr/decode',
+                      'https://flooring-soonest-accommodations-shower.trycloudflare.com/api/vsr/decode',
                       (import.meta as any).env?.VITE_CHAPLIN_VSR_API_URL,
                     ].filter((u): u is string => {
                       if (!u || typeof u !== 'string') return false;
