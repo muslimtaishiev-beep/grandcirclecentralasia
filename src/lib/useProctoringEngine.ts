@@ -911,7 +911,13 @@ export function useProctoringEngine(
                           (import.meta as any).env?.VITE_CHAPLIN_VSR_API_URL,
                           'https://chaplin-vsr-api-d9vdq0ojo6nc73flpkag.onrender.com/api/vsr/decode',
                           'http://localhost:8000/api/vsr/decode'
-                        ].filter(Boolean);
+                        ].filter(url => {
+                          if (!url) return false;
+                          if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url.startsWith('http:')) {
+                            return false;
+                          }
+                          return true;
+                        });
 
                         for (const url of renderUrls) {
                           try {
@@ -1039,9 +1045,10 @@ export function useProctoringEngine(
         const handResult = handLandmarkerRef.current.detectForVideo(video, now);
         lastHandProcessTime.current = now;
 
-        const handsCount = handResult.handLandmarks.length;
+        const handLandmarksList = handResult?.landmarks || handResult?.handLandmarks || [];
+        const handsCount = handLandmarksList.length;
         updates.handsDetected = handsCount;
-        handLandmarksRef.current = handResult.handLandmarks;
+        handLandmarksRef.current = handLandmarksList;
 
         if (handsCount === 0) {
           updates.handStatus = 'NO_HANDS';
@@ -1053,7 +1060,7 @@ export function useProctoringEngine(
           let isBelow = false;
           let activeGesture: HandGestureResult = { gesture: 'NONE', label: 'Ладонь', extendedFingers: 0 };
 
-          for (const handLandmarks of handResult.handLandmarks) {
+          for (const handLandmarks of handLandmarksList) {
             const wrist = handLandmarks[0];
             
             if (wrist.y > 0.72) {
