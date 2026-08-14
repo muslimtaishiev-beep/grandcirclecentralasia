@@ -889,72 +889,92 @@ export function useProctoringEngine(
           const marDelta = maxMar - minMar;
 
           // Trigger Chaplin VSR deep neural network clip send when lip movement/articulation is active
-          if (canvasRef.current && (marDelta > 0.04 || microRes.viseme !== 'RESTING')) {
+          if ((marDelta > 0.02 || microRes.viseme !== 'RESTING') && !(window as any)._chaplinBusy) {
             updates.isSilentLipSpeaking = true;
-            const canvasEl = canvasRef.current;
-            setTimeout(() => {
+            (window as any)._chaplinBusy = true;
+            
+            const targetStream = videoRef.current ? (videoRef.current as any).srcObject : null;
+            const canvasStream = canvasRef.current && canvasRef.current.captureStream ? canvasRef.current.captureStream(16) : null;
+            const mediaStream = targetStream || canvasStream;
+
+            if (mediaStream) {
               try {
-                const stream = canvasEl.captureStream ? canvasEl.captureStream(16) : null;
-                if (stream && !(window as any)._chaplinBusy) {
-                  (window as any)._chaplinBusy = true;
-                  const rec = new MediaRecorder(stream, { mimeType: 'video/webm' });
-                  const chunks: Blob[] = [];
-                  rec.ondataavailable = (e) => chunks.push(e.data);
-                  rec.onstop = async () => {
-                    const blob = new Blob(chunks, { type: 'video/webm' });
-                    const fd = new FormData();
-                    fd.append('video', blob, 'lips.webm');
-                    try {
-                      const customUrl = typeof window !== 'undefined' ? localStorage.getItem('CHAPLIN_VSR_URL') : null;
-                      const renderUrls = [
-                        customUrl,
-                        'https://trackback-sea-herb-poker.trycloudflare.com/api/vsr/decode',
-                        (import.meta as any).env?.VITE_CHAPLIN_VSR_API_URL,
-                      ].filter((url): url is string => {
-                        if (!url || typeof url !== 'string') return false;
-                        if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url.startsWith('http:')) {
-                          return false;
-                        }
-                        return true;
-                      });
-
-                      for (const url of renderUrls) {
-                        try {
-                          const res = await fetch(url, { method: 'POST', body: fd, mode: 'cors' }).catch(() => null);
-                          if (res && res.ok) {
-                            const json = await res.json().catch(() => null);
-                            if (json && json.text && json.text.trim().length > 0) {
-                              const semanticRes = evaluateSemanticIntent(json.text, currentQuestionTextRef.current);
-                              setTelemetry(prev => ({
-                                ...prev,
-                                decodedLipWord: json.text,
-                                speechProbability: semanticRes.probability,
-                                speechIntentCategory: semanticRes.intentCategory,
-                                lastTranscript: `👄 [CHAPLIN VSR]: "${json.text}"`
-                              }));
-
-                              if (semanticRes.probability >= 50 && Date.now() - lastSilentLipEvent.current > EVENT_COOLDOWN) {
-                                addEventRef.current({
-                                  type: 'SILENT_LIP_SPEAKING_DETECTED',
-                                  severity: semanticRes.probability >= 85 ? 'HIGH' : 'MEDIUM',
-                                  description: `👄 Chaplin VSR Распознана речь с губ: "${json.text}" [${semanticRes.intentCategory}] (${semanticRes.probability}%)`
-                                });
-                                lastSilentLipEvent.current = Date.now();
-                              }
-                              break;
-                            }
-                          }
-                        } catch (e) {}
-                      }
-                    } catch (err) {}
+                const rec = new MediaRecorder(mediaStream, { mimeType: 'video/webm' });
+                const chunks: Blob[] = [];
+                rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+                rec.onstop = async () => {
+                  if (chunks.length === 0) {
                     (window as any)._chaplinBusy = false;
-                  };
-                  rec.start();
-                  setTimeout(() => { if (rec.state === 'recording') rec.stop(); }, 1500);
-                }
-              } catch (e) { (window as any)._chaplinBusy = false; }
-            }, 10);
-          } else {
+                    return;
+                  }
+                  const blob = new Blob(chunks, { type: 'video/webm' });
+                  const fd = new FormData();
+                  fd.append('video', blob, 'lips.webm');
+
+                  try {
+                    const customUrl = typeof window !== 'undefined' ? localStorage.getItem('CHAPLIN_VSR_URL') : null;
+                    const renderUrls = [
+                      customUrl,
+                      'https://trackback-sea-herb-poker.trycloudflare.com/api/vsr/decode',
+                      (import.meta as any).env?.VITE_CHAPLIN_VSR_API_URL,
+                    ].filter((url): url is string => {
+                      if (!url || typeof url !== 'string') return false;
+                      if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url.startsWith('http:')) {
+                        return false;
+                      }
+                      return true;
+                    });
+
+                    for (const url of renderUrls) {
+                      try {
+                        console.log('🎥 Sending lip clip to Chaplin VSR:', url);
+                        const res = await fetch(url, { method: 'POST', body: fd, mode: 'cors' }).catch((err) => {
+                          console.warn('VSR fetch error:', err);
+                          return null;
+                        });
+
+                        if (res && res.ok) {
+                          const json = await res.json().catch(() => null);
+                          console.log('👄 Chaplin VSR Raw Output:', json);
+                          if (json && json.text && json.text.trim().length > 0) {
+                            const vsrText = json.text.trim();
+                            const semanticRes = evaluateSemanticIntent(vsrText, currentQuestionTextRef.current);
+                            
+                            setTelemetry(prev => ({
+                              ...prev,
+                              decodedLipWord: vsrText,
+                              speechProbability: semanticRes.probability,
+                              speechIntentCategory: semanticRes.intentCategory,
+                              lastTranscript: `👄 [CHAPLIN VSR]: "${vsrText}"`
+                            }));
+
+                            if (semanticRes.probability >= 40 && Date.now() - lastSilentLipEvent.current > EVENT_COOLDOWN) {
+                              addEventRef.current({
+                                type: 'SILENT_LIP_SPEAKING_DETECTED',
+                                severity: semanticRes.probability >= 85 ? 'HIGH' : 'MEDIUM',
+                                description: `👄 Chaplin VSR Распознана речь с губ: "${vsrText}" [${semanticRes.intentCategory}] (${semanticRes.probability}%)`
+                              });
+                              lastSilentLipEvent.current = Date.now();
+                            }
+                            break;
+                          }
+                        }
+                      } catch (e) {
+                        console.warn('VSR send error:', e);
+                      }
+                    }
+                  } catch (err) {}
+                  (window as any)._chaplinBusy = false;
+                };
+                rec.start();
+                setTimeout(() => { if (rec.state === 'recording') rec.stop(); }, 1800);
+              } catch (e) {
+                (window as any)._chaplinBusy = false;
+              }
+            } else {
+              (window as any)._chaplinBusy = false;
+            }
+          } else if (marDelta <= 0.02 && microRes.viseme === 'RESTING') {
             updates.isSilentLipSpeaking = false;
             silentLipStart.current = null;
           }
