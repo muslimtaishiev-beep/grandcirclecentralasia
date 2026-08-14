@@ -23,6 +23,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+def read_root():
+    return {
+        "status": "online",
+        "service": "Chaplin Visual Speech Recognition API (GPU T4)",
+        "endpoints": {
+            "status": "/api/vsr/status",
+            "decode": "/api/vsr/decode"
+        }
+    }
+
 vsr_pipeline = None
 startup_error = None
 startup_info = {}
