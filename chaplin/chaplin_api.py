@@ -1,0 +1,76 @@
+import os
+import time
+import tempfile
+import torch
+from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+import hydra
+from omegaconf import OmegaConf
+from pipelines.pipeline import InferencePipeline
+
+app = FastAPI(title="Chaplin Visual Speech Recognition API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+vsr_pipeline = None
+
+@app.on_event("startup")
+def load_vsr_model():
+    global vsr_pipeline
+    print("🧠 Loading Chaplin VSR (Auto-AVSR LRS3) neural network...")
+    config_filename = "./configs/LRS3_V_WER19.1.ini"
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    detector = "mediapipe"
+    
+    try:
+        vsr_pipeline = InferencePipeline(
+          config_filename,
+          device=device,
+          detector=detector,
+          face_track=True
+        )
+        print("✅ Chaplin VSR Neural Model Loaded Successfully!")
+    except Exception as e:
+        print("⚠️ Warning: Failed to load Chaplin model:", e)
+
+@app.post("/api/vsr/decode")
+async def decode_video(video: UploadFile = File(...)):
+    if vsr_pipeline is None:
+        return {"success": False, "error": "VSR Model not initialized", "text": ""}
+    
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            content = await video.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        print(f"🎥 Processing video blob: {tmp_path} ({len(content)} bytes)")
+        
+        # Run Chaplin 3D-CNN + Conformer VSR inference
+        raw_text = vsr_pipeline(tmp_path)
+        
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+        print(f"👄 Chaplin VSR Result: '{raw_text}'")
+        return {
+            "success": True,
+            "text": raw_text.strip() if raw_text else "",
+            "confidence": 90 if raw_text else 0
+        }
+    except Exception as e:
+        print("❌ VSR Inference Error:", e)
+        return {"success": False, "error": str(e), "text": ""}
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 7860))
+    uvicorn.run(app, host="0.0.0.0", port=port)
