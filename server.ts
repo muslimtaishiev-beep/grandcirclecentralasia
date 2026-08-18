@@ -274,7 +274,8 @@ app.post("/api/gas", async (req, res) => {
       "submitPsychologistForm", 
       "uploadPdf", 
       "recheckScores", 
-      "getAnswerComparison"
+      "getAnswerComparison",
+      "saveCertificateRecord"
     ];
     if (!publicActions.includes(payload.action)) {
       const authHeader = req.headers["authorization"] || "";

@@ -1425,6 +1425,25 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Студент не найден в CRM" })).setMimeType(ContentService.MimeType.JSON);
     }
     
+    if (action === "saveCertificateRecord") {
+      const { record } = data;
+      let certSheet = ss.getSheetByName("Справки");
+      if (!certSheet) {
+        certSheet = ss.insertSheet("Справки");
+        certSheet.appendRow(["Дата выдачи", "Исходящий №", "ФИО Ученика (в род. падеже)", "Класс", "Дата рождения", "Цель выдачи", "Timestamp"]);
+      }
+      certSheet.appendRow([
+        record.issueDate || new Date().toLocaleDateString("ru-RU"),
+        record.refNumber,
+        record.studentNameGenitive || record.studentName,
+        record.grade,
+        record.dob || "",
+        record.purpose || "по месту требования",
+        record.timestamp || Date.now()
+      ]);
+      return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Unknown action" })).setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: error.message })).setMimeType(ContentService.MimeType.JSON);
