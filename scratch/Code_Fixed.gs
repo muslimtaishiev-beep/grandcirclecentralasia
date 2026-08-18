@@ -1628,6 +1628,14 @@ function doPost(e) {
         const doc = DocumentApp.openById(copyFile.getId());
         const body = doc.getBody();
 
+        const dateParts = (record.issueDate || new Date().toLocaleDateString("ru-RU")).split('.');
+        const dayStr = dateParts[0] || String(new Date().getDate()).padStart(2, '0');
+        const monthMap = { '01': 'января', '02': 'февраля', '03': 'марта', '04': 'апреля', '05': 'мая', '06': 'июня', '07': 'июля', '08': 'августа', '09': 'сентября', '10': 'октября', '11': 'ноября', '12': 'декабря' };
+        const monthStr = monthMap[dateParts[1]] || 'августа';
+        const yearStr = (dateParts[2] || String(new Date().getFullYear())).slice(-2);
+
+        const stampFormattedText = `Общество с ограниченной ответственностью\n«Академия будущих лидеров»\nИНН 03004202510435\n\n№ ${record.refNumber || '26-08-001'}\n«${dayStr}» ${monthStr} 20${yearStr}г.ж.\nг. Бишкек ш.`;
+
         // Format placeholders
         body.replaceText("\\{\\{STUDENT_NAME\\}\\}", record.studentNameGenitive || record.studentName || "");
         body.replaceText("\\{\\{GRADE\\}\\}", String(record.grade || "7"));
@@ -1636,6 +1644,8 @@ function doPost(e) {
         body.replaceText("\\{\\{PURPOSE\\}\\}", record.purpose || "по месту требования");
         body.replaceText("\\{\\{MANAGER_NAME\\}\\}", record.managerName || "Айгерим");
         body.replaceText("\\{\\{DOB\\}\\}", record.dob ? `, ${record.dob} г.р.` : "");
+        body.replaceText("\\{\\{STAMP\\}\\}", stampFormattedText);
+        body.replaceText("\\{\\{FULL_STAMP_TEXT\\}\\}", stampFormattedText);
 
         doc.saveAndClose();
 
