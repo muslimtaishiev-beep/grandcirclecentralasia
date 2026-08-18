@@ -66,13 +66,46 @@ export default function ManagerDashboard() {
     } catch(e) { return []; }
   });
 
-  // Auto-generate outgoing Ref Number in format YY-MM-XXX (e.g., 26-08-001)
+  // Sync certificate registry from Google Sheets on modal open
+  useEffect(() => {
+    if (isCertModalOpen) {
+      fetchGasAPI("/api/gas", { action: "getCertificateRegistry" }, "")
+        .then((data) => {
+          if (data && data.success && Array.isArray(data.certificates)) {
+            setCertHistory(data.certificates);
+            localStorage.setItem("school_certificates_history", JSON.stringify(data.certificates));
+            
+            // Calculate next sequential ref number based on remote records
+            const now = new Date();
+            const yearShort = String(now.getFullYear()).slice(-2); // e.g. "26"
+            const month = String(now.getMonth() + 1).padStart(2, '0'); // e.g. "08"
+            const prefix = `${yearShort}-${month}-`;
+
+            let maxNum = 0;
+            data.certificates.forEach((c: any) => {
+              if (c.refNumber && String(c.refNumber).startsWith(prefix)) {
+                const numPart = parseInt(String(c.refNumber).replace(prefix, ''), 10);
+                if (!isNaN(numPart) && numPart > maxNum) {
+                  maxNum = numPart;
+                }
+              }
+            });
+
+            const nextCountStr = String(maxNum + 1).padStart(3, '0');
+            setCertRefNumber(`${prefix}${nextCountStr}`);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isCertModalOpen]);
+
+  // Auto-generate outgoing Ref Number in format YY-MM-XXX fallback
   useEffect(() => {
     if (!certRefNumber) {
       const now = new Date();
-      const yearShort = String(now.getFullYear()).slice(-2); // e.g. "26"
-      const month = String(now.getMonth() + 1).padStart(2, '0'); // e.g. "08"
-      const count = String(certHistory.length + 1).padStart(3, '0'); // e.g. "001"
+      const yearShort = String(now.getFullYear()).slice(-2);
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const count = String(certHistory.length + 1).padStart(3, '0');
       setCertRefNumber(`${yearShort}-${month}-${count}`);
     }
   }, [certHistory.length]);

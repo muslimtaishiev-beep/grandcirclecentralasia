@@ -1444,6 +1444,30 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
     }
 
+    if (action === "getCertificateRegistry") {
+      let certSheet = ss.getSheetByName("Справки");
+      if (!certSheet || certSheet.getLastRow() <= 1) {
+        return ContentService.createTextOutput(JSON.stringify({ success: true, certificates: [] })).setMimeType(ContentService.MimeType.JSON);
+      }
+      const data = certSheet.getDataRange().getValues();
+      let certificates = [];
+      for (let i = 1; i < data.length; i++) {
+        certificates.push({
+          id: 'cert_' + (data[i][6] || i),
+          issueDate: String(data[i][0]),
+          refNumber: String(data[i][1]),
+          studentNameGenitive: String(data[i][2]),
+          studentName: String(data[i][2]),
+          grade: String(data[i][3]),
+          dob: String(data[i][4]),
+          purpose: String(data[i][5]),
+          timestamp: data[i][6] || Date.now()
+        });
+      }
+      certificates.reverse(); // Newest first
+      return ContentService.createTextOutput(JSON.stringify({ success: true, certificates })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Unknown action" })).setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: error.message })).setMimeType(ContentService.MimeType.JSON);

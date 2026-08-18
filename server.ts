@@ -275,7 +275,8 @@ app.post("/api/gas", async (req, res) => {
       "uploadPdf", 
       "recheckScores", 
       "getAnswerComparison",
-      "saveCertificateRecord"
+      "saveCertificateRecord",
+      "getCertificateRegistry"
     ];
     if (!publicActions.includes(payload.action)) {
       const authHeader = req.headers["authorization"] || "";
