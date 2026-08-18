@@ -25,6 +25,17 @@ export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data
     directorName = ''
   } = data || {};
 
+  // Date formatter for stamp
+  const dateParts = issueDate.split('.');
+  const dayStr = dateParts[0] || String(new Date().getDate()).padStart(2, '0');
+  const monthMap: { [key: string]: string } = {
+    '01': 'января', '02': 'февраля', '03': 'марта', '04': 'апреля',
+    '05': 'мая', '06': 'июня', '07': 'июля', '08': 'августа',
+    '09': 'сентября', '10': 'октября', '11': 'ноября', '12': 'декабря'
+  };
+  const monthStr = monthMap[dateParts[1]] || 'августа';
+  const yearStr = (dateParts[2] || String(new Date().getFullYear())).slice(-2);
+
   return (
     <div
       id="pdf-school-certificate"
@@ -49,7 +60,13 @@ export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data
             alt="Академия Будущих Лидеров"
             className="h-28 object-contain mx-auto"
             onError={(e) => {
-              (e.currentTarget as HTMLElement).style.display = 'none';
+              // Fallback to /logo.png
+              const target = e.currentTarget as HTMLImageElement;
+              if (target.src.endsWith('/school_logo.png')) {
+                target.src = '/logo.png';
+              } else {
+                target.style.display = 'none';
+              }
             }}
           />
         </div>
@@ -58,7 +75,7 @@ export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data
         <div className="w-full h-[1.5px] bg-[#E5833B] mb-5"></div>
 
         {/* 2. School Address Header (2 Columns) */}
-        <div className="flex justify-between items-start text-[13px] font-serif leading-snug mb-8 text-black">
+        <div className="flex justify-between items-start text-[13px] font-serif leading-snug mb-6 text-black">
           {/* Kyrgyz Side */}
           <div className="space-y-0.5 max-w-[280px]">
             <div className="font-bold">Келечектеги лидерлердин академиясы</div>
@@ -80,7 +97,7 @@ export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data
           <div className="text-base font-bold mb-2">г. Бишкек</div>
           
           <div className="flex items-center gap-10">
-            {/* Left Corner Stamp Image with Dynamic Text Overlay */}
+            {/* Left Corner Stamp Image / Styled Stamp Fallback */}
             <div className="w-[320px] relative">
               <img
                 src="/corner_stamp.png"
@@ -88,17 +105,36 @@ export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data
                 className="w-full object-contain"
                 onError={(e) => {
                   (e.currentTarget as HTMLElement).style.display = 'none';
+                  const fallback = document.getElementById('vector-corner-stamp');
+                  if (fallback) fallback.style.display = 'block';
                 }}
               />
-              {/* Dynamic Number Overlay on Stamp */}
+              {/* Dynamic Number Overlay on Image Stamp */}
               <div className="absolute top-[52%] left-[45%] font-mono font-bold text-xs text-blue-950 tracking-wider">
                 {refNumber}
               </div>
-              {/* Dynamic Date Overlay on Stamp */}
+              {/* Dynamic Date Overlay on Image Stamp */}
               <div className="absolute top-[72%] left-[18%] font-serif font-bold text-xs text-blue-950 tracking-wider flex items-center gap-4">
-                <span>{issueDate.split('.')[0] || '18'}</span>
-                <span className="ml-2">{issueDate.split('.')[1] || '08'}</span>
-                <span className="ml-4">26</span>
+                <span>{dayStr}</span>
+                <span className="ml-2">{monthStr}</span>
+                <span className="ml-4">{yearStr}</span>
+              </div>
+
+              {/* High-Resolution Styled Vector Stamp Box Fallback */}
+              <div
+                id="vector-corner-stamp"
+                className="hidden border-2 border-[#1d4ed8] p-2.5 text-[11px] font-sans leading-tight bg-blue-50/20 text-[#1d4ed8] rounded-sm font-semibold text-center"
+              >
+                <div className="text-[11px] font-bold tracking-tight border-b border-[#1d4ed8] pb-1 mb-1 uppercase">
+                  Общество с ограниченной ответственностью<br />
+                  «Академия будущих лидеров»
+                </div>
+                <div className="text-[10px] font-mono">ИНН 03004202510435</div>
+                <div className="mt-1.5 pt-1 border-t border-[#1d4ed8] flex justify-between font-mono font-bold text-[11px] px-1">
+                  <span>№ <u className="underline underline-offset-2 font-mono">{refNumber}</u></span>
+                  <span>«<u>{dayStr}</u>» <u>{monthStr}</u> 20<u>{yearStr}</u>г.ж.</span>
+                </div>
+                <div className="text-[9px] text-slate-700 italic mt-0.5">г. Бишкек ш.</div>
               </div>
             </div>
 
