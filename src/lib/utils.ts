@@ -131,7 +131,7 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
   throw new Error("Превышено количество попыток отправки.");
 }
 
-export function toGenitiveCase(fullName: string): string {
+export function toDativeCase(fullName: string): string {
   if (!fullName || !fullName.trim()) return "";
   const parts = fullName.trim().split(/\s+/);
 
@@ -139,41 +139,43 @@ export function toGenitiveCase(fullName: string): string {
     const w = word.trim();
     if (!w) return "";
 
-    // 1. Surname (usually first part, or if ends in typical surname suffixes)
+    // 1. Surname (usually first part, or ends in typical surname suffixes)
     if (idx === 0 || /ов$|ев$|ин$|ын$|ова$|ева$|ина$|ына$/i.test(w)) {
       if (/ова$/i.test(w)) return w.replace(/ова$/i, "овой");
       if (/ева$/i.test(w)) return w.replace(/ева$/i, "евой");
       if (/ина$/i.test(w)) return w.replace(/ина$/i, "иной");
       if (/ына$/i.test(w)) return w.replace(/ына$/i, "ыной");
 
-      if (/ов$/i.test(w)) return w + "а";
-      if (/ев$/i.test(w)) return w + "а";
-      if (/ин$/i.test(w)) return w + "а";
-      if (/ын$/i.test(w)) return w + "а";
-      if (/ский$/i.test(w)) return w.replace(/ский$/i, "ского");
+      if (/ов$/i.test(w)) return w + "у";
+      if (/ев$/i.test(w)) return w + "у";
+      if (/ин$/i.test(w)) return w + "у";
+      if (/ын$/i.test(w)) return w + "у";
+      if (/ский$/i.test(w)) return w.replace(/ский$/i, "скому");
       if (/ская$/i.test(w)) return w.replace(/ская$/i, "ской");
     }
 
     // 2. Patronymic (Ends in -вич, -вна)
-    if (/вич$/i.test(w)) return w + "а";
-    if (/вна$/i.test(w)) return w.replace(/вна$/i, "вны");
+    if (/вич$/i.test(w)) return w + "у";
+    if (/вна$/i.test(w)) return w.replace(/вна$/i, "вне");
 
     // 3. First names or middle names
-    if (/а$/i.test(w)) {
-      if (/га$|ка$|ха$/i.test(w)) return w.replace(/а$/i, "и");
-      return w.replace(/а$/i, "ы");
-    }
-    if (/я$/i.test(w)) return w.replace(/я$/i, "и");
-    if (/й$/i.test(w)) return w.replace(/й$/i, "я");
-    if (/ь$/i.test(w)) return w.replace(/ь$/i, "я");
+    if (/ия$/i.test(w)) return w.replace(/я$/i, "и"); // Мария -> Марии
+    if (/а$/i.test(w)) return w.replace(/а$/i, "е"); // Анна -> Анне, Никита -> Никите
+    if (/я$/i.test(w)) return w.replace(/я$/i, "е"); // Илья -> Илье, Наталья -> Наталье
+    if (/й$/i.test(w)) return w.replace(/й$/i, "ю"); // Алексей -> Алексею
+    if (/ь$/i.test(w)) return w.replace(/ь$/i, "ю"); // Игорь -> Игорю
 
-    // Male first names ending in consonant (e.g. Бакыт -> Бакыта/Бакыту, Иван -> Ивана)
+    // Male first names ending in consonant (e.g. Бакыт -> Бакыту, Иван -> Ивану)
     if (/[бвгджзклмнпрстфхцчшщ]$/i.test(w)) {
-      return w + "а";
+      return w + "у";
     }
 
     return w;
   });
 
   return declinedParts.filter(Boolean).join(" ");
+}
+
+export function toGenitiveCase(fullName: string): string {
+  return toDativeCase(fullName);
 }

@@ -143,12 +143,12 @@ export default function ManagerDashboard() {
     };
 
     if (!certToRender.studentNameGenitive.trim()) {
-      alert("Введите ФИО ученика в родительном падеже!");
+      alert("Введите ФИО ученика в дательном падеже (Кому?)!");
       return;
     }
 
     if (!certDataOverride) {
-      const confirmMsg = `Проверьте данные перед формированием:\n\n• Выдал менеджер: ${certToRender.managerName}\n• Исходящий №: ${certToRender.refNumber}\n• ФИО (в род. падеже): ${certToRender.studentNameGenitive}\n• Класс: ${certToRender.grade}\n\nВсё верно? Нажмите OK для печати/скачивания или Отмена для редактирования.`;
+      const confirmMsg = `Проверьте данные перед формированием:\n\n• Выдал менеджер: ${certToRender.managerName}\n• Исходящий №: ${certToRender.refNumber}\n• ФИО (в дательном падеже): ${certToRender.studentNameGenitive}\n• Класс: ${certToRender.grade}\n\nВсё верно? Нажмите OK для печати/скачивания или Отмена для редактирования.`;
       if (!confirm(confirmMsg)) return;
     }
 
@@ -936,13 +936,13 @@ export default function ManagerDashboard() {
 
                       <div>
                         <div className="flex justify-between items-center mb-1">
-                          <label className="block text-sm font-semibold text-slate-700">ФИО (в родительном падеже):</label>
+                          <label className="block text-sm font-semibold text-slate-700">ФИО (в дательном падеже: Кому?):</label>
                           <button
                             type="button"
                             onClick={() => setCertStudentNameGenitive(toGenitiveCase(certStudentName))}
                             className="text-xs text-blue-600 hover:text-blue-800 font-bold underline"
                           >
-                            🪄 Авто-склонение
+                            🪄 Авто-склонение (в дат. падеж)
                           </button>
                         </div>
                         <input
