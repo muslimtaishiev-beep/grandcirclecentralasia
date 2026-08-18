@@ -97,44 +97,34 @@ export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data
           <div className="text-base font-bold mb-2">г. Бишкек</div>
           
           <div className="flex items-center gap-10">
-            {/* Left Corner Stamp Image / Styled Stamp Fallback */}
-            <div className="w-[320px] relative">
-              <img
-                src="/corner_stamp.png"
-                alt="Угловой штамп"
-                className="w-full object-contain"
-                onError={(e) => {
-                  (e.currentTarget as HTMLElement).style.display = 'none';
-                  const fallback = document.getElementById('vector-corner-stamp');
-                  if (fallback) fallback.style.display = 'block';
-                }}
-              />
-              {/* Dynamic Number Overlay on Image Stamp */}
-              <div className="absolute top-[52%] left-[45%] font-mono font-bold text-xs text-blue-950 tracking-wider">
-                {refNumber}
+            {/* Ultra High-Resolution HD Vector Official Corner Stamp */}
+            <div className="w-[330px] border-2 border-[#1a49ab] p-2.5 text-[11px] font-sans leading-tight bg-[#f0f4ff]/30 text-[#1a49ab] rounded-sm font-semibold relative select-none">
+              <div className="text-[11.5px] font-bold tracking-tight text-center border-b border-[#1a49ab]/40 pb-1 mb-1.5 font-serif">
+                Общество с ограниченной ответственностью<br />
+                «Академия будущих лидеров»
               </div>
-              {/* Dynamic Date Overlay on Image Stamp */}
-              <div className="absolute top-[72%] left-[18%] font-serif font-bold text-xs text-blue-950 tracking-wider flex items-center gap-4">
-                <span>{dayStr}</span>
-                <span className="ml-2">{monthStr}</span>
-                <span className="ml-4">{yearStr}</span>
+              <div className="text-[10px] text-center font-mono text-[#1a49ab] tracking-wider mb-2">
+                ИНН 03004202510435
               </div>
-
-              {/* High-Resolution Styled Vector Stamp Box Fallback */}
-              <div
-                id="vector-corner-stamp"
-                className="hidden border-2 border-[#1d4ed8] p-2.5 text-[11px] font-sans leading-tight bg-blue-50/20 text-[#1d4ed8] rounded-sm font-semibold text-center"
-              >
-                <div className="text-[11px] font-bold tracking-tight border-b border-[#1d4ed8] pb-1 mb-1 uppercase">
-                  Общество с ограниченной ответственностью<br />
-                  «Академия будущих лидеров»
+              <div className="space-y-1.5 text-[11px] font-serif pl-1">
+                <div className="flex items-baseline">
+                  <span className="font-bold">№</span>
+                  <span className="border-b border-[#1a49ab] px-4 font-mono font-bold ml-2 text-xs text-blue-950">
+                    {refNumber}
+                  </span>
                 </div>
-                <div className="text-[10px] font-mono">ИНН 03004202510435</div>
-                <div className="mt-1.5 pt-1 border-t border-[#1d4ed8] flex justify-between font-mono font-bold text-[11px] px-1">
-                  <span>№ <u className="underline underline-offset-2 font-mono">{refNumber}</u></span>
-                  <span>«<u>{dayStr}</u>» <u>{monthStr}</u> 20<u>{yearStr}</u>г.ж.</span>
+                <div className="flex items-baseline gap-1">
+                  <span>«</span>
+                  <span className="border-b border-[#1a49ab] px-2 font-bold text-xs text-blue-950">{dayStr}</span>
+                  <span>»</span>
+                  <span className="border-b border-[#1a49ab] px-3 font-bold text-xs text-blue-950">{monthStr}</span>
+                  <span>20</span>
+                  <span className="border-b border-[#1a49ab] px-1 font-bold text-xs text-blue-950">{yearStr}</span>
+                  <span>г.ж.</span>
                 </div>
-                <div className="text-[9px] text-slate-700 italic mt-0.5">г. Бишкек ш.</div>
+              </div>
+              <div className="text-right text-[9.5px] text-[#1a49ab] italic mt-1 pr-1 font-serif">
+                г. Бишкек ш.
               </div>
             </div>
 
