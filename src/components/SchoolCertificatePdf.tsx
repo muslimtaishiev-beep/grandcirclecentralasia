@@ -76,12 +76,12 @@ export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data
         </div>
 
         {/* 3. City Title + Stamp Row & 'Справка' Header */}
-        <div className="mt-6 mb-8">
+        <div className="mt-4 mb-6">
           <div className="text-base font-bold mb-2">г. Бишкек</div>
           
-          <div className="flex items-center gap-12">
-            {/* Left Corner Stamp Image / Fallback */}
-            <div className="w-[310px] min-h-[90px] relative">
+          <div className="flex items-center gap-10">
+            {/* Left Corner Stamp Image with Dynamic Text Overlay */}
+            <div className="w-[320px] relative">
               <img
                 src="/corner_stamp.png"
                 alt="Угловой штамп"
@@ -90,36 +90,49 @@ export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data
                   (e.currentTarget as HTMLElement).style.display = 'none';
                 }}
               />
+              {/* Dynamic Number Overlay on Stamp */}
+              <div className="absolute top-[52%] left-[45%] font-mono font-bold text-xs text-blue-950 tracking-wider">
+                {refNumber}
+              </div>
+              {/* Dynamic Date Overlay on Stamp */}
+              <div className="absolute top-[72%] left-[18%] font-serif font-bold text-xs text-blue-950 tracking-wider flex items-center gap-4">
+                <span>{issueDate.split('.')[0] || '18'}</span>
+                <span className="ml-2">{issueDate.split('.')[1] || '08'}</span>
+                <span className="ml-4">26</span>
+              </div>
             </div>
 
-            {/* Title 'Справка' placed to the right of the corner stamp */}
-            <div className="text-3xl font-bold font-serif tracking-wide text-black ml-4">
+            {/* Title 'Справка' placed right next to the corner stamp */}
+            <div className="text-4xl font-bold font-serif tracking-widest text-black ml-4">
               Справка
             </div>
           </div>
         </div>
 
-        {/* 4. Main Body Text */}
-        <div className="space-y-6 text-lg leading-[2] my-10 px-2 text-black">
-          <div>
-            <span className="font-normal">Выдана </span>
-            <span className="inline-block border-b border-black font-bold px-4 text-xl min-w-[450px]">
-              {studentNameGenitive}
+        {/* 4. Main Body Text (Fills Gaps Dynamically) */}
+        <div className="space-y-6 text-lg leading-[2.2] my-8 px-2 text-black">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="font-normal text-xl">Выдана</span>
+            <span className="flex-1 border-b border-black font-bold text-xl px-4 text-center min-w-[400px]">
+              {studentNameGenitive || '________________________________________________________'}
               {dob ? `, ${dob} г.р.` : ''}
             </span>
           </div>
 
-          <p className="indent-8 text-justify">
-            в том, что он(а) действительно является учеником{' '}
-            <strong className="text-xl underline px-2">{grade}</strong> класса в средней школе
-          </p>
+          <div className="flex items-baseline gap-2 flex-wrap indent-8">
+            <span className="font-normal text-[19px]">в том, что он(а) действительно является учеником(цей)</span>
+            <span className="border-b border-black font-bold text-xl px-4 text-center min-w-[60px]">
+              {grade || '__'}
+            </span>
+            <span className="font-normal text-[19px]">класса в средней школе</span>
+          </div>
 
-          <p className="text-justify font-normal">
+          <p className="text-justify font-normal text-[19px]">
             «Академия Будущих Лидеров» (Лицензия LM.-2025-0006 от 03.03.2026).
           </p>
 
-          <p className="text-justify pt-2">
-            Справка выдана для предъявления {purpose || 'по месту требования'}.
+          <p className="text-justify text-[19px] pt-2">
+            Справка выдана для предъявления {purpose ? <span className="font-bold underline px-1">{purpose}</span> : <span>по месту требования</span>}.
           </p>
         </div>
       </div>
