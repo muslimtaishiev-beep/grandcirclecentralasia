@@ -132,8 +132,8 @@ export default function Testing() {
 
   // --- ANTI-CHEAT LOGIC V2 ---
   useEffect(() => {
-    // Restore and check cumulative blur time on mount/reload
-    if (started && !finished && !disqualified) {
+    // Restore and check cumulative blur time on mount/reload (only if not already suspended)
+    if (started && !finished && !disqualified && phase !== "suspended") {
       const lastBlur = safeGetSession("lastBlurTime", null);
       if (lastBlur) {
         const elapsed = Date.now() - parseInt(lastBlur, 10);
@@ -148,7 +148,19 @@ export default function Testing() {
         }
       }
     }
-  }, [started]);
+  }, [started, phase]);
+
+  // Auto-check manager approval every 4 seconds when suspended
+  useEffect(() => {
+    if (phase !== "suspended" || !shortId) return;
+
+    checkSuspendStatus(true);
+    const interval = setInterval(() => {
+      checkSuspendStatus(true);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [phase, shortId]);
 
   useEffect(() => {
     if (!started || finished || disqualified) return;
@@ -576,7 +588,7 @@ export default function Testing() {
 
   const suspendTest = async (currentPhase: string) => {
     if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
-    if (isSubmitting) return;
+    if (isSubmitting || phaseRef.current === "suspended") return;
     setIsSubmitting(true);
 
     const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
@@ -601,6 +613,8 @@ export default function Testing() {
       }
     }
 
+    const savePhase = (currentPhase === 'suspended' ? (sessionStorage.getItem("suspendedPhase") || localStorage.getItem("persist_suspendedPhase") || 'core') : currentPhase);
+
     const payload = {
       action: "suspendTest",
       testId: payloadTestId,
@@ -608,51 +622,75 @@ export default function Testing() {
       studentName,
       grade,
       answers: currentAnswers,
-      phase: currentPhase,
+      phase: savePhase,
       testerPin: isTester ? enteredPin : undefined
     };
 
     try {
       setPhase("suspended");
-      sessionStorage.setItem("suspendedPhase", currentPhase);
+      sessionStorage.setItem("suspendedPhase", savePhase);
+      localStorage.setItem("persist_suspendedPhase", savePhase);
+      sessionStorage.setItem("phase", "suspended");
+      localStorage.setItem("persist_phase", "suspended");
       await fetchGasAPI("/api/gas", payload);
     } catch (e: any) {
       console.error("Failed to suspend:", e);
       setPhase("suspended");
-      sessionStorage.setItem("suspendedPhase", currentPhase);
+      sessionStorage.setItem("suspendedPhase", savePhase);
+      localStorage.setItem("persist_suspendedPhase", savePhase);
+      sessionStorage.setItem("phase", "suspended");
+      localStorage.setItem("persist_phase", "suspended");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const checkSuspendStatus = async () => {
+  const checkSuspendStatus = async (silent = false) => {
     if (isSubmitting) return;
-    setIsSubmitting(true);
+    if (!silent) setIsSubmitting(true);
     try {
       const data = await fetchGasAPI("/api/gas", { action: "checkSuspendStatus", shortId });
       if (data.success && data.status !== "ПРИОСТАНОВЛЕН") {
         setDisqualified(false);
-        const resumePhase = sessionStorage.getItem("suspendedPhase") || "core";
+        const resumePhase = sessionStorage.getItem("suspendedPhase") || localStorage.getItem("persist_suspendedPhase") || "core";
         setPhase(resumePhase as any);
         setTotalBlurTime(0);
+        
+        // Clean ALL blur time and suspension state from BOTH sessionStorage and localStorage
         sessionStorage.setItem("totalBlurTime", "0");
+        localStorage.setItem("persist_totalBlurTime", "0");
+
+        sessionStorage.removeItem("lastBlurTime");
+        localStorage.removeItem("persist_lastBlurTime");
+
+        sessionStorage.removeItem("suspendedPhase");
+        localStorage.removeItem("persist_suspendedPhase");
+
+        sessionStorage.setItem("phase", resumePhase);
+        localStorage.setItem("persist_phase", resumePhase);
         
         // Restore answers from backend if available
         if (data.answers) {
           try {
-            const parsed = JSON.parse(data.answers);
+            const parsed = typeof data.answers === 'string' ? JSON.parse(data.answers) : data.answers;
             setAnswers(prev => ({ ...prev, ...parsed }));
           } catch(e) {}
         }
         
-        alert("Разрешение получено! Вы можете продолжить тест.");
+        if (!silent) {
+          alert("Разрешение получено! Вы можете продолжить тест.");
+        }
       } else {
-        alert("Менеджер еще не дал разрешение на продолжение теста.");
+        if (!silent) {
+          alert("Менеджер еще не дал разрешение на продолжение теста.");
+        }
       }
     } catch (e: any) {
-      alert("Ошибка при проверке статуса: " + e.message);
+      if (!silent) {
+        alert("Ошибка при проверке статуса: " + e.message);
+      }
     } finally {
-      setIsSubmitting(false);
+      if (!silent) setIsSubmitting(false);
     }
   };
 

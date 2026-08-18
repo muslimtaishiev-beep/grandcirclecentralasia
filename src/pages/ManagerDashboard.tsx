@@ -169,8 +169,10 @@ export default function ManagerDashboard() {
       // 2. GAS unblock
       const data = await fetchGasAPI("/api/gas", { action: "unblockStudent", shortId }, "");
       if (data && data.success) {
-        alert("Разрешение успешно выдано! Ученик может зайти и нажать 'Продолжить прерванный тест'.");
+        setStudents(prev => (prev || []).map(s => s.shortId === shortId ? { ...s, status: "В ПРОЦЕССЕ" } : s));
+        alert("Разрешение успешно выдано! Экран ученика автоматически разблокируется.");
       } else {
+        setStudents(prev => (prev || []).map(s => s.shortId === shortId ? { ...s, status: "В ПРОЦЕССЕ" } : s));
         alert("Разрешение отправлено на сервер!");
       }
     } catch (e: any) {
