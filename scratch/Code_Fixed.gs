@@ -1573,12 +1573,35 @@ function doPost(e) {
     }
     
     
-    if (action === "saveCertificateRecord") {
-      const { record } = data;
+    if (action === "saveCertificateRecord" || action === "uploadCertificatePdf") {
+      const { record, base64Data } = data;
+      let pdfUrl = "";
+
+      if (base64Data) {
+        try {
+          const FOLDER_NAME = "Справки Академии Будущих Лидеров";
+          let folders = DriveApp.getFoldersByName(FOLDER_NAME);
+          let folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(FOLDER_NAME);
+          
+          let base64String = base64Data;
+          if (base64String.indexOf("base64,") !== -1) {
+            base64String = base64String.split("base64,")[1];
+          }
+          
+          const fileName = `Справка_${(record.studentNameGenitive || record.studentName || "Ученика").replace(/\s+/g, '_')}_${(record.refNumber || '').replace(/[\/\s]/g, '_')}.pdf`;
+          const decoded = Utilities.base64Decode(base64String);
+          const blob = Utilities.newBlob(decoded, "application/pdf", fileName);
+          
+          const file = folder.createFile(blob);
+          file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          pdfUrl = file.getUrl();
+        } catch(e) {}
+      }
+
       let certSheet = ss.getSheetByName("Справки");
       if (!certSheet) {
         certSheet = ss.insertSheet("Справки");
-        certSheet.appendRow(["Дата выдачи", "Исходящий №", "Менеджер", "ФИО Ученика (в род. падеже)", "Класс", "Дата рождения", "Цель выдачи", "Timestamp"]);
+        certSheet.appendRow(["Дата выдачи", "Исходящий №", "Менеджер", "ФИО Ученика (в дат. падеже)", "Класс", "Дата рождения", "Цель выдачи", "Timestamp", "Ссылка на PDF"]);
       }
       certSheet.appendRow([
         record.issueDate || new Date().toLocaleDateString("ru-RU"),
@@ -1588,9 +1611,10 @@ function doPost(e) {
         record.grade,
         record.dob || "",
         record.purpose || "по месту требования",
-        record.timestamp || Date.now()
+        record.timestamp || Date.now(),
+        pdfUrl
       ]);
-      return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
+      return ContentService.createTextOutput(JSON.stringify({ success: true, pdfUrl })).setMimeType(ContentService.MimeType.JSON);
     }
 
     if (action === "generateCertificateFromDocs") {
@@ -1672,7 +1696,8 @@ function doPost(e) {
           grade: String(data[i][4]),
           dob: String(data[i][5]),
           purpose: String(data[i][6]),
-          timestamp: data[i][7] || Date.now()
+          timestamp: data[i][7] || Date.now(),
+          pdfUrl: String(data[i][8] || "")
         });
       }
       certificates.reverse(); // Newest first

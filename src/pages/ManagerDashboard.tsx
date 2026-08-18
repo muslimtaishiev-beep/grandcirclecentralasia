@@ -168,9 +168,14 @@ export default function ManagerDashboard() {
           html2canvas: { scale: 2, useCORS: true },
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
         };
-        html2pdf().set(opt).from(element).save().then(() => {
+        const worker = html2pdf().set(opt).from(element);
+        
+        // 1. Save PDF locally for user
+        worker.save();
+
+        // 2. Export base64 to upload to Google Drive
+        worker.outputPdf('datauristring').then((dataUri: string) => {
           if (!certDataOverride) {
-            // Log new entry into local history and backend
             const newEntry = {
               id: 'cert_' + Date.now(),
               refNumber: certToRender.refNumber,
@@ -183,29 +188,39 @@ export default function ManagerDashboard() {
               issueDate: certToRender.issueDate,
               timestamp: Date.now()
             };
-            const updatedHistory = [newEntry, ...certHistory];
-            setCertHistory(updatedHistory);
-            localStorage.setItem("school_certificates_history", JSON.stringify(updatedHistory));
 
-            // Sync with backend Google Sheets
-            fetchGasAPI("/api/gas", { action: "saveCertificateRecord", record: newEntry }, "").catch(() => {});
-            
+            // Sync with backend Google Sheets & upload PDF file to Google Drive
+            fetchGasAPI("/api/gas", {
+              action: "uploadCertificatePdf",
+              record: newEntry,
+              base64Data: dataUri
+            }, "").then((res) => {
+              if (res && res.pdfUrl) {
+                newEntry.pdfUrl = res.pdfUrl;
+              }
+              const updatedHistory = [newEntry, ...certHistory];
+              setCertHistory(updatedHistory);
+              localStorage.setItem("school_certificates_history", JSON.stringify(updatedHistory));
+            }).catch(() => {
+              const updatedHistory = [newEntry, ...certHistory];
+              setCertHistory(updatedHistory);
+              localStorage.setItem("school_certificates_history", JSON.stringify(updatedHistory));
+            });
+
             // Advance next ref number YY-MM-XXX
             const now = new Date();
             const yearShort = String(now.getFullYear()).slice(-2);
             const month = String(now.getMonth() + 1).padStart(2, '0');
-            const nextCount = String(updatedHistory.length + 1).padStart(3, '0');
+            const nextCount = String(certHistory.length + 2).padStart(3, '0');
             setCertRefNumber(`${yearShort}-${month}-${nextCount}`);
           }
-          
+
           setIsGeneratingCertPdf(false);
           setCertForExport(null);
-          alert("Справка успешно сформирована и сохранена в реестр!");
-        }).catch(err => {
-          console.error(err);
+          alert("Справка успешно сформирована, скачана и сохранена в Google Диск!");
+        }).catch(() => {
           setIsGeneratingCertPdf(false);
           setCertForExport(null);
-          alert("Ошибка генерации PDF справки");
         });
       } else {
         setIsGeneratingCertPdf(false);
