@@ -6,6 +6,7 @@ import { getHourlyPIN, getCEFRLevel, fetchGasAPI } from "../lib/utils";
 import { testsData } from "../data/testsData";
 import html2pdf from "html2pdf.js";
 import { DiagnosticReportPdf } from "../components/DiagnosticReportPdf";
+import { SchoolCertificatePdf } from "../components/SchoolCertificatePdf";
 
 export default function ManagerDashboard() {
   const navigate = useNavigate();
@@ -43,6 +44,123 @@ export default function ManagerDashboard() {
 
   // Unblock State
   const [unblockingId, setUnblockingId] = useState<string | null>(null);
+
+  // Certificate System State
+  const [isCertModalOpen, setIsCertModalOpen] = useState(false);
+  const [certTab, setCertTab] = useState<"GENERATE" | "HISTORY">("GENERATE");
+  const [selectedStudentForCert, setSelectedStudentForCert] = useState<string>("MANUAL");
+  const [certStudentName, setCertStudentName] = useState("");
+  const [certDob, setCertDob] = useState("");
+  const [certGrade, setCertGrade] = useState("7");
+  const [certPurpose, setCertPurpose] = useState("по месту требования");
+  const [certRefNumber, setCertRefNumber] = useState("");
+  const [certDirectorName, setCertDirectorName] = useState("");
+  const [isGeneratingCertPdf, setIsGeneratingCertPdf] = useState(false);
+  const [certForExport, setCertForExport] = useState<any>(null);
+
+  const [certHistory, setCertHistory] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem("school_certificates_history");
+      return saved ? JSON.parse(saved) : [];
+    } catch(e) { return []; }
+  });
+
+  // Auto-generate outgoing Ref Number based on history count and date
+  useEffect(() => {
+    if (!certRefNumber) {
+      const now = new Date();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const year = now.getFullYear();
+      const count = String(certHistory.length + 1).padStart(3, '0');
+      setCertRefNumber(`№ ${month}-${year}/${count}`);
+    }
+  }, [certHistory.length]);
+
+  const handleStudentSelectForCert = (id: string) => {
+    setSelectedStudentForCert(id);
+    if (id === "MANUAL") {
+      setCertStudentName("");
+      setCertGrade("7");
+      setCertDob("");
+      return;
+    }
+    const found = students.find(s => s.shortId === id);
+    if (found) {
+      setCertStudentName(found.childName || found.studentName || "");
+      setCertGrade(String(found.grade || "7"));
+      if (found.dob) setCertDob(found.dob);
+    }
+  };
+
+  const handleDownloadCertPdf = (certDataOverride?: any) => {
+    const certToRender = certDataOverride || {
+      refNumber: certRefNumber,
+      issueDate: new Date().toLocaleDateString('ru-RU'),
+      studentName: certStudentName,
+      dob: certDob,
+      grade: certGrade,
+      purpose: certPurpose,
+      directorName: certDirectorName
+    };
+
+    if (!certToRender.studentName.trim()) {
+      alert("Введите ФИО ученика для справки!");
+      return;
+    }
+
+    setCertForExport(certToRender);
+    setIsGeneratingCertPdf(true);
+
+    setTimeout(() => {
+      const element = document.getElementById("pdf-school-certificate");
+      if (element) {
+        const opt = {
+          margin: 0,
+          filename: `Справка_${certToRender.studentName.replace(/\s+/g, '_')}_${certToRender.refNumber.replace(/[\/\s]/g, '_')}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        html2pdf().set(opt).from(element).save().then(() => {
+          if (!certDataOverride) {
+            // Log new entry into history
+            const newEntry = {
+              id: 'cert_' + Date.now(),
+              refNumber: certToRender.refNumber,
+              studentName: certToRender.studentName,
+              grade: certToRender.grade,
+              dob: certToRender.dob,
+              purpose: certToRender.purpose,
+              issueDate: certToRender.issueDate,
+              timestamp: Date.now()
+            };
+            const updatedHistory = [newEntry, ...certHistory];
+            setCertHistory(updatedHistory);
+            localStorage.setItem("school_certificates_history", JSON.stringify(updatedHistory));
+            
+            // Advance next ref number
+            const now = new Date();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const year = now.getFullYear();
+            const nextCount = String(updatedHistory.length + 1).padStart(3, '0');
+            setCertRefNumber(`№ ${month}-${year}/${nextCount}`);
+          }
+          
+          setIsGeneratingCertPdf(false);
+          setCertForExport(null);
+          alert("Справка успешно сформирована и сохранена в реестр!");
+        }).catch(err => {
+          console.error(err);
+          setIsGeneratingCertPdf(false);
+          setCertForExport(null);
+          alert("Ошибка генерации PDF справки");
+        });
+      } else {
+        setIsGeneratingCertPdf(false);
+        setCertForExport(null);
+      }
+    }, 400);
+  };
 
   const generatePdf = (student: any) => {
     if (!student.diagnosticsRaw || Object.keys(student.diagnosticsRaw).length === 0) {
@@ -632,6 +750,261 @@ export default function ManagerDashboard() {
                     <textarea value={feedback} onChange={e => setFeedback(e.target.value)} className="w-full border border-gray-300 rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-red-500" placeholder="Например: Не хватило баллов по математике" rows={2}></textarea>
                   </div>
                   <button onClick={submitFinalDecision} className="w-full bg-red-600 text-white rounded-xl py-3 font-bold mt-4 hover:bg-red-700">Подтвердить отказ</button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {/* Certificate Offscreen Container for PDF Export */}
+        {certForExport && (
+          <div style={{ width: 0, height: 0, overflow: 'hidden', position: 'absolute', top: -9999, left: -9999 }}>
+            <SchoolCertificatePdf data={certForExport} />
+          </div>
+        )}
+
+        {/* Floating Action Button for Certificates (Bottom Right) */}
+        <button
+          onClick={() => setIsCertModalOpen(true)}
+          className="fixed bottom-8 right-8 z-40 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold px-6 py-4 rounded-full shadow-2xl hover:shadow-indigo-500/50 transform hover:scale-105 active:scale-95 transition-all flex items-center gap-3 border-2 border-white/20 group"
+          title="Сформировать справку об обучении"
+        >
+          <span className="text-2xl group-hover:rotate-12 transition-transform">📜</span>
+          <span className="text-base tracking-wide hidden sm:inline">Выдать справку</span>
+          {certHistory.length > 0 && (
+            <span className="bg-white/20 text-white text-xs px-2.5 py-1 rounded-full font-mono font-bold">
+              {certHistory.length}
+            </span>
+          )}
+        </button>
+
+        {/* Certificate Management Modal */}
+        {isCertModalOpen && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setIsCertModalOpen(false)}>
+            <div className="bg-white rounded-3xl shadow-2xl max-w-3xl w-full max-h-[92vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+              
+              {/* Modal Header */}
+              <div className="bg-gradient-to-r from-blue-900 to-indigo-900 text-white p-6 flex justify-between items-center relative">
+                <div>
+                  <h3 className="text-2xl font-bold flex items-center gap-2">
+                    <span>📜</span> Генератор Справок об Обучении
+                  </h3>
+                  <p className="text-xs text-blue-200 mt-1">ОсОО «Академия будущих лидеров» • Лицензия LM.-2025-0006</p>
+                </div>
+                <button onClick={() => setIsCertModalOpen(false)} className="text-blue-200 hover:text-white text-2xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition">✕</button>
+              </div>
+
+              {/* Tabs */}
+              <div className="flex border-b border-slate-200 bg-slate-50 px-6 pt-3">
+                <button
+                  onClick={() => setCertTab("GENERATE")}
+                  className={`py-3 px-6 font-bold text-sm border-b-2 transition-all flex items-center gap-2 ${
+                    certTab === "GENERATE"
+                      ? "border-blue-600 text-blue-600 bg-white rounded-t-xl"
+                      : "border-transparent text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  <span>✨ Новая справка</span>
+                </button>
+                <button
+                  onClick={() => setCertTab("HISTORY")}
+                  className={`py-3 px-6 font-bold text-sm border-b-2 transition-all flex items-center gap-2 ${
+                    certTab === "HISTORY"
+                      ? "border-blue-600 text-blue-600 bg-white rounded-t-xl"
+                      : "border-transparent text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  <span>📋 Реестр справок</span>
+                  <span className="bg-slate-200 text-slate-700 text-xs px-2 py-0.5 rounded-full font-mono">{certHistory.length}</span>
+                </button>
+              </div>
+
+              {/* Tab Content */}
+              <div className="p-6 overflow-y-auto flex-1">
+                {certTab === "GENERATE" ? (
+                  <div className="space-y-6">
+                    {/* Student Selection Dropdown */}
+                    <div className="bg-blue-50/60 p-4 rounded-2xl border border-blue-100">
+                      <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                        <span>👤</span> Выбор ученика из базы CRM:
+                      </label>
+                      <select
+                        value={selectedStudentForCert}
+                        onChange={(e) => handleStudentSelectForCert(e.target.value)}
+                        className="w-full border border-blue-200 rounded-xl p-3 bg-white text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      >
+                        <option value="MANUAL">✍️ [+ Ввести данные вручную / Сторонний ученик]</option>
+                        {Array.isArray(students) && students.filter(s => s && (s.childName || s.studentName)).map((s, idx) => (
+                          <option key={idx} value={s.shortId}>
+                            🎓 {s.childName || s.studentName} ({s.grade || '?'} класс, ID: {s.shortId})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Main Form Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">ФИО Ученика (в именительном падеже):</label>
+                        <input
+                          type="text"
+                          value={certStudentName}
+                          onChange={(e) => setCertStudentName(e.target.value)}
+                          placeholder="Например: Асанов Бакыт Алмазович"
+                          className="w-full border border-slate-300 rounded-xl p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 font-bold text-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Класс обучения:</label>
+                        <select
+                          value={certGrade}
+                          onChange={(e) => setCertGrade(e.target.value)}
+                          className="w-full border border-slate-300 rounded-xl p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 font-medium text-slate-800"
+                        >
+                          {[1,2,3,4,5,6,7,8,9,10,11].map(g => (
+                            <option key={g} value={g}>{g} класс</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Дата рождения (опционально):</label>
+                        <input
+                          type="text"
+                          value={certDob}
+                          onChange={(e) => setCertDob(e.target.value)}
+                          placeholder="Например: 15.04.2012 г."
+                          className="w-full border border-slate-300 rounded-xl p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 text-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Исходящий № справки:</label>
+                        <input
+                          type="text"
+                          value={certRefNumber}
+                          onChange={(e) => setCertRefNumber(e.target.value)}
+                          placeholder="№ 04-2026/01"
+                          className="w-full border border-slate-300 rounded-xl p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 font-mono font-bold text-blue-700"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Куда предоставляется:</label>
+                        <select
+                          value={certPurpose}
+                          onChange={(e) => setCertPurpose(e.target.value)}
+                          className="w-full border border-slate-300 rounded-xl p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 text-slate-800"
+                        >
+                          <option value="по месту требования">по месту требования</option>
+                          <option value="в посольство / для оформления визы">в посольство / для оформления визы</option>
+                          <option value="в банковское учреждение">в банковское учреждение</option>
+                          <option value="для получения льгот и субсидий">для получения льгот и субсидий</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Preview Box Component Display */}
+                    <div className="mt-6 border-2 border-slate-200 rounded-2xl p-4 bg-slate-100">
+                      <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                        <span>👁️</span> Предпросмотр перед генерацией:
+                      </div>
+                      <div className="bg-white p-6 rounded-xl shadow border border-slate-200 text-xs font-serif leading-relaxed text-slate-800 space-y-3">
+                        <div className="text-center font-bold text-slate-900 border-b pb-2">
+                          Келечектеги лидерлердин академиясы / Академия Будущих Лидеров
+                        </div>
+                        <div className="flex justify-between font-sans text-[11px] text-slate-600">
+                          <span>Исх. <strong>{certRefNumber}</strong></span>
+                          <span>г. Бишкек</span>
+                          <span>Дата: <strong>{new Date().toLocaleDateString('ru-RU')} г.</strong></span>
+                        </div>
+                        <div className="text-center font-bold text-sm tracking-widest my-2">СПРАВКА</div>
+                        <p>
+                          Выдана <strong>{certStudentName || '[ФИО Ученика]'}</strong>
+                          {certDob ? `, ${certDob} г.р.,` : ''} в том, что он(а) действительно является учеником(цей) <strong>{certGrade}</strong> класса в средней школе «Академия Будущих Лидеров» (Лицензия LM.-2025-0006 от 03.03.2026 г.).
+                        </p>
+                        <p>Справка выдана для предъявления {certPurpose}.</p>
+                        <div className="flex justify-between items-center pt-2 font-sans text-[11px]">
+                          <span><strong>Директор</strong></span>
+                          <span className="text-blue-700 font-semibold">[Печать М.П. заверена]</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* History Tab */
+                  <div className="space-y-4">
+                    {certHistory.length === 0 ? (
+                      <div className="text-center py-12 text-slate-400">
+                        <div className="text-4xl mb-2">📭</div>
+                        <p>Выданных справок пока нет в реестре.</p>
+                      </div>
+                    ) : (
+                      <div className="bg-white rounded-xl border overflow-hidden">
+                        <table className="w-full text-left text-sm border-collapse">
+                          <thead>
+                            <tr className="bg-slate-100 border-b text-slate-600">
+                              <th className="p-3 font-semibold">Исх. №</th>
+                              <th className="p-3 font-semibold">ФИО Ученика</th>
+                              <th className="p-3 font-semibold">Класс</th>
+                              <th className="p-3 font-semibold">Дата выдачи</th>
+                              <th className="p-3 font-semibold text-right">Действия</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {certHistory.map((item, idx) => (
+                              <tr key={idx} className="border-b hover:bg-slate-50 transition">
+                                <td className="p-3 font-mono font-bold text-blue-700">{item.refNumber}</td>
+                                <td className="p-3 font-bold text-slate-800">{item.studentName}</td>
+                                <td className="p-3">{item.grade} класс</td>
+                                <td className="p-3 text-slate-500">{item.issueDate}</td>
+                                <td className="p-3 text-right">
+                                  <button
+                                    onClick={() => handleDownloadCertPdf(item)}
+                                    className="px-3 py-1 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg text-xs font-bold transition"
+                                  >
+                                    📥 Дубликат PDF
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              {certTab === "GENERATE" && (
+                <div className="p-6 border-t border-slate-200 bg-slate-50 flex justify-between items-center gap-4">
+                  <button
+                    onClick={() => setIsCertModalOpen(false)}
+                    className="px-6 py-3 bg-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-300 transition"
+                  >
+                    Отмена
+                  </button>
+
+                  <button
+                    onClick={() => handleDownloadCertPdf()}
+                    disabled={isGeneratingCertPdf || !certStudentName.trim()}
+                    className={`px-8 py-3.5 rounded-xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center gap-2 ${
+                      isGeneratingCertPdf || !certStudentName.trim()
+                        ? "bg-slate-400 cursor-not-allowed"
+                        : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl"
+                    }`}
+                  >
+                    {isGeneratingCertPdf ? (
+                      <>
+                        <span className="animate-spin">↻</span> Формирование PDF...
+                      </>
+                    ) : (
+                      <>
+                        <span>📥</span> Сформировать и скачать PDF справку
+                      </>
+                    )}
+                  </button>
                 </div>
               )}
             </div>
