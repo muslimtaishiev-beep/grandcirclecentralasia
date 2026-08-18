@@ -49,6 +49,7 @@ export default function ManagerDashboard() {
   const [isCertModalOpen, setIsCertModalOpen] = useState(false);
   const [certTab, setCertTab] = useState<"GENERATE" | "HISTORY">("GENERATE");
   const [selectedStudentForCert, setSelectedStudentForCert] = useState<string>("MANUAL");
+  const [certManagerName, setCertManagerName] = useState<string>("Айгерим");
   const [certStudentName, setCertStudentName] = useState("");
   const [certStudentNameGenitive, setCertStudentNameGenitive] = useState("");
   const [certDob, setCertDob] = useState("");
@@ -132,6 +133,7 @@ export default function ManagerDashboard() {
   const handleDownloadCertPdf = (certDataOverride?: any) => {
     const certToRender = certDataOverride || {
       refNumber: certRefNumber,
+      managerName: certManagerName,
       issueDate: new Date().toLocaleDateString('ru-RU'),
       studentNameGenitive: certStudentNameGenitive || certStudentName,
       dob: certDob,
@@ -146,7 +148,7 @@ export default function ManagerDashboard() {
     }
 
     if (!certDataOverride) {
-      const confirmMsg = `Проверьте данные перед формированием:\n\n• Исходящий №: ${certToRender.refNumber}\n• ФИО (в род. падеже): ${certToRender.studentNameGenitive}\n• Класс: ${certToRender.grade}\n\nВсё верно? Нажмите OK для печати/скачивания или Отмена для редактирования.`;
+      const confirmMsg = `Проверьте данные перед формированием:\n\n• Выдал менеджер: ${certToRender.managerName}\n• Исходящий №: ${certToRender.refNumber}\n• ФИО (в род. падеже): ${certToRender.studentNameGenitive}\n• Класс: ${certToRender.grade}\n\nВсё верно? Нажмите OK для печати/скачивания или Отмена для редактирования.`;
       if (!confirm(confirmMsg)) return;
     }
 
@@ -169,6 +171,7 @@ export default function ManagerDashboard() {
             const newEntry = {
               id: 'cert_' + Date.now(),
               refNumber: certToRender.refNumber,
+              managerName: certToRender.managerName,
               studentName: certStudentName || certToRender.studentNameGenitive,
               studentNameGenitive: certToRender.studentNameGenitive,
               grade: certToRender.grade,
@@ -181,7 +184,7 @@ export default function ManagerDashboard() {
             setCertHistory(updatedHistory);
             localStorage.setItem("school_certificates_history", JSON.stringify(updatedHistory));
 
-            // Sync with backend Google Sheets (if active)
+            // Sync with backend Google Sheets
             fetchGasAPI("/api/gas", { action: "saveCertificateRecord", record: newEntry }, "").catch(() => {});
             
             // Advance next ref number YY-MM-XXX
@@ -890,6 +893,33 @@ export default function ManagerDashboard() {
                     {/* Main Form Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Менеджер (кто выдает справку):</label>
+                        <select
+                          value={certManagerName}
+                          onChange={(e) => setCertManagerName(e.target.value)}
+                          className="w-full border border-blue-300 rounded-xl p-3 bg-blue-50/50 text-blue-900 font-bold focus:ring-2 focus:ring-blue-500 text-sm"
+                        >
+                          <option value="Айгерим">👩‍💼 Айгерим</option>
+                          <option value="Диана">👩‍💼 Диана</option>
+                          <option value="Калия">👩‍💼 Калия</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Куда предоставляется:</label>
+                        <select
+                          value={certPurpose}
+                          onChange={(e) => setCertPurpose(e.target.value)}
+                          className="w-full border border-slate-300 rounded-xl p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 text-slate-800 text-sm"
+                        >
+                          <option value="по месту требования">по месту требования</option>
+                          <option value="в посольство / для оформления визы">в посольство / для оформления визы</option>
+                          <option value="в банковское учреждение">в банковское учреждение</option>
+                          <option value="для получения льгот и субсидий">для получения льгот и субсидий</option>
+                        </select>
+                      </div>
+
+                      <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-1">ФИО (в именительном падеже):</label>
                         <input
                           type="text"
@@ -929,23 +959,12 @@ export default function ManagerDashboard() {
                         <select
                           value={certGrade}
                           onChange={(e) => setCertGrade(e.target.value)}
-                          className="w-full border border-slate-300 rounded-xl p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 font-medium text-slate-800"
+                          className="w-full border border-slate-300 rounded-xl p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 font-medium text-slate-800 text-sm"
                         >
                           {[1,2,3,4,5,6,7,8,9,10,11].map(g => (
                             <option key={g} value={g}>{g} класс</option>
                           ))}
                         </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-1">Дата рождения (опционально):</label>
-                        <input
-                          type="text"
-                          value={certDob}
-                          onChange={(e) => setCertDob(e.target.value)}
-                          placeholder="Например: 15.04.2012 г."
-                          className="w-full border border-slate-300 rounded-xl p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 text-slate-800"
-                        />
                       </div>
 
                       <div>
@@ -955,25 +974,11 @@ export default function ManagerDashboard() {
                           value={certRefNumber}
                           onChange={(e) => setCertRefNumber(e.target.value)}
                           placeholder="26-08-001"
-                          className="w-full border border-slate-300 rounded-xl p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 font-mono font-bold text-blue-700"
+                          className="w-full border border-slate-300 rounded-xl p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 font-mono font-bold text-blue-700 text-sm"
                         />
                         <p className="text-[11px] text-slate-500 mt-1">
                           💡 Формат: Год-Месяц-Номер (например, <span className="font-mono font-bold">26-08-001</span>). При ручной выписке можно изменить.
                         </p>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-1">Куда предоставляется:</label>
-                        <select
-                          value={certPurpose}
-                          onChange={(e) => setCertPurpose(e.target.value)}
-                          className="w-full border border-slate-300 rounded-xl p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 text-slate-800"
-                        >
-                          <option value="по месту требования">по месту требования</option>
-                          <option value="в посольство / для оформления визы">в посольство / для оформления визы</option>
-                          <option value="в банковское учреждение">в банковское учреждение</option>
-                          <option value="для получения льгот и субсидий">для получения льгот и субсидий</option>
-                        </select>
                       </div>
                     </div>
 
@@ -988,7 +993,7 @@ export default function ManagerDashboard() {
                         </div>
                         <div className="flex justify-between font-sans text-[11px] text-slate-600">
                           <span>Исх. № <strong>{certRefNumber}</strong></span>
-                          <span>г. Бишкек</span>
+                          <span>Выдал: <strong>Менеджер {certManagerName}</strong></span>
                           <span>Дата: <strong>{new Date().toLocaleDateString('ru-RU')} г.</strong></span>
                         </div>
                         <div className="text-center font-bold text-sm tracking-widest my-2">СПРАВКА</div>
@@ -1018,6 +1023,7 @@ export default function ManagerDashboard() {
                           <thead>
                             <tr className="bg-slate-100 border-b text-slate-600">
                               <th className="p-3 font-semibold">Исх. №</th>
+                              <th className="p-3 font-semibold">Менеджер</th>
                               <th className="p-3 font-semibold">ФИО Ученика (в род. падеже)</th>
                               <th className="p-3 font-semibold">Класс</th>
                               <th className="p-3 font-semibold">Дата выдачи</th>
@@ -1028,6 +1034,7 @@ export default function ManagerDashboard() {
                             {certHistory.map((item, idx) => (
                               <tr key={idx} className="border-b hover:bg-slate-50 transition">
                                 <td className="p-3 font-mono font-bold text-blue-700">{item.refNumber}</td>
+                                <td className="p-3 font-semibold text-indigo-700">{item.managerName || "Айгерим"}</td>
                                 <td className="p-3 font-bold text-slate-800">{item.studentNameGenitive || item.studentName}</td>
                                 <td className="p-3">{item.grade} класс</td>
                                 <td className="p-3 text-slate-500">{item.issueDate}</td>

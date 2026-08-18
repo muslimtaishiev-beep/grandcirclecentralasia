@@ -1430,11 +1430,12 @@ function doPost(e) {
       let certSheet = ss.getSheetByName("Справки");
       if (!certSheet) {
         certSheet = ss.insertSheet("Справки");
-        certSheet.appendRow(["Дата выдачи", "Исходящий №", "ФИО Ученика (в род. падеже)", "Класс", "Дата рождения", "Цель выдачи", "Timestamp"]);
+        certSheet.appendRow(["Дата выдачи", "Исходящий №", "Менеджер", "ФИО Ученика (в род. падеже)", "Класс", "Дата рождения", "Цель выдачи", "Timestamp"]);
       }
       certSheet.appendRow([
         record.issueDate || new Date().toLocaleDateString("ru-RU"),
         record.refNumber,
+        record.managerName || "Айгерим",
         record.studentNameGenitive || record.studentName,
         record.grade,
         record.dob || "",
@@ -1453,15 +1454,16 @@ function doPost(e) {
       let certificates = [];
       for (let i = 1; i < data.length; i++) {
         certificates.push({
-          id: 'cert_' + (data[i][6] || i),
+          id: 'cert_' + (data[i][7] || i),
           issueDate: String(data[i][0]),
           refNumber: String(data[i][1]),
-          studentNameGenitive: String(data[i][2]),
-          studentName: String(data[i][2]),
-          grade: String(data[i][3]),
-          dob: String(data[i][4]),
-          purpose: String(data[i][5]),
-          timestamp: data[i][6] || Date.now()
+          managerName: String(data[i][2] || "Айгерим"),
+          studentNameGenitive: String(data[i][3]),
+          studentName: String(data[i][3]),
+          grade: String(data[i][4]),
+          dob: String(data[i][5]),
+          purpose: String(data[i][6]),
+          timestamp: data[i][7] || Date.now()
         });
       }
       certificates.reverse(); // Newest first
