@@ -97,33 +97,33 @@ export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data
           <div className="text-base font-bold mb-2">г. Бишкек</div>
           
           <div className="flex items-center gap-10">
-            {/* Ultra High-Resolution HD Vector Official Corner Stamp */}
-            <div className="w-[330px] border-2 border-[#1a49ab] p-2.5 text-[11px] font-sans leading-tight bg-[#f0f4ff]/30 text-[#1a49ab] rounded-sm font-semibold relative select-none">
-              <div className="text-[11.5px] font-bold tracking-tight text-center border-b border-[#1a49ab]/40 pb-1 mb-1.5 font-serif">
+            {/* Ultra High-Resolution HD Vector Official Corner Stamp (All Stamp Blue #0C3674) */}
+            <div className="w-[330px] border-[2.5px] border-[#0C3674] p-2.5 text-[11px] font-serif leading-tight bg-[#f0f4ff]/20 text-[#0C3674] rounded-xs relative select-none">
+              <div className="text-[11.5px] font-bold tracking-tight text-center border-b border-[#0C3674]/50 pb-1 mb-1.5 font-serif uppercase">
                 Общество с ограниченной ответственностью<br />
                 «Академия будущих лидеров»
               </div>
-              <div className="text-[10px] text-center font-mono text-[#1a49ab] tracking-wider mb-2">
+              <div className="text-[10px] text-center font-mono text-[#0C3674] tracking-wider mb-2 font-bold">
                 ИНН 03004202510435
               </div>
-              <div className="space-y-1.5 text-[11px] font-serif pl-1">
+              <div className="space-y-1.5 text-[11px] font-serif pl-1 text-[#0C3674]">
                 <div className="flex items-baseline">
                   <span className="font-bold">№</span>
-                  <span className="border-b border-[#1a49ab] px-4 font-mono font-bold ml-2 text-xs text-blue-950">
+                  <span className="border-b border-[#0C3674] px-4 font-mono font-bold ml-2 text-xs text-[#0C3674]">
                     {refNumber}
                   </span>
                 </div>
                 <div className="flex items-baseline gap-1">
-                  <span>«</span>
-                  <span className="border-b border-[#1a49ab] px-2 font-bold text-xs text-blue-950">{dayStr}</span>
-                  <span>»</span>
-                  <span className="border-b border-[#1a49ab] px-3 font-bold text-xs text-blue-950">{monthStr}</span>
-                  <span>20</span>
-                  <span className="border-b border-[#1a49ab] px-1 font-bold text-xs text-blue-950">{yearStr}</span>
-                  <span>г.ж.</span>
+                  <span className="font-bold">«</span>
+                  <span className="border-b border-[#0C3674] px-2 font-bold text-xs text-[#0C3674]">{dayStr}</span>
+                  <span className="font-bold">»</span>
+                  <span className="border-b border-[#0C3674] px-3 font-bold text-xs text-[#0C3674]">{monthStr}</span>
+                  <span className="font-bold">20</span>
+                  <span className="border-b border-[#0C3674] px-1 font-bold text-xs text-[#0C3674]">{yearStr}</span>
+                  <span className="font-bold">г.ж.</span>
                 </div>
               </div>
-              <div className="text-right text-[9.5px] text-[#1a49ab] italic mt-1 pr-1 font-serif">
+              <div className="text-right text-[9.5px] text-[#0C3674] italic mt-1 pr-1 font-serif font-bold">
                 г. Бишкек ш.
               </div>
             </div>

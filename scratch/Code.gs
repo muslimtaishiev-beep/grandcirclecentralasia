@@ -1647,6 +1647,14 @@ function doPost(e) {
         body.replaceText("\\{\\{STAMP\\}\\}", stampFormattedText);
         body.replaceText("\\{\\{FULL_STAMP_TEXT\\}\\}", stampFormattedText);
 
+        // Highlight stamp text in official stamp blue color #0C3674
+        let foundStamp = body.findText("Общество с ограниченной ответственностью");
+        while (foundStamp) {
+          const textElement = foundStamp.getElement().asText();
+          textElement.setForegroundColor("#0C3674");
+          foundStamp = body.findText("Общество с ограниченной ответственностью", foundStamp);
+        }
+
         doc.saveAndClose();
 
         // Convert to PDF
