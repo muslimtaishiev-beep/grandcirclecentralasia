@@ -57,6 +57,9 @@ export default function ManagerDashboard() {
   const [certPurpose, setCertPurpose] = useState("по месту требования");
   const [certRefNumber, setCertRefNumber] = useState("");
   const [certDirectorName, setCertDirectorName] = useState("");
+  const [certDocTemplateId, setCertDocTemplateId] = useState<string>(() => {
+    return localStorage.getItem("cert_google_docs_template_id") || "";
+  });
   const [isGeneratingCertPdf, setIsGeneratingCertPdf] = useState(false);
   const [certForExport, setCertForExport] = useState<any>(null);
 
@@ -209,6 +212,73 @@ export default function ManagerDashboard() {
         setCertForExport(null);
       }
     }, 400);
+  };
+
+  const handleGenerateFromGoogleDocs = async () => {
+    if (!certStudentNameGenitive.trim()) {
+      alert("Введите ФИО ученика в дательном падеже (Кому?)!");
+      return;
+    }
+    
+    let templateId = certDocTemplateId.trim();
+    if (!templateId) {
+      const inputId = prompt(
+        "📄 Введите ID файла шаблона из Google Docs:\n(Ссылка на документ Google Docs выглядит так:\nhttps://docs.google.com/document/d/1ABC123XYZ.../edit\n\nСкопируйте набор букв и цифр между /d/ и /edit):"
+      );
+      if (!inputId || !inputId.trim()) return;
+      templateId = inputId.trim();
+      setCertDocTemplateId(templateId);
+      localStorage.setItem("cert_google_docs_template_id", templateId);
+    }
+
+    const record = {
+      refNumber: certRefNumber,
+      managerName: certManagerName,
+      issueDate: new Date().toLocaleDateString('ru-RU'),
+      studentName: certStudentName,
+      studentNameGenitive: certStudentNameGenitive,
+      grade: certGrade,
+      dob: certDob,
+      purpose: certPurpose,
+      timestamp: Date.now()
+    };
+
+    const confirmMsg = `Формирование справки через Google Docs Шаблон:\n\n• Выдал менеджер: ${record.managerName}\n• Исходящий №: ${record.refNumber}\n• ФИО (в дат. падеже): ${record.studentNameGenitive}\n• Класс: ${record.grade}\n\nСформировать PDF из Google Docs?`;
+    if (!confirm(confirmMsg)) return;
+
+    setIsGeneratingCertPdf(true);
+
+    try {
+      const res = await fetchGasAPI("/api/gas", {
+        action: "generateCertificateFromDocs",
+        docTemplateId: templateId,
+        record
+      }, "");
+
+      if (res && res.success && res.pdfUrl) {
+        window.open(res.pdfUrl, "_blank");
+        alert("🎉 Справка успешно создана по вашему шаблону Google Docs и сохранена в Google Диск!");
+        
+        const newEntry = { id: 'cert_' + record.timestamp, ...record, pdfUrl: res.pdfUrl };
+        const updatedHistory = [newEntry, ...certHistory];
+        setCertHistory(updatedHistory);
+        localStorage.setItem("school_certificates_history", JSON.stringify(updatedHistory));
+
+        // Advance next ref number YY-MM-XXX
+        const now = new Date();
+        const yearShort = String(now.getFullYear()).slice(-2);
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const nextCount = String(updatedHistory.length + 1).padStart(3, '0');
+        setCertRefNumber(`${yearShort}-${month}-${nextCount}`);
+      } else {
+        alert("⚠️ Ошибка шаблона Google Docs: " + (res?.error || "Проверьте ID шаблона и права доступа в Google Диске."));
+      }
+    } catch(err: any) {
+      console.error(err);
+      alert("Ошибка запроса генерации шаблона: " + (err.message || err));
+    } finally {
+      setIsGeneratingCertPdf(false);
+    }
   };
 
   const generatePdf = (student: any) => {
@@ -1058,33 +1128,48 @@ export default function ManagerDashboard() {
 
               {/* Modal Footer */}
               {certTab === "GENERATE" && (
-                <div className="p-6 border-t border-slate-200 bg-slate-50 flex justify-between items-center gap-4">
+                <div className="p-6 border-t border-slate-200 bg-slate-50 flex flex-wrap justify-between items-center gap-4">
                   <button
                     onClick={() => setIsCertModalOpen(false)}
-                    className="px-6 py-3 bg-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-300 transition"
+                    className="px-5 py-3 bg-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-300 transition text-sm"
                   >
                     Отмена
                   </button>
 
-                  <button
-                    onClick={() => handleDownloadCertPdf()}
-                    disabled={isGeneratingCertPdf || !certStudentName.trim()}
-                    className={`px-8 py-3.5 rounded-xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center gap-2 ${
-                      isGeneratingCertPdf || !certStudentName.trim()
-                        ? "bg-slate-400 cursor-not-allowed"
-                        : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl"
-                    }`}
-                  >
-                    {isGeneratingCertPdf ? (
-                      <>
-                        <span className="animate-spin">↻</span> Формирование PDF...
-                      </>
-                    ) : (
-                      <>
-                        <span>📥</span> Сформировать и скачать PDF справку
-                      </>
-                    )}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={handleGenerateFromGoogleDocs}
+                      disabled={isGeneratingCertPdf || !certStudentName.trim()}
+                      title="Использовать шаблон Google Docs для 100% идеальной печати"
+                      className={`px-6 py-3 rounded-xl font-bold text-white transition-all transform hover:scale-[1.02] flex items-center gap-2 text-sm ${
+                        isGeneratingCertPdf || !certStudentName.trim()
+                          ? "bg-slate-400 cursor-not-allowed"
+                          : "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-md"
+                      }`}
+                    >
+                      <span>📄</span> Сформировать через Google Docs Шаблон
+                    </button>
+
+                    <button
+                      onClick={() => handleDownloadCertPdf()}
+                      disabled={isGeneratingCertPdf || !certStudentName.trim()}
+                      className={`px-6 py-3 rounded-xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center gap-2 text-sm ${
+                        isGeneratingCertPdf || !certStudentName.trim()
+                          ? "bg-slate-400 cursor-not-allowed"
+                          : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-md"
+                      }`}
+                    >
+                      {isGeneratingCertPdf ? (
+                        <>
+                          <span className="animate-spin">↻</span> Формирование...
+                        </>
+                      ) : (
+                        <>
+                          <span>📥</span> Скачать быструю PDF справку
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

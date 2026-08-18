@@ -1593,6 +1593,67 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
     }
 
+    if (action === "generateCertificateFromDocs") {
+      const { record, docTemplateId } = data;
+      const TEMPLATE_ID = docTemplateId || "1DEFAULT_DOC_TEMPLATE_ID_PLACEHOLDER";
+      
+      try {
+        const templateFile = DriveApp.getFileById(TEMPLATE_ID);
+        const fileName = `Справка_${(record.studentNameGenitive || record.studentName || "Ученика").replace(/\s+/g, '_')}_${(record.refNumber || '').replace(/[\/\s]/g, '_')}`;
+        const copyFile = templateFile.makeCopy(fileName);
+        const doc = DocumentApp.openById(copyFile.getId());
+        const body = doc.getBody();
+
+        // Format placeholders
+        body.replaceText("\\{\\{STUDENT_NAME\\}\\}", record.studentNameGenitive || record.studentName || "");
+        body.replaceText("\\{\\{GRADE\\}\\}", String(record.grade || "7"));
+        body.replaceText("\\{\\{REF_NUMBER\\}\\}", record.refNumber || "");
+        body.replaceText("\\{\\{DATE\\}\\}", record.issueDate || new Date().toLocaleDateString("ru-RU"));
+        body.replaceText("\\{\\{PURPOSE\\}\\}", record.purpose || "по месту требования");
+        body.replaceText("\\{\\{MANAGER_NAME\\}\\}", record.managerName || "Айгерим");
+        body.replaceText("\\{\\{DOB\\}\\}", record.dob ? `, ${record.dob} г.р.` : "");
+
+        doc.saveAndClose();
+
+        // Convert to PDF
+        const pdfBlob = copyFile.getAs("application/pdf");
+        pdfBlob.setName(`${fileName}.pdf`);
+
+        // Save PDF to Drive folder
+        const FOLDER_NAME = "Справки Академии Будущих Лидеров";
+        let folders = DriveApp.getFoldersByName(FOLDER_NAME);
+        let folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(FOLDER_NAME);
+        const pdfFile = folder.createFile(pdfBlob);
+        pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        const pdfUrl = pdfFile.getUrl();
+
+        // Delete temp Google Doc copy
+        copyFile.setTrashed(true);
+
+        // Save to Certificate Registry Sheet
+        let certSheet = ss.getSheetByName("Справки");
+        if (!certSheet) {
+          certSheet = ss.insertSheet("Справки");
+          certSheet.appendRow(["Дата выдачи", "Исходящий №", "Менеджер", "ФИО Ученика (в дат. падеже)", "Класс", "Дата рождения", "Цель выдачи", "Timestamp", "Ссылка на PDF"]);
+        }
+        certSheet.appendRow([
+          record.issueDate || new Date().toLocaleDateString("ru-RU"),
+          record.refNumber,
+          record.managerName || "Айгерим",
+          record.studentNameGenitive || record.studentName,
+          record.grade,
+          record.dob || "",
+          record.purpose || "по месту требования",
+          record.timestamp || Date.now(),
+          pdfUrl
+        ]);
+
+        return ContentService.createTextOutput(JSON.stringify({ success: true, pdfUrl, message: "Справка успешно сформирована в Google Docs!" })).setMimeType(ContentService.MimeType.JSON);
+      } catch (err) {
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Ошибка Google Docs Шаблона: " + err.message })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
     if (action === "getCertificateRegistry") {
       let certSheet = ss.getSheetByName("Справки");
       if (!certSheet || certSheet.getLastRow() <= 1) {
