@@ -172,12 +172,31 @@ export default function ManagerDashboard() {
       }, "");
 
       if (res && res.success && res.pdfUrl) {
-        window.open(res.pdfUrl, "_blank");
+        // Auto-download PDF to computer
+        try {
+          // Convert Google Drive URL to direct download link
+          let downloadUrl = res.pdfUrl;
+          const fileIdMatch = downloadUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+          if (fileIdMatch && fileIdMatch[1]) {
+            downloadUrl = `https://drive.google.com/uc?export=download&id=${fileIdMatch[1]}`;
+          }
+          
+          const link = document.createElement('a');
+          link.href = downloadUrl;
+          link.download = `Справка_${(record.studentNameGenitive || record.studentName || "").replace(/\s+/g, '_')}_${record.refNumber.replace(/[\\/\\s]/g, '_')}.pdf`;
+          link.target = '_blank';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } catch (dlErr) {
+          // Fallback: just open in new tab
+          window.open(res.pdfUrl, "_blank");
+        }
         
         if (formatType === "PRINT") {
-          alert(`📄 Справка для печати сформирована!\n\nИсходящий номер для журнала: № ${record.refNumber}\n\nПечати и угловой штамп проставляются физически на распечатанном листе бумаге.`);
+          alert(`📄 Справка для печати сформирована и скачивается!\n\nИсходящий номер для журнала: № ${record.refNumber}\n\nПечати и угловой штамп проставляются физически на распечатанном листе бумаге.`);
         } else {
-          alert(`🎉 Онлайн-справка с синим векторным штампом успешно создана и сохранена в Google Диск!\n\nИсходящий номер: № ${record.refNumber}`);
+          alert(`🎉 Онлайн-справка с синим векторным штампом успешно создана и скачивается!\n\nИсходящий номер: № ${record.refNumber}`);
         }
         
         const newEntry = { id: 'cert_' + record.timestamp, ...record, pdfUrl: res.pdfUrl, formatType };
