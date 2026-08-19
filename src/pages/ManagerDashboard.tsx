@@ -1105,14 +1105,14 @@ export default function ManagerDashboard() {
                           : "bg-white hover:bg-slate-100 shadow-sm hover:shadow"
                       }`}
                     >
-                      <span>🖨️</span> Для печати на бумаге (без печати)
+                      <span>🖨️</span> Выдать справку (для печати)
                     </button>
 
                     {/* 2. ONLINE VERSION BUTTON */}
                     <button
                       onClick={() => handleGenerateFromGoogleDocs("ONLINE")}
                       disabled={isGeneratingCertPdf || !certStudentName.trim()}
-                      title="Онлайн формат для отправки ученику (с синим штампом и печатью)"
+                      title="Онлайн формат для отправки ученику в Telegram/WhatsApp (с синим штампом и печатью)"
                       className={`px-6 py-3 rounded-xl font-bold text-white transition-all transform hover:scale-[1.02] flex items-center gap-2 text-sm ${
                         isGeneratingCertPdf || !certStudentName.trim()
                           ? "bg-slate-400 cursor-not-allowed"
@@ -1121,11 +1121,11 @@ export default function ManagerDashboard() {
                     >
                       {isGeneratingCertPdf ? (
                         <>
-                          <span className="animate-spin">↻</span> Сборка PDF...
+                          <span className="animate-spin">↻</span> Создание справки...
                         </>
                       ) : (
                         <>
-                          <span>📱</span> Онлайн выдача (со штампом и печатью)
+                          <span>📱</span> Выдать справку (онлайн с печатью)
                         </>
                       )}
                     </button>
