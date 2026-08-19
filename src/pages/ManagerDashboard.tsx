@@ -312,20 +312,12 @@ export default function ManagerDashboard() {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    try {
-      if (password === "study123" && email.includes("@")) {
-        setIsAuthenticated(true);
-        const SESSION_DURATION = 12 * 60 * 60 * 1000;
-        localStorage.setItem("managerSessionExpiry", (Date.now() + SESSION_DURATION).toString());
-        if (typeof fetchStudents !== "undefined") fetchStudents(); else if (typeof (window as any).fetchStudent !== "undefined") (window as any).fetchStudent();
-      } else {
-        throw new Error("Invalid");
-      }
-    } catch(err) {
+    if (password === "study123" && email.includes("@")) {
+      const SESSION_DURATION = 12 * 60 * 60 * 1000;
+      localStorage.setItem("managerSessionExpiry", (Date.now() + SESSION_DURATION).toString());
+      setIsAuthenticated(true);
+    } else {
       setError("Неверная почта или пароль / Invalid credentials");
-    } finally {
-      setLoading(false);
     }
   };
 
