@@ -1,3 +1,12 @@
+/**
+ * ВАЖНО: Если вы видите ошибку "Required permissions: https://www.googleapis.com/auth/documents",
+ * нажмите 1 раз "Выполнить" для функции authorizeScopes в редакторе Google Apps Script и разрешите доступ!
+ */
+function authorizeScopes() {
+  DriveApp.getRootFolder();
+  DocumentApp.create('Authorize_Scopes_Temp');
+}
+
 const SHEET_TESTS = "Результаты тестов";
 const SHEET_CRM = "CRM Менеджеров";
 const MACRO_MAP = {
