@@ -1034,9 +1034,24 @@ function safeSetValue(sheet, row, col, value) {
 }
 
 function doPost(e) {
+  var lock = null;
   try {
-    const data = JSON.parse(e.postData.contents);
+    // SAFE PARSE: protect against null/undefined postData
+    if (!e || !e.postData || !e.postData.contents) {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Empty request body" })).setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    var data;
+    try {
+      data = JSON.parse(e.postData.contents);
+    } catch (parseErr) {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Invalid JSON in request body" })).setMimeType(ContentService.MimeType.JSON);
+    }
+    
     const action = data.action;
+    if (!action) {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Missing action field" })).setMimeType(ContentService.MimeType.JSON);
+    }
     
     // Read-only actions should NOT block on script lock
     const readOnlyActions = [
@@ -1049,29 +1064,36 @@ function doPost(e) {
       "checkSuspendStatus"
     ];
     
-    let lock = null;
     if (!readOnlyActions.includes(action)) {
       lock = LockService.getScriptLock();
-      try { lock.waitLock(5000); } catch(errLock) { console.warn("Lock wait timeout for " + action); }
+      try { lock.waitLock(10000); } catch(errLock) { 
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Сервер занят, попробуйте через несколько секунд" })).setMimeType(ContentService.MimeType.JSON);
+      }
     }
     
     // Вставьте сюда тот же ключ, что и в VITE_GAS_API_KEY на Vercel
     const VALID_API_KEY = "GRAND_CIRCLE_SECURE_API_KEY_2026";
     
-    // Validate API Key for all actions except maybe some strictly public ones, 
-    // but since we proxy EVERYTHING through Vercel, everything must have the API key!
     if (data.apiKey !== VALID_API_KEY) {
       return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Unauthorized: Invalid API Key" })).setMimeType(ContentService.MimeType.JSON);
     }
     
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let testSheet = ss.getSheetByName(SHEET_TESTS);
-    let crmSheet = ss.getSheetByName(SHEET_CRM);
     
-    if (testSheet.getLastRow() === 0) {
-      testSheet.appendRow(["Дата", "ФИО Ученика", "Класс", "Русский язык", "Математика", "Логика", "Общий балл", "Уникальный ID теста", "Timestamp", "Читерство", "Short ID", "Ответы ученика (JSON)", "Английский язык"]);
+    // SAFE SHEET ACCESS: create sheets if they don't exist
+    var testSheet = ss.getSheetByName(SHEET_TESTS);
+    if (!testSheet) {
+      testSheet = ss.insertSheet(SHEET_TESTS);
+      testSheet.appendRow(["Дата", "ФИО Ученика", "Класс", "Русский язык", "Математика", "Логика", "Общий балл", "Уникальный ID теста", "Timestamp", "Читерство", "Short ID", "Ответы ученика (JSON)", "Английский язык", "Статус", "Диагностика (JSON)"]);
+    } else if (testSheet.getLastRow() === 0) {
+      testSheet.appendRow(["Дата", "ФИО Ученика", "Класс", "Русский язык", "Математика", "Логика", "Общий балл", "Уникальный ID теста", "Timestamp", "Читерство", "Short ID", "Ответы ученика (JSON)", "Английский язык", "Статус", "Диагностика (JSON)"]);
     }
-    if (crmSheet.getLastRow() === 0) {
+    
+    var crmSheet = ss.getSheetByName(SHEET_CRM);
+    if (!crmSheet) {
+      crmSheet = ss.insertSheet(SHEET_CRM);
+      crmSheet.appendRow(["Дата", "Менеджер", "ФИО Родителя", "Номер телефона", "ID Теста (ученика)", "Стадия работы", "Оплата до.инфо", "Взнос", "Общая стоимость", "Оплата -1-месяц", "К психологу?", "Вердикт", "Комментарий психолога", "Финальное решение", "Причина отказа", "Имя ребенка", "Русский", "Математика", "Логика", "Комментарий менеджера", "Английский"]);
+    } else if (crmSheet.getLastRow() === 0) {
       crmSheet.appendRow(["Дата", "Менеджер", "ФИО Родителя", "Номер телефона", "ID Теста (ученика)", "Стадия работы", "Оплата до.инфо", "Взнос", "Общая стоимость", "Оплата -1-месяц", "К психологу?", "Вердикт", "Комментарий психолога", "Финальное решение", "Причина отказа", "Имя ребенка", "Русский", "Математика", "Логика", "Комментарий менеджера", "Английский"]);
     }
     if (action === "registerStudent") {
@@ -1640,8 +1662,8 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({ success: true, pdfUrl })).setMimeType(ContentService.MimeType.JSON);
     }
 
-// Вставьте сюда ссылку или ID вашего шаблона Google Docs по умолчанию:
-const DEFAULT_GOOGLE_DOCS_TEMPLATE_ID = "1TC6nBUkHx9TItz_0kFuaowYVMoKIZGMGKttEvl30MvA";
+    // Вставьте сюда ссылку или ID вашего шаблона Google Docs по умолчанию:
+    var DEFAULT_GOOGLE_DOCS_TEMPLATE_ID = "1TC6nBUkHx9TItz_0kFuaowYVMoKIZGMGKttEvl30MvA";
 
     if (action === "getNextCertRefNumber") {
       let certSheet = ss.getSheetByName("Справки");
@@ -1864,7 +1886,8 @@ const DEFAULT_GOOGLE_DOCS_TEMPLATE_ID = "1TC6nBUkHx9TItz_0kFuaowYVMoKIZGMGKttEvl
 
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Unknown action" })).setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({ success: false, error: error.message })).setMimeType(ContentService.MimeType.JSON);
+    console.error("doPost unhandled error:", error);
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: String(error.message || error) })).setMimeType(ContentService.MimeType.JSON);
   } finally {
     if (lock) {
       try { lock.releaseLock(); } catch(e) {}
@@ -1872,10 +1895,7 @@ const DEFAULT_GOOGLE_DOCS_TEMPLATE_ID = "1TC6nBUkHx9TItz_0kFuaowYVMoKIZGMGKttEvl
   }
 }
 
-function doOptions(e) {
-  return ContentService.createTextOutput("").setMimeType(ContentService.MimeType.JSON).setHeaders({
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type"
-  });
+// doGet handles CORS preflight and health-check from browsers
+function doGet(e) {
+  return ContentService.createTextOutput(JSON.stringify({ status: "ok", message: "GAS is alive" })).setMimeType(ContentService.MimeType.JSON);
 }

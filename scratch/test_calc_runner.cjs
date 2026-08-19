@@ -1,3 +1,4 @@
+
 const SHEET_TESTS = "Результаты тестов";
 const SHEET_CRM = "CRM Менеджеров";
 // 1. Исправленный словарь макро-категорий (с поддержкой Орфоэпии, Лексики и Linking Words)
@@ -730,6 +731,18 @@ function normalizeString(str) {
   return s;
 }
 
+
+function getMacroCategory(topicText, subjectKey) {
+  if (!topicText) return "Основные навыки";
+  let map = MACRO_MAP[subjectKey] || [];
+  for (let item of map) {
+    if (item.keywords.some(kw => topicText.toLowerCase().includes(kw.toLowerCase()))) {
+      return item.macro;
+    }
+  }
+  return "Основные навыки";
+}
+
 function calculateScores(grade, answers) {
   const keys = ANSWER_KEYS[String(grade)];
   if (!keys) return { russian: 0, math: 0, logic: 0 };
@@ -746,6 +759,33 @@ function calculateScores(grade, answers) {
 
   let ru = 0, ma = 0, lo = 0, en = 0;
 
+  let diagnosticsRaw = {};
+  
+  function initPossible(subject, keyMap) {
+    Object.keys(keyMap).forEach(qId => {
+      let qData = keyMap[qId];
+      let topicText = qData.topic || "";
+      let macro = getMacroCategory(topicText, subject);
+      if (!diagnosticsRaw[macro]) diagnosticsRaw[macro] = { earned: 0, possible: 0, subject: subject };
+      diagnosticsRaw[macro].possible += (qData.pts || 1);
+    });
+  }
+  
+  function addEarned(subject, qId, keyMap) {
+    let qData = keyMap[qId];
+    let topicText = qData.topic || "";
+    let macro = getMacroCategory(topicText, subject);
+    if (diagnosticsRaw[macro]) {
+      diagnosticsRaw[macro].earned += (qData.pts || 1);
+    }
+  }
+
+  initPossible("russian", keys.russian || {});
+  initPossible("math", keys.math || {});
+  initPossible("logic", keys.logic || {});
+  initPossible("english", keys.english || {});
+
+
   
   if (answers && typeof answers === 'object') {
     Object.keys(keys.russian).forEach(qId => {
@@ -756,32 +796,32 @@ function calculateScores(grade, answers) {
         let parts = userAnsLower.split("|");
         let optChoice = parts[0] ? parts[0].trim() : "";
         let wordChoice = parts[1] ? parts[1].trim() : parts[0].trim();
-        if ((optChoice === "2" || parts.length === 1) && (wordChoice === "наличие" || wordChoice === "наличии")) ru += keys.russian[qId].pts;
+        if ((optChoice === "2" || parts.length === 1) && (wordChoice === "наличие" || wordChoice === "наличии")) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
       } else if (String(grade) === "11" && (qId === "ru_8_new" || qId === "russian_8")) {
         let parts = userAnsLower.split("|");
         let optChoice = parts[0] ? parts[0].trim() : "";
         let wordChoice = parts[1] ? parts[1].replace(/\s+/g, '').trim() : parts[0].replace(/\s+/g, '').trim();
-        if ((optChoice === "4" || parts.length === 1) && (wordChoice === "кверхутотчас" || wordChoice === "тотчаскверху")) ru += keys.russian[qId].pts;
+        if ((optChoice === "4" || parts.length === 1) && (wordChoice === "кверхутотчас" || wordChoice === "тотчаскверху")) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
       } else if (String(grade) === "10" && (qId === "ru_2_new" || qId === "russian_2")) {
         let parts = userAnsLower.split("|");
         let optChoice = parts[0] ? parts[0].trim() : "";
         let wordChoice = parts[1] ? parts[1].trim() : parts[0].trim();
-        if ((optChoice === "1" || parts.length === 1) && wordChoice === "лесной") ru += keys.russian[qId].pts;
+        if ((optChoice === "1" || parts.length === 1) && wordChoice === "лесной") ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
       } else if (String(grade) === "10" && (qId === "ru_8_new" || qId === "russian_8")) {
         let parts = userAnsLower.split("|");
         let optChoice = parts[0] ? parts[0].trim() : "";
         let wordChoice = parts[1] ? parts[1].replace(/\s+/g, '').trim() : parts[0].replace(/\s+/g, '').trim();
-        if ((optChoice === "5" || parts.length === 1) && (wordChoice === "такжепоэтому" || wordChoice === "поэтомутакже")) ru += keys.russian[qId].pts;
+        if ((optChoice === "5" || parts.length === 1) && (wordChoice === "такжепоэтому" || wordChoice === "поэтомутакже")) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
       } else if (qId === "ru_5_new") {
         try {
           let userObj = JSON.parse(userAnsStr);
           let val1 = String(userObj["input1"] || "").trim().toLowerCase();
           let val2 = String(userObj["input2"] || "").trim().toLowerCase();
-          if (val1 === "нн" && val2 === "н") ru += keys.russian[qId].pts;
+          if (val1 === "нн" && val2 === "н") ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
         } catch(e) {}
       } else if (qId === "ru_8_new" && String(grade) === "10") {
         let val = userAnsLower.replace(/\s+/g, "");
-        if (val === "такжепоэтому" || val === "поэтомутакже") ru += keys.russian[qId].pts;
+        if (val === "такжепоэтому" || val === "поэтомутакже") ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
       } else if (qId === "ru_7_new" && String(grade) === "7") {
         try {
           let userObj = JSON.parse(userAnsStr);
@@ -789,7 +829,7 @@ function calculateScores(grade, answers) {
           let isCorrect = true;
           for (let k in correctObj) { if (userObj[k] !== correctObj[k]) isCorrect = false; }
           for (let k in userObj) { if (userObj[k] !== correctObj[k]) isCorrect = false; }
-          if (isCorrect && Object.keys(correctObj).length > 0) ru += keys.russian[qId].pts;
+          if (isCorrect && Object.keys(correctObj).length > 0) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
         } catch(e) {}
       } else if ((qId === "russian_9" || qId === "russian_10" || qId === "ru_9" || qId === "ru_10" || qId === "ru_7_new") && keys.russian[qId].ans.startsWith("[")) {
         // These are clickable arrays — only parse as JSON if the key is a JSON array
@@ -799,17 +839,17 @@ function calculateScores(grade, answers) {
           if (Array.isArray(userArr) && Array.isArray(correctArr)) {
             userArr.sort();
             correctArr.sort();
-            if (userArr.join(",") === correctArr.join(",")) ru += keys.russian[qId].pts;
+            if (userArr.join(",") === correctArr.join(",")) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
           }
         } catch(e) {
           try {
             let cleanUser = userAnsStr.replace(/\s+/g, "").split(",").sort().join(",");
             let cleanCorrect = JSON.parse(keys.russian[qId].ans).sort().join(",");
-            if (cleanUser === cleanCorrect) ru += keys.russian[qId].pts;
+            if (cleanUser === cleanCorrect) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
           } catch(err) {}
         }
       } else {
-        if (normalizeString(userAnsStr) === normalizeString(keys.russian[qId].ans)) ru += keys.russian[qId].pts;
+        if (normalizeString(userAnsStr) === normalizeString(keys.russian[qId].ans)) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
       }
     });
     Object.keys(keys.math).forEach(qId => {
@@ -878,7 +918,7 @@ function calculateScores(grade, answers) {
       });
     }
   }
-  return { russian: ru, math: ma, logic: lo, english: en };
+  return { scores: { russian: ru, math: ma, logic: lo, english: en }, diagnosticsRaw };
 }
 
 function getTestByShortId(testSheet, shortId) {
@@ -1045,7 +1085,8 @@ function doPost(e) {
 
       let scores = { russian: 0, math: 0, logic: 0 };
       if (!cheated) {
-        scores = calculateScores(grade, answers);
+        let result = calculateScores(grade, answers);
+        scores = result.scores;
       }
       const totalScore = scores.russian + scores.math + scores.logic;
       
@@ -1101,7 +1142,8 @@ function doPost(e) {
       }
       
       if (!cheated) {
-        scores = calculateScores(grade, answers);
+        let result = calculateScores(grade, answers);
+        scores = result.scores;
       }
       
       // Update English score in testSheet (Column 13 - M)
@@ -1333,7 +1375,9 @@ function doPost(e) {
       let answersObj = {};
       try { answersObj = JSON.parse(student.answers || "{}"); } catch(e) {}
       
-      const newScores = calculateScores(student.grade, answersObj);
+      const result = calculateScores(student.grade, answersObj);
+      const newScores = result.scores;
+      const diagnosticsRaw = result.diagnosticsRaw;
       const totalScore = newScores.russian + newScores.math + newScores.logic;
       
       safeSetValue(testSheet, student.row, 4, newScores.russian);
@@ -1350,7 +1394,7 @@ function doPost(e) {
         safeSetValue(crmSheet, crmStudent.row, 21, newScores.english);
       }
       
-      return ContentService.createTextOutput(JSON.stringify({ success: true, scores: newScores })).setMimeType(ContentService.MimeType.JSON);
+      return ContentService.createTextOutput(JSON.stringify({ success: true, scores: newScores, diagnosticsRaw })).setMimeType(ContentService.MimeType.JSON);
     }
 
     if (action === "getAnswerComparison") {
@@ -1506,3 +1550,5 @@ function doOptions(e) {
     "Access-Control-Allow-Headers": "Content-Type"
   });
 }
+
+module.exports = { calculateScores, ANSWER_KEYS };

@@ -1,0 +1,201 @@
+725:  // Remove formatting braces and text
+726:  s = s.replace(/\\text/g, "").replace(/[{}]/g, "");
+727:  s = s.replace(/∪/g, "u");
+728:  // Greek letters
+729:  s = s.replace(/α/g, "alpha").replace(/\\alpha/g, "alpha");
+730:  return s;
+731:}
+732:
+733:
+734:function getMacroCategory(topicText, subjectKey) {
+735:  if (!topicText) return "Основные навыки";
+736:  let map = MACRO_MAP[subjectKey] || [];
+737:  for (let item of map) {
+738:    if (item.keywords.some(kw => topicText.toLowerCase().includes(kw.toLowerCase()))) {
+739:      return item.macro;
+740:    }
+741:  }
+742:  return "Основные навыки";
+743:}
+744:
+745:function calculateScores(grade, answers) {
+746:  const keys = ANSWER_KEYS[String(grade)];
+747:  if (!keys) return { russian: 0, math: 0, logic: 0 };
+748:  
+749:
+750:  // Если answers пришел в виде JSON-строки, парсим его в объект:
+751:  if (typeof answers === 'string') {
+752:    try { 
+753:      answers = JSON.parse(answers); 
+754:    } catch(e) { 
+755:      answers = {}; 
+756:    }
+757:  }
+758:
+759:  let ru = 0, ma = 0, lo = 0, en = 0;
+760:
+761:  let diagnosticsRaw = {};
+762:  
+763:  function initPossible(subject, keyMap) {
+764:    Object.keys(keyMap).forEach(qId => {
+765:      let qData = keyMap[qId];
+766:      let topicText = qData.topic || "";
+767:      let macro = getMacroCategory(topicText, subject);
+768:      if (!diagnosticsRaw[macro]) diagnosticsRaw[macro] = { earned: 0, possible: 0, subject: subject };
+769:      diagnosticsRaw[macro].possible += (qData.pts || 1);
+770:    });
+771:  }
+772:  
+773:  function addEarned(subject, qId, keyMap) {
+774:    let qData = keyMap[qId];
+775:    let topicText = qData.topic || "";
+776:    let macro = getMacroCategory(topicText, subject);
+777:    if (diagnosticsRaw[macro]) {
+778:      diagnosticsRaw[macro].earned += (qData.pts || 1);
+779:    }
+780:  }
+781:
+782:  initPossible("russian", keys.russian || {});
+783:  initPossible("math", keys.math || {});
+784:  initPossible("logic", keys.logic || {});
+785:  initPossible("english", keys.english || {});
+786:
+787:    Object.keys(keys.russian).forEach(qId => {
+788:      let userAnsStr = answers[qId] ? String(answers[qId]).trim() : "";
+789:      let userAnsLower = userAnsStr.toLowerCase();
+790:      
+791:      if (String(grade) === "11" && (qId === "ru_2_new" || qId === "russian_2")) {
+792:        let parts = userAnsLower.split("|");
+793:        let optChoice = parts[0] ? parts[0].trim() : "";
+794:        let wordChoice = parts[1] ? parts[1].trim() : parts[0].trim();
+795:        if ((optChoice === "2" || parts.length === 1) && (wordChoice === "наличие" || wordChoice === "наличии")) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
+796:      } else if (String(grade) === "11" && (qId === "ru_8_new" || qId === "russian_8")) {
+797:        let parts = userAnsLower.split("|");
+798:        let optChoice = parts[0] ? parts[0].trim() : "";
+799:        let wordChoice = parts[1] ? parts[1].replace(/\s+/g, '').trim() : parts[0].replace(/\s+/g, '').trim();
+800:        if ((optChoice === "4" || parts.length === 1) && (wordChoice === "кверхутотчас" || wordChoice === "тотчаскверху")) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
+801:      } else if (String(grade) === "10" && (qId === "ru_2_new" || qId === "russian_2")) {
+802:        let parts = userAnsLower.split("|");
+803:        let optChoice = parts[0] ? parts[0].trim() : "";
+804:        let wordChoice = parts[1] ? parts[1].trim() : parts[0].trim();
+805:        if ((optChoice === "1" || parts.length === 1) && wordChoice === "лесной") ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
+806:      } else if (String(grade) === "10" && (qId === "ru_8_new" || qId === "russian_8")) {
+807:        let parts = userAnsLower.split("|");
+808:        let optChoice = parts[0] ? parts[0].trim() : "";
+809:        let wordChoice = parts[1] ? parts[1].replace(/\s+/g, '').trim() : parts[0].replace(/\s+/g, '').trim();
+810:        if ((optChoice === "5" || parts.length === 1) && (wordChoice === "такжепоэтому" || wordChoice === "поэтомутакже")) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
+811:      } else if (qId === "ru_5_new") {
+812:        try {
+813:          let userObj = JSON.parse(userAnsStr);
+814:          let val1 = String(userObj["input1"] || "").trim().toLowerCase();
+815:          let val2 = String(userObj["input2"] || "").trim().toLowerCase();
+816:          if (val1 === "нн" && val2 === "н") ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
+817:        } catch(e) {}
+818:      } else if (qId === "ru_8_new" && String(grade) === "10") {
+819:        let val = userAnsLower.replace(/\s+/g, "");
+820:        if (val === "такжепоэтому" || val === "поэтомутакже") ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
+821:      } else if (qId === "ru_7_new" && String(grade) === "7") {
+822:        try {
+823:          let userObj = JSON.parse(userAnsStr);
+824:          let correctObj = JSON.parse(keys.russian[qId].ans);
+825:          let isCorrect = true;
+826:          for (let k in correctObj) { if (userObj[k] !== correctObj[k]) isCorrect = false; }
+827:          for (let k in userObj) { if (userObj[k] !== correctObj[k]) isCorrect = false; }
+828:          if (isCorrect && Object.keys(correctObj).length > 0) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
+829:        } catch(e) {}
+830:      } else if ((qId === "russian_9" || qId === "russian_10" || qId === "ru_9" || qId === "ru_10" || qId === "ru_7_new") && keys.russian[qId].ans.startsWith("[")) {
+831:        // These are clickable arrays — only parse as JSON if the key is a JSON array
+832:        try {
+833:          let userArr = Array.isArray(userAnsStr) ? userAnsStr : JSON.parse(userAnsStr);
+834:          let correctArr = JSON.parse(keys.russian[qId].ans);
+835:          if (Array.isArray(userArr) && Array.isArray(correctArr)) {
+836:            userArr.sort();
+837:            correctArr.sort();
+838:            if (userArr.join(",") === correctArr.join(",")) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
+839:          }
+840:        } catch(e) {
+841:          try {
+842:            let cleanUser = userAnsStr.replace(/\s+/g, "").split(",").sort().join(",");
+843:            let cleanCorrect = JSON.parse(keys.russian[qId].ans).sort().join(",");
+844:            if (cleanUser === cleanCorrect) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
+845:          } catch(err) {}
+846:        }
+847:      } else {
+848:        if (normalizeString(userAnsStr) === normalizeString(keys.russian[qId].ans)) ru += keys.russian[qId].pts; addEarned("russian", qId, keys.russian);
+849:      }
+850:    });
+851:    Object.keys(keys.math).forEach(qId => {
+852:      let userAns = answers[qId] ? String(answers[qId]) : "";
+853:      if (normalizeString(userAns) === normalizeString(keys.math[qId].ans)) ma += keys.math[qId].pts;
+854:    });
+855:    Object.keys(keys.logic).forEach(qId => {
+856:      let userAns = answers[qId] ? String(answers[qId]).trim() : "";
+857:      
+858:      if (qId === "logic_3") {
+859:        let ansArray;
+860:        try { ansArray = JSON.parse(userAns); } catch(e) { ansArray = []; }
+861:        if (!Array.isArray(ansArray)) ansArray = [];
+862:        let ansStr = ansArray.join(",").replace(/\s+/g, "").toLowerCase();
+863:        let val = userAns.replace(/\s+/g, "").toLowerCase();
+864:        
+865:        if (
+866:          val.includes("митя,толя,сеня,костя,юра") || 
+867:          val.includes("митя,толя,костя,сеня,юра") || 
+868:          val.includes("митя,сеня,толя,костя,юра") || 
+869:          val.includes("митя,костя,толя,сеня,юра") ||
+870:          ansStr.includes("митя,толя,сеня,костя,юра") || 
+871:          ansStr.includes("митя,толя,костя,сеня,юра") || 
+872:          ansStr.includes("митя,сеня,толя,костя,юра") || 
+873:          ansStr.includes("митя,костя,толя,сеня,юра")
+874:        ) {
+875:          lo += keys.logic[qId].pts;
+876:        }
+877:      } else if (qId === "logic_1" || qId === "logic_2" || qId === "logic_4") {
+878:        let userObj, correctObj;
+879:        try { 
+880:          userObj = JSON.parse(userAns); 
+881:          correctObj = JSON.parse(keys.logic[qId].ans);
+882:          let isCorrect = true;
+883:          if (!userObj || typeof userObj !== 'object') isCorrect = false;
+884:          if (isCorrect) {
+885:            for (let k in correctObj) {
+886:              if (userObj[k] !== correctObj[k]) isCorrect = false;
+887:            }
+888:            for (let k in userObj) {
+889:              if (userObj[k] !== correctObj[k]) isCorrect = false;
+890:            }
+891:          }
+892:          if (isCorrect && Object.keys(correctObj).length > 0) lo += keys.logic[qId].pts;
+893:        } catch(e) {}
+894:      } else {
+895:        if (normalizeString(userAns) === normalizeString(keys.logic[qId].ans)) lo += keys.logic[qId].pts;
+896:      }
+897:    });
+898:    if (keys.english) {
+899:      Object.keys(keys.english).forEach(qId => {
+900:        let userAns = answers[qId] ? String(answers[qId]).trim() : "";
+901:        try {
+902:          if (userAns.startsWith("[")) {
+903:            let arr = JSON.parse(userAns);
+904:            if (Array.isArray(arr)) {
+905:              userAns = arr.join(" ");
+906:            }
+907:          }
+908:        } catch(e) {}
+909:        
+910:        let correctAns = keys.english[qId].ans;
+911:        let normalizedUser = userAns.toLowerCase().replace(/[.,!?;]/g, "").replace(/\s+/g, " ");
+912:        let normalizedCorrect = correctAns.toLowerCase().replace(/[.,!?;]/g, "").replace(/\s+/g, " ");
+913:        if (normalizedUser === normalizedCorrect) en += keys.english[qId].pts;
+914:      });
+915:    }
+916:  }
+917:  return { scores: { russian: ru, math: ma, logic: lo, english: en }, diagnosticsRaw };
+918:}
+919:
+920:function getTestByShortId(testSheet, shortId) {
+921:  const data = testSheet.getDataRange().getValues();
+922:  for (let i = 1; i < data.length; i++) {
+923:    // shortId is in column 10 (index 10)
+924:    if (String(data[i][10]) === String(shortId)) {
+925:      return {

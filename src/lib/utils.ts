@@ -91,8 +91,8 @@ export function getCEFRLevel(grade: number, maxPoints: number, score: number) {
 const DIRECT_GAS_URL = import.meta.env.VITE_GAS_URL || "";
 
 export async function fetchGasAPI(url: string, payload: any, token: string = ""): Promise<any> {
-  let delay = 1000;
-  const MAX_RETRIES = 3;
+  let delay = 1500;
+  const MAX_RETRIES = 4;
   let attempt = 0;
   
   const fullPayload = { apiKey: "GRAND_CIRCLE_SECURE_API_KEY_2026", ...payload };
@@ -110,7 +110,7 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
         method: "POST",
         headers,
         body: JSON.stringify(fullPayload),
-        signal: AbortSignal.timeout(45000)
+        signal: AbortSignal.timeout(50000)
       });
       
       const text = await res.text();
@@ -121,18 +121,25 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
         throw new Error("Неверный формат ответа от сервера");
       }
       
-      if (res.status >= 500 || (data && data.success === false && String(data.error || "").includes("Google Apps Script временно не ответил"))) {
-        throw new Error(data.error || `Сервер временно занят (${res.status})`);
+      // Only retry on 503 (temporary unavailable) — NOT on application-level errors
+      if (res.status === 503 || (data && data.success === false && String(data.error || "").includes("Google Apps Script временно не ответил"))) {
+        throw new Error(data?.error || `Сервер временно занят (${res.status})`);
       }
       
+      // For any other status (200, 400, 401, etc.) return immediately — don't retry
       return data;
     } catch (e: any) {
-      console.warn(`[GAS] fetch failed on [${targetUrl}] (attempt ${attempt}/${MAX_RETRIES}), retrying...`, e);
-      if (attempt >= MAX_RETRIES) {
-        throw new Error("Сервер временно недоступен. Пожалуйста, попробуйте еще раз через пару секунд.");
+      // Don't retry on non-network errors (like AbortError from timeout IS retryable)
+      const isRetryable = e.name === 'AbortError' || e.name === 'TypeError' || String(e.message || "").includes("временно");
+      
+      if (!isRetryable || attempt >= MAX_RETRIES) {
+        console.error(`[GAS] fetch failed permanently (attempt ${attempt}/${MAX_RETRIES}):`, e.message);
+        throw new Error(e.message || "Сервер временно недоступен. Попробуйте еще раз.");
       }
+      
+      console.warn(`[GAS] fetch failed (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delay}ms...`, e.message);
       await new Promise(r => setTimeout(r, delay));
-      delay = Math.min(delay * 1.5, 4000);
+      delay = Math.min(delay * 1.5, 5000);
     }
   }
   throw new Error("Превышено количество попыток отправки.");
