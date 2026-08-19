@@ -236,12 +236,22 @@ export default function ManagerDashboard() {
     }
     
     let templateId = certDocTemplateId.trim();
+    if (templateId.indexOf("/d/") !== -1) {
+      const match = templateId.match(/\/d\/([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) templateId = match[1];
+    }
+
     if (!templateId) {
       const inputId = prompt(
-        "📄 Введите ID файла шаблона из Google Docs:\n(Ссылка на документ Google Docs выглядит так:\nhttps://docs.google.com/document/d/1ABC123XYZ.../edit\n\nСкопируйте набор букв и цифр между /d/ и /edit):"
+        "📄 Вставьте ссылку или ID шаблона из Google Docs:\n(Например: https://docs.google.com/document/d/1BxiMVs0XRA5nFMd.../edit)"
       );
       if (!inputId || !inputId.trim()) return;
-      templateId = inputId.trim();
+      let rawInput = inputId.trim();
+      if (rawInput.indexOf("/d/") !== -1) {
+        const match = rawInput.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        if (match && match[1]) rawInput = match[1];
+      }
+      templateId = rawInput;
       setCertDocTemplateId(templateId);
       localStorage.setItem("cert_google_docs_template_id", templateId);
     }
@@ -286,7 +296,18 @@ export default function ManagerDashboard() {
         const nextCount = String(updatedHistory.length + 1).padStart(3, '0');
         setCertRefNumber(`${yearShort}-${month}-${nextCount}`);
       } else {
-        alert("⚠️ Ошибка шаблона Google Docs: " + (res?.error || "Проверьте ID шаблона и права доступа в Google Диске."));
+        const errMsg = res?.error || "Проверьте ID шаблона и доступ к файлу на Google Диске.";
+        if (errMsg.includes("getFileById") || errMsg.includes("Unexpected error")) {
+          const resetChoice = confirm(
+            `⚠️ Не удалось открыть шаблон Google Docs (ID: ${templateId}).\n\nВозможные причины:\n1. Файл шаблона не расшарен («Все, у кого есть ссылка» -> «Просмотр»)\n2. Введен неверный ID файла.\n\nХотите сбросить и ввести ссылку на шаблон заново?`
+          );
+          if (resetChoice) {
+            setCertDocTemplateId("");
+            localStorage.removeItem("cert_google_docs_template_id");
+          }
+        } else {
+          alert("⚠️ Ошибка шаблона Google Docs: " + errMsg);
+        }
       }
     } catch(err: any) {
       console.error(err);

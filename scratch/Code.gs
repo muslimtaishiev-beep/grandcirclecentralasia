@@ -1619,10 +1619,20 @@ function doPost(e) {
 
     if (action === "generateCertificateFromDocs") {
       const { record, docTemplateId } = data;
-      const TEMPLATE_ID = docTemplateId || "1DEFAULT_DOC_TEMPLATE_ID_PLACEHOLDER";
+      let templateIdRaw = (docTemplateId || "").trim();
+      
+      // Clean and extract ID from full URL if user pasted full URL
+      if (templateIdRaw.indexOf("/d/") !== -1) {
+        const m = templateIdRaw.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        if (m && m[1]) templateIdRaw = m[1];
+      }
+      
+      if (!templateIdRaw) {
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Не указан ID файла шаблона Google Docs." })).setMimeType(ContentService.MimeType.JSON);
+      }
       
       try {
-        const templateFile = DriveApp.getFileById(TEMPLATE_ID);
+        const templateFile = DriveApp.getFileById(templateIdRaw);
         const fileName = `Справка_${(record.studentNameGenitive || record.studentName || "Ученика").replace(/\s+/g, '_')}_${(record.refNumber || '').replace(/[\/\s]/g, '_')}`;
         const copyFile = templateFile.makeCopy(fileName);
         const doc = DocumentApp.openById(copyFile.getId());
