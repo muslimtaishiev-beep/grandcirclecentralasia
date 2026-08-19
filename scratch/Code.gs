@@ -1043,6 +1043,7 @@ function doPost(e) {
       "getAllStudents",
       "getStudentByShortId",
       "getCertificateRegistry",
+      "getNextCertRefNumber",
       "getPsychologistStudent",
       "getAnswerComparison",
       "checkSuspendStatus"
@@ -1865,7 +1866,9 @@ const DEFAULT_GOOGLE_DOCS_TEMPLATE_ID = "1TC6nBUkHx9TItz_0kFuaowYVMoKIZGMGKttEvl
   } catch (error) {
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: error.message })).setMimeType(ContentService.MimeType.JSON);
   } finally {
-    lock.releaseLock();
+    if (lock) {
+      try { lock.releaseLock(); } catch(e) {}
+    }
   }
 }
 
