@@ -58,10 +58,10 @@ export default function ManagerDashboard() {
   const [certRefNumber, setCertRefNumber] = useState("");
   const [certDirectorName, setCertDirectorName] = useState("");
   const [certDocTemplateOnlineId, setCertDocTemplateOnlineId] = useState<string>(() => {
-    return localStorage.getItem("cert_template_id_online") || localStorage.getItem("cert_google_docs_template_id") || "1TC6nBUkHx9TItz_0kFuaowYVMoKIZGMGKttEvl30MvA";
+    return localStorage.getItem("cert_template_id_online") || "1TC6nBUkHx9TItz_0kFuaowYVMoKIZGMGKttEvl30MvA";
   });
   const [certDocTemplatePrintId, setCertDocTemplatePrintId] = useState<string>(() => {
-    return localStorage.getItem("cert_template_id_print") || localStorage.getItem("cert_google_docs_template_id") || "1TC6nBUkHx9TItz_0kFuaowYVMoKIZGMGKttEvl30MvA";
+    return localStorage.getItem("cert_template_id_print") || "1ryJR-wIlQomXX76-Bc4Q6BNgsUQRa4rqdLbXrg-nqvo";
   });
   const [isGeneratingCertPdf, setIsGeneratingCertPdf] = useState(false);
   const [certForExport, setCertForExport] = useState<any>(null);
