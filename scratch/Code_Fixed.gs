@@ -1363,18 +1363,13 @@ function doPost(e) {
       // Build testData map for quick cheating check and grade retrieval
       let testMap = {};
       for (let i = 1; i < testData.length; i++) {
-        
-        let rawStr = testData[i][14] || "{}";
-        let rawObj = {};
-        try { rawObj = JSON.parse(rawStr); } catch(e) {}
-        
+        const rawStr = testData[i][14];
         testMap[String(testData[i][10])] = {
           cheated: (testData[i][9] === "ДА"),
           grade: testData[i][2],
           status: testData[i][13],
-          diagnosticsRaw: rawObj
+          hasDiagnostics: Boolean(rawStr && rawStr.length > 5)
         };
-
       }
       
       let students = [];
@@ -1404,7 +1399,7 @@ function doPost(e) {
           cheated: testMap[sid] ? testMap[sid].cheated : false,
           grade: testMap[sid] ? String(testMap[sid].grade) : "",
           status: testMap[sid] ? String(testMap[sid].status) : "",
-          diagnosticsRaw: testMap[sid] ? testMap[sid].diagnosticsRaw : {}
+          hasDiagnostics: testMap[sid] ? testMap[sid].hasDiagnostics : false
         });
       }
       

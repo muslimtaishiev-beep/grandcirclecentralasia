@@ -57,8 +57,11 @@ export default function ManagerDashboard() {
   const [certPurpose, setCertPurpose] = useState("по месту требования");
   const [certRefNumber, setCertRefNumber] = useState("");
   const [certDirectorName, setCertDirectorName] = useState("");
-  const [certDocTemplateId, setCertDocTemplateId] = useState<string>(() => {
-    return localStorage.getItem("cert_google_docs_template_id") || "1TC6nBUkHx9TItz_0kFuaowYVMoKIZGMGKttEvl30MvA";
+  const [certDocTemplateOnlineId, setCertDocTemplateOnlineId] = useState<string>(() => {
+    return localStorage.getItem("cert_template_id_online") || localStorage.getItem("cert_google_docs_template_id") || "1TC6nBUkHx9TItz_0kFuaowYVMoKIZGMGKttEvl30MvA";
+  });
+  const [certDocTemplatePrintId, setCertDocTemplatePrintId] = useState<string>(() => {
+    return localStorage.getItem("cert_template_id_print") || localStorage.getItem("cert_google_docs_template_id") || "1TC6nBUkHx9TItz_0kFuaowYVMoKIZGMGKttEvl30MvA";
   });
   const [isGeneratingCertPdf, setIsGeneratingCertPdf] = useState(false);
   const [certForExport, setCertForExport] = useState<any>(null);
@@ -121,7 +124,7 @@ export default function ManagerDashboard() {
       return;
     }
     
-    let templateId = certDocTemplateId.trim();
+    let templateId = (formatType === "ONLINE" ? certDocTemplateOnlineId : certDocTemplatePrintId).trim();
     if (templateId.indexOf("/d/") !== -1) {
       const match = templateId.match(/\/d\/([a-zA-Z0-9_-]+)/);
       if (match && match[1]) templateId = match[1];
@@ -129,7 +132,9 @@ export default function ManagerDashboard() {
 
     if (!templateId) {
       const inputId = prompt(
-        "📄 Вставьте полную ссылку или ID шаблона из Google Docs:\n(Например: https://docs.google.com/document/d/1BxiMVs0XRA5nFMd.../edit)"
+        formatType === "ONLINE"
+          ? "📱 Вставьте ссылку или ID шаблона Google Docs ДЛЯ ОНЛАЙН ВЫДАЧИ (с печатями):"
+          : "🖨️ Вставьте ссылку или ID шаблона Google Docs ДЛЯ ПЕЧАТИ (без печатей):"
       );
       if (!inputId || !inputId.trim()) return;
       let rawInput = inputId.trim();
@@ -138,8 +143,13 @@ export default function ManagerDashboard() {
         if (match && match[1]) rawInput = match[1];
       }
       templateId = rawInput;
-      setCertDocTemplateId(templateId);
-      localStorage.setItem("cert_google_docs_template_id", templateId);
+      if (formatType === "ONLINE") {
+        setCertDocTemplateOnlineId(templateId);
+        localStorage.setItem("cert_template_id_online", templateId);
+      } else {
+        setCertDocTemplatePrintId(templateId);
+        localStorage.setItem("cert_template_id_print", templateId);
+      }
     }
 
     const record = {
@@ -238,8 +248,13 @@ export default function ManagerDashboard() {
               `⚠️ Не удалось открыть шаблон Google Docs (ID: ${templateId}).\n\nВозможные причины:\n1. Файл шаблона не расшарен («Все, у кого есть ссылка» -> «Просмотр»)\n2. Введен неверный ID файла.\n\nХотите ввести новую ссылку на шаблон?`
             );
             if (resetChoice) {
-              setCertDocTemplateId("");
-              localStorage.removeItem("cert_google_docs_template_id");
+              if (formatType === "ONLINE") {
+                setCertDocTemplateOnlineId("");
+                localStorage.removeItem("cert_template_id_online");
+              } else {
+                setCertDocTemplatePrintId("");
+                localStorage.removeItem("cert_template_id_print");
+              }
             }
           } else {
             alert("⚠️ Ошибка шаблона Google Docs: " + errMsg);
@@ -254,12 +269,26 @@ export default function ManagerDashboard() {
     }
   };
 
-  const generatePdf = (student: any) => {
-    if (!student.diagnosticsRaw || Object.keys(student.diagnosticsRaw).length === 0) {
-      alert("У данного ученика нет сохраненных данных аналитики.");
-      return;
+  const generatePdf = async (student: any) => {
+    let currentStudent = student;
+    if (!currentStudent.diagnosticsRaw || Object.keys(currentStudent.diagnosticsRaw).length === 0) {
+      setAnalyzingId(student.shortId);
+      try {
+        const data = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId: student.shortId }, "");
+        if (data && data.success && data.student && data.student.diagnosticsRaw) {
+          currentStudent = { ...student, diagnosticsRaw: data.student.diagnosticsRaw };
+        } else {
+          alert("У данного ученика нет сохраненных данных аналитики.");
+          setAnalyzingId(null);
+          return;
+        }
+      } catch (e: any) {
+        alert("Ошибка подгрузки аналитики: " + e.message);
+        setAnalyzingId(null);
+        return;
+      }
     }
-    setStudentForPdf(student);
+    setStudentForPdf(currentStudent);
     setAnalyzingId(student.shortId);
     
     // Give React time to render the DiagnosticReportPdf component with the student data
@@ -595,7 +624,7 @@ export default function ManagerDashboard() {
                       {s.managerName === "Не назначен" && (
                         <button onClick={() => navigate(`/manager/form?testId=${s.shortId}`)} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">Заполнить анкету</button>
                       )}
-                      {s.diagnosticsRaw && Object.keys(s.diagnosticsRaw).length > 0 && (
+                      {(s.hasDiagnostics || (s.diagnosticsRaw && Object.keys(s.diagnosticsRaw).length > 0)) && (
                         <div className="mt-2">
                           <button 
                             onClick={() => generatePdf(s)} 
@@ -1107,21 +1136,40 @@ export default function ManagerDashboard() {
                     <button
                       type="button"
                       onClick={() => {
-                        const newUrl = prompt("Вставьте ссылку или ID шаблона Google Docs:", certDocTemplateId);
+                        const newUrl = prompt("📱 Ссылка на шаблон ДЛЯ ОНЛАЙН ВЫДАЧИ (с печатями в файле):", certDocTemplateOnlineId);
                         if (newUrl !== null) {
                           let clean = newUrl.trim();
                           if (clean.indexOf("/d/") !== -1) {
                             const match = clean.match(/\/d\/([a-zA-Z0-9_-]+)/);
                             if (match && match[1]) clean = match[1];
                           }
-                          setCertDocTemplateId(clean);
-                          localStorage.setItem("cert_google_docs_template_id", clean);
-                          alert("✅ Ссылка на шаблон Google Docs сохранена!");
+                          setCertDocTemplateOnlineId(clean);
+                          localStorage.setItem("cert_template_id_online", clean);
+                          alert("✅ Ссылка на Онлайн-шаблон сохранена!");
                         }
                       }}
-                      className="px-3 py-3 text-xs text-blue-600 font-bold hover:underline"
+                      className="px-2 py-1 text-xs text-blue-600 font-bold hover:underline border border-blue-200 rounded-lg bg-blue-50"
                     >
-                      ⚙️ Изменить шаблон Google Docs
+                      ⚙️ Шаблон Онлайн (с печатью)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newUrl = prompt("🖨️ Ссылка на шаблон ДЛЯ ПЕЧАТИ НА БУМАГЕ (чистый бланк):", certDocTemplatePrintId);
+                        if (newUrl !== null) {
+                          let clean = newUrl.trim();
+                          if (clean.indexOf("/d/") !== -1) {
+                            const match = clean.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                            if (match && match[1]) clean = match[1];
+                          }
+                          setCertDocTemplatePrintId(clean);
+                          localStorage.setItem("cert_template_id_print", clean);
+                          alert("✅ Ссылка на Шаблон для печати сохранена!");
+                        }
+                      }}
+                      className="px-2 py-1 text-xs text-slate-600 font-bold hover:underline border border-slate-300 rounded-lg bg-slate-100"
+                    >
+                      ⚙️ Шаблон Печать (без печати)
                     </button>
                   </div>
 
