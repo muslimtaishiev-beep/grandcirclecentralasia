@@ -1035,6 +1035,17 @@ export default function ManagerDashboard() {
                       </div>
 
                       <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Дата рождения (например: 15.05.2012):</label>
+                        <input
+                          type="text"
+                          value={certDob}
+                          onChange={(e) => setCertDob(e.target.value)}
+                          placeholder="15.05.2012 или 2012"
+                          className="w-full border border-slate-300 rounded-xl p-3 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 text-slate-800 text-sm"
+                        />
+                      </div>
+
+                      <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-1">Исходящий № справки (ГГ-ММ-Номер):</label>
                         <input
                           type="text"
