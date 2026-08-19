@@ -1640,7 +1640,7 @@ function doPost(e) {
     }
 
 // Вставьте сюда ссылку или ID вашего шаблона Google Docs по умолчанию:
-const DEFAULT_GOOGLE_DOCS_TEMPLATE_ID = "";
+const DEFAULT_GOOGLE_DOCS_TEMPLATE_ID = "1TC6nBUkHx9TItz_0kFuaowYVMoKIZGMGKttEvl30MvA";
 
     if (action === "getNextCertRefNumber") {
       let certSheet = ss.getSheetByName("Справки");
