@@ -88,8 +88,6 @@ export function getCEFRLevel(grade: number, maxPoints: number, score: number) {
   };
 }
 
-const DIRECT_GAS_URL = import.meta.env.VITE_GAS_URL || "";
-
 export async function fetchGasAPI(url: string, payload: any, token: string = ""): Promise<any> {
   let delay = 1500;
   const MAX_RETRIES = 4;
@@ -99,14 +97,12 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
 
   while (attempt < MAX_RETRIES) {
     attempt++;
-    // Use proxy (/api/gas) on attempt 1, fallback to env DIRECT_GAS_URL on attempt 2+ if env is defined
-    const targetUrl = (attempt === 1 || !DIRECT_GAS_URL) ? url : DIRECT_GAS_URL;
 
     try {
       const headers: Record<string, string> = { "Content-Type": "text/plain;charset=utf-8" };
-      if (token && targetUrl === url) headers["Authorization"] = `Bearer ${token}`;
+      if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      const res = await fetch(targetUrl, {
+      const res = await fetch(url, {
         method: "POST",
         headers,
         body: JSON.stringify(fullPayload),
@@ -121,15 +117,14 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
         throw new Error("Неверный формат ответа от сервера");
       }
       
-      // Only retry on 503 (temporary unavailable) — NOT on application-level errors
-      if (res.status === 503 || (data && data.success === false && String(data.error || "").includes("Google Apps Script временно не ответил"))) {
+      // Only retry on 503 (temporary unavailable)
+      if (res.status === 503 || (data && data.success === false && String(data.error || "").includes("временно"))) {
         throw new Error(data?.error || `Сервер временно занят (${res.status})`);
       }
       
       // For any other status (200, 400, 401, etc.) return immediately — don't retry
       return data;
     } catch (e: any) {
-      // Don't retry on non-network errors (like AbortError from timeout IS retryable)
       const isRetryable = e.name === 'AbortError' || e.name === 'TypeError' || String(e.message || "").includes("временно");
       
       if (!isRetryable || attempt >= MAX_RETRIES) {
