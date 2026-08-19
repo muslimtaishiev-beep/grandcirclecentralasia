@@ -1748,13 +1748,22 @@ function doPost(e) {
         const stampFormattedText = `Общество с ограниченной ответственностью\n«Академия будущих лидеров»\nИНН 03004202510435\n\n№ ${record.refNumber || '26-08-001'}\n«${dayStr}» ${monthStr} 20${yearStr}г.ж.\nг. Бишкек ш.`;
 
         // Format placeholders
+        const dobFormatted = record.dob ? (String(record.dob).includes("г.р") ? String(record.dob) : `, ${record.dob} г.р.`) : "";
+        const rawDobOnly = record.dob ? String(record.dob).replace(/,?\s*г\.?р\.?/gi, "").trim() : "";
+
         body.replaceText("\\{\\{STUDENT_NAME\\}\\}", record.studentNameGenitive || record.studentName || "");
         body.replaceText("\\{\\{GRADE\\}\\}", String(record.grade || "7"));
         body.replaceText("\\{\\{REF_NUMBER\\}\\}", record.refNumber || "");
         body.replaceText("\\{\\{DATE\\}\\}", record.issueDate || new Date().toLocaleDateString("ru-RU"));
         body.replaceText("\\{\\{PURPOSE\\}\\}", record.purpose || "по месту требования");
         body.replaceText("\\{\\{MANAGER_NAME\\}\\}", record.managerName || "Айгерим");
-        body.replaceText("\\{\\{DOB\\}\\}", record.dob ? `, ${record.dob} г.р.` : "");
+
+        // DOB placeholder variations
+        body.replaceText("\\{\\{DOB\\}\\}", dobFormatted);
+        body.replaceText("\\{\\{BIRTH_DATE\\}\\}", rawDobOnly);
+        body.replaceText("\\{\\{BIRTHDATE\\}\\}", rawDobOnly);
+        body.replaceText("\\{\\{DATE_OF_BIRTH\\}\\}", rawDobOnly);
+        body.replaceText("\\{\\{ДАТА_РОЖДЕНИЯ\\}\\}", rawDobOnly);
 
         if (isOnlineVersion) {
           // ONLINE FORMAT: Include stamp and seals

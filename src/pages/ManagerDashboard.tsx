@@ -112,7 +112,7 @@ export default function ManagerDashboard() {
       setCertStudentName(rawName);
       setCertStudentNameGenitive(toGenitiveCase(rawName));
       setCertGrade(String(found.grade || "7"));
-      if (found.dob) setCertDob(found.dob);
+      setCertDob(found.dob || found.birthDate || found.dateOfBirth || "");
     }
   };
 
