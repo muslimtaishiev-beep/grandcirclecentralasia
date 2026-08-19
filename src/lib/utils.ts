@@ -89,7 +89,7 @@ export function getCEFRLevel(grade: number, maxPoints: number, score: number) {
 }
 
 export async function fetchGasAPI(url: string, payload: any, token: string = ""): Promise<any> {
-  let delay = 2000;
+  let delay = 1500;
   const MAX_RETRIES = 4;
   let attempt = 0;
   
@@ -103,7 +103,7 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
         method: "POST",
         headers,
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(45000) // 45 second timeout — GAS cold starts can take 30s+
+        signal: AbortSignal.timeout(55000) // 55 second timeout — allows GAS cold starts & Doc PDF creation to finish
       });
       
       const text = await res.text();
@@ -111,21 +111,21 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
       try {
         data = JSON.parse(text);
       } catch (err) {
-        throw new Error("Invalid JSON response from server");
+        throw new Error("Неверный формат ответа от сервера");
       }
       
       if (res.status >= 500) {
-        throw new Error(data.error || `Server Error ${res.status}`);
+        throw new Error(data.error || `Сервер временно занят (${res.status})`);
       }
       
       return data;
     } catch (e: any) {
       console.warn(`[GAS] fetch failed (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delay}ms...`, e);
       if (attempt >= MAX_RETRIES) {
-        throw new Error("Сервер временно недоступен. Ваши ответы сохранены локально. Попробуйте позже.");
+        throw new Error("Сервер временно недоступен или прогревается. Пожалуйста, повторите попытку через 5 секунд.");
       }
       await new Promise(r => setTimeout(r, delay));
-      delay = Math.min(delay * 1.5, 10000); // max 10s delay between retries
+      delay = Math.min(delay * 1.5, 5000);
     }
   }
   throw new Error("Превышено количество попыток отправки.");

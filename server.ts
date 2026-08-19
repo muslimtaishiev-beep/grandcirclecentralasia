@@ -304,7 +304,7 @@ app.post("/api/gas", async (req, res) => {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(14000) // 14 seconds timeout to stay within Vercel's serverless limit
+        signal: AbortSignal.timeout(50000) // 50 seconds timeout for Google Apps Script cold starts and Google Docs PDF exports
       });
       
       rawText = await fetchRes.text();
