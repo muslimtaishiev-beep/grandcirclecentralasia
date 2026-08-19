@@ -88,22 +88,29 @@ export function getCEFRLevel(grade: number, maxPoints: number, score: number) {
   };
 }
 
+const FALLBACK_DIRECT_GAS_URL = import.meta.env.VITE_GAS_URL || "https://script.google.com/macros/s/AKfycbymI1U53npCYIscbcWG-0Cflkop2u7KocPvXY_yUSjJlDscQ8FkoYDXOTh2uNlpQHPr/exec";
+
 export async function fetchGasAPI(url: string, payload: any, token: string = ""): Promise<any> {
-  let delay = 1500;
-  const MAX_RETRIES = 4;
+  let delay = 1000;
+  const MAX_RETRIES = 3;
   let attempt = 0;
   
+  const fullPayload = { apiKey: "GRAND_CIRCLE_SECURE_API_KEY_2026", ...payload };
+
   while (attempt < MAX_RETRIES) {
     attempt++;
-    try {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
+    // On attempt 1 try Vercel proxy (/api/gas), on attempts 2+ fallback directly to Google Script URL
+    const targetUrl = (attempt === 1) ? url : FALLBACK_DIRECT_GAS_URL;
 
-      const res = await fetch(url, {
+    try {
+      const headers: Record<string, string> = { "Content-Type": "text/plain;charset=utf-8" };
+      if (token && targetUrl === url) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(targetUrl, {
         method: "POST",
         headers,
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(55000) // 55 second timeout — allows GAS cold starts & Doc PDF creation to finish
+        body: JSON.stringify(fullPayload),
+        signal: AbortSignal.timeout(45000)
       });
       
       const text = await res.text();
@@ -114,18 +121,18 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
         throw new Error("Неверный формат ответа от сервера");
       }
       
-      if (res.status >= 500) {
+      if (res.status >= 500 || (data && data.success === false && String(data.error || "").includes("Google Apps Script временно не ответил"))) {
         throw new Error(data.error || `Сервер временно занят (${res.status})`);
       }
       
       return data;
     } catch (e: any) {
-      console.warn(`[GAS] fetch failed (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delay}ms...`, e);
+      console.warn(`[GAS] fetch failed on [${targetUrl}] (attempt ${attempt}/${MAX_RETRIES}), retrying...`, e);
       if (attempt >= MAX_RETRIES) {
-        throw new Error("Сервер временно недоступен или прогревается. Пожалуйста, повторите попытку через 5 секунд.");
+        throw new Error("Сервер временно недоступен. Пожалуйста, попробуйте еще раз через пару секунд.");
       }
       await new Promise(r => setTimeout(r, delay));
-      delay = Math.min(delay * 1.5, 5000);
+      delay = Math.min(delay * 1.5, 4000);
     }
   }
   throw new Error("Превышено количество попыток отправки.");
