@@ -1025,12 +1025,25 @@ function safeSetValue(sheet, row, col, value) {
 }
 
 function doPost(e) {
-  const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(5000);
-    
     const data = JSON.parse(e.postData.contents);
     const action = data.action;
+    
+    // Read-only actions should NOT block on script lock
+    const readOnlyActions = [
+      "getAllStudents",
+      "getStudentByShortId",
+      "getCertificateRegistry",
+      "getPsychologistStudent",
+      "getAnswerComparison",
+      "checkSuspendStatus"
+    ];
+    
+    let lock = null;
+    if (!readOnlyActions.includes(action)) {
+      lock = LockService.getScriptLock();
+      try { lock.waitLock(5000); } catch(errLock) { console.warn("Lock wait timeout for " + action); }
+    }
     
     // Вставьте сюда тот же ключ, что и в VITE_GAS_API_KEY на Vercel
     const VALID_API_KEY = "GRAND_CIRCLE_SECURE_API_KEY_2026";

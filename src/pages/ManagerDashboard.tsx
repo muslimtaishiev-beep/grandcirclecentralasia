@@ -988,11 +988,14 @@ export default function ManagerDashboard() {
                         className="w-full border border-blue-200 rounded-xl p-3 bg-white text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
                       >
                         <option value="MANUAL">✍️ [+ Ввести данные вручную / Сторонний ученик]</option>
-                        {Array.isArray(students) && students.filter(s => s && (s.childName || s.studentName)).map((s, idx) => (
-                          <option key={idx} value={s.shortId}>
-                            🎓 {s.childName || s.studentName} ({s.grade || '?'} класс, ID: {s.shortId})
-                          </option>
-                        ))}
+                        {Array.isArray(students) && students.map((s, idx) => {
+                          const displayName = s.childName || s.studentName || s.name || `Ученик (${s.shortId || 'Без ID'})`;
+                          return (
+                            <option key={idx} value={s.shortId || idx}>
+                              🎓 {displayName} ({s.grade || '?'} класс, ID: {s.shortId || 'N/A'})
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
 
