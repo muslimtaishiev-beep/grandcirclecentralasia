@@ -174,22 +174,43 @@ export default function ManagerDashboard() {
       if (res && res.success && res.pdfUrl) {
         // Auto-download PDF to computer
         try {
-          // Convert Google Drive URL to direct download link
-          let downloadUrl = res.pdfUrl;
-          const fileIdMatch = downloadUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
-          if (fileIdMatch && fileIdMatch[1]) {
-            downloadUrl = `https://drive.google.com/uc?export=download&id=${fileIdMatch[1]}`;
-          }
+          const filename = `Справка_${(record.studentNameGenitive || record.studentName || "").replace(/\s+/g, '_')}_№${record.refNumber.replace(/[\/\s]/g, '_')}.pdf`;
           
-          const link = document.createElement('a');
-          link.href = downloadUrl;
-          link.download = `Справка_${(record.studentNameGenitive || record.studentName || "").replace(/\s+/g, '_')}_${record.refNumber.replace(/[\\/\\s]/g, '_')}.pdf`;
-          link.target = '_blank';
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
+          if (res.pdfBase64) {
+            // Direct Base64 Blob download
+            const byteCharacters = atob(res.pdfBase64);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+              byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: 'application/pdf' });
+            
+            const blobUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+          } else {
+            // Fallback Google Drive link download
+            let downloadUrl = res.pdfUrl;
+            const fileIdMatch = downloadUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+            if (fileIdMatch && fileIdMatch[1]) {
+              downloadUrl = `https://drive.google.com/uc?export=download&id=${fileIdMatch[1]}`;
+            }
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = filename;
+            link.target = '_blank';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }
         } catch (dlErr) {
-          // Fallback: just open in new tab
+          console.error("Direct download error, opening Drive link:", dlErr);
           window.open(res.pdfUrl, "_blank");
         }
         

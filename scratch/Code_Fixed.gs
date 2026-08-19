@@ -1784,11 +1784,42 @@ function doPost(e) {
           body.replaceText("\\{\\{SIGNATURE\\}\\}", "");
         }
 
+        // УБРАТЬ ЖЁЛТЫЙ ФОН: очищаем все фоновые выделения после замены плейсхолдеров
+        var numChildren = body.getNumChildren();
+        for (var c = 0; c < numChildren; c++) {
+          var child = body.getChild(c);
+          if (child.getType() === DocumentApp.ElementType.PARAGRAPH || child.getType() === DocumentApp.ElementType.LIST_ITEM) {
+            var text = child.editAsText();
+            if (text && text.getText().length > 0) {
+              text.setBackgroundColor(null); // убираем фон у всего текста в параграфе
+            }
+          } else if (child.getType() === DocumentApp.ElementType.TABLE) {
+            var table = child.asTable();
+            for (var r = 0; r < table.getNumRows(); r++) {
+              for (var cl = 0; cl < table.getRow(r).getNumCells(); cl++) {
+                var cell = table.getRow(r).getCell(cl);
+                for (var p = 0; p < cell.getNumChildren(); p++) {
+                  var cellChild = cell.getChild(p);
+                  if (cellChild.getType() === DocumentApp.ElementType.PARAGRAPH || cellChild.getType() === DocumentApp.ElementType.LIST_ITEM) {
+                    var cellText = cellChild.editAsText();
+                    if (cellText && cellText.getText().length > 0) {
+                      cellText.setBackgroundColor(null);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
         doc.saveAndClose();
 
         // Convert to PDF
         const pdfBlob = copyFile.getAs("application/pdf");
-        pdfBlob.setName(`${fileName}.pdf`);
+        pdfBlob.setName(fileName + ".pdf");
+
+        // Encode PDF as base64 for direct browser download
+        var pdfBase64 = Utilities.base64Encode(pdfBlob.getBytes());
 
         // Save PDF to Drive folder
         const FOLDER_NAME = "Справки Академии Будущих Лидеров";
@@ -1817,6 +1848,7 @@ function doPost(e) {
         return ContentService.createTextOutput(JSON.stringify({
           success: true,
           pdfUrl,
+          pdfBase64,
           message: isOnlineVersion ? "Онлайн справка сформирована!" : "Справка для печати на бумаге сформирована!"
         })).setMimeType(ContentService.MimeType.JSON);
       } catch (err) {
