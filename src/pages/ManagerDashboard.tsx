@@ -70,49 +70,29 @@ export default function ManagerDashboard() {
     } catch(e) { return []; }
   });
 
-  // Sync certificate registry from Google Sheets on modal open
+  const fetchNextCertRefNumber = async () => {
+    try {
+      const res = await fetchGasAPI("/api/gas", { action: "getNextCertRefNumber" }, "");
+      if (res && res.success && res.nextRefNumber) {
+        setCertRefNumber(res.nextRefNumber);
+      }
+    } catch(e) {}
+  };
+
+  // Sync certificate registry and next ref number from Google Sheets on modal open
   useEffect(() => {
     if (isCertModalOpen) {
+      fetchNextCertRefNumber();
       fetchGasAPI("/api/gas", { action: "getCertificateRegistry" }, "")
         .then((data) => {
           if (data && data.success && Array.isArray(data.certificates)) {
             setCertHistory(data.certificates);
             localStorage.setItem("school_certificates_history", JSON.stringify(data.certificates));
-            
-            // Calculate next sequential ref number based on remote records
-            const now = new Date();
-            const yearShort = String(now.getFullYear()).slice(-2); // e.g. "26"
-            const month = String(now.getMonth() + 1).padStart(2, '0'); // e.g. "08"
-            const prefix = `${yearShort}-${month}-`;
-
-            let maxNum = 0;
-            data.certificates.forEach((c: any) => {
-              if (c.refNumber && String(c.refNumber).startsWith(prefix)) {
-                const numPart = parseInt(String(c.refNumber).replace(prefix, ''), 10);
-                if (!isNaN(numPart) && numPart > maxNum) {
-                  maxNum = numPart;
-                }
-              }
-            });
-
-            const nextCountStr = String(maxNum + 1).padStart(3, '0');
-            setCertRefNumber(`${prefix}${nextCountStr}`);
           }
         })
         .catch(() => {});
     }
   }, [isCertModalOpen]);
-
-  // Auto-generate outgoing Ref Number in format YY-MM-XXX fallback
-  useEffect(() => {
-    if (!certRefNumber) {
-      const now = new Date();
-      const yearShort = String(now.getFullYear()).slice(-2);
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const count = String(certHistory.length + 1).padStart(3, '0');
-      setCertRefNumber(`${yearShort}-${month}-${count}`);
-    }
-  }, [certHistory.length]);
 
   const handleStudentSelectForCert = (id: string) => {
     setSelectedStudentForCert(id);
@@ -133,103 +113,9 @@ export default function ManagerDashboard() {
     }
   };
 
-  const handleDownloadCertPdf = (certDataOverride?: any) => {
-    const certToRender = certDataOverride || {
-      refNumber: certRefNumber,
-      managerName: certManagerName,
-      issueDate: new Date().toLocaleDateString('ru-RU'),
-      studentNameGenitive: certStudentNameGenitive || certStudentName,
-      dob: certDob,
-      grade: certGrade,
-      purpose: certPurpose,
-      directorName: certDirectorName
-    };
 
-    if (!certToRender.studentNameGenitive.trim()) {
-      alert("Введите ФИО ученика в дательном падеже (Кому?)!");
-      return;
-    }
 
-    if (!certDataOverride) {
-      const confirmMsg = `Проверьте данные перед формированием:\n\n• Выдал менеджер: ${certToRender.managerName}\n• Исходящий №: ${certToRender.refNumber}\n• ФИО (в дательном падеже): ${certToRender.studentNameGenitive}\n• Класс: ${certToRender.grade}\n\nВсё верно? Нажмите OK для печати/скачивания или Отмена для редактирования.`;
-      if (!confirm(confirmMsg)) return;
-    }
-
-    setCertForExport(certToRender);
-    setIsGeneratingCertPdf(true);
-
-    setTimeout(() => {
-      const element = document.getElementById("pdf-school-certificate");
-      if (element) {
-        const opt = {
-          margin: 0,
-          filename: `Справка_${certToRender.studentNameGenitive.replace(/\s+/g, '_')}_${certToRender.refNumber.replace(/[\/\s]/g, '_')}.pdf`,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-        };
-        const worker = html2pdf().set(opt).from(element);
-        
-        // 1. Save PDF locally for user
-        worker.save();
-
-        // 2. Export base64 to upload to Google Drive
-        worker.outputPdf('datauristring').then((dataUri: string) => {
-          if (!certDataOverride) {
-            const newEntry = {
-              id: 'cert_' + Date.now(),
-              refNumber: certToRender.refNumber,
-              managerName: certToRender.managerName,
-              studentName: certStudentName || certToRender.studentNameGenitive,
-              studentNameGenitive: certToRender.studentNameGenitive,
-              grade: certToRender.grade,
-              dob: certToRender.dob,
-              purpose: certToRender.purpose,
-              issueDate: certToRender.issueDate,
-              timestamp: Date.now()
-            };
-
-            // Sync with backend Google Sheets & upload PDF file to Google Drive
-            fetchGasAPI("/api/gas", {
-              action: "uploadCertificatePdf",
-              record: newEntry,
-              base64Data: dataUri
-            }, "").then((res) => {
-              if (res && res.pdfUrl) {
-                newEntry.pdfUrl = res.pdfUrl;
-              }
-              const updatedHistory = [newEntry, ...certHistory];
-              setCertHistory(updatedHistory);
-              localStorage.setItem("school_certificates_history", JSON.stringify(updatedHistory));
-            }).catch(() => {
-              const updatedHistory = [newEntry, ...certHistory];
-              setCertHistory(updatedHistory);
-              localStorage.setItem("school_certificates_history", JSON.stringify(updatedHistory));
-            });
-
-            // Advance next ref number YY-MM-XXX
-            const now = new Date();
-            const yearShort = String(now.getFullYear()).slice(-2);
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const nextCount = String(certHistory.length + 2).padStart(3, '0');
-            setCertRefNumber(`${yearShort}-${month}-${nextCount}`);
-          }
-
-          setIsGeneratingCertPdf(false);
-          setCertForExport(null);
-          alert("Справка успешно сформирована, скачана и сохранена в Google Диск!");
-        }).catch(() => {
-          setIsGeneratingCertPdf(false);
-          setCertForExport(null);
-        });
-      } else {
-        setIsGeneratingCertPdf(false);
-        setCertForExport(null);
-      }
-    }, 400);
-  };
-
-  const handleGenerateFromGoogleDocs = async () => {
+  const handleGenerateFromGoogleDocs = async (formatType: "ONLINE" | "PRINT") => {
     if (!certStudentNameGenitive.trim()) {
       alert("Введите ФИО ученика в дательном падеже (Кому?)!");
       return;
@@ -243,7 +129,7 @@ export default function ManagerDashboard() {
 
     if (!templateId) {
       const inputId = prompt(
-        "📄 Вставьте ссылку или ID шаблона из Google Docs:\n(Например: https://docs.google.com/document/d/1BxiMVs0XRA5nFMd.../edit)"
+        "📄 Вставьте полную ссылку или ID шаблона из Google Docs:\n(Например: https://docs.google.com/document/d/1BxiMVs0XRA5nFMd.../edit)"
       );
       if (!inputId || !inputId.trim()) return;
       let rawInput = inputId.trim();
@@ -257,7 +143,7 @@ export default function ManagerDashboard() {
     }
 
     const record = {
-      refNumber: certRefNumber,
+      refNumber: certRefNumber.trim(),
       managerName: certManagerName,
       issueDate: new Date().toLocaleDateString('ru-RU'),
       studentName: certStudentName,
@@ -268,7 +154,11 @@ export default function ManagerDashboard() {
       timestamp: Date.now()
     };
 
-    const confirmMsg = `Формирование справки через Google Docs Шаблон:\n\n• Выдал менеджер: ${record.managerName}\n• Исходящий №: ${record.refNumber}\n• ФИО (в дат. падеже): ${record.studentNameGenitive}\n• Класс: ${record.grade}\n\nСформировать PDF из Google Docs?`;
+    const typeTitle = formatType === "PRINT" 
+      ? "🖨️ ДЛЯ ПЕЧАТИ НА БУМАГЕ (без цифровых штампов)" 
+      : "📱 ЭЛЕКТРОННАЯ / ОНЛАЙН ВЫДАЧА (с синим штампом и печатью)";
+
+    const confirmMsg = `Подтверждение выписки справки:\n\n• Формат: ${typeTitle}\n• Исходящий №: ${record.refNumber}\n• Выдал менеджер: ${record.managerName}\n• ФИО (в дат. падеже): ${record.studentNameGenitive}\n• Класс: ${record.grade}\n\nСформировать PDF документ в Google Docs?`;
     if (!confirm(confirmMsg)) return;
 
     setIsGeneratingCertPdf(true);
@@ -277,36 +167,43 @@ export default function ManagerDashboard() {
       const res = await fetchGasAPI("/api/gas", {
         action: "generateCertificateFromDocs",
         docTemplateId: templateId,
+        formatType,
         record
       }, "");
 
       if (res && res.success && res.pdfUrl) {
         window.open(res.pdfUrl, "_blank");
-        alert("🎉 Справка успешно создана по вашему шаблону Google Docs и сохранена в Google Диск!");
         
-        const newEntry = { id: 'cert_' + record.timestamp, ...record, pdfUrl: res.pdfUrl };
+        if (formatType === "PRINT") {
+          alert(`📄 Справка для печати сформирована!\n\nИсходящий номер для журнала: № ${record.refNumber}\n\nПечати и угловой штамп проставляются физически на распечатанном листе бумаге.`);
+        } else {
+          alert(`🎉 Онлайн-справка с синим векторным штампом успешно создана и сохранена в Google Диск!\n\nИсходящий номер: № ${record.refNumber}`);
+        }
+        
+        const newEntry = { id: 'cert_' + record.timestamp, ...record, pdfUrl: res.pdfUrl, formatType };
         const updatedHistory = [newEntry, ...certHistory];
         setCertHistory(updatedHistory);
         localStorage.setItem("school_certificates_history", JSON.stringify(updatedHistory));
 
-        // Advance next ref number YY-MM-XXX
-        const now = new Date();
-        const yearShort = String(now.getFullYear()).slice(-2);
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const nextCount = String(updatedHistory.length + 1).padStart(3, '0');
-        setCertRefNumber(`${yearShort}-${month}-${nextCount}`);
+        // Fetch exact next unique ref number from Google Sheets
+        fetchNextCertRefNumber();
       } else {
-        const errMsg = res?.error || "Проверьте ID шаблона и доступ к файлу на Google Диске.";
-        if (errMsg.includes("getFileById") || errMsg.includes("Unexpected error")) {
-          const resetChoice = confirm(
-            `⚠️ Не удалось открыть шаблон Google Docs (ID: ${templateId}).\n\nВозможные причины:\n1. Файл шаблона не расшарен («Все, у кого есть ссылка» -> «Просмотр»)\n2. Введен неверный ID файла.\n\nХотите сбросить и ввести ссылку на шаблон заново?`
-          );
-          if (resetChoice) {
-            setCertDocTemplateId("");
-            localStorage.removeItem("cert_google_docs_template_id");
-          }
+        if (res?.isDuplicateRef) {
+          alert(`❌ ОШИБКА ДУБЛИКАТА НОМЕРА:\n${res.error}\n\nПожалуйста, обновите исходящий номер на следующий свободной.`);
+          fetchNextCertRefNumber();
         } else {
-          alert("⚠️ Ошибка шаблона Google Docs: " + errMsg);
+          const errMsg = res?.error || "Проверьте ссылку на шаблон и доступ к файлу в Google Диске.";
+          if (errMsg.includes("getFileById") || errMsg.includes("Unexpected error")) {
+            const resetChoice = confirm(
+              `⚠️ Не удалось открыть шаблон Google Docs (ID: ${templateId}).\n\nВозможные причины:\n1. Файл шаблона не расшарен («Все, у кого есть ссылка» -> «Просмотр»)\n2. Введен неверный ID файла.\n\nХотите ввести новую ссылку на шаблон?`
+            );
+            if (resetChoice) {
+              setCertDocTemplateId("");
+              localStorage.removeItem("cert_google_docs_template_id");
+            }
+          } else {
+            alert("⚠️ Ошибка шаблона Google Docs: " + errMsg);
+          }
         }
       }
     } catch(err: any) {
@@ -1168,43 +1065,67 @@ export default function ManagerDashboard() {
               {/* Modal Footer */}
               {certTab === "GENERATE" && (
                 <div className="p-6 border-t border-slate-200 bg-slate-50 flex flex-wrap justify-between items-center gap-4">
-                  <button
-                    onClick={() => setIsCertModalOpen(false)}
-                    className="px-5 py-3 bg-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-300 transition text-sm"
-                  >
-                    Отмена
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setIsCertModalOpen(false)}
+                      className="px-5 py-3 bg-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-300 transition text-sm"
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newUrl = prompt("Вставьте ссылку или ID шаблона Google Docs:", certDocTemplateId);
+                        if (newUrl !== null) {
+                          let clean = newUrl.trim();
+                          if (clean.indexOf("/d/") !== -1) {
+                            const match = clean.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                            if (match && match[1]) clean = match[1];
+                          }
+                          setCertDocTemplateId(clean);
+                          localStorage.setItem("cert_google_docs_template_id", clean);
+                          alert("✅ Ссылка на шаблон Google Docs сохранена!");
+                        }
+                      }}
+                      className="px-3 py-3 text-xs text-blue-600 font-bold hover:underline"
+                    >
+                      ⚙️ Изменить шаблон Google Docs
+                    </button>
+                  </div>
 
                   <div className="flex flex-wrap items-center gap-3">
+                    {/* 1. PRINT VERSION BUTTON */}
                     <button
-                      onClick={handleGenerateFromGoogleDocs}
+                      onClick={() => handleGenerateFromGoogleDocs("PRINT")}
                       disabled={isGeneratingCertPdf || !certStudentName.trim()}
-                      title="Использовать шаблон Google Docs для 100% идеальной печати"
+                      title="Формат для печати на бумаге (без электронных печатей и штампов)"
+                      className={`px-5 py-3 rounded-xl font-bold text-slate-800 transition-all border border-slate-300 flex items-center gap-2 text-sm ${
+                        isGeneratingCertPdf || !certStudentName.trim()
+                          ? "bg-slate-200 cursor-not-allowed text-slate-400"
+                          : "bg-white hover:bg-slate-100 shadow-sm hover:shadow"
+                      }`}
+                    >
+                      <span>🖨️</span> Для печати на бумаге (без печати)
+                    </button>
+
+                    {/* 2. ONLINE VERSION BUTTON */}
+                    <button
+                      onClick={() => handleGenerateFromGoogleDocs("ONLINE")}
+                      disabled={isGeneratingCertPdf || !certStudentName.trim()}
+                      title="Онлайн формат для отправки ученику (с синим штампом и печатью)"
                       className={`px-6 py-3 rounded-xl font-bold text-white transition-all transform hover:scale-[1.02] flex items-center gap-2 text-sm ${
                         isGeneratingCertPdf || !certStudentName.trim()
                           ? "bg-slate-400 cursor-not-allowed"
-                          : "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-md"
-                      }`}
-                    >
-                      <span>📄</span> Сформировать через Google Docs Шаблон
-                    </button>
-
-                    <button
-                      onClick={() => handleDownloadCertPdf()}
-                      disabled={isGeneratingCertPdf || !certStudentName.trim()}
-                      className={`px-6 py-3 rounded-xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center gap-2 text-sm ${
-                        isGeneratingCertPdf || !certStudentName.trim()
-                          ? "bg-slate-400 cursor-not-allowed"
-                          : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-md"
+                          : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-md hover:shadow-lg"
                       }`}
                     >
                       {isGeneratingCertPdf ? (
                         <>
-                          <span className="animate-spin">↻</span> Формирование...
+                          <span className="animate-spin">↻</span> Сборка PDF...
                         </>
                       ) : (
                         <>
-                          <span>📥</span> Скачать быструю PDF справку
+                          <span>📱</span> Онлайн выдача (со штампом и печатью)
                         </>
                       )}
                     </button>

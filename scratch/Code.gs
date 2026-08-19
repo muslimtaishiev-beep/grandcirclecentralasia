@@ -1639,9 +1639,45 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({ success: true, pdfUrl })).setMimeType(ContentService.MimeType.JSON);
     }
 
+// Вставьте сюда ссылку или ID вашего шаблона Google Docs по умолчанию:
+const DEFAULT_GOOGLE_DOCS_TEMPLATE_ID = "";
+
+    if (action === "getNextCertRefNumber") {
+      let certSheet = ss.getSheetByName("Справки");
+      let existingNumbers = new Set();
+      if (certSheet && certSheet.getLastRow() > 1) {
+        const rows = certSheet.getDataRange().getValues();
+        for (let i = 1; i < rows.length; i++) {
+          const num = String(rows[i][1] || "").trim();
+          if (num) existingNumbers.add(num);
+        }
+      }
+      
+      const now = new Date();
+      const yearShort = String(now.getFullYear()).slice(-2);
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const prefix = `${yearShort}-${month}-`;
+      
+      let count = existingNumbers.size + 1;
+      let nextRefNumber = `${prefix}${String(count).padStart(3, '0')}`;
+      
+      while (existingNumbers.has(nextRefNumber)) {
+        count++;
+        nextRefNumber = `${prefix}${String(count).padStart(3, '0')}`;
+      }
+      
+      return ContentService.createTextOutput(JSON.stringify({
+        success: true,
+        nextRefNumber,
+        totalIssued: existingNumbers.size
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     if (action === "generateCertificateFromDocs") {
-      const { record, docTemplateId } = data;
-      let templateIdRaw = (docTemplateId || "").trim();
+      const { record, docTemplateId, formatType } = data;
+      const isOnlineVersion = (formatType === "ONLINE" || data.isOnlineVersion !== false);
+      
+      let templateIdRaw = (docTemplateId || DEFAULT_GOOGLE_DOCS_TEMPLATE_ID || "").trim();
       
       // Clean and extract ID from full URL if user pasted full URL
       if (templateIdRaw.indexOf("/d/") !== -1) {
@@ -1650,12 +1686,37 @@ function doPost(e) {
       }
       
       if (!templateIdRaw) {
-        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Не указан ID файла шаблона Google Docs." })).setMimeType(ContentService.MimeType.JSON);
+        return ContentService.createTextOutput(JSON.stringify({
+          success: false,
+          error: "Не указана ссылка или ID файла шаблона Google Docs. Вставьте ссылку на шаблон!"
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+
+      // Check for Ref Number uniqueness in Справки sheet!
+      let certSheet = ss.getSheetByName("Справки");
+      if (!certSheet) {
+        certSheet = ss.insertSheet("Справки");
+        certSheet.appendRow(["Дата выдачи", "Исходящий №", "Менеджер", "ФИО Ученика (в дат. падеже)", "Класс", "Дата рождения", "Цель выдачи", "Timestamp", "Ссылка на PDF"]);
+      }
+
+      const reqRefNum = String(record.refNumber || "").trim();
+      if (reqRefNum && certSheet.getLastRow() > 1) {
+        const existingData = certSheet.getDataRange().getValues();
+        for (let i = 1; i < existingData.length; i++) {
+          const existingNum = String(existingData[i][1] || "").trim();
+          if (existingNum && existingNum === reqRefNum) {
+            return ContentService.createTextOutput(JSON.stringify({
+              success: false,
+              isDuplicateRef: true,
+              error: `Исходящий номер № ${reqRefNum} уже есть в системе! Повторная выписка под тем же номером запрещена.`
+            })).setMimeType(ContentService.MimeType.JSON);
+          }
+        }
       }
       
       try {
         const templateFile = DriveApp.getFileById(templateIdRaw);
-        const fileName = `Справка_${(record.studentNameGenitive || record.studentName || "Ученика").replace(/\s+/g, '_')}_${(record.refNumber || '').replace(/[\/\s]/g, '_')}`;
+        const fileName = `Справка_${(record.studentNameGenitive || record.studentName || "Ученика").replace(/\s+/g, '_')}_${(record.refNumber || '').replace(/[\/\s]/g, '_')}_${isOnlineVersion ? 'ОНЛАЙН' : 'ПЕЧАТЬ'}`;
         const copyFile = templateFile.makeCopy(fileName);
         const doc = DocumentApp.openById(copyFile.getId());
         const body = doc.getBody();
@@ -1676,15 +1737,28 @@ function doPost(e) {
         body.replaceText("\\{\\{PURPOSE\\}\\}", record.purpose || "по месту требования");
         body.replaceText("\\{\\{MANAGER_NAME\\}\\}", record.managerName || "Айгерим");
         body.replaceText("\\{\\{DOB\\}\\}", record.dob ? `, ${record.dob} г.р.` : "");
-        body.replaceText("\\{\\{STAMP\\}\\}", stampFormattedText);
-        body.replaceText("\\{\\{FULL_STAMP_TEXT\\}\\}", stampFormattedText);
 
-        // Highlight stamp text in official stamp blue color #0C3674
-        let foundStamp = body.findText("Общество с ограниченной ответственностью");
-        while (foundStamp) {
-          const textElement = foundStamp.getElement().asText();
-          textElement.setForegroundColor("#0C3674");
-          foundStamp = body.findText("Общество с ограниченной ответственностью", foundStamp);
+        if (isOnlineVersion) {
+          // ONLINE FORMAT: Include stamp and seals
+          body.replaceText("\\{\\{STAMP\\}\\}", stampFormattedText);
+          body.replaceText("\\{\\{FULL_STAMP_TEXT\\}\\}", stampFormattedText);
+          body.replaceText("\\{\\{SEAL\\}\\}", "[Печать и подпись заверены ЭЦП / М.П.]");
+          body.replaceText("\\{\\{WET_SEAL\\}\\}", "[Печать и подпись заверены ЭЦП / М.П.]");
+
+          // Highlight stamp text in official stamp blue color #0C3674
+          let foundStamp = body.findText("Общество с ограниченной ответственностью");
+          while (foundStamp) {
+            const textElement = foundStamp.getElement().asText();
+            textElement.setForegroundColor("#0C3674");
+            foundStamp = body.findText("Общество с ограниченной ответственностью", foundStamp);
+          }
+        } else {
+          // PRINT FORMAT: Remove stamps and seals for physical printing
+          body.replaceText("\\{\\{STAMP\\}\\}", "");
+          body.replaceText("\\{\\{FULL_STAMP_TEXT\\}\\}", "");
+          body.replaceText("\\{\\{SEAL\\}\\}", "");
+          body.replaceText("\\{\\{WET_SEAL\\}\\}", "");
+          body.replaceText("\\{\\{SIGNATURE\\}\\}", "");
         }
 
         doc.saveAndClose();
@@ -1705,11 +1779,6 @@ function doPost(e) {
         copyFile.setTrashed(true);
 
         // Save to Certificate Registry Sheet
-        let certSheet = ss.getSheetByName("Справки");
-        if (!certSheet) {
-          certSheet = ss.insertSheet("Справки");
-          certSheet.appendRow(["Дата выдачи", "Исходящий №", "Менеджер", "ФИО Ученика (в дат. падеже)", "Класс", "Дата рождения", "Цель выдачи", "Timestamp", "Ссылка на PDF"]);
-        }
         certSheet.appendRow([
           record.issueDate || new Date().toLocaleDateString("ru-RU"),
           record.refNumber,
@@ -1722,7 +1791,11 @@ function doPost(e) {
           pdfUrl
         ]);
 
-        return ContentService.createTextOutput(JSON.stringify({ success: true, pdfUrl, message: "Справка успешно сформирована в Google Docs!" })).setMimeType(ContentService.MimeType.JSON);
+        return ContentService.createTextOutput(JSON.stringify({
+          success: true,
+          pdfUrl,
+          message: isOnlineVersion ? "Онлайн справка сформирована!" : "Справка для печати на бумаге сформирована!"
+        })).setMimeType(ContentService.MimeType.JSON);
       } catch (err) {
         return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Ошибка Google Docs Шаблона: " + err.message })).setMimeType(ContentService.MimeType.JSON);
       }

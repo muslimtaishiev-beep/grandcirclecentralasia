@@ -277,6 +277,7 @@ app.post("/api/gas", async (req, res) => {
       "getAnswerComparison",
       "saveCertificateRecord",
       "getCertificateRegistry",
+      "getNextCertRefNumber",
       "generateCertificateFromDocs",
       "uploadCertificatePdf"
     ];
