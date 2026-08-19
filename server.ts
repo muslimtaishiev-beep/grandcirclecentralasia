@@ -239,8 +239,12 @@ app.get("/api/public/check-retake/:shortId", async (req, res) => {
 
 // GAS Proxy
 app.post("/api/gas", async (req, res) => {
-  const gasUrl = process.env.VITE_GAS_URL || "https://script.google.com/macros/s/AKfycbymI1U53npCYIscbcWG-0Cflkop2u7KocPvXY_yUSjJlDscQ8FkoYDXOTh2uNlpQHPr/exec";
+  const gasUrl = process.env.VITE_GAS_URL || process.env.GAS_URL;
   const gasApiKey = "GRAND_CIRCLE_SECURE_API_KEY_2026";
+  
+  if (!gasUrl) {
+    return res.status(500).json({ error: "VITE_GAS_URL environment variable is not configured." });
+  }
 
   try {
     const payload = { ...req.body, apiKey: gasApiKey };

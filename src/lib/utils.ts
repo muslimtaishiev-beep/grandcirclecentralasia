@@ -88,7 +88,7 @@ export function getCEFRLevel(grade: number, maxPoints: number, score: number) {
   };
 }
 
-const FALLBACK_DIRECT_GAS_URL = import.meta.env.VITE_GAS_URL || "https://script.google.com/macros/s/AKfycbymI1U53npCYIscbcWG-0Cflkop2u7KocPvXY_yUSjJlDscQ8FkoYDXOTh2uNlpQHPr/exec";
+const DIRECT_GAS_URL = import.meta.env.VITE_GAS_URL || "";
 
 export async function fetchGasAPI(url: string, payload: any, token: string = ""): Promise<any> {
   let delay = 1000;
@@ -99,8 +99,8 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
 
   while (attempt < MAX_RETRIES) {
     attempt++;
-    // On attempt 1 try Vercel proxy (/api/gas), on attempts 2+ fallback directly to Google Script URL
-    const targetUrl = (attempt === 1) ? url : FALLBACK_DIRECT_GAS_URL;
+    // Use proxy (/api/gas) on attempt 1, fallback to env DIRECT_GAS_URL on attempt 2+ if env is defined
+    const targetUrl = (attempt === 1 || !DIRECT_GAS_URL) ? url : DIRECT_GAS_URL;
 
     try {
       const headers: Record<string, string> = { "Content-Type": "text/plain;charset=utf-8" };
