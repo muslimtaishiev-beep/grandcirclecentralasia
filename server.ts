@@ -210,7 +210,7 @@ function resolveTenantFromApiKey(apiKey: string | undefined): TenantContext {
 
 app.post("/api/proctoring/upload-evidence", async (req, res) => {
   const gasUrl = process.env.VITE_GAS_URL || process.env.GAS_URL;
-  const gasApiKey = process.env.GAS_API_KEY;
+  const gasApiKey = process.env.GAS_API_KEY || process.env.VITE_GAS_API_KEY;
 
   if (!gasApiKey) {
     return res.status(500).json({ success: false, error: "Server misconfiguration: GAS_API_KEY not set" });
@@ -355,7 +355,7 @@ app.get("/api/public/check-retake/:shortId", async (req, res) => {
         const gasRes = await fetch(process.env.VITE_GAS_URL, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({ action: "checkSuspendStatus", shortId: req.params.shortId, apiKey: process.env.GAS_API_KEY }),
+          body: JSON.stringify({ action: "checkSuspendStatus", shortId: req.params.shortId, apiKey: process.env.GAS_API_KEY || process.env.VITE_GAS_API_KEY }),
           signal: AbortSignal.timeout(5000)
         });
         const gasData = await gasRes.json();
@@ -375,7 +375,7 @@ app.get("/api/public/check-retake/:shortId", async (req, res) => {
 app.post("/api/gas", async (req, res) => {
   const gasUrl = process.env.VITE_GAS_URL || process.env.GAS_URL;
   // ⚠️ SECURITY: API key injected server-side ONLY — never from client body
-  const gasApiKey = process.env.GAS_API_KEY;
+  const gasApiKey = process.env.GAS_API_KEY || process.env.VITE_GAS_API_KEY;
   if (!gasApiKey) {
     console.error("[SECURITY] GAS_API_KEY env var is not set! Refusing proxy.");
     return res.status(500).json({ error: "Server misconfiguration: GAS_API_KEY not set" });
