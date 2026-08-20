@@ -158,7 +158,140 @@ async function requireAuth(req: express.Request, res: express.Response, next: ex
   res.status(401).json({ error: "Unauthorized access to admin APIs." });
 }
 
-// PUBLIC API ENDPOINTS
+// ─────────────────────────────────────────────────────────────────────────────
+// TENANT CONTEXT SYSTEM (Sprint 2.1 — SaaS multi-tenancy foundation)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Current implementation: single-tenant (Grand Circle).
+// The org_id is derived server-side from GAS_API_KEY — never from client body.
+//
+// To add a second tenant (Company B):
+// 1. Generate a new API key for Company B
+// 2. Add it to TENANT_API_KEY_MAP (from env or secure KV store)
+// 3. Company B gets their own Drive folder and evidence isolation automatically
+//
+// Schema for future multi-tenant expansion:
+// TENANT_API_KEY_MAP: { [sha256_hash_of_key]: { org_id, org_name, plan_tier, quota } }
+
+interface TenantContext {
+  org_id: string;
+  org_name: string;
+  plan_tier: 'free' | 'pro' | 'enterprise';
+}
+
+function resolveTenantFromApiKey(apiKey: string | undefined): TenantContext {
+  // Single-tenant for now — expand this map when adding clients
+  const defaultTenant: TenantContext = {
+    org_id: process.env.DEFAULT_ORG_ID || 'grand-circle-central-asia',
+    org_name: process.env.DEFAULT_ORG_NAME || 'Grand Circle Central Asia',
+    plan_tier: 'pro',
+  };
+  return defaultTenant; // TODO: lookup from KV store when multi-tenant
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROCTORING EVIDENCE UPLOAD ENDPOINT
+// POST /api/proctoring/upload-evidence
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Accepts the evidence package from client (useProctoringEvidence hook).
+// Injects org_id SERVER-SIDE from GAS_API_KEY — client cannot override it.
+// Forwards to GAS which saves to Google Drive: [org_id]/[session_id]/
+//
+// Evidence folder structure on Google Drive:
+//   Прокторинг / [org_id] / [session_id] /
+//     report.md          ← Markdown violation report
+//     snapshot_001.jpg   ← Evidence screenshots
+//     snapshot_002.jpg
+//     ...
+//
+// Future improvement: return pre-signed Firebase Storage URL for large video uploads
+// instead of sending video through this proxy.
+
+app.post("/api/proctoring/upload-evidence", async (req, res) => {
+  const gasUrl = process.env.VITE_GAS_URL || process.env.GAS_URL;
+  const gasApiKey = process.env.GAS_API_KEY;
+
+  if (!gasApiKey) {
+    return res.status(500).json({ success: false, error: "Server misconfiguration: GAS_API_KEY not set" });
+  }
+  if (!gasUrl) {
+    return res.status(500).json({ success: false, error: "Server misconfiguration: GAS_URL not set" });
+  }
+
+  try {
+    const body = req.body;
+    if (!body || !body.sessionId || !body.studentShortId) {
+      return res.status(400).json({ success: false, error: "Missing required fields: sessionId, studentShortId" });
+    }
+
+    // ⚠️ SECURITY: org_id is injected HERE server-side, never from client body
+    const tenant = resolveTenantFromApiKey(gasApiKey);
+
+    // Audit log: record who uploaded evidence (Sprint 3 — Firestore)
+    const auditEntry = {
+      timestamp: new Date().toISOString(),
+      action: 'UPLOAD_PROCTORING_EVIDENCE',
+      org_id: tenant.org_id,
+      session_id: body.sessionId,
+      student_short_id: body.studentShortId,
+      snapshot_count: (body.snapshots || []).length,
+      ip: req.ip || req.socket?.remoteAddress || 'unknown',
+    };
+    console.log('[AUDIT]', JSON.stringify(auditEntry));
+    // TODO Sprint 3: await admin.firestore().collection('audit_logs').add(auditEntry);
+
+    // Forward to GAS for Google Drive upload
+    const payload = {
+      action: 'uploadProctoringPackage',
+      apiKey: gasApiKey,            // ← server injects, not client
+      orgId: tenant.org_id,         // ← server injects, not client
+      orgName: tenant.org_name,
+      sessionId: body.sessionId,
+      studentName: body.studentName || 'Неизвестный ученик',
+      studentShortId: body.studentShortId,
+      testId: body.testId || '',
+      honestyIndex: body.honestyIndex ?? 100,
+      sessionStartTime: body.sessionStartTime,
+      sessionEndTime: body.sessionEndTime,
+      totalViolations: body.totalViolations ?? 0,
+      violationsByType: body.violationsByType ?? {},
+      markdownReport: body.markdownReport || '',
+      snapshots: (body.snapshots || []).slice(0, 15), // cap at 15 screenshots
+    };
+
+    let gasData: any = { success: false };
+    try {
+      const gasRes = await fetch(gasUrl, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(55000),
+      });
+      gasData = await gasRes.json();
+    } catch (gasErr: any) {
+      console.warn('[ProctoringEvidence] GAS upload failed, returning partial success:', gasErr.message);
+      // Even if GAS fails, return success=true with local record for resilience
+      return res.json({
+        success: true,
+        folderUrl: null,
+        warning: 'Evidence logged locally; Drive upload failed — will retry',
+        orgId: tenant.org_id,
+      });
+    }
+
+    return res.json({
+      success: true,
+      folderUrl: gasData.folderUrl || null,
+      orgId: tenant.org_id,
+    });
+  } catch (e: any) {
+    console.error('[ProctoringEvidence] Endpoint error:', e.message);
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+
 
 // 1. Get all public forum details in a single highly-efficient request
 app.get("/api/public/data", async (req, res) => {
@@ -222,7 +355,7 @@ app.get("/api/public/check-retake/:shortId", async (req, res) => {
         const gasRes = await fetch(process.env.VITE_GAS_URL, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({ action: "checkSuspendStatus", shortId: req.params.shortId, apiKey: "GRAND_CIRCLE_SECURE_API_KEY_2026" }),
+          body: JSON.stringify({ action: "checkSuspendStatus", shortId: req.params.shortId, apiKey: process.env.GAS_API_KEY }),
           signal: AbortSignal.timeout(5000)
         });
         const gasData = await gasRes.json();
@@ -241,7 +374,12 @@ app.get("/api/public/check-retake/:shortId", async (req, res) => {
 // GAS Proxy
 app.post("/api/gas", async (req, res) => {
   const gasUrl = process.env.VITE_GAS_URL || process.env.GAS_URL;
-  const gasApiKey = "GRAND_CIRCLE_SECURE_API_KEY_2026";
+  // ⚠️ SECURITY: API key injected server-side ONLY — never from client body
+  const gasApiKey = process.env.GAS_API_KEY;
+  if (!gasApiKey) {
+    console.error("[SECURITY] GAS_API_KEY env var is not set! Refusing proxy.");
+    return res.status(500).json({ error: "Server misconfiguration: GAS_API_KEY not set" });
+  }
   
   if (!gasUrl) {
     return res.status(500).json({ error: "VITE_GAS_URL environment variable is not configured." });

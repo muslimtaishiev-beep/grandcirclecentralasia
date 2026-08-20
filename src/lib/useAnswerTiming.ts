@@ -98,38 +98,20 @@ export function useAnswerTiming(): {
     const expectedTime = startData.expectedTimeSeconds;
     const ratio = expectedTime > 0 ? actualTime / expectedTime : 1;
 
-    let result: TimingResult;
-
-    if (actualTime < 0.15 * expectedTime) {
-      result = {
-        suspicious: true,
-        type: 'FAST_ANSWER',
-        severity: 'HIGH',
-        actualTime,
-        expectedTime,
-      };
-    } else if (actualTime < 0.30 * expectedTime) {
-      result = {
-        suspicious: true,
-        type: 'FAST_ANSWER',
-        severity: 'MEDIUM',
-        actualTime,
-        expectedTime,
-      };
-    } else {
-      result = {
-        suspicious: false,
-        actualTime,
-        expectedTime,
-      };
-    }
+    // \u2705 FAST_ANSWER detection is disabled by product decision.
+    // Timing data is still tracked for analytics purposes only.
+    const result: TimingResult = {
+      suspicious: false, // always false — fast-answer violations are turned off
+      actualTime,
+      expectedTime,
+    };
 
     const report: TimingReport = {
       questionId,
       expectedTime,
       actualTime,
       ratio,
-      suspicious: result.suspicious,
+      suspicious: false,
     };
 
     reportsRef.current.set(questionId, report);

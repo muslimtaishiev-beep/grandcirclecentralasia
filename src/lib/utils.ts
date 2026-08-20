@@ -92,8 +92,10 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
   let delay = 1500;
   const MAX_RETRIES = 4;
   let attempt = 0;
-  
-  const fullPayload = { apiKey: "GRAND_CIRCLE_SECURE_API_KEY_2026", ...payload };
+
+  // ⚠️ SECURITY: API key is NEVER sent from the client.
+  // The server proxy (server.ts /api/gas) injects GAS_API_KEY from process.env.
+  const fullPayload = { ...payload };
 
   while (attempt < MAX_RETRIES) {
     attempt++;

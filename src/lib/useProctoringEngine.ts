@@ -65,6 +65,35 @@ export interface ProctoringEvent {
   description: string;
 }
 
+// ── WARNING MESSAGE MAPPER ──
+// Maps event types to user-facing animated overlay messages.
+// Consumed by ProctoringWarningOverlay component.
+export interface WarningMessage {
+  title: string;
+  body: string;
+  icon: string;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH';
+}
+
+export const PROCTORING_WARNING_MESSAGES: Record<ProctoringEvent['type'], WarningMessage> = {
+  GAZE_LEFT:  { icon: '👁️', title: 'Смотрите в экран!', body: 'Отведение взгляда зафиксировано. Сосредоточьтесь на тесте.', severity: 'MEDIUM' },
+  GAZE_RIGHT: { icon: '👁️', title: 'Смотрите в экран!', body: 'Отведение взгляда зафиксировано. Сосредоточьтесь на тесте.', severity: 'MEDIUM' },
+  EXTRA_FACE: { icon: '👥', title: 'Посторонние в кадре!', body: 'Обнаружен посторонний человек. Проходите тест самостоятельно.', severity: 'HIGH' },
+  FACE_LOST:  { icon: '👤', title: 'Вернитесь в кадр!', body: 'Ваше лицо не обнаружено. Встаньте перед камерой.', severity: 'HIGH' },
+  HAND_BELOW: { icon: '✋', title: 'Поднимите руки!', body: 'Руки должны быть видны на столе во время теста.', severity: 'MEDIUM' },
+  SWIPE:      { icon: '👆', title: 'Не подсказывайте жестами!', body: 'Жесты руками зафиксированы. Сигнализирование ответов запрещено.', severity: 'HIGH' },
+  PHONE_DETECTED:    { icon: '📱', title: 'Уберите телефон!', body: 'Телефон обнаружен в кадре. Использование устройств запрещено.', severity: 'HIGH' },
+  BOOK_DETECTED:     { icon: '📖', title: 'Уберите конспект!', body: 'Книга или конспект обнаружены. Использование материалов запрещено.', severity: 'HIGH' },
+  SPEECH_CHEAT_DETECTED:   { icon: '🗣️', title: 'Не разговаривайте!', body: 'Речь зафиксирована. Разговоры и просьбы о помощи запрещены.', severity: 'HIGH' },
+  GESTURE_SIGNAL_DETECTED: { icon: '🖐', title: 'Не подсказывайте жестами!', body: 'Сигнал пальцами зафиксирован. Жестовые подсказки запрещены.', severity: 'HIGH' },
+  LIGHT_ANOMALY:     { icon: '💡', title: 'Уберите телефон!', body: 'Свечение от экрана устройства обнаружено снизу.', severity: 'MEDIUM' },
+  PASTE_DETECTED:    { icon: '📋', title: 'Вставка текста запрещена!', body: 'Обнаружена вставка текста из буфера обмена.', severity: 'HIGH' },
+  TAB_SWITCH:        { icon: '🔀', title: 'Вернитесь на страницу теста!', body: 'Смена вкладки или окна браузера зафиксирована.', severity: 'HIGH' },
+  // ✅ Lip reading is DISABLED — telemetry runs but never fires a user-visible warning
+  SILENT_LIP_SPEAKING_DETECTED: { icon: '👄', title: '', body: 'Нарушений не выявлено', severity: 'LOW' },
+  FAST_ANSWER: { icon: '⚡', title: '', body: '', severity: 'LOW' }, // disabled
+};
+
 // ── 1. DISTANCE-INDEPENDENT MAR (MOUTH ASPECT RATIO) VISEME CLASSIFIER ──
 function classifyMicroViseme(landmarks: { x: number; y: number; z: number }[]): {
   mar: number;
@@ -945,11 +974,9 @@ export function useProctoringEngine(
                             }));
 
                             if (semanticRes.probability >= 40 && Date.now() - lastSilentLipEvent.current > EVENT_COOLDOWN) {
-                              addEventRef.current({
-                                type: 'SILENT_LIP_SPEAKING_DETECTED',
-                                severity: semanticRes.probability >= 85 ? 'HIGH' : 'MEDIUM',
-                                description: `👄 Chaplin VSR Распознана речь с губ: "${vsrText}" [${semanticRes.intentCategory}] (${semanticRes.probability}%)`
-                              });
+                              // ✅ LIP READING EVENTS ARE DISABLED by product decision.
+                              // Telemetry (decodedLipWord, isSilentLipSpeaking) still updates for admin UI
+                              // but NO violation event is generated for the student or report.
                               lastSilentLipEvent.current = Date.now();
                             }
                             break;

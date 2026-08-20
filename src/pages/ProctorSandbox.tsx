@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 
 import { useProctoringEngine, ProctoringEvent } from "../lib/useProctoringEngine";
 import { useCompositeRecorder } from "../lib/useCompositeRecorder";
 import { useAnswerTiming } from "../lib/useAnswerTiming";
+import ProctoringWarningOverlay from "../components/ProctoringWarningOverlay";
 
 const ProctoringOverlay = lazy(() => import("../components/ProctoringOverlay"));
 
@@ -261,6 +262,12 @@ export default function ProctorSandbox() {
         className="fixed -top-[9999px] -left-[9999px] w-[640px] h-[480px] pointer-events-none opacity-0"
         playsInline
         muted
+      />
+
+      {/* ── PROCTORING WARNING OVERLAY (Student-facing animated alerts) ── */}
+      <ProctoringWarningOverlay
+        events={engine.events}
+        isActive={isSessionActive && mode === "student"}
       />
 
       {/* Proctoring Overlay renderer */}

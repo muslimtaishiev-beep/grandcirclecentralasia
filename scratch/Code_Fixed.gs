@@ -1920,7 +1920,136 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({ success: true, url: fileUrl })).setMimeType(ContentService.MimeType.JSON);
     }
 
+    if (action === "uploadProctoringPackage") {
+      // ── PROCTORING EVIDENCE PACKAGE UPLOAD TO GOOGLE DRIVE ──
+      //
+      // Folder structure (UUID-based to prevent cross-tenant guessing):
+      //   "Прокторинг" / [org_id] / [session_id] /
+      //     report.md
+      //     snapshot_001.jpg  ... snapshot_N.jpg
+      //
+      // org_id is injected by server.ts — never trusted from client body directly.
+      // (server.ts re-adds apiKey which was already validated above, and injects orgId)
+
+      const {
+        orgId,
+        orgName,
+        sessionId,
+        studentName,
+        studentShortId,
+        testId,
+        honestyIndex,
+        sessionStartTime,
+        sessionEndTime,
+        totalViolations,
+        violationsByType,
+        markdownReport,
+        snapshots
+      } = data;
+
+      if (!orgId || !sessionId || !studentShortId) {
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Missing orgId, sessionId or studentShortId" })).setMimeType(ContentService.MimeType.JSON);
+      }
+
+      try {
+        // 1. Get or create the root proctoring folder
+        const rootFolderName = "Прокторинг";
+        let rootFolder;
+        const rootFolders = DriveApp.getFoldersByName(rootFolderName);
+        if (rootFolders.hasNext()) {
+          rootFolder = rootFolders.next();
+        } else {
+          rootFolder = DriveApp.createFolder(rootFolderName);
+        }
+
+        // 2. Get or create org folder (by org_id — UUID-based, not org_name)
+        let orgFolder;
+        const orgFolders = rootFolder.getFoldersByName(orgId);
+        if (orgFolders.hasNext()) {
+          orgFolder = orgFolders.next();
+        } else {
+          orgFolder = rootFolder.createFolder(orgId);
+          // Store org name as a doc for human readability
+          orgFolder.createFile("org_name.txt", orgName || orgId, MimeType.PLAIN_TEXT);
+        }
+
+        // 3. Create session folder (session_id is UUID — unique per test session)
+        const sessionFolderName = sessionId;
+        let sessionFolder;
+        const sessionFolders = orgFolder.getFoldersByName(sessionFolderName);
+        if (sessionFolders.hasNext()) {
+          sessionFolder = sessionFolders.next();
+        } else {
+          sessionFolder = orgFolder.createFolder(sessionFolderName);
+        }
+
+        // 4. Save markdown report
+        const reportFilename = "report_" + studentShortId + ".md";
+        const existingReports = sessionFolder.getFilesByName(reportFilename);
+        if (existingReports.hasNext()) {
+          existingReports.next().setTrashed(true); // overwrite
+        }
+        sessionFolder.createFile(reportFilename, markdownReport || "# Отчёт недоступен", MimeType.PLAIN_TEXT);
+
+        // 5. Save snapshots (JPEG base64 → binary blob)
+        const snapshotArray = snapshots || [];
+        const savedSnapshotCount = 0;
+        for (let i = 0; i < Math.min(snapshotArray.length, 15); i++) {
+          const snap = snapshotArray[i];
+          if (!snap || !snap.jpegBase64) continue;
+          try {
+            const bytes = Utilities.base64Decode(snap.jpegBase64);
+            const blob = Utilities.newBlob(bytes, MimeType.JPEG);
+            const filename = "snapshot_" + String(i + 1).padStart(3, "0") + "_" + (snap.eventType || "event") + ".jpg";
+            blob.setName(filename);
+            sessionFolder.createFile(blob);
+          } catch (snapErr) {
+            console.warn("Failed to save snapshot " + i + ":", snapErr);
+          }
+        }
+
+        // 6. Save metadata JSON
+        const metadata = {
+          orgId: orgId,
+          orgName: orgName || orgId,
+          sessionId: sessionId,
+          studentName: studentName || "Неизвестный ученик",
+          studentShortId: studentShortId,
+          testId: testId || "",
+          honestyIndex: honestyIndex || 100,
+          totalViolations: totalViolations || 0,
+          violationsByType: violationsByType || {},
+          sessionStartTime: sessionStartTime,
+          sessionEndTime: sessionEndTime,
+          snapshotCount: snapshotArray.length,
+          uploadedAt: new Date().toISOString()
+        };
+        sessionFolder.createFile("metadata.json", JSON.stringify(metadata, null, 2), MimeType.PLAIN_TEXT);
+
+        // 7. Make session folder viewable by anyone with link (for manager dashboard)
+        // Note: This shares the folder link. For enterprise, restrict to org domain.
+        sessionFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        const folderUrl = sessionFolder.getUrl();
+
+        return ContentService.createTextOutput(JSON.stringify({
+          success: true,
+          folderUrl: folderUrl,
+          sessionId: sessionId,
+          orgId: orgId,
+          snapshotCount: snapshotArray.length
+        })).setMimeType(ContentService.MimeType.JSON);
+
+      } catch (driveErr) {
+        console.error("uploadProctoringPackage Drive error:", driveErr);
+        return ContentService.createTextOutput(JSON.stringify({
+          success: false,
+          error: "Drive upload failed: " + String(driveErr.message || driveErr)
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Unknown action" })).setMimeType(ContentService.MimeType.JSON);
+
   } catch (error) {
     console.error("doPost unhandled error:", error);
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: String(error.message || error) })).setMimeType(ContentService.MimeType.JSON);
