@@ -571,8 +571,8 @@ export default function ManagerDashboard() {
                     </td>
                     <td className="p-4 text-center">
                       <div className="flex flex-col items-center justify-center">
-                        <div className="relative w-12 h-8 overflow-hidden flex flex-col items-center justify-end">
-                          <svg className="absolute top-0 w-12 h-12" viewBox="0 0 48 48">
+                        <div className="relative w-14 h-8 overflow-hidden flex flex-col items-center justify-end">
+                          <svg className="absolute top-0 w-14 h-14" viewBox="0 0 48 48">
                             <path d="M 4 24 A 20 20 0 0 1 44 24" stroke="currentColor" strokeWidth="4" fill="transparent" className="text-gray-200" />
                             <path d="M 4 24 A 20 20 0 0 1 44 24" stroke="currentColor" strokeWidth="4" fill="transparent"
                               strokeDasharray="100"
@@ -581,11 +581,33 @@ export default function ManagerDashboard() {
                               className={percentage > 70 ? "text-green-500" : percentage > 40 ? "text-yellow-500" : "text-red-500"}
                             />
                           </svg>
-                          <div className="absolute bottom-0 text-sm font-bold z-10 leading-none mb-0.5">
-                            {totalScore}
+                          <div className="absolute bottom-0 text-xs font-bold z-10 leading-none mb-0.5 text-gray-800">
+                            {totalScore}/{maxScore}
                           </div>
                         </div>
-                        <div className="text-[10px] text-gray-400 mt-1">{(() => { const maxEn = getMaxScore(s.grade, "english"); let enStr = `А:${s.en || 0}`; if (s.en !== undefined && s.en !== null && s.en !== "" && maxEn !== "?") { const cefr = getCEFRLevel(parseInt(s.grade, 10), maxEn as number, parseInt(s.en, 10)); if(cefr) enStr = `Английский: ${cefr.actualLevel} (${cefr.percent}%) ${cefr.icon}`; } return `Р:${s.ru || 0} М:${s.ma || 0} Л:${s.lo || 0} | ${enStr}`; })()}</div>
+                        <div className="text-[10px] text-gray-500 font-medium mt-1">
+                          {(() => {
+                            const maxRu = getMaxScore(s.grade, "russian");
+                            const maxMa = getMaxScore(s.grade, "math");
+                            const maxLo = getMaxScore(s.grade, "logic");
+                            const maxEn = getMaxScore(s.grade, "english");
+
+                            const ruStr = `Р:${s.ru ?? 0}${maxRu !== "?" ? "/" + maxRu : ""}`;
+                            const maStr = `М:${s.ma ?? 0}${maxMa !== "?" ? "/" + maxMa : ""}`;
+                            const loStr = `Л:${s.lo ?? 0}${maxLo !== "?" ? "/" + maxLo : ""}`;
+
+                            let enStr = "";
+                            if (s.en !== undefined && s.en !== null && s.en !== "" && maxEn !== "?") {
+                              const cefr = getCEFRLevel(parseInt(s.grade, 10), maxEn as number, parseInt(s.en, 10));
+                              if (cefr) enStr = ` | Английский: ${cefr.actualLevel} (${cefr.percent}%) ${cefr.icon}`;
+                              else enStr = ` | А:${s.en}/${maxEn}`;
+                            } else if (s.en) {
+                              enStr = ` | А:${s.en}${maxEn !== "?" ? "/" + maxEn : ""}`;
+                            }
+
+                            return `${ruStr} ${maStr} ${loStr} (${percentage}%)${enStr}`;
+                          })()}
+                        </div>
                       </div>
                     </td>
                     <td className="p-4">
