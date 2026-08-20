@@ -2,9 +2,15 @@ import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 
 import { useProctoringEngine, ProctoringEvent } from "../lib/useProctoringEngine";
 import { useCompositeRecorder } from "../lib/useCompositeRecorder";
 import { useAnswerTiming } from "../lib/useAnswerTiming";
+import { useProctoringEvidence } from "../lib/useProctoringEvidence";
 import ProctoringWarningOverlay from "../components/ProctoringWarningOverlay";
 
 const ProctoringOverlay = lazy(() => import("../components/ProctoringOverlay"));
+
+// Generate a stable session UUID
+function generateSessionId(): string {
+  return 'sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
+}
 
 // Mock questions for test simulation
 const MOCK_QUESTIONS = [
@@ -100,11 +106,37 @@ export default function ProctorSandbox() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const eventLogRef = useRef<HTMLDivElement | null>(null);
 
+  // Session ID — generated once per page load, stable across renders
+  const sessionIdRef = useRef<string>(generateSessionId());
+
+  // Evidence package state
+  const [evidenceStatus, setEvidenceStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
+  const [evidenceFolderUrl, setEvidenceFolderUrl] = useState<string | null>(null);
+  const [sessionStartTimeMs] = useState<number>(Date.now);
+
   // ML & Recording Hooks
   const currentQuestionText = mode === "student" && MOCK_QUESTIONS[currentQ] ? MOCK_QUESTIONS[currentQ].text : undefined;
   const engine = useProctoringEngine(videoRef, canvasRef, isSessionActive, currentQuestionText);
   const recorder = useCompositeRecorder(canvasRef);
   const timing = useAnswerTiming();
+
+  // Evidence hook — snapshots per violation + report compiler
+  const evidence = useProctoringEvidence(
+    canvasRef,
+    sessionIdRef.current,
+    'grand-circle-central-asia',   // orgId — replace with dynamic value when multi-tenant
+    'Ученик (Sandbox)',             // studentName — replace with real name from test context
+    sessionIdRef.current.slice(-6), // shortId
+    'sandbox-test',                 // testId — replace with real test ID
+    sessionStartTimeMs,
+  );
+
+  // Auto-capture snapshot on every new violation event
+  useEffect(() => {
+    if (engine.events.length === 0) return;
+    const latestEvent = engine.events[engine.events.length - 1];
+    evidence.onEvent(latestEvent);
+  }, [engine.events.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ensure camera stream stays attached to videoRef whenever DOM updates
   const syncVideoStream = useCallback(() => {
@@ -236,14 +268,35 @@ export default function ProctorSandbox() {
     [currentQ, engine, timing]
   );
 
-  // Stop Session
+  // Stop Session — compile + upload evidence, then download video
   const stopSession = useCallback(async () => {
     setIsSessionActive(false);
     const blob = await recorder.stopRecording();
-    if (blob) {
-      recorder.downloadRecording(`proctoring_session_${Date.now()}`);
+
+    // Compile proctoring report
+    const report = evidence.compileReport(engine.events, engine.honestyIndex, blob);
+
+    // Upload evidence to Google Drive via /api/proctoring/upload-evidence
+    setEvidenceStatus('uploading');
+    try {
+      const result = await evidence.uploadEvidence(report, blob);
+      if (result.success) {
+        setEvidenceStatus('done');
+        setEvidenceFolderUrl(result.folderUrl || null);
+      } else {
+        setEvidenceStatus('error');
+        console.warn('[ProctorSandbox] Evidence upload failed:', result.error);
+      }
+    } catch (e) {
+      setEvidenceStatus('error');
     }
-  }, [recorder]);
+
+    // Download video recording locally
+    if (blob) {
+      recorder.downloadRecording(`proctoring_${sessionIdRef.current}`);
+    }
+  }, [recorder, engine.events, engine.honestyIndex, evidence]);
+
 
   // Simulate test events for manual verification
   const simulateEvent = useCallback(
@@ -464,19 +517,50 @@ export default function ProctorSandbox() {
                   </div>
                 )}
 
-                <div className="flex flex-wrap gap-3 mt-8 justify-center">
-                  <button
-                    onClick={stopSession}
-                    className="px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-xl font-bold text-sm shadow-lg shadow-cyan-500/20 transition-all"
-                  >
-                    ⬇ Скачать видеозапись
-                  </button>
-                  <button
-                    onClick={() => setMode("admin")}
-                    className="px-6 py-3 bg-slate-800 hover:bg-slate-700 rounded-xl font-bold text-sm text-slate-300 transition"
-                  >
-                    👨‍💼 Открыть вид менеджера
-                  </button>
+                {/* Evidence Upload Status */}
+                <div className="mt-4">
+                  {evidenceStatus === 'idle' && (
+                    <button
+                      onClick={stopSession}
+                      className="w-full px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-xl font-bold text-sm shadow-lg shadow-cyan-500/20 transition-all"
+                    >
+                      📦 Завершить и отправить отчёт менеджеру
+                    </button>
+                  )}
+
+                  {evidenceStatus === 'uploading' && (
+                    <div className="flex items-center justify-center gap-3 bg-blue-500/10 border border-blue-500/30 rounded-xl px-6 py-4">
+                      <svg className="animate-spin w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                      </svg>
+                      <span className="text-blue-300 text-sm font-semibold">Загрузка отчёта на Google Drive...</span>
+                    </div>
+                  )}
+
+                  {evidenceStatus === 'done' && (
+                    <div className="bg-green-500/10 border border-green-500/30 rounded-xl px-5 py-4 text-left space-y-2">
+                      <div className="flex items-center gap-2 text-green-400 font-bold text-sm">✅ Отчёт успешно отправлен менеджеру!</div>
+                      <div className="text-slate-400 text-xs">Скриншотов нарушений: <span className="text-white font-bold">{evidence.snapshotCount()}</span></div>
+                      <div className="text-slate-400 text-xs">Нарушений зафиксировано: <span className="text-white font-bold">{engine.events.filter(e => e.type !== 'SILENT_LIP_SPEAKING_DETECTED' && e.type !== 'FAST_ANSWER').length}</span></div>
+                      {evidenceFolderUrl && (
+                        <a
+                          href={evidenceFolderUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 mt-1 text-xs text-cyan-400 hover:text-cyan-300 underline"
+                        >
+                          📂 Открыть папку с материалами на Drive
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {evidenceStatus === 'error' && (
+                    <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-5 py-3 text-sm text-red-300">
+                      ⚠️ Ошибка загрузки отчёта. Видеозапись сохранена локально.
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
@@ -762,12 +846,44 @@ export default function ProctorSandbox() {
 
             {/* Download controls */}
             <div className="p-3 border-t border-slate-800 space-y-2">
-              <button
-                onClick={stopSession}
-                className="w-full py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-xl text-xs font-bold text-white transition-all shadow-lg shadow-cyan-500/20"
-              >
-                ⬇ Остановить и скачать видеозапись
-              </button>
+              {evidenceStatus === 'idle' && (
+                <button
+                  onClick={stopSession}
+                  className="w-full py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-xl text-xs font-bold text-white transition-all shadow-lg shadow-cyan-500/20"
+                >
+                  📦 Остановить + отправить отчёт менеджеру
+                </button>
+              )}
+              {evidenceStatus === 'uploading' && (
+                <div className="w-full py-2.5 bg-slate-800 rounded-xl text-xs text-blue-300 text-center font-semibold animate-pulse">
+                  ⏳ Загрузка отчёта на Drive...
+                </div>
+              )}
+              {evidenceStatus === 'done' && (
+                <div className="space-y-1.5">
+                  <div className="w-full py-2 bg-green-500/10 border border-green-500/30 rounded-xl text-xs text-green-400 text-center font-semibold">
+                    ✅ Отчёт отправлен! Скриншотов: {evidence.snapshotCount()}
+                  </div>
+                  {evidenceFolderUrl && (
+                    <a
+                      href={evidenceFolderUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block w-full py-2 bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 rounded-xl text-xs text-cyan-400 text-center font-semibold transition"
+                    >
+                      📂 Открыть папку на Drive
+                    </a>
+                  )}
+                </div>
+              )}
+              {evidenceStatus === 'error' && (
+                <button
+                  onClick={stopSession}
+                  className="w-full py-2.5 bg-red-500/20 border border-red-500/30 rounded-xl text-xs text-red-400 font-bold"
+                >
+                  ⚠️ Ошибка — попробовать снова
+                </button>
+              )}
             </div>
           </div>
         </div>
