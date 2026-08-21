@@ -21,7 +21,8 @@ import {
   ShieldCheck
 } from "lucide-react";
 import { collection, onSnapshot, updateDoc, doc, query, orderBy, limit } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { db, auth } from "../lib/firebase";
 import { TenantRequestsTab } from "../components/superadmin/TenantRequestsTab";
 
 interface OrganizationProject {
@@ -57,39 +58,55 @@ interface VercelSystemLog {
 
 export default function SuperAdminDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return Boolean(localStorage.getItem("admin_token") || sessionStorage.getItem("admin_token"));
+    return Boolean(auth.currentUser || localStorage.getItem("admin_token") || sessionStorage.getItem("admin_token"));
   });
+  const [adminEmailInput, setAdminEmailInput] = useState("");
   const [adminPasswordInput, setAdminPasswordInput] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged((user) => {
+      if (user) {
+        setIsAuthenticated(true);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoggingIn(true);
     setAuthError("");
     try {
+      const userCred = await signInWithEmailAndPassword(auth, adminEmailInput, adminPasswordInput);
+      const user = userCred.user;
+      const idToken = await user.getIdToken();
+
+      // Verify token with backend
       const res = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: adminPasswordInput })
+        body: JSON.stringify({ idToken })
       });
       const data = await res.json();
-      if (res.ok && data.token) {
-        localStorage.setItem("admin_token", data.token);
-        sessionStorage.setItem("admin_token", data.token);
+      if (res.ok && data.success) {
+        localStorage.setItem("admin_token", idToken);
+        sessionStorage.setItem("admin_token", idToken);
         setIsAuthenticated(true);
       } else {
-        setAuthError(data.error || "Неверный пароль верховного администратора");
+        setAuthError(data.error || "Ошибка авторизации в Firebase Auth");
       }
-    } catch (err) {
-      setAuthError("Ошибка соединения с сервером");
+    } catch (err: any) {
+      setAuthError(err.message || "Ошибка входа через Firebase Auth. Проверьте Email и пароль.");
     } finally {
       setIsLoggingIn(false);
     }
   };
 
-  const handleAdminLogout = () => {
+  const handleAdminLogout = async () => {
+    await signOut(auth);
     localStorage.removeItem("admin_token");
     sessionStorage.removeItem("admin_token");
     setIsAuthenticated(false);
@@ -302,7 +319,23 @@ export default function SuperAdminDashboard() {
 
             <div>
               <label className="block text-xs font-bold text-[#888888] uppercase tracking-wider mb-2">
-                Пароль Администратора
+                Email Администратора (Firebase Auth)
+              </label>
+              <div className="relative">
+                <input
+                  type="email"
+                  value={adminEmailInput}
+                  onChange={(e) => setAdminEmailInput(e.target.value)}
+                  placeholder="admin@studyfreeforum.com"
+                  required
+                  className="w-full bg-[#000000] border border-[#333333] rounded-lg px-4 py-3 text-sm text-[#ffffff] focus:outline-none focus:border-[#9F7AEA] transition font-mono"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[#888888] uppercase tracking-wider mb-2">
+                Пароль
               </label>
               <div className="relative">
                 <input

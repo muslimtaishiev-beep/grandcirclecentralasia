@@ -861,21 +861,22 @@ app.post("/api/subscribe", async (req, res) => {
 
 // ADMIN ENDPOINTS
 
-// 1. Administrative Login
+// 1. Administrative Login via Firebase Auth
 app.post("/api/admin/login", async (req, res) => {
-  const { password } = req.body;
-  const db = await readDb();
-
-  const correctPassword = db.settings.adminPassword || "admin";
-
-  if (password === correctPassword) {
-    // Generate a unique session token
-    const token = "token_" + Math.random().toString(36).substring(2) + Date.now().toString(36);
-    activeSessions.add(token);
-    return res.json({ success: true, token });
+  const { idToken } = req.body;
+  if (!idToken) {
+    return res.status(400).json({ success: false, error: "Missing Firebase Auth ID token." });
   }
 
-  res.status(400).json({ error: "Invalid administrative password." });
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    activeSessions.add(idToken);
+    console.log(`[ADMIN_AUTH] Firebase Auth verified for UID: ${decodedToken.uid} (${decodedToken.email})`);
+    return res.json({ success: true, token: idToken, uid: decodedToken.uid, email: decodedToken.email });
+  } catch (err: any) {
+    console.error("[ADMIN_AUTH] Firebase Auth verification failed:", err.message);
+    return res.status(401).json({ success: false, error: "Invalid Firebase Auth credentials." });
+  }
 });
 
 // 2. Administrative Check Token
