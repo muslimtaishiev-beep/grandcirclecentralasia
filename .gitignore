@@ -8,3 +8,4 @@ coverage/
 !.env.example
 serviceAccountKey.json
 data/db.json
+SECURITY_MANIFEST.md
