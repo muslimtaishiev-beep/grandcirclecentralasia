@@ -870,7 +870,7 @@ app.post("/api/subscribe", async (req, res) => {
 
 // ADMIN ENDPOINTS
 
-// 1. Administrative Login via Firebase Auth
+// 1. Administrative Login via Firebase Auth (Strict Role Verification)
 app.post("/api/admin/login", async (req, res) => {
   const { idToken } = req.body;
   if (!idToken) {
@@ -879,8 +879,24 @@ app.post("/api/admin/login", async (req, res) => {
 
   try {
     const decodedToken = await admin.auth().verifyIdToken(idToken);
+    
+    // Fetch user profile from Firestore to verify globalRole
+    let isSuperAdmin = Boolean(decodedToken.admin === true);
+    if (!isSuperAdmin) {
+      const userDoc = await admin.firestore().collection("users").doc(decodedToken.uid).get();
+      const userData = userDoc.data();
+      isSuperAdmin = userData?.globalRole === "superadmin" || 
+                     userData?.role === "superadmin" || 
+                     Boolean(decodedToken.email?.endsWith("@studyfreeforum.com"));
+    }
+
+    if (!isSuperAdmin) {
+      console.warn(`[ADMIN_AUTH] Access denied for UID ${decodedToken.uid} (${decodedToken.email}). Not a SuperAdmin.`);
+      return res.status(403).json({ success: false, error: "Отказ в доступе. Ваш аккаунт не имеет прав Супер-Администратора." });
+    }
+
     activeSessions.add(idToken);
-    console.log(`[ADMIN_AUTH] Firebase Auth verified for UID: ${decodedToken.uid} (${decodedToken.email})`);
+    console.log(`[ADMIN_AUTH] SuperAdmin verified for UID: ${decodedToken.uid} (${decodedToken.email})`);
     return res.json({ success: true, token: idToken, uid: decodedToken.uid, email: decodedToken.email });
   } catch (err: any) {
     console.error("[ADMIN_AUTH] Firebase Auth verification failed:", err.message);
@@ -888,7 +904,7 @@ app.post("/api/admin/login", async (req, res) => {
   }
 });
 
-// 2. Administrative Check Token via Firebase Auth
+// 2. Administrative Check Token via Firebase Auth (Strict Role Verification)
 app.get("/api/admin/check", async (req, res) => {
   const authHeader = req.headers["authorization"] || "";
   const token = authHeader.replace("Bearer ", "").trim();
@@ -897,12 +913,21 @@ app.get("/api/admin/check", async (req, res) => {
     return res.json({ success: false, valid: false });
   }
 
-  if (activeSessions.has(token)) {
-    return res.json({ success: true, valid: true });
-  }
-
   try {
     const decoded = await admin.auth().verifyIdToken(token);
+    let isSuperAdmin = Boolean(decoded.admin === true);
+    if (!isSuperAdmin) {
+      const userDoc = await admin.firestore().collection("users").doc(decoded.uid).get();
+      const userData = userDoc.data();
+      isSuperAdmin = userData?.globalRole === "superadmin" || 
+                     userData?.role === "superadmin" || 
+                     Boolean(decoded.email?.endsWith("@studyfreeforum.com"));
+    }
+
+    if (!isSuperAdmin) {
+      return res.json({ success: false, valid: false, error: "Access denied. Not a SuperAdmin." });
+    }
+
     activeSessions.add(token);
     return res.json({ success: true, valid: true, uid: decoded.uid, email: decoded.email });
   } catch (e) {
