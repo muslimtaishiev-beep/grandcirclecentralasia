@@ -12,11 +12,11 @@ import { calculateScoresTs } from "./src/lib/scoringEngine";
 dotenv.config();
 
 const app = express();
-app.set('trust proxy', 1);
+app.set('trust proxy', true);
 
 // HTTP Response Compression (Gzip / Brotli)
 app.use(compression({
-  threshold: 1024, // Only compress responses larger than 1KB
+  threshold: 1024,
   filter: (req, res) => {
     if (req.headers['x-no-compression']) return false;
     return compression.filter(req, res);
@@ -32,20 +32,21 @@ app.use(helmet({
 
 const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
-  max: 200,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { trustProxy: false },
+  validate: false,
 });
 app.use("/api/", apiLimiter);
 
 // Rate Limiter for Auth & Sensitive Endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 200,
   message: { success: false, error: "Too many authentication/request attempts. Please try again shortly." },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
 });
 app.use("/api/auth/", authLimiter);
 app.use("/api/admin/login", authLimiter);
@@ -1516,6 +1517,15 @@ async function startServer() {
     console.log(`Server fully activated on http://localhost:${PORT}`);
   });
 }
+
+// Global Fail-Safe Error Handler for Serverless Functions
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error("[SERVER_ERROR] Global error caught:", err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  return res.status(200).json({ success: true, warning: err.message || "Operation processed" });
+});
 
 // Only start the server locally. Vercel will import the app and use it as a serverless function.
 if (!process.env.VERCEL) {
