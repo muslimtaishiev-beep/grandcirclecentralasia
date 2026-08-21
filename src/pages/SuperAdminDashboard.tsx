@@ -380,7 +380,6 @@ export default function SuperAdminDashboard() {
       const res = await fetch(`/api/tenants/${selectedOrgModal.id}/invite`, {
         method: "POST",
         headers: {
-          "Content-[#Type]": "application/json",
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         },
