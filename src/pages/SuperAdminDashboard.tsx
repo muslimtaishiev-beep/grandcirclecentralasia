@@ -18,7 +18,23 @@ import {
   Eye,
   EyeOff,
   LogOut,
-  ShieldCheck
+  ShieldCheck,
+  LayoutDashboard,
+  Globe,
+  Wrench,
+  Key,
+  Shield,
+  Play,
+  UserCheck,
+  ChevronRight,
+  X,
+  Zap,
+  BarChart3,
+  Layers,
+  Radio,
+  FileText,
+  AlertTriangle,
+  Ban
 } from "lucide-react";
 import { collection, onSnapshot, updateDoc, doc, query, orderBy, limit } from "firebase/firestore";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
@@ -136,6 +152,10 @@ export default function SuperAdminDashboard() {
   const [activeTab, setActiveTab] = useState<"projects" | "deployments" | "logs" | "storage" | "flags" | "settings" | "requests">("projects");
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
+
+  // Selected Organization Control Modal State
+  const [selectedOrgModal, setSelectedOrgModal] = useState<OrganizationProject | null>(null);
+  const [modalActiveTab, setModalActiveTab] = useState<"actions" | "proctoring" | "apikeys" | "status">("actions");
 
   // Maintenance Mode Control State
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
@@ -322,6 +342,25 @@ export default function SuperAdminDashboard() {
     } catch (err) {
       // Local state fallback if doc doesn't exist yet
       setProjects(projects.map(p => p.id === projectId ? { ...p, proctoringFlags: updatedFlags } : p));
+    }
+    if (selectedOrgModal && selectedOrgModal.id === projectId) {
+      setSelectedOrgModal({ ...selectedOrgModal, proctoringFlags: updatedFlags });
+    }
+  };
+
+  const toggleOrgStatus = async (projectId: string) => {
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return;
+    const newStatus = proj.status === "SUSPENDED" ? "READY font-mono" : "SUSPENDED";
+
+    try {
+      const docRef = doc(db, "tenants", projectId);
+      await updateDoc(docRef, { status: newStatus });
+    } catch (err) {
+      setProjects(projects.map(p => p.id === projectId ? { ...p, status: newStatus as any } : p));
+    }
+    if (selectedOrgModal && selectedOrgModal.id === projectId) {
+      setSelectedOrgModal({ ...selectedOrgModal, status: newStatus as any });
     }
   };
 
@@ -545,13 +584,13 @@ export default function SuperAdminDashboard() {
                 {filteredProjects.map((project) => (
                   <div 
                     key={project.id}
-                    className="bg-[#0a0a0a] border border-[#333333] hover:border-[#666666] rounded-lg p-5 transition flex flex-col justify-between space-y-4 shadow-sm"
+                    className="bg-[#0a0a0a] border border-[#333333] hover:border-[#9F7AEA]/60 rounded-xl p-5 transition flex flex-col justify-between space-y-4 shadow-sm group"
                   >
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-[#50e3c2]" title="Ready" />
-                          <h3 className="font-semibold text-sm text-[#ffffff]">{project.name}</h3>
+                          <div className={`w-2.5 h-2.5 rounded-full ${project.status === "SUSPENDED" ? "bg-red-500" : "bg-[#50e3c2]"}`} title={project.status === "SUSPENDED" ? "Заблокирована" : "Активна"} />
+                          <h3 className="font-semibold text-sm text-[#ffffff] group-hover:text-[#9F7AEA] transition">{project.name}</h3>
                         </div>
                         <span className="text-[10px] font-mono text-[#888888] bg-[#111111] px-1.5 py-0.5 rounded border border-[#222222]">
                           {project.slug}
@@ -578,6 +617,35 @@ export default function SuperAdminDashboard() {
                         <div className="text-[10px] text-[#666666] uppercase font-mono">Хранилище</div>
                         <div className="font-bold text-[#ededed] font-mono mt-0.5">{project.storageUsedMb} MB</div>
                       </div>
+                    </div>
+
+                    {/* ── ACTION TOOLBAR ── */}
+                    <div className="pt-3 border-t border-[#1a1a1a] flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => setSelectedOrgModal(project)}
+                        className="flex-1 py-2 px-3 bg-[#9F7AEA] hover:bg-[#805ad5] text-white font-bold text-xs rounded-lg shadow transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Wrench className="w-3.5 h-3.5" />
+                        <span>Управлять</span>
+                      </button>
+                      <a
+                        href={`/workspace/${project.slug}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-2 bg-[#1a1a1a] hover:bg-[#262626] text-[#ededed] rounded-lg transition flex items-center justify-center border border-[#333333]"
+                        title="Войти в Дашборд организации"
+                      >
+                        <LayoutDashboard className="w-4 h-4 text-[#50e3c2]" />
+                      </a>
+                      <a
+                        href={`/site/${project.slug}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-2 bg-[#1a1a1a] hover:bg-[#262626] text-[#ededed] rounded-lg transition flex items-center justify-center border border-[#333333]"
+                        title="Открыть сайт организации"
+                      >
+                        <Globe className="w-4 h-4 text-[#9F7AEA]" />
+                      </a>
                     </div>
                   </div>
                 ))}
@@ -741,6 +809,222 @@ export default function SuperAdminDashboard() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── ORGANIZATION CONTROL MODAL ── */}
+        {selectedOrgModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="bg-[#0a0a0a] border border-[#333333] rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl animate-fade-in flex flex-col max-h-[90vh]">
+              {/* Modal Header */}
+              <div className="p-5 border-b border-[#222222] flex items-center justify-between bg-[#111111]">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#9F7AEA]/10 border border-[#9F7AEA]/30 flex items-center justify-center text-[#9F7AEA]">
+                    <Wrench className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-white flex items-center gap-2">
+                      <span>{selectedOrgModal.name}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded font-mono border ${selectedOrgModal.status === "SUSPENDED" ? "bg-red-950/50 text-red-400 border-red-800" : "bg-emerald-950/50 text-emerald-400 border-emerald-800"}`}>
+                        {selectedOrgModal.status === "SUSPENDED" ? "ЗАБЛОКИРОВАНА" : "АКТИВНА"}
+                      </span>
+                    </h2>
+                    <p className="text-xs text-[#888888] font-mono mt-0.5">ID: {selectedOrgModal.id} | Slug: {selectedOrgModal.slug}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedOrgModal(null)}
+                  className="p-2 text-[#666666] hover:text-white hover:bg-[#222222] rounded-lg transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Nav Tabs */}
+              <div className="flex border-b border-[#222222] bg-[#000000] px-5 gap-4">
+                {[
+                  { id: "actions", label: "Быстрый доступ", icon: LayoutDashboard },
+                  { id: "proctoring", label: "Прокторинг и Флаги", icon: ShieldCheck },
+                  { id: "apikeys", label: "API Ключ & Безопасность", icon: Key },
+                  { id: "status", label: "Статус & Управление", icon: Sliders }
+                ].map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = modalActiveTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setModalActiveTab(tab.id as any)}
+                      className={`py-3 text-xs font-medium flex items-center gap-2 border-b-2 transition ${isActive ? "border-[#9F7AEA] text-white" : "border-transparent text-[#777777] hover:text-[#cccccc]"}`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span>{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
+                {/* Tab 1: Actions */}
+                {modalActiveTab === "actions" && (
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-bold text-[#888888] uppercase tracking-wider font-mono">Переход в модули организации</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <a
+                        href={`/workspace/${selectedOrgModal.slug}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-4 bg-[#111111] hover:bg-[#1a1a1a] border border-[#222222] hover:border-[#9F7AEA] rounded-xl transition flex items-center gap-3 group"
+                      >
+                        <div className="w-9 h-9 rounded-lg bg-[#9F7AEA]/10 flex items-center justify-center text-[#9F7AEA] group-hover:scale-110 transition">
+                          <LayoutDashboard className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-white group-hover:text-[#9F7AEA]">Главный Кабинет</div>
+                          <div className="text-[11px] text-[#777777]">CRM, Студенты, Платежи и Тесты</div>
+                        </div>
+                      </a>
+
+                      <a
+                        href={`/workspace/${selectedOrgModal.slug}/builder`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-4 bg-[#111111] hover:bg-[#1a1a1a] border border-[#222222] hover:border-[#50e3c2] rounded-xl transition flex items-center gap-3 group"
+                      >
+                        <div className="w-9 h-9 rounded-lg bg-[#50e3c2]/10 flex items-center justify-center text-[#50e3c2] group-hover:scale-110 transition">
+                          <Wrench className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-white group-hover:text-[#50e3c2]">Конструктор Форм</div>
+                          <div className="text-[11px] text-[#777777]">Создание тестов, анкет и ассессментов</div>
+                        </div>
+                      </a>
+
+                      <a
+                        href={`/site/${selectedOrgModal.slug}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-4 bg-[#111111] hover:bg-[#1a1a1a] border border-[#222222] hover:border-purple-400 rounded-xl transition flex items-center gap-3 group"
+                      >
+                        <div className="w-9 h-9 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-400 group-hover:scale-110 transition">
+                          <Globe className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-white group-hover:text-purple-400">Публичный Портал</div>
+                          <div className="text-[11px] text-[#777777]">Сайт организации для абитуриентов</div>
+                        </div>
+                      </a>
+
+                      <a
+                        href={`/workspace/${selectedOrgModal.slug}/settings`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-4 bg-[#111111] hover:bg-[#1a1a1a] border border-[#222222] hover:border-amber-400 rounded-xl transition flex items-center gap-3 group"
+                      >
+                        <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400 group-hover:scale-110 transition">
+                          <Settings className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-white group-hover:text-amber-400">Штат и Настройки</div>
+                          <div className="text-[11px] text-[#777777]">Управление сотрудниками и правами</div>
+                        </div>
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 2: Proctoring Flags */}
+                {modalActiveTab === "proctoring" && (
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-bold text-[#888888] uppercase tracking-wider font-mono">Флаги Прокторинга и ИИ</h3>
+                    <div className="space-y-2">
+                      {[
+                        { key: "gazeAway", label: "Трекинг взгляда (Gaze Away AI)", desc: "Фиксация отвода глаз от экрана" },
+                        { key: "faceCount", label: "Детекция лиц (Multiple Faces)", desc: "Фиксация присутствия сторонних лиц" },
+                        { key: "handTracking", label: "Детекция рук и предметов", desc: "Контроль жестов и записей" },
+                        { key: "audioAnalysis", label: "Шумовой анализ (Noise AI)", desc: "Анализ звуков в помещении" },
+                        { key: "phoneDetection", label: "Детекция смартфонов", desc: "Распознавание экранов телефонов" },
+                      ].map((flag) => {
+                        const isEnabled = selectedOrgModal.proctoringFlags[flag.key as keyof OrganizationProject["proctoringFlags"]];
+                        return (
+                          <div key={flag.key} className="flex items-center justify-between p-3.5 bg-[#111111] border border-[#222222] rounded-xl">
+                            <div>
+                              <div className="font-bold text-white">{flag.label}</div>
+                              <div className="text-[11px] text-[#666666]">{flag.desc}</div>
+                            </div>
+                            <button
+                              onClick={() => toggleFlag(selectedOrgModal.id, flag.key as any)}
+                              className={`w-12 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out cursor-pointer ${isEnabled ? 'bg-[#50e3c2]' : 'bg-[#222222]'}`}
+                            >
+                              <div className={`w-4 h-4 rounded-full bg-black transition-transform duration-200 ease-in-out ${isEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 3: API Keys */}
+                {modalActiveTab === "apikeys" && (
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-bold text-[#888888] uppercase tracking-wider font-mono">API Ключ и Вебхуки</h3>
+                    <div className="p-4 bg-[#111111] border border-[#222222] rounded-xl space-y-3 font-mono">
+                      <div>
+                        <div className="text-[#666666] text-[10px] uppercase">Secret API Key</div>
+                        <div className="flex items-center justify-between bg-[#000000] p-2.5 rounded border border-[#222222] mt-1">
+                          <span className="text-[#50e3c2] text-xs">{selectedOrgModal.apiKey}</span>
+                          <button
+                            onClick={() => copyKey(selectedOrgModal.apiKey, selectedOrgModal.id)}
+                            className="px-2.5 py-1 bg-[#222222] hover:bg-[#333333] text-white rounded text-[10px] transition flex items-center gap-1 cursor-pointer"
+                          >
+                            {copiedKeyId === selectedOrgModal.id ? <Check className="w-3.5 h-3.5 text-[#50e3c2]" /> : <Copy className="w-3.5 h-3.5" />}
+                            <span>{copiedKeyId === selectedOrgModal.id ? "Скопирован" : "Копировать"}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-[#666666] text-[10px] uppercase">Webhook Endpoint</div>
+                        <div className="flex items-center justify-between bg-[#000000] p-2.5 rounded border border-[#222222] mt-1">
+                          <span className="text-[#888888] text-xs">https://www.studyfreeforum.com/api/webhooks/{selectedOrgModal.slug}</span>
+                          <button
+                            onClick={() => copyKey(`https://www.studyfreeforum.com/api/webhooks/${selectedOrgModal.slug}`, `wh_${selectedOrgModal.id}`)}
+                            className="px-2.5 py-1 bg-[#222222] hover:bg-[#333333] text-white rounded text-[10px] transition flex items-center gap-1 cursor-pointer"
+                          >
+                            {copiedKeyId === `wh_${selectedOrgModal.id}` ? <Check className="w-3.5 h-3.5 text-[#50e3c2]" /> : <Copy className="w-3.5 h-3.5" />}
+                            <span>{copiedKeyId === `wh_${selectedOrgModal.id}` ? "Скопирован" : "Копировать"}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 4: Status & Suspension */}
+                {modalActiveTab === "status" && (
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-bold text-[#888888] uppercase tracking-wider font-mono">Управление статусом доступа</h3>
+                    <div className="p-4 bg-[#111111] border border-[#222222] rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-white">Статус организации</div>
+                        <div className="text-[11px] text-[#666666]">
+                          {selectedOrgModal.status === "SUSPENDED" ? "Организация заблокирована. Доступ к рабочим пространствам ограничен." : "Организация активно работает на платформе."}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => toggleOrgStatus(selectedOrgModal.id)}
+                        className={`px-4 py-2 rounded-lg font-bold text-xs transition cursor-pointer flex items-center gap-1.5 ${selectedOrgModal.status === "SUSPENDED" ? "bg-emerald-600 hover:bg-emerald-500 text-white" : "bg-red-600 hover:bg-red-500 text-white"}`}
+                      >
+                        {selectedOrgModal.status === "SUSPENDED" ? <Play className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+                        <span>{selectedOrgModal.status === "SUSPENDED" ? "РАЗБЛОКИРОВАТЬ" : "ЗАБЛОКИРОВАТЬ"}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
