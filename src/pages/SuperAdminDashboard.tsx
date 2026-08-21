@@ -376,7 +376,8 @@ export default function SuperAdminDashboard() {
     setDirectorSuccess(false);
 
     try {
-      const token = localStorage.getItem("admin_token") || sessionStorage.getItem("admin_token") || "";
+      const freshToken = auth.currentUser ? await auth.currentUser.getIdToken(true) : "";
+      const token = freshToken || localStorage.getItem("admin_token") || sessionStorage.getItem("admin_token") || "";
       const res = await fetch(`/api/tenants/${selectedOrgModal.id}/invite`, {
         method: "POST",
         headers: {

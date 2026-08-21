@@ -77,6 +77,13 @@ router.get("/my", requireFirebaseAuth, async (req: any, res: any) => {
 // Middleware to check if user is an admin of the tenant
 const requireTenantAdmin = async (req: any, res: any, next: any) => {
   try {
+    const email = req.user?.email || "";
+    // SuperAdmin Universal Override
+    if (email.endsWith("@studyfreeforum.com") || req.user?.uid === "superadmin") {
+      req.membership = { role: "org:owner", permissions: { canManageOrganization: true, canManageUsers: true } };
+      return next();
+    }
+
     const uid = req.user.uid;
     const tenantId = req.params.id;
     const db = admin.firestore();
@@ -93,7 +100,7 @@ const requireTenantAdmin = async (req: any, res: any, next: any) => {
     }
 
     const membership = membershipsSnapshot.docs[0].data();
-    if (membership.role !== "org:owner" && membership.role !== "org:admin") {
+    if (membership.role !== "org:owner" && membership.role !== "org:admin" && !membership.role?.includes("Руководитель")) {
       return res.status(403).json({ error: "Access denied. Requires org:admin role." });
     }
 
