@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { motion } from 'framer-motion';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Key, X, Check } from 'lucide-react';
 
 interface LoginProps {
   lang?: "ru" | "en" | "kg";
@@ -15,6 +15,14 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Forgot Password Modal State
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState('');
+  const [resetSuccess, setResetSuccess] = useState(false);
+
   const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -45,15 +53,36 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
     }
   };
 
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail) return;
+    setResetLoading(true);
+    setResetError('');
+    setResetSuccess(false);
+
+    try {
+      await sendPasswordResetEmail(auth, resetEmail);
+      setResetSuccess(true);
+    } catch (err: any) {
+      if (err.code === 'auth/user-not-found') {
+        setResetError(lang === 'ru' ? 'Пользователь с такой почтой не найден в системе.' : 'User with this email not found.');
+      } else {
+        setResetError(err.message || (lang === 'ru' ? 'Ошибка при отправке письма сброса пароля.' : 'Failed to send password reset email.'));
+      }
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
+    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans relative">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <h2 className="mt-6 text-center text-3xl font-display font-black text-slate-900 uppercase tracking-tight">
           {lang === 'ru' ? 'Вход участника' : lang === 'kg' ? 'Катышуучунун кирүүсү' : 'Participant Login'}
         </h2>
         <p className="mt-2 text-center text-sm text-slate-600">
           {lang === 'ru' ? 'Или ' : lang === 'kg' ? 'Же ' : 'Or '}
-          <button onClick={() => navigate('/register')} className="font-bold text-[#9F7AEA] hover:text-[#805AD5] transition-colors underline decoration-2 underline-offset-4">
+          <button onClick={() => navigate('/register')} className="font-bold text-[#9F7AEA] hover:text-[#805AD5] transition-colors underline decoration-2 underline-offset-4 cursor-pointer">
             {lang === 'ru' ? 'активируйте аккаунт для просмотра результатов' : lang === 'kg' ? 'жыйынтыктарды көрүү үчүн аккаунтту активдештириңиз' : 'activate your account to check results'}
           </button>
         </p>
@@ -86,9 +115,21 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-slate-700 uppercase tracking-wider mb-2">
-                {lang === 'ru' ? 'Пароль' : lang === 'kg' ? 'Сырсөз' : 'Password'}
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-bold text-slate-700 uppercase tracking-wider">
+                  {lang === 'ru' ? 'Пароль' : lang === 'kg' ? 'Сырсөз' : 'Password'}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetEmail(email);
+                    setIsResetModalOpen(true);
+                  }}
+                  className="text-xs font-semibold text-[#9F7AEA] hover:text-[#805ad5] transition-colors cursor-pointer"
+                >
+                  {lang === 'ru' ? 'Забыли пароль?' : lang === 'kg' ? 'Сырсөздү унуттуңузбу?' : 'Forgot password?'}
+                </button>
+              </div>
               <div className="mt-1 relative">
                 <input
                   type={showPassword ? "text" : "password"}
@@ -101,7 +142,7 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
                 >
                   {showPassword ? (
                     <EyeOff className="h-5 w-5" />
@@ -116,7 +157,7 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex justify-center py-4 px-4 border-2 border-slate-900 text-sm font-bold rounded-none text-white bg-slate-900 hover:bg-white hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-900 uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                className="w-full flex justify-center py-4 px-4 border-2 border-slate-900 text-sm font-bold rounded-none text-white bg-slate-900 hover:bg-white hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-900 uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed group cursor-pointer"
               >
                 {loading ? (
                   <span className="flex items-center">
@@ -156,6 +197,88 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
           <div className="absolute -top-6 -left-6 w-32 h-32 bg-[#F3E8FF] rounded-full opacity-50 z-0 blur-xl"></div>
         </div>
       </div>
+
+      {/* ── FORGOT PASSWORD MODAL ── */}
+      {isResetModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 relative animate-fade-in">
+            <button
+              onClick={() => {
+                setIsResetModalOpen(false);
+                setResetSuccess(false);
+                setResetError('');
+              }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition cursor-pointer p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-[#9F7AEA]/10 flex items-center justify-center text-[#9F7AEA]">
+                <Key className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-lg text-slate-900">
+                  {lang === 'ru' ? 'Восстановление пароля' : 'Password Reset'}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {lang === 'ru' ? 'Мы отправим ссылку для сброса на вашу почту' : 'We will send a reset link to your email'}
+                </p>
+              </div>
+            </div>
+
+            {resetSuccess ? (
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-sm space-y-2">
+                <div className="flex items-center gap-2 font-bold text-emerald-900">
+                  <Check className="w-5 h-5 text-emerald-600" />
+                  <span>{lang === 'ru' ? 'Письмо успешно отправлено!' : 'Reset link sent!'}</span>
+                </div>
+                <p className="text-xs text-emerald-700">
+                  {lang === 'ru' 
+                    ? `Мы отправили письмо с инструкциями по восстановлению на ${resetEmail}. Проверьте папку "Входящие" и "Спам".`
+                    : `We sent instructions to ${resetEmail}. Check your inbox and spam folder.`}
+                </p>
+                <button
+                  onClick={() => setIsResetModalOpen(false)}
+                  className="w-full mt-2 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition cursor-pointer"
+                >
+                  {lang === 'ru' ? 'Понятно, закрыть' : 'Got it, close'}
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleResetPassword} className="space-y-4">
+                {resetError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
+                    {resetError}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    {lang === 'ru' ? 'Ваш Email' : 'Your Email'}
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="user@example.com"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    className="w-full px-3 py-2.5 border-2 border-slate-200 rounded-lg text-sm font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#9F7AEA] bg-slate-50 focus:bg-white"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={resetLoading}
+                  className="w-full py-3 bg-slate-900 hover:bg-[#9F7AEA] text-white font-bold text-xs uppercase tracking-widest rounded-xl transition cursor-pointer disabled:opacity-50"
+                >
+                  {resetLoading ? (lang === 'ru' ? 'Отправка...' : 'Sending...') : (lang === 'ru' ? 'Отправить ссылку для сброса' : 'Send Reset Link')}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
