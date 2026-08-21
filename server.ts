@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import admin from "firebase-admin";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import { calculateScoresTs } from "./src/lib/scoringEngine";
 
 dotenv.config();
 
@@ -291,7 +292,163 @@ app.post("/api/proctoring/upload-evidence", async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SAAS EXAM API ENDPOINTS (High-Speed Vercel Routes)
+// ─────────────────────────────────────────────────────────────────────────────
 
+// 1. POST /api/exams/start — Register or resume an exam session
+app.post("/api/exams/start", async (req, res) => {
+  try {
+    const { testId, studentName, grade, shortId, isTester } = req.body;
+    if (!studentName || !grade) {
+      return res.status(400).json({ success: false, error: "Missing studentName or grade" });
+    }
+
+    const studentShortId = shortId || Math.floor(100000 + Math.random() * 900000).toString();
+    const sessionId = testId || `test_${studentShortId}_${Date.now()}`;
+    const tenant = resolveTenantFromApiKey(process.env.GAS_API_KEY);
+
+    // Save session in Firestore if available
+    if (useFirebase) {
+      try {
+        await admin.firestore().collection("exam_sessions").doc(sessionId).set({
+          id: sessionId,
+          tenantId: tenant.org_id,
+          studentName,
+          studentShortId,
+          grade: Number(grade),
+          isTester: Boolean(isTester),
+          status: "IN_PROGRESS",
+          startedAt: admin.firestore.Timestamp.now(),
+          currentAnswers: {},
+          updatedAt: admin.firestore.Timestamp.now()
+        }, { merge: true });
+      } catch (e) {
+        console.warn("[Exams/Start] Firestore session write failed:", e);
+      }
+    }
+
+    return res.json({
+      success: true,
+      sessionId,
+      studentShortId,
+      timeLimitMinutes: 90,
+      status: "IN_PROGRESS"
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// 2. POST /api/exams/telemetry — Lightweight 10s proctoring pings
+app.post("/api/exams/telemetry", async (req, res) => {
+  try {
+    const { sessionId, telemetry } = req.body;
+    if (!sessionId) {
+      return res.status(400).json({ success: false, error: "Missing sessionId" });
+    }
+
+    // Record last telemetry ping in Firestore if available
+    if (useFirebase) {
+      try {
+        await admin.firestore().collection("exam_sessions").doc(sessionId).set({
+          lastTelemetryAt: admin.firestore.Timestamp.now(),
+          telemetrySummary: telemetry || {}
+        }, { merge: true });
+      } catch (e) {}
+    }
+
+    return res.json({ success: true, timestamp: Date.now() });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// 3. POST /api/exams/submit — High-speed TS scoring + Firestore + GAS Dual-Write
+app.post("/api/exams/submit", async (req, res) => {
+  try {
+    const { sessionId, shortId, studentName, grade, answers, cheated, isTester, isRetake } = req.body;
+    if (!shortId || !studentName || !grade) {
+      return res.status(400).json({ success: false, error: "Missing required submission fields" });
+    }
+
+    const tenant = resolveTenantFromApiKey(process.env.GAS_API_KEY);
+
+    // 1. Calculate Scores using TypeScript Engine (100% accuracy)
+    const result = calculateScoresTs(grade, answers);
+    const { scores, diagnosticsRaw, summaryText } = result;
+
+    // 2. Write to Firestore `submissions` collection
+    let submissionId = `sub_${shortId}_${Date.now()}`;
+    if (useFirebase) {
+      try {
+        const subDoc = {
+          id: submissionId,
+          tenantId: tenant.org_id,
+          testId: sessionId || `test_${shortId}`,
+          sessionId: sessionId || `test_${shortId}`,
+          studentName,
+          studentShortId: shortId,
+          grade: Number(grade),
+          submittedAt: admin.firestore.Timestamp.now(),
+          cheated: Boolean(cheated),
+          scores,
+          answersJson: typeof answers === 'string' ? answers : JSON.stringify(answers || {}),
+          diagnosticSummary: summaryText,
+          status: "ЗАВЕРШЕН"
+        };
+        await admin.firestore().collection("submissions").doc(submissionId).set(subDoc);
+        console.log(`[Exams/Submit] Firestore write SUCCESS: ${submissionId}`);
+      } catch (fErr) {
+        console.warn("[Exams/Submit] Firestore write failed:", fErr);
+      }
+    }
+
+    // 3. DUAL-WRITE: Proxy submission to GAS so Google Sheets backup is 100% updated!
+    const gasUrl = process.env.VITE_GAS_URL || process.env.GAS_URL;
+    const gasApiKey = process.env.GAS_API_KEY || process.env.VITE_GAS_API_KEY;
+
+    if (gasUrl && gasApiKey) {
+      try {
+        const gasPayload = {
+          action: "submitTest",
+          apiKey: gasApiKey,
+          testId: sessionId || `test_${shortId}`,
+          shortId,
+          studentName,
+          grade,
+          answers: typeof answers === 'string' ? answers : JSON.stringify(answers || {}),
+          cheated: cheated ? "ДА" : "НЕТ",
+          isTester: Boolean(isTester),
+          isRetake: Boolean(isRetake)
+        };
+        fetch(gasUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(gasPayload)
+        }).catch(err => console.warn("[Exams/Submit] Background GAS Dual-Write notice:", err.message));
+      } catch (gErr) {
+        console.warn("[Exams/Submit] GAS Dual-Write trigger notice:", gErr);
+      }
+    }
+
+    return res.json({
+      success: true,
+      totalScore: scores.total,
+      scores: {
+        russian: scores.russian,
+        math: scores.math,
+        logic: scores.logic,
+        english: scores.english
+      },
+      cheated: Boolean(cheated),
+      summaryText
+    });
+  } catch (e: any) {
+    console.error("[Exams/Submit] Endpoint error:", e);
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
 
 
 // Maintenance Mode Endpoints

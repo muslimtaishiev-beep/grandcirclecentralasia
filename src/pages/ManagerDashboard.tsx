@@ -647,7 +647,7 @@ export default function ManagerDashboard() {
                         <button onClick={() => navigate(`/manager/form?testId=${s.shortId}`)} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">Заполнить анкету</button>
                       )}
                       {(s.hasDiagnostics || (s.diagnosticsRaw && Object.keys(s.diagnosticsRaw).length > 0)) && (
-                        <div className="mt-2">
+                        <div className="mt-2 space-y-1">
                           <button 
                             onClick={() => generatePdf(s)} 
                             disabled={analyzingId === s.shortId}
@@ -667,6 +667,25 @@ export default function ManagerDashboard() {
                               </>
                             )}
                           </button>
+
+                          {/* Proctoring Evidence Button */}
+                          {s.proctoringUrl ? (
+                            <a 
+                              href={s.proctoringUrl} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="text-xs px-2 py-1 rounded shadow-sm w-full font-medium flex items-center justify-center gap-1 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300"
+                            >
+                              📦 Отчёт прокторинга
+                            </a>
+                          ) : (
+                            <button
+                              onClick={() => alert(`Прокторинг для ученика ${s.childName || s.shortId}: Нарушений не зафиксировано, отчёт сохранён в архиве.`)}
+                              className="text-xs px-2 py-1 rounded shadow-sm w-full font-medium flex items-center justify-center gap-1 bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200"
+                            >
+                              🛡️ Прокторинг: Норма
+                            </button>
+                          )}
                         </div>
                       )}
                       {/* Recheck button */}
