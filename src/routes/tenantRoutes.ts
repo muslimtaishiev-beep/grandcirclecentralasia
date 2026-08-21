@@ -107,35 +107,25 @@ const requireTenantAdmin = async (req: any, res: any, next: any) => {
 // POST /api/tenants/:id/invite - Invite staff to the organization
 router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
   try {
-    const { email, role } = req.body;
+    const { email, role, roleName, permissions } = req.body;
     const tenantId = req.params.id;
     const uid = req.user.uid;
     const db = admin.firestore();
 
-    if (!email || !role) {
-      return res.status(400).json({ success: false, error: "Missing email or role" });
+    if (!email) {
+      return res.status(400).json({ success: false, error: "Missing email address" });
     }
 
-    const allowedRoles = ["org:admin", "org:manager", "org:teacher", "org:student"];
-    if (role === "org:owner" && req.membership.role !== "org:owner") {
-      return res.status(403).json({ success: false, error: "Only an org:owner can transfer or grant owner role." });
-    }
-    if (role !== "org:owner" && !allowedRoles.includes(role)) {
-      return res.status(400).json({ success: false, error: "Invalid role specified." });
-    }
+    const assignedRole = roleName || role || "Работник";
 
-    // Typically you would send an email here. For now, just create a membership record 
-    // or link it if the user already exists.
-    
-    // Check if user exists
+    // Check if target user exists in Auth
     let targetUserId = "";
     try {
       const userRecord = await admin.auth().getUserByEmail(email);
       targetUserId = userRecord.uid;
     } catch (authErr: any) {
       if (authErr.code === "auth/user-not-found") {
-        // User doesn't exist yet, we could create a placeholder or just store the invite by email.
-        return res.status(404).json({ success: false, error: "User with this email not found. They must register first." });
+        return res.status(404).json({ success: false, error: "Пользователь с такой почтой не найден. Сначала зарегистрируйте аккаунт." });
       }
       throw authErr;
     }
@@ -147,7 +137,14 @@ router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: 
       .get();
 
     if (!existingSnapshot.empty) {
-      return res.status(400).json({ success: false, error: "User is already a member or invited" });
+      // Update existing membership role & permissions
+      const docId = existingSnapshot.docs[0].id;
+      await db.collection("memberships").doc(docId).update({
+        role: assignedRole,
+        permissions: permissions || {},
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      return res.json({ success: true, message: "Роль и разрешения сотрудника обновлены" });
     }
 
     const membershipId = `mem_${targetUserId}_${tenantId}`;
@@ -155,13 +152,19 @@ router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: 
       id: membershipId,
       userId: targetUserId,
       tenantId: tenantId,
-      role: role,
-      status: "active", // In a real app, this would be 'invited' until they accept
+      role: assignedRole,
+      permissions: permissions || {
+        canReviewSubmissions: true,
+        canManageSchedule: true,
+        canCreateTests: false,
+        canManageOrganization: false
+      },
+      status: "active",
       invitedBy: uid,
       joinedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    return res.json({ success: true, message: "User invited successfully" });
+    return res.json({ success: true, message: "Сотрудник успешно добавлен в организацию" });
   } catch (error: any) {
     console.error("[Tenants/Invite] Error:", error);
     return res.status(500).json({ success: false, error: error.message });

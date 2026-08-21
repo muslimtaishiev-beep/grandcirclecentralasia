@@ -243,6 +243,23 @@ export interface ProctoringLogEntry {
 // 6. GLOBAL USERS & RBAC (Глобальные пользователи и роли)
 // ────────────────────────────────────────────────────────────────────────────
 
+export interface CustomRole {
+  id: string;
+  name: string;                     // "Управляющий", "Работник", "Инструктор", etc.
+  description?: string;
+  permissions: RolePermissions;
+}
+
+export interface RolePermissions {
+  canManageOrganization: boolean;   // Изменение настроек школы
+  canManageUsers: boolean;          // Добавление/Удаление работников
+  canCreateTests: boolean;         // Редактирование банков вопросов и тестов
+  canReviewSubmissions: boolean;   // Просмотр и проверка результатов тестирования
+  canViewAnalytics: boolean;       // Доступ к отчетам и аналитике
+  canManageSchedule: boolean;      // Расписание и журнал
+  canViewFinancials: boolean;      // Финансы и выплаты
+}
+
 export interface PlatformUser {
   id: string;                    // Firebase Auth UID
   email: string;
@@ -257,7 +274,9 @@ export interface Membership {
   id: string;
   userId: string;
   tenantId: string;
-  role: "org:owner" | "org:admin" | "org:manager" | "org:teacher" | "org:psychologist" | "org:viewer" | "org:student";
+  role: string;                  // "Управляющий" | "Работник" | customRole.name
+  customRoleId?: string;
+  permissions: Partial<RolePermissions>;
   status: "active" | "invited" | "suspended";
   invitedBy: string;
   joinedAt: Timestamp;
