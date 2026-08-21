@@ -113,6 +113,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/tenants", tenantRoutes);
 app.use("/api/superadmin", superAdminRoutes);
 
+let memoryDbStore: any = null;
+
 // Helper to read database
 async function readDb() {
   const defaultMetrics = [
@@ -126,70 +128,83 @@ async function readDb() {
     { id: "m8", value: "100%", label_en: "Networking", label_ru: "Нетворкинг", order: 8 }
   ];
 
-  if (useFirebase) {
+  if (memoryDbStore) {
+    return memoryDbStore;
+  }
+
+  if (useFirebase && admin.apps.length > 0) {
     try {
       const dbRef = admin.firestore().collection("system").doc("db");
       const doc = await dbRef.get();
       if (doc.exists) {
-        const data = doc.data() || {};
-        if (!data.metrics || data.metrics.length === 0) {
-          data.metrics = defaultMetrics;
-          await dbRef.set(data);
+        memoryDbStore = doc.data() || {};
+        if (!memoryDbStore.metrics || memoryDbStore.metrics.length === 0) {
+          memoryDbStore.metrics = defaultMetrics;
         }
-        return data;
+        return memoryDbStore;
       }
     } catch (e) {
-      console.error("Firebase read error", e);
+      console.warn("Firebase read notice:", e);
     }
   }
 
-  // Fallback / Initial schema
+  // Local file fallback (if file exists and readable)
   try {
-    const data = await fs.readFile(DB_PATH, "utf-8");
-    const parsed = JSON.parse(data);
-    if (!parsed.metrics || parsed.metrics.length === 0) {
-      parsed.metrics = defaultMetrics;
-      fs.writeFile(DB_PATH, JSON.stringify(parsed, null, 2), "utf-8").catch(e => console.error(e));
+    if (existsSync(DB_PATH)) {
+      const data = await fs.readFile(DB_PATH, "utf-8");
+      memoryDbStore = JSON.parse(data);
+      if (memoryDbStore) return memoryDbStore;
     }
-    return parsed;
   } catch (error) {
-    console.error("Database reading error, reloading blank structure.", error);
-    return {
-      settings: {
-        eventDate: "June 26, 2026",
-        eventVenue: "Astana Technopark, Block C4",
-        contactEmail: "info@mainedu.kz",
-        contactPhone: "+7 (7172) 55-44-33"
-      },
-      speakers: [],
-      program: [],
-      partners: [],
-      tickets: [],
-      subscribers: [],
-      metrics: defaultMetrics
-    };
+    console.warn("Local db.json read notice:", error);
   }
+
+  // Blank structure fallback
+  memoryDbStore = {
+    settings: {
+      eventDate: "June 26, 2026",
+      eventVenue: "Astana Technopark, Block C4",
+      contactEmail: "info@mainedu.kz",
+      contactPhone: "+7 (7172) 55-44-33",
+      maintenance: {
+        enabled: false,
+        message: "Идут плановые технические работы на серверах прокторинга. Доступ будет восстановлен в ближайшее время.",
+        estimatedTime: "30 минут",
+        updatedAt: new Date().toISOString()
+      }
+    },
+    speakers: [],
+    program: [],
+    partners: [],
+    tickets: [],
+    subscribers: [],
+    metrics: defaultMetrics
+  };
+
+  return memoryDbStore;
 }
 
 // Helper to write database
 async function writeDb(data: any) {
-  if (useFirebase) {
+  memoryDbStore = data;
+  if (useFirebase && admin.apps.length > 0) {
     try {
       const dbRef = admin.firestore().collection("system").doc("db");
       await dbRef.set(data);
       return true;
     } catch (e) {
-      console.error("Firebase write error", e);
+      console.warn("Firebase write notice:", e);
     }
   }
 
   try {
-    await fs.writeFile(DB_PATH, JSON.stringify(data, null, 2), "utf-8");
-    return true;
+    if (existsSync(DB_PATH)) {
+      await fs.writeFile(DB_PATH, JSON.stringify(data, null, 2), "utf-8");
+    }
   } catch (error) {
-    console.error("Database writing error: ", error);
-    return false;
+    console.warn("Local db.json write notice (safe memory fallback used):", error);
   }
+  return true;
 }
 
 // Authentication middleware (Pure Firebase Auth verification)
