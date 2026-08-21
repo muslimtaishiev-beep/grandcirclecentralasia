@@ -142,6 +142,9 @@ async function readDb() {
         if (!memoryDbStore.metrics || memoryDbStore.metrics.length === 0) {
           memoryDbStore.metrics = defaultMetrics;
         }
+        if (memoryDbStore.settings && memoryDbStore.settings.maintenance) {
+          memoryDbStore.settings.maintenance.enabled = false;
+        }
         return memoryDbStore;
       }
     } catch (e) {

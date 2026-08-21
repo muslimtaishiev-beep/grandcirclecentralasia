@@ -282,7 +282,7 @@ export default function SuperAdminDashboard() {
     setMaintenanceSuccess(false);
     try {
       setMaintenanceEnabled(enabledState);
-      const token = sessionStorage.getItem("admin_token") || "admin";
+      const token = localStorage.getItem("admin_token") || sessionStorage.getItem("admin_token") || "";
       const res = await fetch("/api/admin/maintenance", {
         method: "POST",
         headers: { 
