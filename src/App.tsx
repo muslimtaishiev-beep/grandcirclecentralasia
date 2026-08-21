@@ -227,15 +227,15 @@ export default function App() {
             </ProtectedRoute>
           } />
           
-          <Route path="/test" element={<Testing />} />
-          <Route path="/test/:testId" element={<Testing />} />
-          <Route path="/manager/form" element={<ManagerForm />} />
-          <Route path="/manager-dashboard" element={<ManagerDashboard />} />
+          <Route path="/test" element={<ProtectedRoute><Testing /></ProtectedRoute>} />
+          <Route path="/test/:testId" element={<ProtectedRoute><Testing /></ProtectedRoute>} />
+          <Route path="/manager/form" element={<ProtectedRoute><ManagerForm /></ProtectedRoute>} />
+          <Route path="/manager-dashboard" element={<ProtectedRoute><ManagerDashboard /></ProtectedRoute>} />
           <Route path="/receipt/:shortId" element={<Receipt />} />
-          <Route path="/psychologist/:shortId" element={<PsychologistForm />} />
+          <Route path="/psychologist/:shortId" element={<ProtectedRoute><PsychologistForm /></ProtectedRoute>} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/terms" element={<TermsOfUse />} />
-          <Route path="/sandbox/proctor" element={<ProctorSandbox />} />
+          <Route path="/sandbox/proctor" element={<ProtectedRoute><ProctorSandbox /></ProtectedRoute>} />
           <Route path="/super-admin" element={<SuperAdminDashboard />} />
           <Route path="/site/:siteId" element={<SiteRenderer />} />
           
