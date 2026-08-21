@@ -155,7 +155,12 @@ export default function SuperAdminDashboard() {
 
   // Selected Organization Control Modal State
   const [selectedOrgModal, setSelectedOrgModal] = useState<OrganizationProject | null>(null);
-  const [modalActiveTab, setModalActiveTab] = useState<"actions" | "proctoring" | "apikeys" | "status">("actions");
+  const [modalActiveTab, setModalActiveTab] = useState<"actions" | "proctoring" | "apikeys" | "status" | "director">("actions");
+  const [directorEmail, setDirectorEmail] = useState("");
+  const [directorName, setDirectorName] = useState("");
+  const [directorPhone, setDirectorPhone] = useState("");
+  const [directorSuccess, setDirectorSuccess] = useState(false);
+  const [isAssigningDirector, setIsAssigningDirector] = useState(false);
 
   // Maintenance Mode Control State
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
@@ -361,6 +366,51 @@ export default function SuperAdminDashboard() {
     }
     if (selectedOrgModal && selectedOrgModal.id === projectId) {
       setSelectedOrgModal({ ...selectedOrgModal, status: newStatus as any });
+    }
+  };
+
+  const handleAssignDirector = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOrgModal || !directorEmail) return;
+    setIsAssigningDirector(true);
+    setDirectorSuccess(false);
+
+    try {
+      const token = localStorage.getItem("admin_token") || sessionStorage.getItem("admin_token") || "";
+      const res = await fetch(`/api/tenants/${selectedOrgModal.id}/invite`, {
+        method: "POST",
+        headers: {
+          "Content-[#Type]": "application/json",
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          email: directorEmail,
+          displayName: directorName || directorEmail.split("@")[0],
+          roleName: "Руководитель / Директор",
+          role: "org:owner",
+          permissions: {
+            canManageOrganization: true,
+            canManageUsers: true,
+            canCreateTests: true,
+            canReviewSubmissions: true,
+            canViewAnalytics: true,
+            canManageSchedule: true,
+            canViewFinancials: true
+          }
+        })
+      });
+      const data = await res.json();
+      if (data.success || res.ok) {
+        setDirectorSuccess(true);
+        setTimeout(() => setDirectorSuccess(false), 4000);
+      } else {
+        alert(data.error || "Ошибка при назначении руководителя");
+      }
+    } catch (err: any) {
+      alert(err.message || "Ошибка соединения с сервером");
+    } finally {
+      setIsAssigningDirector(false);
     }
   };
 
@@ -845,6 +895,7 @@ export default function SuperAdminDashboard() {
               <div className="flex border-b border-[#222222] bg-[#000000] px-5 gap-4">
                 {[
                   { id: "actions", label: "Быстрый доступ", icon: LayoutDashboard },
+                  { id: "director", label: "Руководитель & Права", icon: UserCheck },
                   { id: "proctoring", label: "Прокторинг и Флаги", icon: ShieldCheck },
                   { id: "apikeys", label: "API Ключ & Безопасность", icon: Key },
                   { id: "status", label: "Статус & Управление", icon: Sliders }
@@ -1000,6 +1051,87 @@ export default function SuperAdminDashboard() {
                       </div>
                     </div>
                   </div>
+                )}
+
+                {/* Tab 5: Director Assignment */}
+                {modalActiveTab === "director" && (
+                  <form onSubmit={handleAssignDirector} className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-bold text-[#888888] uppercase tracking-wider font-mono">Назначить Руководителя Организации</h3>
+                      <span className="text-[10px] text-[#50e3c2] bg-[#112211] border border-[#224422] px-2 py-0.5 rounded font-mono">100% Все Права (Owner)</span>
+                    </div>
+
+                    {directorSuccess && (
+                      <div className="p-3 bg-emerald-950/60 border border-emerald-800 text-emerald-300 rounded-xl text-xs flex items-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-400" />
+                        <span>Руководитель успешно назначен! Выданы все максимальные права управления.</span>
+                      </div>
+                    )}
+
+                    <div className="space-y-3 bg-[#111111] p-4 rounded-xl border border-[#222222]">
+                      <div>
+                        <label className="block text-[10px] font-mono text-[#888888] uppercase mb-1">Email Руководителя *</label>
+                        <input
+                          type="email"
+                          required
+                          placeholder="director@school.com"
+                          value={directorEmail}
+                          onChange={(e) => setDirectorEmail(e.target.value)}
+                          className="w-full bg-[#000000] border border-[#333333] rounded-lg px-3 py-2 text-xs text-white placeholder-[#555555] focus:outline-none focus:border-[#9F7AEA]"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-mono text-[#888888] uppercase mb-1">ФИО / Имя Директора</label>
+                          <input
+                            type="text"
+                            placeholder="Иванов Иван Иванович"
+                            value={directorName}
+                            onChange={(e) => setDirectorName(e.target.value)}
+                            className="w-full bg-[#000000] border border-[#333333] rounded-lg px-3 py-2 text-xs text-white placeholder-[#555555] focus:outline-none focus:border-[#9F7AEA]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-mono text-[#888888] uppercase mb-1">Телефон Руководителя</label>
+                          <input
+                            type="text"
+                            placeholder="+996 555 123 456"
+                            value={directorPhone}
+                            onChange={(e) => setDirectorPhone(e.target.value)}
+                            className="w-full bg-[#000000] border border-[#333333] rounded-lg px-3 py-2 text-xs text-white placeholder-[#555555] focus:outline-none focus:border-[#9F7AEA]"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-[#111111] border border-[#222222] rounded-xl space-y-2 text-[11px] text-[#888888]">
+                      <div className="font-bold text-white flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-[#9F7AEA]" />
+                        <span>Выдаваемые привилегии Руководителю:</span>
+                      </div>
+                      <ul className="grid grid-cols-2 gap-1.5 list-disc list-inside text-[#cccccc]">
+                        <li>Управление организацией и настройками</li>
+                        <li>Управление всеми сотрудниками</li>
+                        <li>Создание и редактирование всех тестов</li>
+                        <li>Проверка и просмотр всех экзаменов</li>
+                        <li>Доступ к отчетам и аналитике</li>
+                        <li>Доступ к финансовым выплатам</li>
+                      </ul>
+                      <p className="text-[10px] text-[#50e3c2] pt-1 font-mono">
+                        💡 Примечание: У вас как у Супер-Администратора сохраняются абсолютные права на 100% функций во всех организациях!
+                      </p>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isAssigningDirector}
+                      className="w-full py-3 bg-[#9F7AEA] hover:bg-[#805ad5] text-white font-bold text-xs uppercase tracking-widest rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-lg disabled:opacity-50"
+                    >
+                      {isAssigningDirector ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />}
+                      <span>Назначить Руководителя и Выдать Права</span>
+                    </button>
+                  </form>
                 )}
 
                 {/* Tab 4: Status & Suspension */}
