@@ -534,6 +534,16 @@ app.post("/api/exams/submit", async (req, res) => {
 });
 
 
+// Public Data Endpoint for landing page and global settings
+app.get("/api/public/data", async (req, res) => {
+  try {
+    const db = await readDb();
+    return res.json(db);
+  } catch (e: any) {
+    return res.status(500).json({ error: "Failed to load public data" });
+  }
+});
+
 // Maintenance Mode Endpoints
 app.get("/api/public/maintenance", async (req, res) => {
   try {

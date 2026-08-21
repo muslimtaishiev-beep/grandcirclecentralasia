@@ -128,8 +128,9 @@ export default function SuperAdminDashboard() {
   const [isSavingMaintenance, setIsSavingMaintenance] = useState(false);
   const [maintenanceSuccess, setMaintenanceSuccess] = useState(false);
 
-  // Subscribe to live Firestore collections
+  // Subscribe to live Firestore collections (only when authenticated)
   useEffect(() => {
+    if (!isAuthenticated) return;
     setLoading(true);
 
     // 1. Subscribe to /tenants
@@ -242,7 +243,7 @@ export default function SuperAdminDashboard() {
       unsubSessions();
       unsubLogs();
     };
-  }, []);
+  }, [isAuthenticated]);
 
   const handleSaveMaintenance = async (enabledState: boolean) => {
     setIsSavingMaintenance(true);
