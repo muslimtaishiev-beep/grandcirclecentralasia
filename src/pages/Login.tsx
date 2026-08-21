@@ -1,6 +1,12 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail } from 'firebase/auth';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { 
+  signInWithEmailAndPassword, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  sendPasswordResetEmail,
+  confirmPasswordReset
+} from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, Key, X, Check } from 'lucide-react';
@@ -23,7 +29,24 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
   const [resetError, setResetError] = useState('');
   const [resetSuccess, setResetSuccess] = useState(false);
 
+  // Password Reset Confirmation (from email link) State
+  const [searchParams] = useSearchParams();
+  const oobCode = searchParams.get('oobCode');
+  const mode = searchParams.get('mode');
+
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [confirmError, setConfirmError] = useState('');
+  const [confirmSuccess, setConfirmSuccess] = useState(false);
+
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (mode === 'resetPassword' && oobCode) {
+      setIsConfirmModalOpen(true);
+    }
+  }, [mode, oobCode]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,7 +84,12 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
     setResetSuccess(false);
 
     try {
-      await sendPasswordResetEmail(auth, resetEmail);
+      auth.languageCode = lang === 'kg' ? 'ru' : lang;
+      const actionCodeSettings = {
+        url: `${window.location.origin}/login`,
+        handleCodeInApp: true
+      };
+      await sendPasswordResetEmail(auth, resetEmail, actionCodeSettings);
       setResetSuccess(true);
     } catch (err: any) {
       if (err.code === 'auth/user-not-found') {
@@ -71,6 +99,31 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
       }
     } finally {
       setResetLoading(false);
+    }
+  };
+
+  const handleConfirmPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!oobCode || !newPassword) return;
+    setConfirmLoading(true);
+    setConfirmError('');
+    setConfirmSuccess(false);
+
+    try {
+      await confirmPasswordReset(auth, oobCode, newPassword);
+      setConfirmSuccess(true);
+      setTimeout(() => {
+        setIsConfirmModalOpen(false);
+        navigate('/login');
+      }, 2500);
+    } catch (err: any) {
+      if (err.code === 'auth/invalid-action-code' || err.code === 'auth/expired-action-code') {
+        setConfirmError(lang === 'ru' ? 'Ссылка для сброса пароля устарела или уже была использована. Запросите сброс пароля заново.' : 'Reset code is invalid or expired. Please request a new link.');
+      } else {
+        setConfirmError(err.message || (lang === 'ru' ? 'Ошибка при сохранении нового пароля.' : 'Failed to reset password.'));
+      }
+    } finally {
+      setConfirmLoading(false);
     }
   };
 
@@ -273,6 +326,72 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
                   className="w-full py-3 bg-slate-900 hover:bg-[#9F7AEA] text-white font-bold text-xs uppercase tracking-widest rounded-xl transition cursor-pointer disabled:opacity-50"
                 >
                   {resetLoading ? (lang === 'ru' ? 'Отправка...' : 'Sending...') : (lang === 'ru' ? 'Отправить ссылку для сброса' : 'Send Reset Link')}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── CONFIRM NEW PASSWORD MODAL ── */}
+      {isConfirmModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 relative animate-fade-in">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-[#9F7AEA]/10 flex items-center justify-center text-[#9F7AEA]">
+                <Key className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-lg text-slate-900">
+                  {lang === 'ru' ? 'Создание нового пароля' : 'Set New Password'}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {lang === 'ru' ? 'Введите ваш новый пароль для входа' : 'Enter your new password below'}
+                </p>
+              </div>
+            </div>
+
+            {confirmSuccess ? (
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-sm space-y-2">
+                <div className="flex items-center gap-2 font-bold text-emerald-900">
+                  <Check className="w-5 h-5 text-emerald-600" />
+                  <span>{lang === 'ru' ? 'Пароль успешно изменен!' : 'Password changed!'}</span>
+                </div>
+                <p className="text-xs text-emerald-700">
+                  {lang === 'ru' 
+                    ? 'Ваш новый пароль сохранен. Сейчас вы будете перенаправлены на форму входа.'
+                    : 'Your new password is saved. Redirecting to login...'}
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={handleConfirmPasswordReset} className="space-y-4">
+                {confirmError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
+                    {confirmError}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    {lang === 'ru' ? 'Новый пароль' : 'New Password'}
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    placeholder="••••••••"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-3 py-2.5 border-2 border-slate-200 rounded-lg text-sm font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#9F7AEA] bg-slate-50 focus:bg-white"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={confirmLoading}
+                  className="w-full py-3 bg-slate-900 hover:bg-[#9F7AEA] text-white font-bold text-xs uppercase tracking-widest rounded-xl transition cursor-pointer disabled:opacity-50"
+                >
+                  {confirmLoading ? (lang === 'ru' ? 'Сохранение...' : 'Saving...') : (lang === 'ru' ? 'Сохранить новый пароль' : 'Save New Password')}
                 </button>
               </form>
             )}
