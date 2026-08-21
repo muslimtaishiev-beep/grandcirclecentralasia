@@ -13,7 +13,12 @@ import {
   Activity, 
   RefreshCw,
   HardDrive,
-  Loader2
+  Loader2,
+  Lock,
+  Eye,
+  EyeOff,
+  LogOut,
+  ShieldCheck
 } from "lucide-react";
 import { collection, onSnapshot, updateDoc, doc, query, orderBy, limit } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -51,6 +56,45 @@ interface VercelSystemLog {
 }
 
 export default function SuperAdminDashboard() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return Boolean(localStorage.getItem("admin_token") || sessionStorage.getItem("admin_token"));
+  });
+  const [adminPasswordInput, setAdminPasswordInput] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setAuthError("");
+    try {
+      const res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: adminPasswordInput })
+      });
+      const data = await res.json();
+      if (res.ok && data.token) {
+        localStorage.setItem("admin_token", data.token);
+        sessionStorage.setItem("admin_token", data.token);
+        setIsAuthenticated(true);
+      } else {
+        setAuthError(data.error || "Неверный пароль верховного администратора");
+      }
+    } catch (err) {
+      setAuthError("Ошибка соединения с сервером");
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleAdminLogout = () => {
+    localStorage.removeItem("admin_token");
+    sessionStorage.removeItem("admin_token");
+    setIsAuthenticated(false);
+  };
+
   const [projects, setProjects] = useState<OrganizationProject[]>([]);
   const [liveSessions, setLiveSessions] = useState<any[]>([]);
   const [logs, setLogs] = useState<VercelSystemLog[]>([]);
@@ -237,6 +281,62 @@ export default function SuperAdminDashboard() {
     setTimeout(() => setCopiedKeyId(null), 2000);
   };
 
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#000000] text-[#ededed] flex items-center justify-center p-4 font-sans">
+        <div className="w-full max-w-md bg-[#111111] border border-[#333333] rounded-2xl p-8 shadow-2xl relative overflow-hidden">
+          <div className="flex flex-col items-center text-center mb-8">
+            <div className="w-12 h-12 bg-[#1a1a1a] border border-[#333333] rounded-xl flex items-center justify-center text-[#9F7AEA] mb-4 shadow-inner">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <h2 className="text-xl font-bold text-[#ffffff] tracking-tight uppercase">Super Admin Portal</h2>
+            <p className="text-xs text-[#888888] mt-1">Доступ верховного администратора платформы</p>
+          </div>
+
+          <form onSubmit={handleAdminLogin} className="space-y-5">
+            {authError && (
+              <div className="bg-[#2a1111] border border-[#ff4444]/40 p-3.5 rounded-lg text-xs text-[#ff6666] font-medium flex items-center gap-2">
+                <span>⚠️ {authError}</span>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-bold text-[#888888] uppercase tracking-wider mb-2">
+                Пароль Администратора
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={adminPasswordInput}
+                  onChange={(e) => setAdminPasswordInput(e.target.value)}
+                  placeholder="••••••••••••"
+                  required
+                  className="w-full bg-[#000000] border border-[#333333] rounded-lg px-4 py-3 text-sm text-[#ffffff] focus:outline-none focus:border-[#9F7AEA] transition pr-10 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-[#666666] hover:text-[#ffffff] transition"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              className="w-full py-3.5 px-4 bg-[#ffffff] text-[#000000] font-bold text-xs uppercase tracking-widest rounded-lg hover:bg-[#ededed] transition disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer shadow-lg"
+            >
+              {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+              <span>Войти в консоль</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   const filteredProjects = projects.filter(p => 
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     p.slug.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -263,10 +363,12 @@ export default function SuperAdminDashboard() {
           </div>
 
           <div className="flex items-center gap-3 text-xs">
-            <div className="hidden sm:flex items-center gap-2 bg-[#111111] border border-[#333333] px-2.5 py-1 rounded-md text-[#888888]">
-              <Search className="w-3.5 h-3.5" />
-              <span>Поиск организаций...</span>
-            </div>
+            <button
+              onClick={handleAdminLogout}
+              className="flex items-center gap-1.5 text-xs text-[#ff6666] hover:text-[#ff8888] bg-[#221111] border border-[#442222] px-3 py-1.5 rounded transition font-medium cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" /> Выйти
+            </button>
           </div>
         </div>
 
