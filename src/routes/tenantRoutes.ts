@@ -1,6 +1,6 @@
 import { Router } from "express";
 import admin from "firebase-admin";
-import { requireFirebaseAuth } from "./authRoutes";
+import { requireFirebaseAuth } from "./authRoutes.js";
 
 const router = Router();
 

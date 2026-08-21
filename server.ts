@@ -7,7 +7,7 @@ import admin from "firebase-admin";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import compression from "compression";
-import { calculateScoresTs } from "./src/lib/scoringEngine";
+import { calculateScoresTs } from "./src/lib/scoringEngine.js";
 
 dotenv.config();
 
@@ -106,9 +106,9 @@ try {
 // Memory active sessions store
 let activeSessions = new Set<string>();
 
-import authRoutes from "./src/routes/authRoutes";
-import tenantRoutes from "./src/routes/tenantRoutes";
-import superAdminRoutes from "./src/routes/superAdminRoutes";
+import authRoutes from "./src/routes/authRoutes.js";
+import tenantRoutes from "./src/routes/tenantRoutes.js";
+import superAdminRoutes from "./src/routes/superAdminRoutes.js";
 
 app.use("/api/auth", authRoutes);
 app.use("/api/tenants", tenantRoutes);
