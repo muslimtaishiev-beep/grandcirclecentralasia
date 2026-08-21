@@ -31,7 +31,7 @@
       "destination": "/api/index.ts"
     },
     {
-      "source": "/((?!assets/|.*\\..*).*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]
