@@ -293,23 +293,37 @@ app.post("/api/proctoring/upload-evidence", async (req, res) => {
 
 
 
-// 1. Get all public forum details in a single highly-efficient request
-app.get("/api/public/data", async (req, res) => {
-  const db = await readDb();
-  // Strip password from public settings
-  const publicSettings = { ...db.settings };
-  delete publicSettings.adminPassword;
 
-  res.json({
-    settings: publicSettings,
-    speakers: db.speakers || [],
-    program: db.program || [],
-    partners: db.partners || [],
-    tickets: db.tickets || [],
-    metrics: db.metrics || [],
-    universities: db.universities || []
-  });
+// Maintenance Mode Endpoints
+app.get("/api/public/maintenance", async (req, res) => {
+  const db = await readDb();
+  const maintenance = db.settings?.maintenance || {
+    enabled: false,
+    message: "Идут плановые технические работы на серверах прокторинга. Доступ будет восстановлен в ближайшее время.",
+    estimatedTime: "30 минут",
+    updatedAt: new Date().toISOString()
+  };
+  res.json(maintenance);
 });
+
+app.post("/api/admin/maintenance", async (req, res) => {
+  const { enabled, message, estimatedTime } = req.body;
+  const db = await readDb();
+  if (!db.settings) db.settings = {};
+  
+  db.settings.maintenance = {
+    enabled: Boolean(enabled),
+    message: message || "Идут плановые технические работы.",
+    estimatedTime: estimatedTime || "30 минут",
+    updatedAt: new Date().toISOString()
+  };
+
+  await writeDb(db);
+  console.log(`[MAINTENANCE] Mode updated to: ${enabled ? 'ENABLED' : 'DISABLED'}`);
+  res.json({ success: true, maintenance: db.settings.maintenance });
+});
+
+
 
 // 2. Subscribe to newsletter
 app.post("/api/public/subscribe", async (req, res) => {

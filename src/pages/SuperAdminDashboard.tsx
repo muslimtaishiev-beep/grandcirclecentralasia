@@ -159,6 +159,52 @@ export default function SuperAdminDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
 
+  // Maintenance Mode Control State
+  const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
+  const [maintenanceMessage, setMaintenanceMessage] = useState("Идут плановые технические работы по обновлению серверов прокторинга. Доступ будет восстановлен в ближайшее время.");
+  const [maintenanceTime, setMaintenanceTime] = useState("30-45 минут");
+  const [isSavingMaintenance, setIsSavingMaintenance] = useState(false);
+  const [maintenanceSuccess, setMaintenanceSuccess] = useState(false);
+
+  useEffect(() => {
+    // Fetch initial maintenance status from server
+    fetch("/api/public/maintenance")
+      .then(res => res.json())
+      .then(data => {
+        if (data) {
+          setMaintenanceEnabled(Boolean(data.enabled));
+          if (data.message) setMaintenanceMessage(data.message);
+          if (data.estimatedTime) setMaintenanceTime(data.estimatedTime);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSaveMaintenance = async (enabledState: boolean) => {
+    setIsSavingMaintenance(true);
+    setMaintenanceSuccess(false);
+    try {
+      const res = await fetch("/api/admin/maintenance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: enabledState,
+          message: maintenanceMessage,
+          estimatedTime: maintenanceTime
+        })
+      });
+      if (res.ok) {
+        setMaintenanceEnabled(enabledState);
+        setMaintenanceSuccess(true);
+        setTimeout(() => setMaintenanceSuccess(false), 3000);
+      }
+    } catch (e) {
+      console.error("Failed to update maintenance mode", e);
+    } finally {
+      setIsSavingMaintenance(false);
+    }
+  };
+
   // New Project Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newOrgName, setNewOrgName] = useState("");
@@ -309,6 +355,88 @@ export default function SuperAdminDashboard() {
 
       {/* ── MAIN DASHBOARD CONTAINER ── */}
       <main className="max-w-[1200px] mx-auto px-4 sm:px-6 py-8 space-y-8">
+
+        {/* ── GLOBAL MAINTENANCE MODE CONTROL BAR ── */}
+        <div className={`p-5 rounded-lg border font-mono text-xs transition-all space-y-4 ${
+          maintenanceEnabled 
+            ? "bg-[#221a00] border-[#f5a623] text-[#f5a623]" 
+            : "bg-[#0a0a0a] border-[#333333] text-[#888888]"
+        }`}>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className={`w-3 h-3 rounded-full ${
+                maintenanceEnabled ? "bg-[#f5a623] animate-ping" : "bg-[#444444]"
+              }`} />
+              <div>
+                <div className="font-bold text-sm text-[#ffffff] flex items-center gap-2">
+                  <span>🚨 РЕЖИМ ТЕХНИЧЕСКИХ РАБОТ</span>
+                  {maintenanceEnabled && (
+                    <span className="text-[10px] bg-[#f5a623]/20 border border-[#f5a623]/40 text-[#f5a623] px-2 py-0.5 rounded uppercase font-mono">
+                      АКТИВЕН ДЛЯ ВСЕХ СТРАНИЦ И ШКОЛ
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-[#888888] font-sans mt-0.5">
+                  При включении все входящие пользователи и ученики всех школ улетят на экран «Технические Работы».
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-end font-sans">
+              {maintenanceEnabled ? (
+                <button
+                  onClick={() => handleSaveMaintenance(false)}
+                  disabled={isSavingMaintenance}
+                  className="px-4 py-2 bg-[#ff4444] hover:bg-[#dd3333] text-white font-bold rounded-md shadow transition cursor-pointer text-xs flex items-center gap-1.5"
+                >
+                  <span>ВЫКЛЮЧИТЬ ТЕХРАБОТЫ</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleSaveMaintenance(true)}
+                  disabled={isSavingMaintenance}
+                  className="px-4 py-2 bg-[#f5a623] hover:bg-[#e09512] text-black font-bold rounded-md shadow transition cursor-pointer text-xs flex items-center gap-1.5"
+                >
+                  <span>ВКЛЮЧИТЬ ТЕХРАБОТЫ НА ВСЕ СТРАНИЦЫ</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Maintenance Message & Time Customizer */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-[#333333]/50 font-sans">
+            <div className="sm:col-span-2">
+              <label className="block text-[10px] font-mono uppercase text-[#888888] mb-1">
+                Сообщение для страниц всех школ и тестов:
+              </label>
+              <input 
+                type="text"
+                value={maintenanceMessage}
+                onChange={(e) => setMaintenanceMessage(e.target.value)}
+                placeholder="Текст описания технических работ..."
+                className="w-full bg-[#111111] border border-[#333333] rounded px-3 py-1.5 text-xs text-[#ededed] focus:outline-none focus:border-[#666666]"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-mono uppercase text-[#888888] mb-1">
+                Примерное время окончания:
+              </label>
+              <input 
+                type="text"
+                value={maintenanceTime}
+                onChange={(e) => setMaintenanceTime(e.target.value)}
+                placeholder="напр. 30 минут / 16:00"
+                className="w-full bg-[#111111] border border-[#333333] rounded px-3 py-1.5 text-xs text-[#ededed] focus:outline-none focus:border-[#666666]"
+              />
+            </div>
+          </div>
+
+          {maintenanceSuccess && (
+            <div className="text-[11px] text-[#50e3c2] font-mono text-right font-bold pt-1">
+              ✅ Обновления успешно применены! Все школы переведены на соответствующий режим.
+            </div>
+          )}
+        </div>
 
         {/* ── TAB 1: PROJECTS (ORGANIZATIONS) ── */}
         {(activeTab === "projects" || activeTab === ("projects font-mono" as any)) && (

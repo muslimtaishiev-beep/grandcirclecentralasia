@@ -31,6 +31,7 @@ const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsOfUse = lazy(() => import("./pages/TermsOfUse"));
 const ProctorSandbox = lazy(() => import("./pages/ProctorSandbox"));
 const SuperAdminDashboard = lazy(() => import("./pages/SuperAdminDashboard"));
+const MaintenanceMode = lazy(() => import("./pages/MaintenanceMode"));
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 import { PublicData } from "./types";
@@ -48,6 +49,9 @@ export default function App() {
   const [dataTrigger, setDataTrigger] = useState(0);
   const [showAllSpeakers, setShowAllSpeakers] = useState(false);
 
+  // Maintenance state
+  const [maintenanceInfo, setMaintenanceInfo] = useState<{ enabled: boolean; message?: string; estimatedTime?: string }>({ enabled: false });
+
   const navigate = (path: string) => {
     navigateRouter(path);
     window.scrollTo(0, 0);
@@ -62,6 +66,9 @@ export default function App() {
         if (response.ok) {
           const resJson = await response.json();
           setPublicData(resJson);
+          if (resJson?.settings?.maintenance) {
+            setMaintenanceInfo(resJson.settings.maintenance);
+          }
         }
       } catch (err) {
         console.error("Failed to load global server resources.", err);
@@ -69,7 +76,19 @@ export default function App() {
         setLoading(false);
       }
     };
+
+    const fetchMaintenance = async () => {
+      try {
+        const res = await fetch((import.meta.env.VITE_API_URL || "") + "/api/public/maintenance");
+        if (res.ok) {
+          const data = await res.json();
+          if (data) setMaintenanceInfo(data);
+        }
+      } catch (e) {}
+    };
+
     fetchPublicData();
+    fetchMaintenance();
   }, [dataTrigger]);
 
   const forceRefetch = () => {
@@ -89,7 +108,21 @@ export default function App() {
   } as unknown as PublicData;
 
   const isAdminPath = currentPath === "/admin";
+  const isSuperAdminPath = currentPath.startsWith("/super-admin");
   const isTicketsPath = currentPath === "/tickets";
+
+  // 🚨 GLOBAL MAINTENANCE MODE OVERRIDE (except for /super-admin)
+  if (maintenanceInfo.enabled && !isSuperAdminPath) {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-[#050508] text-white flex items-center justify-center">Loading...</div>}>
+        <MaintenanceMode 
+          message={maintenanceInfo.message}
+          estimatedTime={maintenanceInfo.estimatedTime}
+          onRefreshCheck={forceRefetch}
+        />
+      </Suspense>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#EDE9FE] text-slate-800 antialiased font-sans flex flex-col justify-between" id="main_app_wrapper">
