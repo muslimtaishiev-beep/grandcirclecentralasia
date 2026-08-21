@@ -105,9 +105,6 @@ export default function App() {
         if (response.ok) {
           const resJson = await response.json();
           setPublicData(resJson);
-          if (resJson?.settings?.maintenance) {
-            setMaintenanceInfo(resJson.settings.maintenance);
-          }
         }
       } catch (err) {
         console.error("Failed to load global server resources.", err);

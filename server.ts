@@ -138,13 +138,13 @@ async function readDb() {
       const dbRef = admin.firestore().collection("system").doc("db");
       const doc = await dbRef.get();
       if (doc.exists) {
-        memoryDbStore = doc.data() || {};
-        if (!memoryDbStore.metrics || memoryDbStore.metrics.length === 0) {
-          memoryDbStore.metrics = defaultMetrics;
-        }
-        if (memoryDbStore.settings && memoryDbStore.settings.maintenance) {
-          memoryDbStore.settings.maintenance.enabled = false;
-        }
+        if (!memoryDbStore.settings) memoryDbStore.settings = {};
+        memoryDbStore.settings.maintenance = {
+          enabled: false,
+          message: "Система работает в штатном режиме.",
+          estimatedTime: "0 минут",
+          updatedAt: new Date().toISOString()
+        };
         return memoryDbStore;
       }
     } catch (e) {
