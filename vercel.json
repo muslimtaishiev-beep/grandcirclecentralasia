@@ -31,7 +31,7 @@
       "destination": "/api/index.ts"
     },
     {
-      "source": "/((?!api/).*)",
+      "source": "/((?!api/|assets/|favicon.ico|.*\\..*).*)",
       "destination": "/index.html"
     }
   ]
