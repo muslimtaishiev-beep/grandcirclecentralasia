@@ -159,6 +159,8 @@ export default function SuperAdminDashboard() {
   const [directorEmail, setDirectorEmail] = useState("");
   const [directorName, setDirectorName] = useState("");
   const [directorPhone, setDirectorPhone] = useState("");
+  const [customPassword, setCustomPassword] = useState("");
+  const [generatedPasswordShow, setGeneratedPasswordShow] = useState<string | null>(null);
   const [directorSuccess, setDirectorSuccess] = useState(false);
   const [isAssigningDirector, setIsAssigningDirector] = useState(false);
 
@@ -374,6 +376,7 @@ export default function SuperAdminDashboard() {
     if (!selectedOrgModal || !directorEmail) return;
     setIsAssigningDirector(true);
     setDirectorSuccess(false);
+    setGeneratedPasswordShow(null);
 
     try {
       const freshToken = auth.currentUser ? await auth.currentUser.getIdToken(true) : "";
@@ -386,6 +389,7 @@ export default function SuperAdminDashboard() {
         },
         body: JSON.stringify({
           email: directorEmail,
+          password: customPassword || undefined,
           displayName: directorName || directorEmail.split("@")[0],
           roleName: "Руководитель / Директор",
           role: "org:owner",
@@ -403,7 +407,11 @@ export default function SuperAdminDashboard() {
       const data = await res.json();
       if (data.success || res.ok) {
         setDirectorSuccess(true);
-        setTimeout(() => setDirectorSuccess(false), 4000);
+        if (data.tempPassword) {
+          setGeneratedPasswordShow(data.tempPassword);
+        } else if (customPassword) {
+          setGeneratedPasswordShow(customPassword);
+        }
       } else {
         alert(data.error || "Ошибка при назначении руководителя");
       }
@@ -1068,6 +1076,26 @@ export default function SuperAdminDashboard() {
                       </div>
                     )}
 
+                    {generatedPasswordShow && (
+                      <div className="p-4 bg-emerald-950/80 border border-emerald-500 text-emerald-200 rounded-xl space-y-2">
+                        <div className="font-bold flex items-center gap-2 text-xs">
+                          <Key className="w-4 h-4 text-emerald-400" />
+                          <span>Пароль для входа Руководителя:</span>
+                        </div>
+                        <div className="flex items-center justify-between bg-black/60 p-2.5 rounded-lg border border-emerald-800/60 font-mono text-sm">
+                          <span className="font-bold text-white select-all">{generatedPasswordShow}</span>
+                          <button
+                            type="button"
+                            onClick={() => copyKey(generatedPasswordShow, "dir_pass")}
+                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs transition flex items-center gap-1 cursor-pointer"
+                          >
+                            {copiedKeyId === "dir_pass" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                            <span>{copiedKeyId === "dir_pass" ? "Скопировано!" : "Скопировать Пароль"}</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="space-y-3 bg-[#111111] p-4 rounded-xl border border-[#222222]">
                       <div>
                         <label className="block text-[10px] font-mono text-[#888888] uppercase mb-1">Email Руководителя *</label>
@@ -1102,6 +1130,17 @@ export default function SuperAdminDashboard() {
                             className="w-full bg-[#000000] border border-[#333333] rounded-lg px-3 py-2 text-xs text-white placeholder-[#555555] focus:outline-none focus:border-[#9F7AEA]"
                           />
                         </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-mono text-[#888888] uppercase mb-1">Пароль (Оставьте пустым для авто-генерации)</label>
+                        <input
+                          type="text"
+                          placeholder="например: Director2026!"
+                          value={customPassword}
+                          onChange={(e) => setCustomPassword(e.target.value)}
+                          className="w-full bg-[#000000] border border-[#333333] rounded-lg px-3 py-2 text-xs text-white placeholder-[#555555] focus:outline-none focus:border-[#9F7AEA] font-mono"
+                        />
                       </div>
                     </div>
 
