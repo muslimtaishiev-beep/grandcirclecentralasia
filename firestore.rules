@@ -1,37 +1,49 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Check if the user is an admin by email
-    function isAdmin() {
-      return request.auth != null && (
-        request.auth.token.email == "admin@mainedu.kz" || 
-        request.auth.token.email == "muslim.taishiev@gmail.com"
-      );
+
+    // Helper functions for B2B SaaS Tenant Isolation
+    function isAuthenticated() {
+      return request.auth != null;
     }
 
-    match /users/{userId} {
-      // User can read/write their own document. Admin can do everything.
-      allow read, write: if request.auth != null && (request.auth.uid == userId || isAdmin());
+    function isSameTenant(tenantId) {
+      return isAuthenticated() && request.auth.token.tenantId == tenantId;
     }
 
-    match /decisions/{decisionId} {
-      // Anyone can read decisions (used during Signup to see pre-set decision)
-      allow read: if true;
-      // Only admins can write decisions
-      allow write: if isAdmin();
+    function isSuperAdmin() {
+      return isAuthenticated() && request.auth.token.role == 'superadmin';
     }
 
-    match /settings/{document=**} {
-      // Settings are read-only for public, write for admin
-      allow read: if true;
-      allow write: if isAdmin();
+    // 1. TENANTS Collection
+    match /tenants/{tenantId} {
+      allow read: if isSameTenant(tenantId) || isSuperAdmin();
+      allow write: if isSuperAdmin();
     }
-    
-    // Default deny for everything else
-    match /{document=**} {
-      allow read, write: if false;
+
+    // 2. TESTS Collection
+    match /tests/{testId} {
+      allow read: if isSameTenant(resource.data.tenantId) || isSuperAdmin();
+      allow write: if isSameTenant(request.resource.data.tenantId) && request.auth.token.role == 'admin';
+    }
+
+    // 3. QUESTIONS Collection
+    match /questions/{questionId} {
+      allow read: if isSameTenant(resource.data.tenantId) || isSuperAdmin();
+      allow write: if isSameTenant(request.resource.data.tenantId) && request.auth.token.role == 'admin';
+    }
+
+    // 4. EXAM SESSIONS Collection
+    match /exam_sessions/{sessionId} {
+      allow read, write: if isSameTenant(resource.data.tenantId) || isSuperAdmin();
+      allow create: if isSameTenant(request.resource.data.tenantId);
+    }
+
+    // 5. SUBMISSIONS Collection (Immutable after creation)
+    match /submissions/{submissionId} {
+      allow read: if isSameTenant(resource.data.tenantId) || isSuperAdmin();
+      allow create: if isSameTenant(request.resource.data.tenantId);
+      allow update, delete: if isSuperAdmin(); // Immutable for standard users
     }
   }
 }
