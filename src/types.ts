@@ -1,7 +1,6 @@
 export interface Settings {
   eventDate: string;
   eventVenue: string;
-  adminPassword?: string;
   contactEmail: string;
   contactPhone: string;
 }

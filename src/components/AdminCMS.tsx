@@ -48,7 +48,6 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
   const [settingsForm, setSettingsForm] = useState<Settings>({
     eventDate: "",
     eventVenue: "",
-    adminPassword: "",
     contactEmail: "",
     contactPhone: ""
   });
@@ -1447,16 +1446,6 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
                   className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-700 outline-hidden"
                 />
               </div>
-            </div>
-
-            <div className="border-t border-dashed border-slate-200/80 pt-4">
-              <label className="block text-4xs font-bold text-red-500 uppercase tracking-widest font-mono mb-1.5 ml-1">Modify Admin Panel Password ⚠️</label>
-              <input
-                type="text" required value={settingsForm.adminPassword || "admin"}
-                onChange={(e) => setSettingsForm({ ...settingsForm, adminPassword: e.target.value })}
-                className="w-full rounded-xl border border-red-150 bg-red-50/20 p-3 text-xs font-mono font-bold text-slate-700 outline-hidden focus:border-red-400"
-              />
-              <p className="mt-1.5 text-4xs text-slate-400 font-bold tracking-wider font-mono">WARNING: Changing password updates the main credentials instantly. Keep this documented!</p>
             </div>
           </div>
 

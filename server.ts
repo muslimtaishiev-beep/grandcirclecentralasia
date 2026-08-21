@@ -158,7 +158,6 @@ async function readDb() {
       settings: {
         eventDate: "June 26, 2026",
         eventVenue: "Astana Technopark, Block C4",
-        adminPassword: "admin",
         contactEmail: "info@mainedu.kz",
         contactPhone: "+7 (7172) 55-44-33"
       },
@@ -193,16 +192,16 @@ async function writeDb(data: any) {
   }
 }
 
-// Authentication middleware
+// Authentication middleware (Pure Firebase Auth verification)
 async function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
   const authHeader = req.headers["authorization"] || "";
   const token = authHeader.replace("Bearer ", "").trim();
   
   if (!token || token === "null" || token === "undefined") {
-    return next(); // Dev / SuperAdmin local session fallback
+    return res.status(401).json({ error: "Unauthorized access: missing token." });
   }
 
-  if (activeSessions.has(token) || token === "admin") {
+  if (activeSessions.has(token)) {
     return next();
   }
 
@@ -211,7 +210,7 @@ async function requireAuth(req: express.Request, res: express.Response, next: ex
     (req as any).user = decoded;
     return next();
   } catch (e) {
-    return next();
+    return res.status(401).json({ error: "Unauthorized access: invalid Firebase Auth token." });
   }
 }
 
@@ -924,15 +923,14 @@ app.get("/api/admin/data", requireAuth, async (req, res) => {
   res.json(db);
 });
 
-// Update Administrative Settings (including password)
+// Update Administrative Settings
 app.put("/api/admin/settings", requireAuth, async (req, res) => {
-  const { eventDate, eventVenue, adminPassword, contactEmail, contactPhone } = req.body;
+  const { eventDate, eventVenue, contactEmail, contactPhone } = req.body;
   const db = await readDb();
 
   db.settings = {
     eventDate: eventDate || db.settings.eventDate,
     eventVenue: eventVenue || db.settings.eventVenue,
-    adminPassword: adminPassword || db.settings.adminPassword,
     contactEmail: contactEmail || db.settings.contactEmail,
     contactPhone: contactPhone || db.settings.contactPhone
   };
