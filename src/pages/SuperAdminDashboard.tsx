@@ -94,11 +94,19 @@ export default function SuperAdminDashboard() {
       if (user) {
         try {
           const idToken = await user.getIdToken();
-          localStorage.setItem("admin_token", idToken);
-          sessionStorage.setItem("admin_token", idToken);
-          setIsAuthenticated(true);
+          const res = await fetch("/api/admin/check", {
+            headers: { "Authorization": `Bearer ${idToken}` }
+          });
+          const data = await res.json();
+          if (res.ok && (data.success || data.valid)) {
+            localStorage.setItem("admin_token", idToken);
+            sessionStorage.setItem("admin_token", idToken);
+            setIsAuthenticated(true);
+            return;
+          }
         } catch (e) {}
       }
+      setIsAuthenticated(false);
     });
     return () => unsub();
   }, []);
