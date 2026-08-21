@@ -888,15 +888,26 @@ app.post("/api/admin/login", async (req, res) => {
   }
 });
 
-// 2. Administrative Check Token
+// 2. Administrative Check Token via Firebase Auth
 app.get("/api/admin/check", async (req, res) => {
   const authHeader = req.headers["authorization"] || "";
   const token = authHeader.replace("Bearer ", "").trim();
   
-  if (token && activeSessions.has(token)) {
-    return res.json({ valid: true });
+  if (!token || token === "null" || token === "undefined") {
+    return res.json({ success: false, valid: false });
   }
-  res.json({ valid: false });
+
+  if (activeSessions.has(token)) {
+    return res.json({ success: true, valid: true });
+  }
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    activeSessions.add(token);
+    return res.json({ success: true, valid: true, uid: decoded.uid, email: decoded.email });
+  } catch (e) {
+    return res.json({ success: false, valid: false });
+  }
 });
 
 // 3. Administrative Logout

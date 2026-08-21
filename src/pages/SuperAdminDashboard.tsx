@@ -57,9 +57,7 @@ interface VercelSystemLog {
 }
 
 export default function SuperAdminDashboard() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return Boolean(auth.currentUser || localStorage.getItem("admin_token") || sessionStorage.getItem("admin_token"));
-  });
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [adminEmailInput, setAdminEmailInput] = useState("");
   const [adminPasswordInput, setAdminPasswordInput] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -67,9 +65,39 @@ export default function SuperAdminDashboard() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged((user) => {
+    const verifySession = async () => {
+      const token = localStorage.getItem("admin_token") || sessionStorage.getItem("admin_token");
+      if (!token) {
+        setIsAuthenticated(false);
+        return;
+      }
+      try {
+        const res = await fetch("/api/admin/check", {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (res.ok && (data.success || data.valid)) {
+          setIsAuthenticated(true);
+        } else {
+          localStorage.removeItem("admin_token");
+          sessionStorage.removeItem("admin_token");
+          setIsAuthenticated(false);
+        }
+      } catch (e) {
+        setIsAuthenticated(false);
+      }
+    };
+
+    verifySession();
+
+    const unsub = auth.onAuthStateChanged(async (user) => {
       if (user) {
-        setIsAuthenticated(true);
+        try {
+          const idToken = await user.getIdToken();
+          localStorage.setItem("admin_token", idToken);
+          sessionStorage.setItem("admin_token", idToken);
+          setIsAuthenticated(true);
+        } catch (e) {}
       }
     });
     return () => unsub();
