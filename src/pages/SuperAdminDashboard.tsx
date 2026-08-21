@@ -89,26 +89,6 @@ export default function SuperAdminDashboard() {
     };
 
     verifySession();
-
-    const unsub = auth.onAuthStateChanged(async (user) => {
-      if (user) {
-        try {
-          const idToken = await user.getIdToken();
-          const res = await fetch("/api/admin/check", {
-            headers: { "Authorization": `Bearer ${idToken}` }
-          });
-          const data = await res.json();
-          if (res.ok && (data.success || data.valid)) {
-            localStorage.setItem("admin_token", idToken);
-            sessionStorage.setItem("admin_token", idToken);
-            setIsAuthenticated(true);
-            return;
-          }
-        } catch (e) {}
-      }
-      setIsAuthenticated(false);
-    });
-    return () => unsub();
   }, []);
 
   const handleAdminLogin = async (e: React.FormEvent) => {
