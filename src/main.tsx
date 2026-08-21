@@ -6,6 +6,13 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import App from './App.tsx';
 import './index.css';
 
+// Mute Three.js THREE.Clock deprecation warning
+const origWarn = console.warn;
+console.warn = (...args: any[]) => {
+  if (typeof args[0] === 'string' && args[0].includes('THREE.Clock')) return;
+  origWarn(...args);
+};
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
