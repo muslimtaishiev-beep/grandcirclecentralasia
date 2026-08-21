@@ -1,0 +1,221 @@
+import { Router } from "express";
+import admin from "firebase-admin";
+import { requireFirebaseAuth } from "./authRoutes";
+
+const router = Router();
+
+// Helper to record audit log events in Firestore /audit_logs
+export const recordAuditLog = async (db: FirebaseFirestore.Firestore, data: {
+  userId: string;
+  userEmail?: string;
+  action: string;
+  target?: string;
+  details?: string;
+  ip?: string;
+}) => {
+  try {
+    const logId = `log_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    await db.collection("audit_logs").doc(logId).set({
+      id: logId,
+      userId: data.userId,
+      userEmail: data.userEmail || "system",
+      action: data.action,
+      target: data.target || "system",
+      details: data.details || "",
+      ip: data.ip || "127.0.0.1",
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("[AuditLog] Failed to record audit log:", err);
+  }
+};
+
+// Middleware to check if user is a SuperAdmin
+export const requireSuperAdmin = async (req: any, res: any, next: any) => {
+  try {
+    const uid = req.user.uid;
+    const db = admin.firestore();
+
+    const userDoc = await db.collection("users").doc(uid).get();
+    if (!userDoc.exists) {
+      return res.status(403).json({ error: "Access denied. User not found." });
+    }
+
+    const userData = userDoc.data();
+    if (userData?.globalRole !== "superadmin") {
+      return res.status(403).json({ error: "Access denied. Requires superadmin role." });
+    }
+
+    next();
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+// GET /api/superadmin/audit-logs - List system audit logs
+router.get("/audit-logs", requireFirebaseAuth, requireSuperAdmin, async (req: any, res: any) => {
+  try {
+    const db = admin.firestore();
+    const snapshot = await db.collection("audit_logs").orderBy("timestamp", "desc").limit(100).get();
+    
+    const logs = snapshot.docs.map(doc => doc.data());
+    return res.json({ success: true, logs });
+  } catch (error: any) {
+    console.error("[SuperAdmin/AuditLogs] Error:", error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/superadmin/stats - System-wide SaaS Metrics
+router.get("/stats", requireFirebaseAuth, requireSuperAdmin, async (req: any, res: any) => {
+  try {
+    const db = admin.firestore();
+
+    const [tenantsSnap, usersSnap, requestsSnap, auditSnap] = await Promise.all([
+      db.collection("tenants").get(),
+      db.collection("users").get(),
+      db.collection("tenant_invites").where("status", "==", "pending").get(),
+      db.collection("audit_logs").limit(5).get()
+    ]);
+
+    return res.json({
+      success: true,
+      stats: {
+        totalTenants: tenantsSnap.size,
+        totalUsers: usersSnap.size,
+        pendingRequests: requestsSnap.size,
+        recentLogsCount: auditSnap.size
+      }
+    });
+  } catch (error: any) {
+    console.error("[SuperAdmin/Stats] Error:", error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/superadmin/tenant-requests - List all tenant requests
+router.get("/tenant-requests", requireFirebaseAuth, requireSuperAdmin, async (req: any, res: any) => {
+  try {
+    const db = admin.firestore();
+    const snapshot = await db.collection("tenant_invites").orderBy("requestedAt", "desc").get();
+    
+    const requests = snapshot.docs.map(doc => doc.data());
+    return res.json({ success: true, requests });
+  } catch (error: any) {
+    console.error("[SuperAdmin/TenantRequests] Error:", error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/superadmin/tenant-requests/:id - Approve or reject a request
+router.post("/tenant-requests/:id", requireFirebaseAuth, requireSuperAdmin, async (req: any, res: any) => {
+  try {
+    const { action, rejectReason } = req.body;
+    const requestId = req.params.id;
+    const uid = req.user.uid;
+    const db = admin.firestore();
+
+    if (action !== "approve" && action !== "reject") {
+      return res.status(400).json({ success: false, error: "Invalid action" });
+    }
+
+    const requestRef = db.collection("tenant_invites").doc(requestId);
+    const requestDoc = await requestRef.get();
+
+    if (!requestDoc.exists) {
+      return res.status(404).json({ success: false, error: "Request not found" });
+    }
+
+    const requestData = requestDoc.data();
+    if (requestData?.status !== "pending") {
+      return res.status(400).json({ success: false, error: "Request is already processed" });
+    }
+
+    if (action === "approve") {
+      const tenantId = `org_${Math.random().toString(36).substring(2, 10)}`;
+      const slug = requestData.organizationName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
+      
+      const newTenant = {
+        id: tenantId,
+        slug: slug,
+        name: requestData.organizationName,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        status: "active",
+        branding: {
+          logoUrl: null,
+          primaryColor: "#000000",
+          loginMessage: null
+        },
+        settings: {
+          maxStudents: 50,
+          allowedDomains: [],
+          proctoringEnabled: false,
+          storageProvider: "firebase_storage",
+          gasUrl: null,
+          gasApiKey: null
+        },
+        contacts: {
+          email: requestData.contactEmail,
+          phone: requestData.contactPhone
+        }
+      };
+
+      await db.collection("tenants").doc(tenantId).set(newTenant);
+
+      if (requestData.requestedByUserId) {
+        const membershipId = `mem_${requestData.requestedByUserId}_${tenantId}`;
+        await db.collection("memberships").doc(membershipId).set({
+          id: membershipId,
+          userId: requestData.requestedByUserId,
+          tenantId: tenantId,
+          role: "org:owner",
+          status: "active",
+          invitedBy: uid,
+          joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+
+      await requestRef.update({
+        status: "approved",
+        reviewedBy: uid,
+        reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Record Audit Log
+      await recordAuditLog(db, {
+        userId: uid,
+        userEmail: req.user.email,
+        action: "TENANT_APPROVE",
+        target: tenantId,
+        details: `Approved organization: ${requestData.organizationName}`,
+        ip: req.ip
+      });
+
+      return res.json({ success: true, message: "Tenant approved and created", tenantId });
+    } else {
+      await requestRef.update({
+        status: "rejected",
+        rejectReason: rejectReason || "No reason provided",
+        reviewedBy: uid,
+        reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Record Audit Log
+      await recordAuditLog(db, {
+        userId: uid,
+        userEmail: req.user.email,
+        action: "TENANT_REJECT",
+        target: requestId,
+        details: `Rejected organization: ${requestData.organizationName}. Reason: ${rejectReason}`,
+        ip: req.ip
+      });
+
+      return res.json({ success: true, message: "Tenant request rejected" });
+    }
+  } catch (error: any) {
+    console.error("[SuperAdmin/TenantRequests] Error:", error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+export default router;

@@ -17,15 +17,15 @@
  *   - Idempotent: uses shortId + testId as dedup key
  */
 
-import * as admin from "firebase-admin";
+import admin from "firebase-admin";
 import * as fs from "fs";
 import * as path from "path";
 import { randomUUID } from "crypto";
 
 // ── CONFIG ──────────────────────────────────────────────────────────────────
 const DRY_RUN = process.env.DRY_RUN !== "false";
-const TENANT_ID = "school_grand_circle";
-const TENANT_NAME = "Grand Circle Central Asia";
+const TENANT_ID = process.env.TENANT_ID || "org_future_leaders";
+const TENANT_NAME = "ОсОО «Академия Будущих Лидеров»";
 const BATCH_SIZE = 400; // Firestore limit: 500 per batch
 
 // ── FIREBASE INIT ───────────────────────────────────────────────────────────
@@ -69,17 +69,33 @@ interface SheetRow {
   diagnosticsJson: string;
 }
 
+import Papa from "papaparse";
+
 function parseTSV(filePath: string): SheetRow[] {
   const content = fs.readFileSync(filePath, "utf-8");
-  const lines = content.split("\n").filter((l) => l.trim());
+  const parsed = Papa.parse<string[]>(content, {
+    delimiter: "\t",
+    skipEmptyLines: true,
+  });
 
-  // Skip header row
-  const dataLines = lines.slice(1);
+  const dataLines = parsed.data.slice(1);
   const rows: SheetRow[] = [];
 
-  for (const line of dataLines) {
-    const cols = line.split("\t");
-    if (cols.length < 11) continue; // Skip malformed rows
+  for (const cols of dataLines) {
+    if (!cols || cols.length < 11) continue;
+
+    let col13 = (cols[13] || "").trim();
+    let col14 = (cols[14] || "").trim();
+    let status = "ЗАВЕРШЕН";
+    let diagnosticsJson = "{}";
+
+    if (col13 === "ЗАВЕРШЕН" || col13 === "ПРИОСТАНОВЛЕН" || col13 === "В ПРОЦЕССЕ") {
+      status = col13;
+      diagnosticsJson = col14;
+    } else if (col13.includes("🟢") || col13.includes("🔴")) {
+      diagnosticsJson = col13;
+      status = "ЗАВЕРШЕН";
+    }
 
     rows.push({
       date: (cols[0] || "").trim(),
@@ -95,8 +111,8 @@ function parseTSV(filePath: string): SheetRow[] {
       shortId: (cols[10] || "").trim(),
       answersJson: (cols[11] || "{}").trim(),
       englishScore: (cols[12] || "0").trim(),
-      status: (cols[13] || "").trim(),
-      diagnosticsJson: (cols[14] || "{}").trim(),
+      status,
+      diagnosticsJson,
     });
   }
 
@@ -301,8 +317,10 @@ async function main() {
   console.log(`  🔒 DRY_RUN: ${DRY_RUN ? "YES (no writes)" : "NO (LIVE!)"}`);
   console.log("═══════════════════════════════════════════════\n");
 
+  const db = initFirebase();
+
   // 1. Find data file
-  const dataDir = path.join(__dirname, "data");
+  const dataDir = path.join(process.cwd(), "scripts", "data");
   const tsvPath = path.join(dataDir, "test_results.tsv");
   const jsonPath = path.join(dataDir, "test_results.json");
 
@@ -379,9 +397,7 @@ async function main() {
     return;
   }
 
-  // 5. Initialize Firebase and write
-  const db = initFirebase();
-
+  // 5. Write to Firestore
   console.log("\n🔥 Writing to Firestore...\n");
   await ensureTenantExists(db);
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import DOMPurify from "dompurify";
 import { QRCodeCanvas } from "qrcode.react";
 import { Reorder } from "framer-motion";
 import { testsData } from "../data/testsData";
@@ -228,7 +229,7 @@ export default function Testing() {
     };
 
     const handleFullscreenChange = () => {
-      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      if (!document.fullscreenElement && !(document as any).webkitFullscreenElement) {
         setIsFullscreenViolation(true);
       }
     };
@@ -789,7 +790,7 @@ export default function Testing() {
           </div>
           
           <button 
-            onClick={checkSuspendStatus}
+            onClick={() => checkSuspendStatus(false)}
             disabled={isSubmitting}
             className={`w-full py-4 rounded-xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-[0.98] mb-4 ${
               isSubmitting ? "bg-slate-400 cursor-not-allowed" : "bg-gradient-to-r from-blue-600 to-indigo-600 shadow-lg hover:shadow-xl hover:from-blue-700 hover:to-indigo-700"
@@ -802,7 +803,7 @@ export default function Testing() {
     );
   }
 
-  if (disqualified && phase !== "suspended") {
+  if (disqualified && (phase as string) !== "suspended") {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center relative overflow-hidden">
@@ -1169,7 +1170,7 @@ export default function Testing() {
                       </div>
                     )}
                     {q.html ? (
-                      <div dangerouslySetInnerHTML={{ __html: `${i + 1}. ${q.html}` }} />
+                      <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`${i + 1}. ${q.html}`) }} />
                     ) : (
                       <>{i + 1}. {formatMathText(q.text)}</>
                     )}
@@ -1188,7 +1189,7 @@ export default function Testing() {
                             className="w-4 h-4 text-blue-600 border-slate-300"
                           />
                           {q.optionsHtml && q.optionsHtml[i] ? (
-                            <span className="text-slate-700" dangerouslySetInnerHTML={{__html: q.optionsHtml[i]}} />
+                            <span className="text-slate-700" dangerouslySetInnerHTML={{__html: DOMPurify.sanitize(q.optionsHtml[i])}} />
                           ) : (
                             <span className="text-slate-700">{formatMathText(opt)}</span>
                           )}
@@ -1244,7 +1245,7 @@ export default function Testing() {
                     <div className="mt-4 text-slate-800 text-lg leading-relaxed">
                       {q.text.split("[gap]").map((part, pIdx, arr) => (
                         <React.Fragment key={pIdx}>
-                          <span dangerouslySetInnerHTML={{ __html: part }} />
+                          <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(part) }} />
                           {pIdx < arr.length - 1 && (
                             <select
                               value={answers[q.id] || ""}

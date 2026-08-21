@@ -94,7 +94,7 @@ const Decision: React.FC<DecisionProps> = ({ lang }) => {
     
     try {
       const html2pdf = (await import('html2pdf.js')).default;
-      const opt = {
+      const opt: any = {
         margin:       [0.5, 0.5, 0.5, 0.5],
         filename:     `Decision_${userData?.firstName || 'Student'}.pdf`,
         image:        { type: 'jpeg', quality: 0.98 },

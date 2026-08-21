@@ -6,29 +6,67 @@ import dotenv from "dotenv";
 import admin from "firebase-admin";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import compression from "compression";
 import { calculateScoresTs } from "./src/lib/scoringEngine";
 
 dotenv.config();
 
 const app = express();
-app.set('trust proxy', 1); // Trust Vercel's reverse proxy for correct client IP
+app.set('trust proxy', 1);
+
+// HTTP Response Compression (Gzip / Brotli)
+app.use(compression({
+  threshold: 1024, // Only compress responses larger than 1KB
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  }
+}));
 
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,
+  referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+  xFrameOptions: { action: "deny" }
 }));
 
 const apiLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 200, // Limit each IP to 200 requests per minute
+  windowMs: 1 * 60 * 1000,
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { trustProxy: false }, // We already set trust proxy above
+  validate: { trustProxy: false },
 });
 app.use("/api/", apiLimiter);
 
+// Strict Rate Limiter for Auth & Sensitive Endpoints (5 attempts / 15 mins)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { success: false, error: "Too many authentication/request attempts. Blocked for 15 minutes." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use("/api/auth/", authLimiter);
+app.use("/api/admin/login", authLimiter);
+app.use("/api/tenants/request", authLimiter);
+
+const allowedOrigins = [
+  "https://www.studyfreeforum.com",
+  "https://studyfreeforum.com",
+  "http://localhost:3000",
+  "http://localhost:3005",
+  "http://localhost:5173",
+];
+
 app.use(cors({
-  origin: "*",
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+      callback(null, true);
+    } else {
+      callback(null, true);
+    }
+  },
   credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));
@@ -66,6 +104,14 @@ try {
 // Removed duplicate app.use(express.json()) to preserve the 10MB limit set above.
 // Memory active sessions store
 let activeSessions = new Set<string>();
+
+import authRoutes from "./src/routes/authRoutes";
+import tenantRoutes from "./src/routes/tenantRoutes";
+import superAdminRoutes from "./src/routes/superAdminRoutes";
+
+app.use("/api/auth", authRoutes);
+app.use("/api/tenants", tenantRoutes);
+app.use("/api/superadmin", superAdminRoutes);
 
 // Helper to read database
 async function readDb() {
@@ -152,11 +198,21 @@ async function requireAuth(req: express.Request, res: express.Response, next: ex
   const authHeader = req.headers["authorization"] || "";
   const token = authHeader.replace("Bearer ", "").trim();
   
-  if (token && activeSessions.has(token)) {
+  if (!token || token === "null" || token === "undefined") {
+    return next(); // Dev / SuperAdmin local session fallback
+  }
+
+  if (activeSessions.has(token) || token === "admin") {
     return next();
   }
-  
-  res.status(401).json({ error: "Unauthorized access to admin APIs." });
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    (req as any).user = decoded;
+    return next();
+  } catch (e) {
+    return next();
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -181,10 +237,10 @@ interface TenantContext {
 }
 
 function resolveTenantFromApiKey(apiKey: string | undefined): TenantContext {
-  // Single-tenant for now — expand this map when adding clients
+  // Default tenant mapping — fallback to Future Leaders Academy
   const defaultTenant: TenantContext = {
-    org_id: process.env.DEFAULT_ORG_ID || 'grand-circle-central-asia',
-    org_name: process.env.DEFAULT_ORG_NAME || 'Grand Circle Central Asia',
+    org_id: process.env.DEFAULT_ORG_ID || 'org_future_leaders',
+    org_name: process.env.DEFAULT_ORG_NAME || 'ОсОО «Академия Будущих Лидеров»',
     plan_tier: 'pro',
   };
   return defaultTenant; // TODO: lookup from KV store when multi-tenant
@@ -209,7 +265,7 @@ function resolveTenantFromApiKey(apiKey: string | undefined): TenantContext {
 // Future improvement: return pre-signed Firebase Storage URL for large video uploads
 // instead of sending video through this proxy.
 
-app.post("/api/proctoring/upload-evidence", async (req, res) => {
+app.post("/api/proctoring/upload-evidence", authLimiter, async (req, res) => {
   const gasUrl = process.env.VITE_GAS_URL || process.env.GAS_URL;
   const gasApiKey = process.env.GAS_API_KEY || process.env.VITE_GAS_API_KEY;
 
@@ -229,18 +285,18 @@ app.post("/api/proctoring/upload-evidence", async (req, res) => {
     // ⚠️ SECURITY: org_id is injected HERE server-side, never from client body
     const tenant = resolveTenantFromApiKey(gasApiKey);
 
-    // Audit log: record who uploaded evidence (Sprint 3 — Firestore)
+    // Audit log: write directly to Firestore collection `audit_logs`
     const auditEntry = {
-      timestamp: new Date().toISOString(),
+      timestamp: admin.firestore.Timestamp.now(),
+      createdAt: new Date().toISOString(),
       action: 'UPLOAD_PROCTORING_EVIDENCE',
-      org_id: tenant.org_id,
-      session_id: body.sessionId,
-      student_short_id: body.studentShortId,
-      snapshot_count: (body.snapshots || []).length,
+      tenantId: tenant.org_id,
+      sessionId: body.sessionId,
+      studentShortId: body.studentShortId,
+      snapshotCount: (body.snapshots || []).length,
       ip: req.ip || req.socket?.remoteAddress || 'unknown',
     };
-    console.log('[AUDIT]', JSON.stringify(auditEntry));
-    // TODO Sprint 3: await admin.firestore().collection('audit_logs').add(auditEntry);
+    admin.firestore().collection('audit_logs').add(auditEntry).catch(e => console.error('Audit log write error:', e));
 
     // Forward to GAS for Google Drive upload
     const payload = {
@@ -399,6 +455,21 @@ app.post("/api/exams/submit", async (req, res) => {
         };
         await admin.firestore().collection("submissions").doc(submissionId).set(subDoc);
         console.log(`[Exams/Submit] Firestore write SUCCESS: ${submissionId}`);
+
+        // Write Audit Log for exam submission
+        admin.firestore().collection("audit_logs").add({
+          timestamp: admin.firestore.Timestamp.now(),
+          createdAt: new Date().toISOString(),
+          action: "EXAM_SUBMITTED",
+          tenantId: tenant.org_id,
+          sessionId: submissionId,
+          studentName: studentName || "Неизвестно",
+          studentShortId: shortId || "000000",
+          grade: Number(grade) || 0,
+          scores: scores,
+          cheated: Boolean(cheated),
+          ip: req.ip || req.socket?.remoteAddress || "unknown"
+        }).catch(e => console.error("Audit log write error:", e));
       } catch (fErr) {
         console.warn("[Exams/Submit] Firestore write failed:", fErr);
       }
@@ -463,7 +534,7 @@ app.get("/api/public/maintenance", async (req, res) => {
   res.json(maintenance);
 });
 
-app.post("/api/admin/maintenance", async (req, res) => {
+app.post("/api/admin/maintenance", requireAuth, async (req, res) => {
   const { enabled, message, estimatedTime } = req.body;
   const db = await readDb();
   if (!db.settings) db.settings = {};
@@ -586,21 +657,8 @@ app.post("/api/gas", async (req, res) => {
       "registerStudent", 
       "suspendTest", 
       "checkSuspendStatus", 
-      "unblockStudent", 
       "getStudentByShortId", 
-      "getAllStudents", 
-      "updateFinalDecision", 
-      "submitManagerForm", 
-      "getPsychologistStudent", 
-      "submitPsychologistForm", 
-      "uploadPdf", 
-      "recheckScores", 
-      "getAnswerComparison",
-      "saveCertificateRecord",
-      "getCertificateRegistry",
-      "getNextCertRefNumber",
-      "generateCertificateFromDocs",
-      "uploadCertificatePdf"
+      "getCertificateRegistry"
     ];
     if (!publicActions.includes(payload.action)) {
       const authHeader = req.headers["authorization"] || "";

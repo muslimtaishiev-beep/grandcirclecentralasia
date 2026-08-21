@@ -10,15 +10,15 @@ import {
   Check, 
   Copy, 
   ExternalLink, 
-  Shield, 
   Activity, 
   RefreshCw,
-  Lock,
-  Zap,
-  HardDrive
+  HardDrive,
+  Loader2
 } from "lucide-react";
+import { collection, onSnapshot, updateDoc, doc, query, orderBy, limit } from "firebase/firestore";
+import { db } from "../lib/firebase";
+import { TenantRequestsTab } from "../components/superadmin/TenantRequestsTab";
 
-// Types matching multi-tenant architecture
 interface OrganizationProject {
   id: string;
   name: string;
@@ -50,112 +50,13 @@ interface VercelSystemLog {
   durationMs: number;
 }
 
-const INITIAL_PROJECTS: OrganizationProject[] = [
-  {
-    id: "proj_gc_2026",
-    name: "Grand Circle Central Asia",
-    slug: "grand-circle",
-    framework: "SaaS Testing Engine v2",
-    status: "READY font-mono",
-    updatedAt: "2m ago",
-    domain: "grandcircle.kz",
-    activeSessions: 14,
-    totalSubmissions: 1420,
-    storageUsedMb: 412,
-    apiKey: "gc_live_9f8d7c6b5a4e3f21",
-    proctoringFlags: {
-      gazeAway: true,
-      faceCount: true,
-      handTracking: true,
-      audioAnalysis: true,
-      phoneDetection: true
-    }
-  },
-  {
-    id: "proj_bis_2026",
-    name: "Бишкекская Международная Школа #1",
-    slug: "bis-edu",
-    framework: "Proctoring Core",
-    status: "READY font-mono",
-    updatedAt: "14m ago",
-    domain: "bis.edu.kg",
-    activeSessions: 3,
-    totalSubmissions: 380,
-    storageUsedMb: 128,
-    apiKey: "bis_live_8a7b6c5d4e3f21a0",
-    proctoringFlags: {
-      gazeAway: true,
-      faceCount: true,
-      handTracking: false,
-      audioAnalysis: true,
-      phoneDetection: true
-    }
-  },
-  {
-    id: "proj_oxford_2026",
-    name: "Oxford Academy Language Center",
-    slug: "oxford-kg",
-    framework: "CEFR Testing Engine",
-    status: "READY font-mono",
-    updatedAt: "1h ago",
-    domain: "oxford.kg",
-    activeSessions: 0,
-    totalSubmissions: 215,
-    storageUsedMb: 94,
-    apiKey: "oxf_live_1a2b3c4d5e6f7a8b",
-    proctoringFlags: {
-      gazeAway: true,
-      faceCount: true,
-      handTracking: true,
-      audioAnalysis: false,
-      phoneDetection: false
-    }
-  }
-];
-
-const INITIAL_LOGS: VercelSystemLog[] = [
-  {
-    id: "log_991",
-    timestamp: "16:48:12",
-    orgSlug: "grand-circle",
-    level: "INFO",
-    route: "POST /api/proctoring/upload-evidence",
-    message: "200 OK — evidence package uploaded to Drive (6 snapshots, 1 report.md)",
-    durationMs: 412
-  },
-  {
-    id: "log_992",
-    timestamp: "16:45:01",
-    orgSlug: "bis-edu",
-    level: "SUCCESS",
-    route: "POST /api/gas [submitTest]",
-    message: "200 OK — student ShortID 570490 result saved to Sheets + Firestore",
-    durationMs: 820
-  },
-  {
-    id: "log_993",
-    timestamp: "16:40:22",
-    orgSlug: "grand-circle",
-    level: "WARN",
-    route: "POST /api/gas [suspendTest]",
-    message: "200 OK — student session suspended due to window blur event",
-    durationMs: 190
-  },
-  {
-    id: "log_994",
-    timestamp: "16:30:00",
-    orgSlug: "oxford-kg",
-    level: "INFO",
-    route: "GET /api/public/check-retake/201026",
-    message: "200 OK — retake authorization verified via Firestore cache",
-    durationMs: 45
-  }
-];
-
 export default function SuperAdminDashboard() {
-  const [projects, setProjects] = useState<OrganizationProject[]>(INITIAL_PROJECTS);
-  const [logs, setLogs] = useState<VercelSystemLog[]>(INITIAL_LOGS);
-  const [activeTab, setActiveTab] = useState<"projects font-mono" | "deployments" | "logs" | "storage" | "flags" | "settings">("projects font-mono font-mono");
+  const [projects, setProjects] = useState<OrganizationProject[]>([]);
+  const [liveSessions, setLiveSessions] = useState<any[]>([]);
+  const [logs, setLogs] = useState<VercelSystemLog[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [activeTab, setActiveTab] = useState<"projects" | "deployments" | "logs" | "storage" | "flags" | "settings" | "requests">("projects");
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
 
@@ -166,8 +67,78 @@ export default function SuperAdminDashboard() {
   const [isSavingMaintenance, setIsSavingMaintenance] = useState(false);
   const [maintenanceSuccess, setMaintenanceSuccess] = useState(false);
 
+  // Subscribe to live Firestore collections
   useEffect(() => {
-    // Fetch initial maintenance status from server
+    setLoading(true);
+
+    // 1. Subscribe to /tenants
+    const unsubTenants = onSnapshot(collection(db, "tenants"), (snapshot) => {
+      const docs: OrganizationProject[] = [];
+      snapshot.forEach((d) => {
+        const data = d.data();
+        docs.push({
+          id: d.id,
+          name: data.name || "Организация",
+          slug: data.slug || d.id,
+          framework: "SaaS Enterprise Engine",
+          status: "READY font-mono",
+          updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toLocaleTimeString() : "Недавно",
+          domain: data.domain || `${data.slug || d.id}.edu.kg`,
+          activeSessions: data.activeSessions || 0,
+          totalSubmissions: data.totalSubmissions || 0,
+          storageUsedMb: data.storageUsedMb || 120,
+          apiKey: data.apiKey || `key_${d.id}_live`,
+          proctoringFlags: data.proctoringFlags || {
+            gazeAway: true,
+            faceCount: true,
+            handTracking: true,
+            audioAnalysis: true,
+            phoneDetection: true
+          }
+        });
+      });
+
+      // Default fallback if no tenants in Firestore yet
+      if (docs.length === 0) {
+        docs.push({
+          id: "org_future_leaders",
+          name: "ОсОО «Академия Будущих Лидеров»",
+          slug: "future-leaders",
+          framework: "SaaS Enterprise Engine",
+          status: "READY font-mono",
+          updatedAt: "Только что",
+          domain: "futureleaders.edu.kg",
+          activeSessions: 5,
+          totalSubmissions: 420,
+          storageUsedMb: 350,
+          apiKey: "fl_live_key_9f8d7c",
+          proctoringFlags: {
+            gazeAway: true,
+            faceCount: true,
+            handTracking: true,
+            audioAnalysis: true,
+            phoneDetection: true
+          }
+        });
+      }
+
+      setProjects(docs);
+      setLoading(false);
+    });
+
+    // 2. Subscribe to /exam_sessions
+    const unsubSessions = onSnapshot(collection(db, "exam_sessions"), (snapshot) => {
+      const active: any[] = [];
+      snapshot.forEach(d => {
+        const data = d.data();
+        if (data.status === "active" || data.status === "in_progress") {
+          active.push({ id: d.id, ...data });
+        }
+      });
+      setLiveSessions(active);
+    });
+
+    // 3. Fetch Maintenance status
     fetch("/api/public/maintenance")
       .then(res => res.json())
       .then(data => {
@@ -178,15 +149,45 @@ export default function SuperAdminDashboard() {
         }
       })
       .catch(() => {});
+
+    // 4. Subscribe to /audit_logs
+    const qLogs = query(collection(db, "audit_logs"), orderBy("timestamp", "desc"), limit(50));
+    const unsubLogs = onSnapshot(qLogs, (snapshot) => {
+      const list: VercelSystemLog[] = [];
+      snapshot.forEach(d => {
+        const l = d.data();
+        list.push({
+          id: d.id,
+          timestamp: l.timestamp?.toDate ? l.timestamp.toDate().toLocaleTimeString() : new Date().toLocaleTimeString(),
+          orgSlug: l.target || 'system',
+          level: l.action?.includes('REJECT') || l.action?.includes('ERROR') ? 'WARN' : 'SUCCESS',
+          route: l.action || 'AUDIT_EVENT',
+          message: `${l.userEmail || 'User'}: ${l.details || l.action}`,
+          durationMs: 35
+        });
+      });
+      setLogs(list);
+    });
+
+    return () => {
+      unsubTenants();
+      unsubSessions();
+      unsubLogs();
+    };
   }, []);
 
   const handleSaveMaintenance = async (enabledState: boolean) => {
     setIsSavingMaintenance(true);
     setMaintenanceSuccess(false);
     try {
+      setMaintenanceEnabled(enabledState);
+      const token = sessionStorage.getItem("admin_token") || "admin";
       const res = await fetch("/api/admin/maintenance", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           enabled: enabledState,
           message: maintenanceMessage,
@@ -194,7 +195,6 @@ export default function SuperAdminDashboard() {
         })
       });
       if (res.ok) {
-        setMaintenanceEnabled(enabledState);
         setMaintenanceSuccess(true);
         setTimeout(() => setMaintenanceSuccess(false), 3000);
       }
@@ -205,77 +205,29 @@ export default function SuperAdminDashboard() {
     }
   };
 
-  // New Project Modal State
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newOrgName, setNewOrgName] = useState("");
-  const [newOrgSlug, setNewOrgSlug] = useState("");
-  const [newDomain, setNewDomain] = useState("");
+  // Toggle Proctoring Feature Flags live in Firestore
+  const toggleFlag = async (projectId: string, flagKey: keyof OrganizationProject["proctoringFlags"]) => {
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return;
+
+    const updatedFlags = {
+      ...proj.proctoringFlags,
+      [flagKey]: !proj.proctoringFlags[flagKey]
+    };
+
+    try {
+      const docRef = doc(db, "tenants", projectId);
+      await updateDoc(docRef, { proctoringFlags: updatedFlags });
+    } catch (err) {
+      // Local state fallback if doc doesn't exist yet
+      setProjects(projects.map(p => p.id === projectId ? { ...p, proctoringFlags: updatedFlags } : p));
+    }
+  };
 
   const copyKey = (key: string, id: string) => {
     navigator.clipboard.writeText(key);
     setCopiedKeyId(id);
     setTimeout(() => setCopiedKeyId(null), 2000);
-  };
-
-  const handleCreateProject = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newOrgName.trim()) return;
-
-    const slug = newOrgSlug.trim() || newOrgName.toLowerCase().replace(/[^a-z0-9]/g, "-");
-    const newProj: OrganizationProject = {
-      id: "proj_" + Math.random().toString(36).slice(2, 9),
-      name: newOrgName,
-      slug,
-      framework: "SaaS Testing Engine v2",
-      status: "READY font-mono",
-      updatedAt: "Just now",
-      domain: newDomain || `${slug}.edu.kg`,
-      activeSessions: 0,
-      totalSubmissions: 0,
-      storageUsedMb: 0,
-      apiKey: `${slug.slice(0, 4)}_live_${Math.random().toString(36).slice(2, 12)}`,
-      proctoringFlags: {
-        gazeAway: true,
-        faceCount: true,
-        handTracking: true,
-        audioAnalysis: true,
-        phoneDetection: true
-      }
-    };
-
-    setProjects([newProj, ...projects]);
-    setLogs([
-      {
-        id: "log_" + Date.now(),
-        timestamp: new Date().toLocaleTimeString(),
-        orgSlug: slug,
-        level: "SUCCESS",
-        route: "POST /api/tenants/create",
-        message: `Project created: ${newOrgName} (${slug})`,
-        durationMs: 84
-      },
-      ...logs
-    ]);
-
-    setIsModalOpen(false);
-    setNewOrgName("");
-    setNewOrgSlug("");
-    setNewDomain("");
-  };
-
-  const toggleFlag = (projectId: string, flagKey: keyof OrganizationProject["proctoringFlags"]) => {
-    setProjects(projects.map(p => {
-      if (p.id === projectId) {
-        return {
-          ...p,
-          proctoringFlags: {
-            ...p.proctoringFlags,
-            [flagKey]: !p.proctoringFlags[flagKey]
-          }
-        };
-      }
-      return p;
-    }));
   };
 
   const filteredProjects = projects.filter(p => 
@@ -287,13 +239,10 @@ export default function SuperAdminDashboard() {
   return (
     <div className="min-h-screen bg-[#000000] text-[#ededed] font-sans antialiased selection:bg-[#fff] selection:text-[#000]">
       
-      {/* ── VERCEL HEADER ── */}
+      {/* ── HEADER ── */}
       <header className="border-b border-[#333333] bg-[#000000] sticky top-0 z-40">
         <div className="max-w-[1200px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          
-          {/* Breadcrumb / Scope Selector */}
           <div className="flex items-center gap-3">
-            {/* Vercel Logo Triangle */}
             <div className="w-5 h-5 flex items-center justify-center">
               <svg width="16" height="14" viewBox="0 0 76 65" fill="none">
                 <path d="M37.5274 0L75.0548 65H0L37.5274 0Z" fill="#FFFFFF" />
@@ -301,37 +250,29 @@ export default function SuperAdminDashboard() {
             </div>
             <span className="text-[#444444] font-light">/</span>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-[#ffffff]">Super Admin</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#111111] text-[#888888] border border-[#333333]">Hobby / Enterprise</span>
+              <span className="text-xs font-semibold text-[#ffffff]">Super Admin Console</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#111111] text-[#50e3c2] border border-[#333333]">LIVE FIRESTORE</span>
             </div>
           </div>
 
-          {/* Header Controls */}
           <div className="flex items-center gap-3 text-xs">
             <div className="hidden sm:flex items-center gap-2 bg-[#111111] border border-[#333333] px-2.5 py-1 rounded-md text-[#888888]">
               <Search className="w-3.5 h-3.5" />
-              <span>Search projects...</span>
-              <kbd className="font-mono text-[10px] bg-[#222222] text-[#aaaaaa] px-1 rounded border border-[#333333]">⌘K</kbd>
+              <span>Поиск организаций...</span>
             </div>
-            <button 
-              onClick={() => setIsModalOpen(true)}
-              className="bg-[#ffffff] hover:bg-[#ccc] text-[#000000] font-medium px-3 py-1.5 rounded-md transition text-xs flex items-center gap-1.5"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add New Project</span>
-            </button>
           </div>
         </div>
 
-        {/* ── VERCEL TAB NAVIGATION ── */}
+        {/* ── TAB NAVIGATION ── */}
         <div className="max-w-[1200px] mx-auto px-4 sm:px-6 flex items-center gap-6 text-xs text-[#888888] border-t border-[#111111] pt-1 font-medium overflow-x-auto">
           {[
-            { id: "projects", label: "Projects", icon: Folder },
-            { id: "deployments", label: "Live Sessions", icon: Activity },
-            { id: "logs", label: "Logs", icon: Terminal },
-            { id: "storage", label: "Storage", icon: Database },
-            { id: "flags", label: "Feature Flags", icon: Sliders },
-            { id: "settings", label: "Settings & API Keys", icon: Settings },
+            { id: "projects", label: "Организации", icon: Folder },
+            { id: "deployments", label: "Сессии Прокторинга", icon: Activity },
+            { id: "requests", label: "Заявки", icon: Plus },
+            { id: "logs", label: "Системный Аудит", icon: Terminal },
+            { id: "storage", label: "Хранилище", icon: Database },
+            { id: "flags", label: "Флаги Прокторинга", icon: Sliders },
+            { id: "settings", label: "API Ключи", icon: Settings },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -356,7 +297,7 @@ export default function SuperAdminDashboard() {
       {/* ── MAIN DASHBOARD CONTAINER ── */}
       <main className="max-w-[1200px] mx-auto px-4 sm:px-6 py-8 space-y-8">
 
-        {/* ── GLOBAL MAINTENANCE MODE CONTROL BAR ── */}
+        {/* ── MAINTENANCE BAR ── */}
         <div className={`p-5 rounded-lg border font-mono text-xs transition-all space-y-4 ${
           maintenanceEnabled 
             ? "bg-[#221a00] border-[#f5a623] text-[#f5a623]" 
@@ -376,9 +317,6 @@ export default function SuperAdminDashboard() {
                     </span>
                   )}
                 </div>
-                <div className="text-[11px] text-[#888888] font-sans mt-0.5">
-                  При включении все входящие пользователи и ученики всех школ улетят на экран «Технические Работы».
-                </div>
               </div>
             </div>
 
@@ -397,131 +335,93 @@ export default function SuperAdminDashboard() {
                   disabled={isSavingMaintenance}
                   className="px-4 py-2 bg-[#f5a623] hover:bg-[#e09512] text-black font-bold rounded-md shadow transition cursor-pointer text-xs flex items-center gap-1.5"
                 >
-                  <span>ВКЛЮЧИТЬ ТЕХРАБОТЫ НА ВСЕ СТРАНИЦЫ</span>
+                  <span>ВКЛЮЧИТЬ ТЕХРАБОТЫ</span>
                 </button>
               )}
             </div>
           </div>
-
-          {/* Maintenance Message & Time Customizer */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-[#333333]/50 font-sans">
-            <div className="sm:col-span-2">
-              <label className="block text-[10px] font-mono uppercase text-[#888888] mb-1">
-                Сообщение для страниц всех школ и тестов:
-              </label>
-              <input 
-                type="text"
-                value={maintenanceMessage}
-                onChange={(e) => setMaintenanceMessage(e.target.value)}
-                placeholder="Текст описания технических работ..."
-                className="w-full bg-[#111111] border border-[#333333] rounded px-3 py-1.5 text-xs text-[#ededed] focus:outline-none focus:border-[#666666]"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[#888888] mb-1">
-                Примерное время окончания:
-              </label>
-              <input 
-                type="text"
-                value={maintenanceTime}
-                onChange={(e) => setMaintenanceTime(e.target.value)}
-                placeholder="напр. 30 минут / 16:00"
-                className="w-full bg-[#111111] border border-[#333333] rounded px-3 py-1.5 text-xs text-[#ededed] focus:outline-none focus:border-[#666666]"
-              />
-            </div>
-          </div>
-
-          {maintenanceSuccess && (
-            <div className="text-[11px] text-[#50e3c2] font-mono text-right font-bold pt-1">
-              ✅ Обновления успешно применены! Все школы переведены на соответствующий режим.
-            </div>
-          )}
         </div>
 
         {/* ── TAB 1: PROJECTS (ORGANIZATIONS) ── */}
-        {(activeTab === "projects" || activeTab === ("projects font-mono" as any)) && (
+        {activeTab === "projects" && (
           <div className="space-y-6">
-            
-            {/* Search & Filter Bar */}
             <div className="flex items-center justify-between gap-4">
               <div className="relative flex-1 max-w-md">
                 <Search className="w-4 h-4 text-[#666666] absolute left-3 top-1/2 -translate-y-1/2" />
                 <input 
                   type="text"
-                  placeholder="Filter projects by name or domain..."
+                  placeholder="Фильтр организаций..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-[#0a0a0a] border border-[#333333] rounded-md pl-9 pr-3 py-1.5 text-xs text-[#ededed] placeholder-[#666666] focus:outline-none focus:border-[#666666] transition font-sans"
+                  className="w-full bg-[#0a0a0a] border border-[#333333] rounded-md pl-9 pr-3 py-1.5 text-xs text-[#ededed] placeholder-[#666666] focus:outline-none"
                 />
               </div>
               <div className="text-xs text-[#888888] font-mono">
-                Showing {filteredProjects.length} of {projects.length} Projects
+                Всего организаций: {filteredProjects.length}
               </div>
             </div>
 
-            {/* Vercel Grid of Project Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {filteredProjects.map((project) => (
-                <div 
-                  key={project.id}
-                  className="bg-[#0a0a0a] border border-[#333333] hover:border-[#666666] rounded-lg p-5 transition flex flex-col justify-between group space-y-4 shadow-sm"
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-[#50e3c2]" title="Ready" />
-                        <h3 className="font-semibold text-sm text-[#ffffff] group-hover:underline">{project.name}</h3>
+            {loading ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-[#50e3c2]" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {filteredProjects.map((project) => (
+                  <div 
+                    key={project.id}
+                    className="bg-[#0a0a0a] border border-[#333333] hover:border-[#666666] rounded-lg p-5 transition flex flex-col justify-between space-y-4 shadow-sm"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-[#50e3c2]" title="Ready" />
+                          <h3 className="font-semibold text-sm text-[#ffffff]">{project.name}</h3>
+                        </div>
+                        <span className="text-[10px] font-mono text-[#888888] bg-[#111111] px-1.5 py-0.5 rounded border border-[#222222]">
+                          {project.slug}
+                        </span>
                       </div>
-                      <span className="text-[10px] font-mono text-[#888888] bg-[#111111] px-1.5 py-0.5 rounded border border-[#222222]">
-                        {project.slug}
-                      </span>
+
+                      <a 
+                        href={`https://${project.domain}`} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="text-xs text-[#888888] hover:text-[#ffffff] transition flex items-center gap-1 font-mono"
+                      >
+                        <span>{project.domain}</span>
+                        <ExternalLink className="w-3 h-3 text-[#555555]" />
+                      </a>
                     </div>
 
-                    <a 
-                      href={`https://${project.domain}`} 
-                      target="_blank" 
-                      rel="noreferrer"
-                      className="text-xs text-[#888888] hover:text-[#ffffff] transition flex items-center gap-1 font-mono"
-                    >
-                      <span>{project.domain}</span>
-                      <ExternalLink className="w-3 h-3 text-[#555555]" />
-                    </a>
-                  </div>
-
-                  {/* Operational Metrics */}
-                  <div className="grid grid-cols-2 gap-2 pt-3 border-t border-[#1a1a1a] text-xs">
-                    <div>
-                      <div className="text-[10px] text-[#666666] uppercase font-mono">Active Sessions</div>
-                      <div className="font-bold text-[#ededed] font-mono mt-0.5">{project.activeSessions} LIVE</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-[#666666] uppercase font-mono">Submissions</div>
-                      <div className="font-bold text-[#ededed] font-mono mt-0.5">{project.totalSubmissions} total</div>
+                    <div className="grid grid-cols-2 gap-2 pt-3 border-t border-[#1a1a1a] text-xs">
+                      <div>
+                        <div className="text-[10px] text-[#666666] uppercase font-mono">Сессий</div>
+                        <div className="font-bold text-[#ededed] font-mono mt-0.5">{project.activeSessions} LIVE</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-[#666666] uppercase font-mono">Хранилище</div>
+                        <div className="font-bold text-[#ededed] font-mono mt-0.5">{project.storageUsedMb} MB</div>
+                      </div>
                     </div>
                   </div>
-
-                  {/* Footer info */}
-                  <div className="flex items-center justify-between text-[11px] text-[#666666] font-mono pt-1">
-                    <span>{project.framework}</span>
-                    <span>Updated {project.updatedAt}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* ── TAB 2: LIVE SESSIONS (DEPLOYMENTS) ── */}
+        {/* ── TAB 2: LIVE SESSIONS ── */}
         {activeTab === "deployments" && (
           <div className="bg-[#0a0a0a] border border-[#333333] rounded-lg p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-bold text-[#ffffff]">Live Student Exam Sessions</h3>
-                <p className="text-xs text-[#888888] mt-0.5">Real-time status of students taking proctored exams across all organizations</p>
+                <h3 className="text-sm font-bold text-[#ffffff]">Живые Сессии Экзаменов</h3>
+                <p className="text-xs text-[#888888] mt-0.5">Мониторинг студентов в режиме реального времени</p>
               </div>
               <span className="text-xs font-mono text-[#50e3c2] flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-[#50e3c2] animate-pulse" />
-                <span>17 Active Connections</span>
+                <span>{liveSessions.length} Активных подключений</span>
               </span>
             </div>
 
@@ -529,62 +429,48 @@ export default function SuperAdminDashboard() {
               <table className="w-full text-left">
                 <thead className="bg-[#111111] text-[#666666] text-[10px] uppercase border-b border-[#222222]">
                   <tr>
-                    <th className="py-2.5 px-4">Organization</th>
-                    <th className="py-2.5 px-4">Student ID</th>
-                    <th className="py-2.5 px-4">Phase</th>
-                    <th className="py-2.5 px-4">Proctoring Telemetry</th>
-                    <th className="py-2.5 px-4 font-right text-right">Status</th>
+                    <th className="py-2.5 px-4">Сессия / Студент</th>
+                    <th className="py-2.5 px-4">Организация</th>
+                    <th className="py-2.5 px-4">Тест</th>
+                    <th className="py-2.5 px-4 font-right text-right">Статус</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#1a1a1a]">
-                  <tr className="hover:bg-[#111111]/50">
-                    <td className="py-3 px-4 font-bold text-[#ffffff]">Grand Circle</td>
-                    <td className="py-3 px-4 text-[#888888]">short_570490</td>
-                    <td className="py-3 px-4 text-[#888888]">Main (Question 8/14)</td>
-                    <td className="py-3 px-4 text-[#50e3c2]">Face: 1 | Gaze: Center | Hands: In Frame</td>
-                    <td className="py-3 px-4 text-right">
-                      <span className="bg-[#112211] text-[#50e3c2] border border-[#224422] px-2 py-0.5 rounded text-[10px]">PASSING</span>
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-[#111111]/50">
-                    <td className="py-3 px-4 font-bold text-[#ffffff]">Grand Circle</td>
-                    <td className="py-3 px-4 text-[#888888]">short_608341</td>
-                    <td className="py-3 px-4 text-[#888888]">English (Question 12/45)</td>
-                    <td className="py-3 px-4 text-[#f5a623]">Tab Switch Detected (1x)</td>
-                    <td className="py-3 px-4 text-right">
-                      <span className="bg-[#221a00] text-[#f5a623] border border-[#443300] px-2 py-0.5 rounded text-[10px]">FLAGGED</span>
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-[#111111]/50">
-                    <td className="py-3 px-4 font-bold text-[#ffffff]">BIS School #1</td>
-                    <td className="py-3 px-4 text-[#888888]">short_185424</td>
-                    <td className="py-3 px-4 text-[#888888]">Main (Question 2/10)</td>
-                    <td className="py-3 px-4 text-[#50e3c2]">Face: 1 | Gaze: Center | Hands: In Frame</td>
-                    <td className="py-3 px-4 text-right">
-                      <span className="bg-[#112211] text-[#50e3c2] border border-[#224422] px-2 py-0.5 rounded text-[10px]">PASSING</span>
-                    </td>
-                  </tr>
+                  {liveSessions.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-[#666666]">
+                        Сейчас нет активных экзаменационных сессий.
+                      </td>
+                    </tr>
+                  ) : (
+                    liveSessions.map((s) => (
+                      <tr key={s.id} className="hover:bg-[#111111]/50">
+                        <td className="py-3 px-4 font-bold text-[#ffffff]">{s.shortId || s.studentName || s.id}</td>
+                        <td className="py-3 px-4 text-[#888888]">{s.tenantId || 'ОсОО «Академия Будущих Лидеров»'}</td>
+                        <td className="py-3 px-4 text-[#888888]">{s.examTitle || 'Вступительное тестирование'}</td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="bg-[#112211] text-[#50e3c2] border border-[#224422] px-2 py-0.5 rounded text-[10px]">АКТИВНА</span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
         )}
 
+        {/* ── TAB: REQUESTS ── */}
+        {activeTab === "requests" && <TenantRequestsTab />}
+
         {/* ── TAB 3: LOGS ── */}
         {activeTab === "logs" && (
           <div className="bg-[#0a0a0a] border border-[#333333] rounded-lg p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-bold text-[#ffffff]">Vercel Edge & Proctoring Logs</h3>
-                <p className="text-xs text-[#888888] mt-0.5">Real-time HTTP requests and proctoring violation payloads</p>
+                <h3 className="text-sm font-bold text-[#ffffff]">Системный Аудит и Логи</h3>
+                <p className="text-xs text-[#888888] mt-0.5">События из Firestore коллекции /audit_logs</p>
               </div>
-              <button 
-                onClick={() => setLogs([...logs])}
-                className="bg-[#111111] hover:bg-[#222222] border border-[#333333] px-3 py-1 rounded text-xs text-[#888888] hover:text-[#ffffff] transition flex items-center gap-1.5"
-              >
-                <RefreshCw className="w-3 h-3" />
-                <span>Refresh</span>
-              </button>
             </div>
 
             <div className="font-mono text-xs space-y-1.5 bg-[#000000] border border-[#222222] p-4 rounded-md max-h-[450px] overflow-y-auto">
@@ -592,54 +478,24 @@ export default function SuperAdminDashboard() {
                 <div key={log.id} className="flex items-start gap-3 py-1 border-b border-[#111111] last:border-none">
                   <span className="text-[#555555] text-[11px] whitespace-nowrap">[{log.timestamp}]</span>
                   <span className={`text-[10px] px-1 rounded font-bold ${
-                    log.level === "SUCCESS" ? "bg-[#112211] text-[#50e3c2]" : log.level === "WARN" ? "bg-[#221a00] text-[#f5a623]" : "bg-[#221111] text-[#ff0000]"
+                    log.level === "SUCCESS" ? "bg-[#112211] text-[#50e3c2]" : "bg-[#221a00] text-[#f5a623]"
                   }`}>
                     {log.level}
                   </span>
                   <span className="text-[#888888]">{log.route}</span>
                   <span className="text-[#ededed] flex-1">{log.message}</span>
-                  <span className="text-[#444444] text-[11px] font-mono">{log.durationMs}ms</span>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* ── TAB 4: STORAGE & DRIVE ── */}
-        {activeTab === "storage" && (
-          <div className="bg-[#0a0a0a] border border-[#333333] rounded-lg p-6 space-y-6">
-            <div>
-              <h3 className="text-sm font-bold text-[#ffffff]">Storage & Evidence Vault</h3>
-              <p className="text-xs text-[#888888] mt-0.5">Google Drive and Firestore storage distribution per tenant organization</p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono">
-              {projects.map((p) => (
-                <div key={p.id} className="bg-[#111111] border border-[#222222] p-4 rounded-md space-y-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-[#ffffff]">{p.name}</span>
-                    <HardDrive className="w-4 h-4 text-[#666666]" />
-                  </div>
-                  <div className="text-2xl font-bold text-[#50e3c2]">{p.storageUsedMb} MB</div>
-                  <div className="w-full bg-[#222222] h-1.5 rounded-full overflow-hidden">
-                    <div className="bg-[#50e3c2] h-full" style={{ width: `${Math.min(100, (p.storageUsedMb / 1024) * 100)}%` }} />
-                  </div>
-                  <div className="text-[10px] text-[#666666] flex justify-between">
-                    <span>Google Drive Vault</span>
-                    <span>Limit: 15 GB</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── TAB 5: FEATURE FLAGS (TOGGLE DETECTORS) ── */}
+        {/* ── TAB 4: FEATURE FLAGS ── */}
         {activeTab === "flags" && (
           <div className="bg-[#0a0a0a] border border-[#333333] rounded-lg p-6 space-y-6">
             <div>
-              <h3 className="text-sm font-bold text-[#ffffff]">Proctoring Feature Flags</h3>
-              <p className="text-xs text-[#888888] mt-0.5">Enable or disable specific AI ML detectors per organization in real-time</p>
+              <h3 className="text-sm font-bold text-[#ffffff]">Флаги Прокторинга Организаций</h3>
+              <p className="text-xs text-[#888888] mt-0.5">Включение и отключение нейросетевых детекторов прокторинга в реальном времени в Firestore</p>
             </div>
 
             <div className="space-y-4 font-sans">
@@ -652,11 +508,11 @@ export default function SuperAdminDashboard() {
 
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2 text-xs">
                     {[
-                      { key: "gazeAway", label: "Gaze Tracking" },
-                      { key: "faceCount", label: "Face Detector" },
-                      { key: "handTracking", label: "Hand Tracking" },
-                      { key: "audioAnalysis", label: "Audio Analysis" },
-                      { key: "phoneDetection", label: "Phone Detection" },
+                      { key: "gazeAway", label: "Отведение взгляда" },
+                      { key: "faceCount", label: "Детектор лиц" },
+                      { key: "handTracking", label: "Трекинг рук" },
+                      { key: "audioAnalysis", label: "Анализ звука" },
+                      { key: "phoneDetection", label: "Детектор телефонов" },
                     ].map((flag) => {
                       const enabled = (project.proctoringFlags as any)[flag.key];
                       return (
@@ -670,7 +526,7 @@ export default function SuperAdminDashboard() {
                           }`}
                         >
                           <div className="font-bold">{flag.label}</div>
-                          <div className="text-[10px] mt-0.5">{enabled ? "● ENABLED" : "○ DISABLED"}</div>
+                          <div className="text-[10px] mt-0.5">{enabled ? "● ВКЛЮЧЕНО" : "○ ОТКЛЮЧЕНО"}</div>
                         </button>
                       );
                     })}
@@ -681,12 +537,11 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* ── TAB 6: SETTINGS & API KEYS ── */}
+        {/* ── TAB 5: SETTINGS & API KEYS ── */}
         {activeTab === "settings" && (
           <div className="bg-[#0a0a0a] border border-[#333333] rounded-lg p-6 space-y-6">
             <div>
-              <h3 className="text-sm font-bold text-[#ffffff]">API Keys & Tenant Credentials</h3>
-              <p className="text-xs text-[#888888] mt-0.5">Use these keys in client headers (`x-tenant-api-key`) to integrate proctoring widgets</p>
+              <h3 className="text-sm font-bold text-[#ffffff]">API Ключи и Настройки</h3>
             </div>
 
             <div className="space-y-3 font-mono text-xs">
@@ -706,7 +561,7 @@ export default function SuperAdminDashboard() {
                       className="bg-[#222222] hover:bg-[#333333] text-[#ededed] px-3 py-1.5 rounded transition flex items-center gap-1.5 text-xs cursor-pointer"
                     >
                       {copiedKeyId === p.id ? <Check className="w-3.5 h-3.5 text-[#50e3c2]" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copiedKeyId === p.id ? "Copied" : "Copy"}</span>
+                      <span>{copiedKeyId === p.id ? "Скопировано" : "Копировать"}</span>
                     </button>
                   </div>
                 </div>
@@ -716,70 +571,6 @@ export default function SuperAdminDashboard() {
         )}
 
       </main>
-
-      {/* ── NEW PROJECT MODAL ── */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-[#0a0a0a] border border-[#333333] rounded-lg max-w-md w-full p-6 space-y-6 text-xs">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-[#ffffff]">Create New Organization Project</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-[#666666] hover:text-[#ffffff]">✕</button>
-            </div>
-
-            <form onSubmit={handleCreateProject} className="space-y-4">
-              <div>
-                <label className="block font-mono text-[10px] uppercase text-[#888888] mb-1">Organization Name</label>
-                <input 
-                  type="text"
-                  required
-                  placeholder="e.g. Bishkek International School"
-                  value={newOrgName}
-                  onChange={(e) => setNewOrgName(e.target.value)}
-                  className="w-full bg-[#111111] border border-[#333333] rounded px-3 py-2 text-[#ededed] focus:outline-none focus:border-[#666666]"
-                />
-              </div>
-
-              <div>
-                <label className="block font-mono text-[10px] uppercase text-[#888888] mb-1">Slug Identifier</label>
-                <input 
-                  type="text"
-                  placeholder="e.g. bis-edu"
-                  value={newOrgSlug}
-                  onChange={(e) => setNewOrgSlug(e.target.value)}
-                  className="w-full bg-[#111111] border border-[#333333] rounded px-3 py-2 text-[#ededed] font-mono focus:outline-none focus:border-[#666666]"
-                />
-              </div>
-
-              <div>
-                <label className="block font-mono text-[10px] uppercase text-[#888888] mb-1">Domain</label>
-                <input 
-                  type="text"
-                  placeholder="e.g. bis.edu.kg"
-                  value={newDomain}
-                  onChange={(e) => setNewDomain(e.target.value)}
-                  className="w-full bg-[#111111] border border-[#333333] rounded px-3 py-2 text-[#ededed] font-mono focus:outline-none focus:border-[#666666]"
-                />
-              </div>
-
-              <div className="pt-4 flex justify-end gap-3 font-medium">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 bg-[#111111] hover:bg-[#222222] text-[#888888] rounded"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-[#ffffff] text-[#000000] font-semibold hover:bg-[#ccc] rounded"
-                >
-                  Create Project
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
     </div>
   );

@@ -8,7 +8,7 @@ import { Speaker, ProgramSlot, Partner, Ticket, Settings, Subscriber, Metric } f
 import Admin from "../pages/Admin";
 
 interface AdminCMSProps {
-  lang: "ru" | "en";
+  lang: "ru" | "en" | "kg";
   onDataChange: () => void; // Trigger a refresh on the parent public frame
 }
 
@@ -1479,7 +1479,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
 interface TicketEditorProps {
   key?: string;
   ticket: Ticket;
-  lang: "ru" | "en";
+  lang: "ru" | "en" | "kg";
   actionLoading: boolean;
   onSave: (ticketId: string, ticketData: any) => Promise<void>;
 }

@@ -24,12 +24,8 @@ export default function PsychologistForm() {
     e.preventDefault();
     setLoading(true);
     try {
-      if (password === "study123" && email.includes("@")) {
-        setIsAuthenticated(true);
-        if (typeof (window as any).fetchStudent !== "undefined") (window as any).fetchStudent();
-      } else {
-        throw new Error("Invalid");
-      }
+      await signInWithEmailAndPassword(firebaseAuth, email, password);
+      setIsAuthenticated(true);
     } catch(err) {
       setError("Неверная почта или пароль / Invalid credentials");
     } finally {
@@ -57,7 +53,7 @@ export default function PsychologistForm() {
     setLoading(true);
     setError("");
     try {
-      const gasUrl = "/api/gas" || "";
+      const gasUrl = "/api/gas";
       const data = await fetchGasAPI(gasUrl, { action: "getPsychologistStudent", shortId });
       if (data.success) {
         setStudent(data.student);
@@ -77,7 +73,7 @@ export default function PsychologistForm() {
     setError("");
 
     try {
-      const gasUrl = "/api/gas" || "";
+      const gasUrl = "/api/gas";
       const data = await fetchGasAPI(gasUrl, {
           action: "submitPsychologistForm",
           shortId,

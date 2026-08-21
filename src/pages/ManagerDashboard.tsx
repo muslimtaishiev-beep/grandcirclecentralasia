@@ -1,7 +1,7 @@
 import { auth as firebaseAuth } from "../lib/firebase";
 import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { getHourlyPIN, getCEFRLevel, fetchGasAPI, toGenitiveCase } from "../lib/utils";
 import { testsData } from "../data/testsData";
 import html2pdf from "html2pdf.js";
@@ -49,7 +49,19 @@ export default function ManagerDashboard() {
   const [isCertModalOpen, setIsCertModalOpen] = useState(false);
   const [certTab, setCertTab] = useState<"GENERATE" | "HISTORY">("GENERATE");
   const [selectedStudentForCert, setSelectedStudentForCert] = useState<string>("MANUAL");
-  const [certManagerName, setCertManagerName] = useState<string>("Айгерим");
+  const [certManagerName, setCertManagerName] = useState<string>(() => {
+    return firebaseAuth.currentUser?.displayName || firebaseAuth.currentUser?.email || "Сотрудник Академии";
+  });
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(firebaseAuth, (user) => {
+      if (user) {
+        setIsAuthenticated(true);
+        setCertManagerName(user.displayName || user.email || "Сотрудник Академии");
+      }
+    });
+    return () => unsub();
+  }, []);
   const [certStudentName, setCertStudentName] = useState("");
   const [certStudentNameGenitive, setCertStudentNameGenitive] = useState("");
   const [certDob, setCertDob] = useState("");
@@ -72,6 +84,14 @@ export default function ManagerDashboard() {
       return saved ? JSON.parse(saved) : [];
     } catch(e) { return []; }
   });
+
+  const handleDownloadCertPdf = (item: any) => {
+    if (item?.pdfUrl) {
+      window.open(item.pdfUrl, "_blank");
+    } else {
+      alert("Ссылка на документ недоступна.");
+    }
+  };
 
   const fetchNextCertRefNumber = async () => {
     try {
@@ -296,7 +316,7 @@ export default function ManagerDashboard() {
       const element = document.getElementById('pdf-diagnostic-report');
       if (element) {
         const displayName = student.childName || student.studentName || student.shortId;
-        const opt = {
+        const opt: any = {
           margin: 0,
           filename: `Аналитика_${displayName}_${student.grade}класс.pdf`,
           image: { type: 'jpeg', quality: 0.98 },
@@ -307,7 +327,7 @@ export default function ManagerDashboard() {
         
         worker.output('datauristring').then(async (base64: string) => {
           try {
-            const gasUrl = "/api/gas" || "";
+            const gasUrl = "/api/gas";
             
             const displayName = student.childName || student.studentName || student.shortId;
             const res = await fetchGasAPI(gasUrl, {
@@ -341,11 +361,15 @@ export default function ManagerDashboard() {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === "study123" && email.includes("@")) {
+    setError("");
+    try {
+      const { signInWithEmailAndPassword } = await import("firebase/auth");
+      const { auth } = await import("../lib/firebase");
+      await signInWithEmailAndPassword(auth, email, password);
       const SESSION_DURATION = 12 * 60 * 60 * 1000;
       localStorage.setItem("managerSessionExpiry", (Date.now() + SESSION_DURATION).toString());
       setIsAuthenticated(true);
-    } else {
+    } catch (err: any) {
       setError("Неверная почта или пароль / Invalid credentials");
     }
   };
@@ -361,20 +385,27 @@ export default function ManagerDashboard() {
     }
   }, []);
 
+  // Multi-tenant Org Context
+  const { orgId: routeOrgId } = useParams();
+  const activeTenantId = routeOrgId || "org_future_leaders";
+
   useEffect(() => {
     if (isAuthenticated) {
       fetchStudents();
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, activeTenantId]);
 
   const fetchStudents = async () => {
     setLoading(true);
     setError("");
     try {
-      const gasUrl = "/api/gas" || "";
-      const data = await fetchGasAPI(gasUrl, { action: "getAllStudents" }, "");
+      const gasUrl = "/api/gas";
+      const data = await fetchGasAPI(gasUrl, { action: "getAllStudents", tenantId: activeTenantId }, "");
       if (data.success) {
-        setStudents(data.students || data.data || []);
+        const rawList = data.students || data.data || [];
+        // Filter strictly by tenantId to enforce total multi-tenant isolation
+        const filtered = rawList.filter((s: any) => s.tenantId === activeTenantId || (!s.tenantId && activeTenantId === "org_future_leaders"));
+        setStudents(filtered);
       } else {
         setError(data.error);
         setStudents([]);
@@ -454,7 +485,7 @@ export default function ManagerDashboard() {
     const finalRejectReason = rejectReason === "Другое" ? otherReason : rejectReason;
 
     try {
-      const gasUrl = "/api/gas" || "";
+      const gasUrl = "/api/gas";
       const data = await fetchGasAPI(gasUrl, { 
           action: "updateFinalDecision", 
           shortId: selectedStudent, 

@@ -240,11 +240,56 @@ export interface ProctoringLogEntry {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// 6. GLOBAL USERS & RBAC (Глобальные пользователи и роли)
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface PlatformUser {
+  id: string;                    // Firebase Auth UID
+  email: string;
+  displayName: string;
+  avatarUrl: string | null;
+  globalRole: "superadmin" | "user";
+  createdAt: Timestamp;
+  lastLoginAt: Timestamp;
+}
+
+export interface Membership {
+  id: string;
+  userId: string;
+  tenantId: string;
+  role: "org:owner" | "org:admin" | "org:manager" | "org:teacher" | "org:psychologist" | "org:viewer" | "org:student";
+  status: "active" | "invited" | "suspended";
+  invitedBy: string;
+  joinedAt: Timestamp;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 7. TENANT INVITES (Заявки на создание организации)
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface TenantInvite {
+  id: string;
+  organizationName: string;
+  contactEmail: string;
+  contactPhone: string;
+  contactPerson: string;
+  description: string;
+  requestedAt: Timestamp;
+  status: "pending" | "approved" | "rejected";
+  reviewedBy: string | null;
+  reviewedAt: Timestamp | null;
+  rejectReason: string | null;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // COLLECTION PATHS (for use in queries)
 // ────────────────────────────────────────────────────────────────────────────
 
 export const FIRESTORE_COLLECTIONS = {
   TENANTS: "tenants",
+  TENANT_INVITES: "tenant_invites",
+  USERS: "users",
+  MEMBERSHIPS: "memberships",
   TESTS: "tests",
   QUESTIONS: "questions",
   EXAM_SESSIONS: "exam_sessions",

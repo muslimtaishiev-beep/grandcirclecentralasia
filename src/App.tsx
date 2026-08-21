@@ -32,7 +32,42 @@ const TermsOfUse = lazy(() => import("./pages/TermsOfUse"));
 const ProctorSandbox = lazy(() => import("./pages/ProctorSandbox"));
 const SuperAdminDashboard = lazy(() => import("./pages/SuperAdminDashboard"));
 const MaintenanceMode = lazy(() => import("./pages/MaintenanceMode"));
+
+// Workspace Modules
+const WorkspaceLayout = lazy(() => import("./pages/workspace/Layout"));
+const WorkspaceDashboard = lazy(() => import("./pages/workspace/Dashboard"));
+const WorkspaceSettings = lazy(() => import("./pages/workspace/Settings"));
+const WorkspaceBuilder = lazy(() => import("./pages/workspace/Builder"));
+const DocumentList = lazy(() => import("./pages/workspace/docs/DocumentList"));
+const DocumentEditor = lazy(() => import("./pages/workspace/docs/DocumentEditor"));
+const SpreadsheetList = lazy(() => import("./pages/workspace/sheets/SpreadsheetList"));
+const SpreadsheetEditor = lazy(() => import("./pages/workspace/sheets/SpreadsheetEditor"));
+const CrmContacts = lazy(() => import("./pages/workspace/crm/CrmContacts"));
+const CrmDeals = lazy(() => import("./pages/workspace/crm/CrmDeals"));
+const TestList = lazy(() => import("./pages/workspace/tests/TestList"));
+const TestEditor = lazy(() => import("./pages/workspace/tests/TestEditor"));
+const TaskBoard = lazy(() => import("./pages/workspace/tasks/TaskBoard"));
+const TaskList = lazy(() => import("./pages/workspace/tasks/TaskList"));
+const ChatLayout = lazy(() => import("./pages/workspace/chat/ChatLayout"));
+const SiteBuilder = lazy(() => import("./pages/workspace/sites/SiteBuilder"));
+const SiteRenderer = lazy(() => import("./pages/workspace/sites/SiteRenderer"));
+const AutomationsList = lazy(() => import("./pages/workspace/automations/AutomationsList"));
+const ScheduleGrid = lazy(() => import("./pages/workspace/edu/ScheduleGrid"));
+const AttendanceJournal = lazy(() => import("./pages/workspace/edu/AttendanceJournal"));
+const SubscriptionsManager = lazy(() => import("./pages/workspace/edu/SubscriptionsManager"));
+const TeacherPayroll = lazy(() => import("./pages/workspace/edu/TeacherPayroll"));
+
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { GracefulErrorBoundary } from "./components/ui/GracefulErrorBoundary";
+import DashboardSkeleton from "./components/skeletons/DashboardSkeleton";
+import CrmSkeleton from "./components/skeletons/CrmSkeleton";
+import TaskSkeleton from "./components/skeletons/TaskSkeleton";
+import ChatSkeleton from "./components/skeletons/ChatSkeleton";
+import DocsSkeleton from "./components/skeletons/DocsSkeleton";
+import SheetsSkeleton from "./components/skeletons/SheetsSkeleton";
+import CookieBanner from "./components/ui/CookieBanner";
+import { SkipToContent } from "./components/ui/SkipToContent";
+import { captureUtmParameters } from "./lib/utmTracker";
 
 import { PublicData } from "./types";
 import { staticDb } from "./data/staticDb";
@@ -40,6 +75,10 @@ import { staticDb } from "./data/staticDb";
 
 export default function App() {
   const [lang, setLang] = useState<"ru" | "en" | "kg">("ru");
+
+  useEffect(() => {
+    captureUtmParameters();
+  }, []);
   
   // Basic routing via react-router
   const location = useLocation();
@@ -114,6 +153,9 @@ export default function App() {
   // 🚨 GLOBAL MAINTENANCE MODE OVERRIDE (except for /super-admin)
   if (maintenanceInfo.enabled && !isSuperAdminPath) {
     return (
+    <div className="min-h-screen flex flex-col bg-slate-50 font-sans selection:bg-[#9F7AEA] selection:text-white relative">
+      <SkipToContent targetId="main-content" />
+      <CookieBanner />
       <Suspense fallback={<div className="min-h-screen bg-[#050508] text-white flex items-center justify-center">Loading...</div>}>
         <MaintenanceMode 
           message={maintenanceInfo.message}
@@ -121,14 +163,17 @@ export default function App() {
           onRefreshCheck={forceRefetch}
         />
       </Suspense>
+    </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-[#EDE9FE] text-slate-800 antialiased font-sans flex flex-col justify-between" id="main_app_wrapper">
+      <SkipToContent targetId="main-content" />
+      <CookieBanner />
       
       {/* Header is global */}
-      {!isAdminPath && !currentPath.startsWith("/super-admin") && !currentPath.startsWith("/admission") && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && !currentPath.startsWith("/sandbox") && (
+      {!isAdminPath && !currentPath.startsWith("/super-admin") && !currentPath.startsWith("/workspace") && !currentPath.startsWith("/admission") && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && !currentPath.startsWith("/sandbox") && (
         <Header 
           lang={lang} 
           setLang={setLang} 
@@ -185,6 +230,7 @@ export default function App() {
           } />
           
           <Route path="/test" element={<Testing />} />
+          <Route path="/test/:testId" element={<Testing />} />
           <Route path="/manager/form" element={<ManagerForm />} />
           <Route path="/manager-dashboard" element={<ManagerDashboard />} />
           <Route path="/receipt/:shortId" element={<Receipt />} />
@@ -193,6 +239,44 @@ export default function App() {
           <Route path="/terms" element={<TermsOfUse />} />
           <Route path="/sandbox/proctor" element={<ProctorSandbox />} />
           <Route path="/super-admin" element={<SuperAdminDashboard />} />
+          <Route path="/site/:siteId" element={<SiteRenderer />} />
+          
+          <Route path="/workspace" element={<ProtectedRoute><WorkspaceLayout /></ProtectedRoute>}>
+            <Route index element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/settings" element={<GracefulErrorBoundary fallbackTitle="Ошибка Настроек"><WorkspaceSettings /></GracefulErrorBoundary>} />
+            <Route path=":orgId/builder" element={<GracefulErrorBoundary fallbackTitle="Ошибка Конструктора"><WorkspaceBuilder /></GracefulErrorBoundary>} />
+            <Route path=":orgId/sites" element={<GracefulErrorBoundary fallbackTitle="Ошибка Конструктора Сайтов"><SiteBuilder /></GracefulErrorBoundary>} />
+            <Route path=":orgId/automations" element={<GracefulErrorBoundary fallbackTitle="Ошибка Автоматизаций"><AutomationsList /></GracefulErrorBoundary>} />
+            <Route path=":orgId/docs" element={<GracefulErrorBoundary fallbackTitle="Ошибка Документов"><Suspense fallback={<DocsSkeleton />}><DocumentList /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/docs/new" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Документов"><Suspense fallback={<DocsSkeleton />}><DocumentEditor /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/docs/:id" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Документов"><Suspense fallback={<DocsSkeleton />}><DocumentEditor /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/sheets" element={<GracefulErrorBoundary fallbackTitle="Ошибка Таблиц"><Suspense fallback={<SheetsSkeleton />}><SpreadsheetList /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/sheets/new" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Таблиц"><Suspense fallback={<SheetsSkeleton />}><SpreadsheetEditor /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/sheets/:sheetId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Таблиц"><Suspense fallback={<SheetsSkeleton />}><SpreadsheetEditor /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/crm/contacts" element={<GracefulErrorBoundary fallbackTitle="Ошибка CRM Контактов"><Suspense fallback={<CrmSkeleton />}><CrmContacts /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/crm/deals" element={<GracefulErrorBoundary fallbackTitle="Ошибка CRM Сделок"><Suspense fallback={<CrmSkeleton />}><CrmDeals /></Suspense></GracefulErrorBoundary>} />
+            
+            {/* Multi-Tenant Testing & Evaluation Routes */}
+            <Route path=":orgId/tests" element={<GracefulErrorBoundary fallbackTitle="Ошибка Тестов"><TestList /></GracefulErrorBoundary>} />
+            <Route path=":orgId/tests/new" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Тестов"><TestEditor /></GracefulErrorBoundary>} />
+            <Route path=":orgId/tests/manage" element={<GracefulErrorBoundary fallbackTitle="Ошибка Проверки Менеджера"><ManagerDashboard /></GracefulErrorBoundary>} />
+            <Route path=":orgId/tests/check/:shortId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Формы Оценки"><ManagerForm /></GracefulErrorBoundary>} />
+            <Route path=":orgId/tests/psychology/:shortId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Формы Психолога"><PsychologistForm /></GracefulErrorBoundary>} />
+            <Route path=":orgId/tests/:id" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Тестов"><TestEditor /></GracefulErrorBoundary>} />
+            <Route path=":orgId/take-test/:testId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Прохождения Теста"><Testing /></GracefulErrorBoundary>} />
+
+            <Route path=":orgId/tasks" element={<GracefulErrorBoundary fallbackTitle="Ошибка Задач"><Suspense fallback={<TaskSkeleton />}><TaskList /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/tasks/list" element={<GracefulErrorBoundary fallbackTitle="Ошибка Задач"><Suspense fallback={<TaskSkeleton />}><TaskList /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/tasks/board" element={<GracefulErrorBoundary fallbackTitle="Ошибка Канбана Задач"><Suspense fallback={<TaskSkeleton />}><TaskBoard /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/chat" element={<GracefulErrorBoundary fallbackTitle="Ошибка Чата"><Suspense fallback={<ChatSkeleton />}><ChatLayout /></Suspense></GracefulErrorBoundary>} />
+
+            {/* Educational Core Engine (Phase 2) */}
+            <Route path=":orgId/edu/schedule" element={<GracefulErrorBoundary fallbackTitle="Ошибка Расписания"><ScheduleGrid /></GracefulErrorBoundary>} />
+            <Route path=":orgId/edu/attendance" element={<GracefulErrorBoundary fallbackTitle="Ошибка Журнала"><AttendanceJournal /></GracefulErrorBoundary>} />
+            <Route path=":orgId/edu/subscriptions" element={<GracefulErrorBoundary fallbackTitle="Ошибка Абонементов"><SubscriptionsManager /></GracefulErrorBoundary>} />
+            <Route path=":orgId/edu/payroll" element={<GracefulErrorBoundary fallbackTitle="Ошибка Зарплат"><TeacherPayroll /></GracefulErrorBoundary>} />
+          </Route>
 
           {/* Main Forum Route */}
           <Route path="/" element={

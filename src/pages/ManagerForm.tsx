@@ -1,7 +1,7 @@
 import { auth as firebaseAuth } from "../lib/firebase";
 import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import React, { useState, useEffect } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate, useParams } from "react-router-dom";
 import { testsData } from "../data/testsData";
 import { fetchGasAPI } from "../lib/utils";
 import html2pdf from "html2pdf.js";
@@ -10,7 +10,10 @@ import { DiagnosticReportPdf } from "../components/DiagnosticReportPdf";
 export default function ManagerForm() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const urlShortId = searchParams.get("shortId") || searchParams.get("testId") || "";
+  const { orgId: routeOrgId, shortId: routeShortId } = useParams();
+
+  const urlShortId = routeShortId || searchParams.get("shortId") || searchParams.get("testId") || "";
+  const tenantId = routeOrgId || searchParams.get("tenantId") || "org_future_leaders";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -18,7 +21,19 @@ export default function ManagerForm() {
   const [shortId, setShortId] = useState(urlShortId);
   const [student, setStudent] = useState<any>(null);
 
-  const [managerName, setManagerName] = useState("");
+  const [managerName, setManagerName] = useState(() => {
+    return firebaseAuth.currentUser?.displayName || firebaseAuth.currentUser?.email || "Менеджер Академии";
+  });
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(firebaseAuth, (user) => {
+      if (user) {
+        setIsAuthenticated(true);
+        setManagerName(user.displayName || user.email || "Менеджер Академии");
+      }
+    });
+    return () => unsub();
+  }, []);
 
   const [analyzing, setAnalyzing] = useState(false);
 
@@ -32,7 +47,7 @@ export default function ManagerForm() {
       const element = document.getElementById('pdf-diagnostic-report');
       if (element) {
         const displayName = student.childName || student.studentName || student.shortId;
-        const opt = {
+        const opt: any = {
           margin: 0,
           filename: `Аналитика_${displayName}_${student.grade}класс.pdf`,
           image: { type: 'jpeg', quality: 0.98 },
@@ -88,11 +103,8 @@ export default function ManagerForm() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      if (password === "study123" && email.includes("@")) {
-        setIsAuthenticated(true);
-      } else {
-        throw new Error("Invalid");
-      }
+      await signInWithEmailAndPassword(firebaseAuth, email, password);
+      setIsAuthenticated(true);
     } catch (err: any) {
       setError("Ошибка входа: Неверные данные");
     }

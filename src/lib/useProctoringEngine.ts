@@ -1085,7 +1085,7 @@ export function useProctoringEngine(
         const handResult = handLandmarkerRef.current.detectForVideo(video, now);
         lastHandProcessTime.current = now;
 
-        const handLandmarksList = handResult?.landmarks || handResult?.handLandmarks || [];
+        const handLandmarksList = (handResult as any)?.landmarks || (handResult as any)?.handLandmarks || [];
         const handsCount = handLandmarksList.length;
         updates.handsDetected = handsCount;
         handLandmarksRef.current = handLandmarksList;

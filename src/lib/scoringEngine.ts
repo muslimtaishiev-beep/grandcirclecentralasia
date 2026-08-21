@@ -144,7 +144,6 @@ export const ANSWER_KEYS: Record<string, Record<SubjectKey, Record<string, Answe
       "russian_4": { ans: "(не) решительность, (не) подвижная вода", pts: 1, topic: "Орфография: НЕ/НИ, слитное и раздельное" },
       "russian_5": { ans: "пр…паять, пр…обрести, пр…усадебный", pts: 1, topic: "Орфография: Корни и приставки" },
       "russian_6": { ans: "к четырехстам прибавить пятьдесят.", pts: 1, topic: "Синтаксис и Грамматика" },
-      "russian_7": { ans: "часть речи сказуемое —", pts: 1, topic: "Синтаксис и Грамматика" },
       "russian_8": { ans: "из-под этой тучи вырвались яркие лучи, и мокрые леса и поля засверкали.", pts: 1, topic: "Орфография: НЕ/НИ, слитное и раздельное" }
     },
     math: {
@@ -399,7 +398,7 @@ export const ANSWER_KEYS: Record<string, Record<SubjectKey, Record<string, Answe
     logic: {
       "logic_1": { ans: JSON.stringify({ "Белов": "Чёрная рубашка", "Серов": "Белая рубашка", "Чернов": "Серая рубашка" }), pts: 1, topic: "Логические матрицы" },
       "logic_2": { ans: JSON.stringify({ "Ящик 1 (надпись «крупа»)": "Сахар", "Ящик 2 (надпись «вермишель»)": "Крупа", "Ящик 3 (надпись «крупа или сахар»)": "Вермишель" }), pts: 1, topic: "Задачи с ложными утверждениями" },
-      "logic_3": { ans: "митя,толя,сеня,костя,юра", pts: 1, topic: "Упорядочивание и очереди" },
+      "logic_3": { ans: JSON.stringify(["митя","толя","сеня","костя","юра"]), pts: 1, topic: "Упорядочивание и очереди" },
       "logic_4": { ans: JSON.stringify({ "Олег": "Скрипач", "Коля": "Пианист", "Ваня": "Певец" }), pts: 1, topic: "Логические матрицы" },
       "logic_5": { ans: "Уменьшилась в 2 раза", pts: 1, topic: "Проценты и доли" },
       "logic_6": { ans: "60", pts: 1, topic: "Задачи на совместную работу" },
@@ -461,11 +460,8 @@ export const ANSWER_KEYS: Record<string, Record<SubjectKey, Record<string, Answe
       "russian_2": { ans: "наличии", pts: 1, topic: "Орфография: Корни и приставки" },
       "russian_3": { ans: "сложноподчиненное", pts: 1, topic: "Орфография: Суффиксы и окончания" },
       "russian_4": { ans: "выт..реть", pts: 1, topic: "Орфография: НЕ/НИ, слитное и раздельное" },
-      "russian_5": { ans: "6", pts: 1, topic: "Орфография: Корни и приставки" },
-      "russian_6": { ans: "проста…вать", pts: 1, topic: "Синтаксис и Грамматика" },
-      "russian_7": { ans: "(не) дерзал", pts: 1, topic: "Синтаксис и Грамматика" },
-      "russian_8": { ans: "4", pts: 1, topic: "Орфография: НЕ/НИ, слитное и раздельное" },
-      "russian_9": { ans: "2, 4", pts: 1, topic: "Орфография: Корни и приставки" },
+      "russian_6": { ans: "эмал…вый", pts: 1, topic: "Синтаксис и Грамматика" },
+      "russian_8": { ans: "кверхутотчас", pts: 1, topic: "Орфография: НЕ/НИ, слитное и раздельное" },
       "russian_10": { ans: "3, 5", pts: 1, topic: "Пунктуация: Осложненное предложение" }
     },
     math: {
@@ -505,7 +501,35 @@ export const ANSWER_KEYS: Record<string, Record<SubjectKey, Record<string, Answe
       "en_10_11_q14": { ans: "will be having", pts: 1, topic: "Grammar: Advanced Tenses (Perfect/Future)" },
       "en_10_11_q15": { ans: "boils", pts: 1, topic: "Grammar: Conditionals & Modals" },
       "en_10_11_q16": { ans: "is said", pts: 1, topic: "Grammar: Basic Tenses (Present/Past)" },
-      "en_10_11_q17": { ans: "got", pts: 1, topic: "Syntax & Error Correction" }
+      "en_10_11_q17": { ans: "got", pts: 1, topic: "Syntax & Error Correction" },
+      "en_10_11_q18": { ans: "waking", pts: 1, topic: "Continuous Tenses" },
+      "en_10_11_q19": { ans: "had known", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q20": { ans: "had worked", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q21": { ans: "hadn’t said", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q22": { ans: "has been fixing", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q23": { ans: "will have built", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q24": { ans: "would finish", pts: 1, topic: "Future & Conditionals" },
+      "en_10_11_q25": { ans: "were", pts: 1, topic: "Continuous Tenses" },
+      "en_10_11_q26": { ans: "haven’t completed", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q27": { ans: "breaking", pts: 1, topic: "Continuous Tenses" },
+      "en_10_11_q28": { ans: "had been waiting", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q29": { ans: "If I had known, I would have helped you.", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q30": { ans: "He told me that he would come later.", pts: 1, topic: "Future & Conditionals" },
+      "en_10_11_q31": { ans: "I have already seen this film.", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q32": { ans: "She suggested taking a break.", pts: 1, topic: "Continuous Tenses" },
+      "en_10_11_q33": { ans: "The project was completed by them.", pts: 1, topic: "Continuous Tenses" },
+      "en_10_11_q34": { ans: "I look forward to hearing from you.", pts: 1, topic: "Continuous Tenses" },
+      "en_10_11_q35": { ans: "however", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q36": { ans: "despite", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q37": { ans: "nevertheless", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q38": { ans: "whereas", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q39": { ans: "while", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q40": { ans: "in spite of", pts: 1, topic: "Vocabulary & Prepositions" },
+      "en_10_11_q41": { ans: "She has been looking for a job for six months.", pts: 1, topic: "Perfect Tenses" },
+      "en_10_11_q42": { ans: "I remember to lock the door before leaving.", pts: 1, topic: "Continuous Tenses" },
+      "en_10_11_q43": { ans: "I would rather stay at home than go out.", pts: 1, topic: "Future & Conditionals" },
+      "en_10_11_q44": { ans: "Despite the heavy rain, they went out.", pts: 1, topic: "Linking Words" },
+      "en_10_11_q45": { ans: "Try pressing this button to see if it works.", pts: 1, topic: "Continuous Tenses" }
     }
   }
 };

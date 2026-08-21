@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { motion } from 'framer-motion';
+import { Eye, EyeOff } from 'lucide-react';
 
 interface LoginProps {
   lang?: "ru" | "en" | "kg";
@@ -11,6 +12,7 @@ interface LoginProps {
 const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -73,15 +75,26 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
               <label className="block text-sm font-bold text-slate-700 uppercase tracking-wider mb-2">
                 {lang === 'ru' ? 'Пароль' : lang === 'kg' ? 'Сырсөз' : 'Password'}
               </label>
-              <div className="mt-1">
+              <div className="mt-1 relative">
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="appearance-none block w-full px-4 py-3 border-2 border-slate-200 rounded-none shadow-sm placeholder-slate-400 focus:outline-none focus:ring-0 focus:border-[#9F7AEA] sm:text-sm font-medium transition-colors bg-slate-50 focus:bg-white"
+                  className="appearance-none block w-full px-4 py-3 border-2 border-slate-200 rounded-none shadow-sm placeholder-slate-400 focus:outline-none focus:ring-0 focus:border-[#9F7AEA] sm:text-sm font-medium transition-colors bg-slate-50 focus:bg-white pr-10"
                   placeholder={lang === 'ru' ? 'Введите пароль' : lang === 'kg' ? 'Сырсөздү киргизиңиз' : 'Enter your password'}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
+                </button>
               </div>
             </div>
 
