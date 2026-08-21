@@ -560,25 +560,14 @@ app.get("/api/public/data", async (req, res) => {
   }
 });
 
-// Maintenance Mode Endpoints
+// Maintenance Mode Endpoints (Hard Disabled by User Command)
 app.get("/api/public/maintenance", async (req, res) => {
-  try {
-    const db = await readDb();
-    const maintenance = db?.settings?.maintenance || {
-      enabled: false,
-      message: "Идут плановые технические работы на серверах прокторинга. Доступ будет восстановлен в ближайшее время.",
-      estimatedTime: "30 минут",
-      updatedAt: new Date().toISOString()
-    };
-    return res.json(maintenance);
-  } catch (e) {
-    return res.json({
-      enabled: false,
-      message: "Идут плановые технические работы на серверах прокторинга. Доступ будет восстановлен в ближайшее время.",
-      estimatedTime: "30 минут",
-      updatedAt: new Date().toISOString()
-    });
-  }
+  return res.json({
+    enabled: false,
+    message: "Система работает в штатном режиме.",
+    estimatedTime: "0 минут",
+    updatedAt: new Date().toISOString()
+  });
 });
 
 app.post("/api/admin/maintenance", requireAuth, async (req, res) => {

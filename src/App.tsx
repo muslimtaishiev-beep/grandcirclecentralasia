@@ -150,8 +150,9 @@ export default function App() {
   const isSuperAdminPath = currentPath.startsWith("/super-admin");
   const isTicketsPath = currentPath === "/tickets";
 
-  // 🚨 GLOBAL MAINTENANCE MODE OVERRIDE (except for /super-admin)
-  if (maintenanceInfo.enabled && !isSuperAdminPath) {
+  // Maintenance Mode Override (Hard Disabled)
+  const isMaintenanceActive = false;
+  if (isMaintenanceActive) {
     return (
     <div className="min-h-screen flex flex-col bg-slate-50 font-sans selection:bg-[#9F7AEA] selection:text-white relative">
       <SkipToContent targetId="main-content" />
