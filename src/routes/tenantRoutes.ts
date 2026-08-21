@@ -107,7 +107,7 @@ const requireTenantAdmin = async (req: any, res: any, next: any) => {
 // POST /api/tenants/:id/invite - Invite staff to the organization
 router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
   try {
-    const { email, name, displayName, role, roleName, permissions } = req.body;
+    const { email, password, name, displayName, role, roleName, permissions } = req.body;
     const tenantId = req.params.id;
     const uid = req.user.uid;
     const db = admin.firestore();
@@ -119,20 +119,36 @@ router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: 
     const assignedRole = roleName || role || "Работник";
     const staffName = displayName || name || email.split("@")[0];
 
-    // Check if target user exists in Auth
+    // Check if target user exists in Auth, if not create automatically
     let targetUserId = "";
+    let createdTempPassword = "";
     try {
       const userRecord = await admin.auth().getUserByEmail(email);
       targetUserId = userRecord.uid;
-      // Optionally update user's displayName in Auth
       if (staffName && !userRecord.displayName) {
         await admin.auth().updateUser(targetUserId, { displayName: staffName });
       }
     } catch (authErr: any) {
       if (authErr.code === "auth/user-not-found") {
-        return res.status(404).json({ success: false, error: "Пользователь с такой почтой не найден. Сначала зарегистрируйте аккаунт." });
+        createdTempPassword = password || `Pass_${Math.random().toString(36).slice(-6)}!2026`;
+        const newUserRecord = await admin.auth().createUser({
+          email: email,
+          password: createdTempPassword,
+          displayName: staffName
+        });
+        targetUserId = newUserRecord.uid;
+
+        // Create user document in Firestore
+        await db.collection("users").doc(targetUserId).set({
+          id: targetUserId,
+          email: email,
+          displayName: staffName,
+          globalRole: "user",
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      } else {
+        throw authErr;
       }
-      throw authErr;
     }
 
     // Check if membership already exists
@@ -171,7 +187,11 @@ router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: 
       joinedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    return res.json({ success: true, message: "Сотрудник успешно добавлен в организацию" });
+    return res.json({ 
+      success: true, 
+      message: createdTempPassword ? `Аккаунт создан! Временный пароль: ${createdTempPassword}` : "Сотрудник успешно добавлен в организацию",
+      tempPassword: createdTempPassword
+    });
   } catch (error: any) {
     console.error("[Tenants/Invite] Error:", error);
     return res.status(500).json({ success: false, error: error.message });
