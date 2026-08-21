@@ -298,6 +298,19 @@ app.post("/api/proctoring/upload-evidence", authLimiter, async (req, res) => {
     };
     admin.firestore().collection('audit_logs').add(auditEntry).catch(e => console.error('Audit log write error:', e));
 
+    // 🔔 REAL-TIME PUSH NOTIFICATION FOR TENANT MANAGERS
+    if ((body.totalViolations ?? 0) > 0 || (body.honestyIndex ?? 100) < 85) {
+      admin.firestore().collection("notifications").add({
+        tenantId: tenant.org_id,
+        title: "🚨 Нарушение прокторинга",
+        body: `Ученик ${body.studentName || 'Студент'} (${body.studentShortId}) совершил ${body.totalViolations || 1} нарушений. Индекс честности: ${body.honestyIndex ?? 100}%. Папка доказательств создана.`,
+        type: "system",
+        read: false,
+        actionUrl: `/workspace/${tenant.org_id}/tests/check/${body.studentShortId}`,
+        createdAt: admin.firestore.Timestamp.now(),
+      }).catch(e => console.error("Notification creation error:", e));
+    }
+
     // Forward to GAS for Google Drive upload
     const payload = {
       action: 'uploadProctoringPackage',
