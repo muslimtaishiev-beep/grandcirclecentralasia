@@ -124,6 +124,9 @@ export default function SuperAdminDashboard() {
 
       setProjects(docs);
       setLoading(false);
+    }, (err) => {
+      console.warn("[SuperAdmin] Tenants listener error:", err.message);
+      setLoading(false);
     });
 
     // 2. Subscribe to /exam_sessions
@@ -136,6 +139,8 @@ export default function SuperAdminDashboard() {
         }
       });
       setLiveSessions(active);
+    }, (err) => {
+      console.warn("[SuperAdmin] Sessions listener error:", err.message);
     });
 
     // 3. Fetch Maintenance status
@@ -167,6 +172,8 @@ export default function SuperAdminDashboard() {
         });
       });
       setLogs(list);
+    }, (err) => {
+      console.warn("[SuperAdmin] Logs listener error:", err.message);
     });
 
     return () => {

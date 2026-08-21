@@ -537,14 +537,23 @@ app.post("/api/exams/submit", async (req, res) => {
 
 // Maintenance Mode Endpoints
 app.get("/api/public/maintenance", async (req, res) => {
-  const db = await readDb();
-  const maintenance = db.settings?.maintenance || {
-    enabled: false,
-    message: "Идут плановые технические работы на серверах прокторинга. Доступ будет восстановлен в ближайшее время.",
-    estimatedTime: "30 минут",
-    updatedAt: new Date().toISOString()
-  };
-  res.json(maintenance);
+  try {
+    const db = await readDb();
+    const maintenance = db?.settings?.maintenance || {
+      enabled: false,
+      message: "Идут плановые технические работы на серверах прокторинга. Доступ будет восстановлен в ближайшее время.",
+      estimatedTime: "30 минут",
+      updatedAt: new Date().toISOString()
+    };
+    return res.json(maintenance);
+  } catch (e) {
+    return res.json({
+      enabled: false,
+      message: "Идут плановые технические работы на серверах прокторинга. Доступ будет восстановлен в ближайшее время.",
+      estimatedTime: "30 минут",
+      updatedAt: new Date().toISOString()
+    });
+  }
 });
 
 app.post("/api/admin/maintenance", requireAuth, async (req, res) => {
