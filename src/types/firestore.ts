@@ -274,6 +274,7 @@ export interface Membership {
   id: string;
   userId: string;
   tenantId: string;
+  displayName?: string;
   role: string;                  // "Управляющий" | "Работник" | customRole.name
   customRoleId?: string;
   permissions: Partial<RolePermissions>;

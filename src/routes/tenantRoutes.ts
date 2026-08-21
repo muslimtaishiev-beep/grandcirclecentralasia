@@ -107,7 +107,7 @@ const requireTenantAdmin = async (req: any, res: any, next: any) => {
 // POST /api/tenants/:id/invite - Invite staff to the organization
 router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
   try {
-    const { email, role, roleName, permissions } = req.body;
+    const { email, name, displayName, role, roleName, permissions } = req.body;
     const tenantId = req.params.id;
     const uid = req.user.uid;
     const db = admin.firestore();
@@ -117,12 +117,17 @@ router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: 
     }
 
     const assignedRole = roleName || role || "Работник";
+    const staffName = displayName || name || email.split("@")[0];
 
     // Check if target user exists in Auth
     let targetUserId = "";
     try {
       const userRecord = await admin.auth().getUserByEmail(email);
       targetUserId = userRecord.uid;
+      // Optionally update user's displayName in Auth
+      if (staffName && !userRecord.displayName) {
+        await admin.auth().updateUser(targetUserId, { displayName: staffName });
+      }
     } catch (authErr: any) {
       if (authErr.code === "auth/user-not-found") {
         return res.status(404).json({ success: false, error: "Пользователь с такой почтой не найден. Сначала зарегистрируйте аккаунт." });
@@ -137,14 +142,15 @@ router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: 
       .get();
 
     if (!existingSnapshot.empty) {
-      // Update existing membership role & permissions
+      // Update existing membership role, name & permissions
       const docId = existingSnapshot.docs[0].id;
       await db.collection("memberships").doc(docId).update({
+        displayName: staffName,
         role: assignedRole,
         permissions: permissions || {},
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
-      return res.json({ success: true, message: "Роль и разрешения сотрудника обновлены" });
+      return res.json({ success: true, message: "Имя, роль и разрешения сотрудника обновлены" });
     }
 
     const membershipId = `mem_${targetUserId}_${tenantId}`;
@@ -152,6 +158,7 @@ router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: 
       id: membershipId,
       userId: targetUserId,
       tenantId: tenantId,
+      displayName: staffName,
       role: assignedRole,
       permissions: permissions || {
         canReviewSubmissions: true,

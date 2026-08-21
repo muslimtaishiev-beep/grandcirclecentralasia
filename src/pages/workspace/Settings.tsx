@@ -10,8 +10,9 @@ export default function WorkspaceSettings() {
   
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("org:manager");
+  const [inviteRole, setInviteRole] = useState("Работник");
   const [isInviting, setIsInviting] = useState(false);
 
   // Bitrix24 Permission States per member (stored locally & synced)
@@ -73,17 +74,18 @@ export default function WorkspaceSettings() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${await user?.getIdToken()}`
         },
-        body: JSON.stringify({ email: inviteEmail, role: inviteRole })
+        body: JSON.stringify({ email: inviteEmail, name: inviteName, roleName: inviteRole, role: inviteRole })
       });
       const data = await res.json();
       if (data.success) {
         setInviteEmail("");
+        setInviteName("");
         fetchMembers();
         await createNotification({
           tenantId: activeTenant.id,
           userId: user.uid,
           title: "Сотрудник Добавлен",
-          body: `Сотрудник ${inviteEmail} был добавлен и получил личный кабинет.`,
+          body: `Сотрудник ${inviteName || inviteEmail} добавлен с ролью "${inviteRole}".`,
           type: "system"
         });
       } else {
@@ -98,10 +100,8 @@ export default function WorkspaceSettings() {
 
   const getRoleBadge = (role: string) => {
     switch(role) {
-      case 'org:admin': return <span className="px-2.5 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-md text-xs font-bold flex items-center gap-1"><Shield className="w-3 h-3" /> Руководитель</span>;
-      case 'org:manager': return <span className="px-2.5 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded-md text-xs font-bold">Менеджер CRM</span>;
-      case 'org:teacher': return <span className="px-2.5 py-0.5 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 rounded-md text-xs font-bold">Преподаватель</span>;
-      default: return <span className="px-2.5 py-0.5 bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400 rounded-md text-xs font-bold">Сотрудник</span>;
+      case 'org:admin': case 'Управляющий': return <span className="px-2.5 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-md text-xs font-bold flex items-center gap-1"><Shield className="w-3 h-3" /> Управляющий</span>;
+      case 'Работник': default: return <span className="px-2.5 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded-md text-xs font-bold flex items-center gap-1"><User className="w-3 h-3" /> {role || "Работник"}</span>;
     }
   };
 
@@ -109,15 +109,25 @@ export default function WorkspaceSettings() {
     <div className="max-w-5xl mx-auto space-y-8 text-[var(--text-main)]">
       <div>
         <h1 className="text-2xl font-bold">Управление Командой и Правами Доступа (Bitrix24 Style)</h1>
-        <p className="text-xs text-[var(--text-muted)] mt-1">Регистрация сотрудников и делегирование индивидуальных прав доступа для {activeTenant?.name}.Каждому работнику выдается личный аккаунт без ручного выбора менеджеров.</p>
+        <p className="text-xs text-[var(--text-muted)] mt-1">Регистрация сотрудников и делегирование индивидуальных прав доступа для {activeTenant?.name}. Каждому работнику выдается личный аккаунт без ручного выбора менеджеров.</p>
       </div>
 
       {/* Invite Form */}
       <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-6 shadow-xs space-y-4">
         <h2 className="text-base font-bold flex items-center gap-2">
-          <Plus className="w-5 h-5 text-[var(--accent)]" /> Регистрация Нового Сотрудника Руководителем
+          <Plus className="w-5 h-5 text-[var(--accent)]" /> Регистрация Нового Сотрудника Управляющим
         </h2>
         <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1 relative">
+            <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+            <input 
+              type="text"
+              placeholder="ФИО / Имя сотрудника (напр. Иван Иванов)..."
+              value={inviteName}
+              onChange={e => setInviteName(e.target.value)}
+              className="w-full bg-[var(--bg-app)] border border-[var(--border-color)] rounded-xl pl-10 pr-4 py-2 text-xs focus:outline-none focus:border-[var(--accent)] text-[var(--text-main)]"
+            />
+          </div>
           <div className="flex-1 relative">
             <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
             <input 
@@ -128,16 +138,16 @@ export default function WorkspaceSettings() {
               className="w-full bg-[var(--bg-app)] border border-[var(--border-color)] rounded-xl pl-10 pr-4 py-2 text-xs focus:outline-none focus:border-[var(--accent)] text-[var(--text-main)]"
             />
           </div>
-          <select 
-            value={inviteRole}
-            onChange={e => setInviteRole(e.target.value)}
-            className="bg-[var(--bg-app)] border border-[var(--border-color)] rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-[var(--accent)] text-[var(--text-main)] font-semibold"
-          >
-            <option value="org:admin">Руководитель / Админ</option>
-            <option value="org:manager">Менеджер по продажам</option>
-            <option value="org:teacher">Преподаватель / Эксперт</option>
-            <option value="org:student">Сотрудник отделов</option>
-          </select>
+          <div className="w-48 relative">
+            <Briefcase className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+            <input 
+              type="text"
+              placeholder="Роль (напр. Работник, Проктор)..."
+              value={inviteRole}
+              onChange={e => setInviteRole(e.target.value)}
+              className="w-full bg-[var(--bg-app)] border border-[var(--border-color)] rounded-xl pl-10 pr-4 py-2 text-xs focus:outline-none focus:border-[var(--accent)] text-[var(--text-main)] font-semibold"
+            />
+          </div>
           <button 
             type="submit" 
             disabled={isInviting || !inviteEmail}
@@ -188,13 +198,16 @@ export default function WorkspaceSettings() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-full bg-[var(--accent)] flex items-center justify-center text-white font-bold text-sm shadow-xs">
-                        {member.user?.email?.[0]?.toUpperCase() || <User className="w-5 h-5" />}
+                        {(member.displayName || member.user?.displayName || member.user?.email || "С")?.[0]?.toUpperCase()}
                       </div>
                       <div>
-                        <div className="font-bold text-sm text-[var(--text-main)]">{member.user?.email || "Сотрудник компании"}</div>
+                        <div className="font-bold text-sm text-[var(--text-main)]">
+                          {member.displayName || member.user?.displayName || member.name || member.user?.email || "Сотрудник компании"}
+                        </div>
+                        <div className="text-xs text-[var(--text-muted)] font-mono">{member.user?.email || member.email || ""}</div>
                         <div className="flex items-center gap-2 mt-1">
                           {getRoleBadge(member.role)}
-                          <span className="text-xs text-[var(--text-muted)]">• Аккаунт: Личный</span>
+                          <span className="text-xs text-[var(--text-muted)]">• Личный аккаунт работника</span>
                         </div>
                       </div>
                     </div>
