@@ -48,13 +48,42 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
     }
   }, [mode, oobCode]);
 
+  const redirectUserByRole = async () => {
+    const loggedUser = auth.currentUser;
+    const userEmail = loggedUser?.email || "";
+
+    if (userEmail.endsWith("@studyfreeforum.com") || userEmail === "admin@studyfreeforum.com") {
+      navigate("/super-admin");
+      return;
+    }
+
+    try {
+      const idToken = await loggedUser?.getIdToken();
+      const res = await fetch("/api/auth/me", {
+        headers: { Authorization: `Bearer ${idToken}` }
+      });
+      const data = await res.json();
+
+      if (data.user?.globalRole === "superadmin") {
+        navigate("/super-admin");
+      } else if (data.memberships && data.memberships.length > 0) {
+        const firstOrgSlug = data.memberships[0].tenantId || "org_future_leaders";
+        navigate(`/workspace/${firstOrgSlug}`);
+      } else {
+        navigate("/dashboard");
+      }
+    } catch (e) {
+      navigate("/dashboard");
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       setError('');
       setLoading(true);
       await signInWithEmailAndPassword(auth, email, password);
-      navigate('/dashboard');
+      await redirectUserByRole();
     } catch (err) {
       setError(lang === 'ru' ? 'Ошибка входа. Проверьте почту и пароль.' : lang === 'kg' ? 'Кирүү катасы. Электрондук почтаны жана сырсөздү текшериңиз.' : 'Failed to sign in. Please check your credentials.');
     } finally {
@@ -68,7 +97,7 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
       setLoading(true);
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-      navigate('/dashboard');
+      await redirectUserByRole();
     } catch (err: any) {
       setError(err.message || (lang === 'ru' ? 'Ошибка входа через Google. Проверьте Authorized Domains в Firebase.' : 'Google sign-in error. Check Authorized Domains in Firebase.'));
     } finally {
