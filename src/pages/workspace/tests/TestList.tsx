@@ -1,16 +1,30 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useOutletContext, Link } from 'react-router-dom';
-import { Search, Plus, FileQuestion, MoreVertical, Play, Settings, Users, ShieldCheck, Copy, Link2 } from 'lucide-react';
+import { FileQuestion, ShieldCheck, Play, ExternalLink } from 'lucide-react';
 import { CopyButton } from '../../../components/ui/CopyButton';
+import { testsData } from '../../../data/testsData';
 
 export default function TestList() {
   const { activeTenant } = useOutletContext<any>() || {};
-  
-  const [tests] = useState([
-    { id: '1', title: 'Главный Вступительный Экзамен (10 класс)', status: 'Active', questions: 25, participants: 42, timeLimit: 60, aiProctoring: true },
-    { id: '2', title: 'Оценка Английского Языка (CEFR / Вступительный)', status: 'Active', questions: 50, participants: 120, timeLimit: 90, aiProctoring: true },
-    { id: '3', title: 'Логика и Психологический Опросник', status: 'Active', questions: 15, participants: 88, timeLimit: 30, aiProctoring: false },
-  ]);
+
+  const gradeTests = [7, 8, 9, 10, 11].map(grade => {
+    const data = testsData[grade];
+    const ruCount = data?.russian?.length || 0;
+    const maCount = data?.math?.length || 0;
+    const loCount = data?.logic?.length || 0;
+    const enCount = data?.english?.length || 0;
+    const totalQuestions = ruCount + maCount + loCount + enCount;
+
+    return {
+      grade,
+      title: `Вступительный Экзамен (${grade} Класс) • Академия Будущих Лидеров`,
+      questions: totalQuestions,
+      details: `Русский (${ruCount}), Математика (${maCount}), Логика (${loCount}), Английский (${enCount})`,
+      timeLimit: 90,
+      status: 'Активен',
+      aiProctoring: true,
+    };
+  });
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 text-[var(--text-main)]">
@@ -18,23 +32,16 @@ export default function TestList() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[var(--border-color)] pb-4">
         <div>
-          <h1 className="text-2xl font-bold">Тесты и Экзамены Организации</h1>
-          <p className="text-xs text-[var(--text-muted)] mt-1">Управление онлайн-тестированием и проверкой ответов для {activeTenant?.name}</p>
+          <h1 className="text-2xl font-bold">Вступительные Тесты (7–11 Классы)</h1>
+          <p className="text-xs text-[var(--text-muted)] mt-1">Официальные экзаменационные материалы и прокторинг для {activeTenant?.name || "Grand Circle Central Asia"}</p>
         </div>
         
         <div className="flex items-center gap-3">
           <Link 
-            to={`/workspace/${activeTenant?.id}/tests/manage`}
+            to={`/workspace/${activeTenant?.id || "org_future_leaders"}/tests/manage`}
             className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition"
           >
-            <ShieldCheck className="w-4 h-4" /> Кабинет Проверки Менеджера
-          </Link>
-          
-          <Link 
-            to={`/workspace/${activeTenant?.id}/tests/new`}
-            className="bg-[var(--accent)] text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 hover:opacity-90 transition shadow-xs"
-          >
-            <Plus className="w-4 h-4" /> Создать Тест
+            <ShieldCheck className="w-4 h-4" /> Кабинет Проверки Управляющего
           </Link>
         </div>
       </div>
@@ -44,9 +51,9 @@ export default function TestList() {
         <div>
           <h3 className="font-bold text-emerald-400 text-sm flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>Кабинет Проверки Тестов и Результатов для Управляющего</span>
+            <span>Кабинет Проверки Ответников и Прокторинга для Управляющего</span>
           </h3>
-          <p className="text-xs text-emerald-200/70 mt-1">Просмотр результатов абитуриентов, ответов на тесты, фрагментов видео прокторинга, PDF-отчетов и генерация сертификатов.</p>
+          <p className="text-xs text-emerald-200/70 mt-1">Просмотр результатов абитуриентов, видеозаписей кадра прокторинга, выгрузка PDF-отчетов и официальных сертификатов.</p>
         </div>
         <Link
           to={`/workspace/${activeTenant?.id || "org_future_leaders"}/tests/manage`}
@@ -62,37 +69,32 @@ export default function TestList() {
         <table className="w-full text-left text-xs">
           <thead className="bg-[var(--bg-panel)] border-b border-[var(--border-color)] text-[var(--text-muted)] font-mono uppercase">
             <tr>
-              <th className="px-6 py-3.5 font-bold">Название Теста</th>
-              <th className="px-6 py-3.5 font-bold">Параметры</th>
+              <th className="px-6 py-3.5 font-bold">Класс / Название Теста</th>
+              <th className="px-6 py-3.5 font-bold">Предметы & Задания</th>
               <th className="px-6 py-3.5 font-bold">Статус</th>
-              <th className="px-6 py-3.5 font-bold text-right">Ссылка для Учеников</th>
+              <th className="px-6 py-3.5 font-bold text-right">Действия & Ссылка</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border-color)]">
-            {tests.map(test => {
-              const studentLink = `${window.location.origin}/test?orgId=${activeTenant?.id}&testId=${test.id}`;
+            {gradeTests.map(test => {
+              const studentLink = `${window.location.origin}/test?grade=${test.grade}`;
               return (
-                <tr key={test.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition group">
+                <tr key={test.grade} className="hover:bg-black/5 dark:hover:bg-white/5 transition group">
                   <td className="px-6 py-4">
-                    <Link to={`/workspace/${activeTenant?.id}/tests/${test.id}`} className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center border border-purple-500/20">
-                        <FileQuestion className="w-4 h-4" />
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center border border-purple-500/20 font-bold font-mono">
+                        {test.grade} кл
                       </div>
-                      <span className="font-bold text-[var(--text-main)] group-hover:text-[var(--accent)] transition">{test.title}</span>
-                    </Link>
+                      <div>
+                        <div className="font-bold text-[var(--text-main)]">{test.title}</div>
+                        <div className="text-[11px] text-[var(--text-muted)] mt-0.5">Время прохождения: {test.timeLimit} мин.</div>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
-                      <span>{test.questions} вопр.</span>
-                      <span>{test.timeLimit} мин.</span>
-                      <span className="flex items-center gap-1">
-                        <Users className="w-3 h-3" /> {test.participants}
-                      </span>
-                      {test.aiProctoring && (
-                        <span className="bg-purple-500/10 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded-full text-[10px] uppercase font-bold border border-purple-500/20">
-                          AI Прокторинг
-                        </span>
-                      )}
+                    <div className="space-y-1">
+                      <div className="font-semibold text-[var(--text-main)]">{test.questions} вопросов в сумме</div>
+                      <div className="text-[11px] text-[var(--text-muted)]">{test.details}</div>
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -102,6 +104,14 @@ export default function TestList() {
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
+                      <a
+                        href={`/test?grade=${test.grade}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 bg-purple-600/10 hover:bg-purple-600/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 rounded-lg font-bold text-[11px] flex items-center gap-1.5 transition"
+                      >
+                        <Play className="w-3.5 h-3.5" /> Пройти Тест
+                      </a>
                       <CopyButton text={studentLink} label="Скопировать ссылку" />
                     </div>
                   </td>
