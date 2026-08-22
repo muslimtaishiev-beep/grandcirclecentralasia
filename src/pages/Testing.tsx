@@ -39,6 +39,11 @@ export default function Testing() {
   const [isRetake, setIsRetake] = useState(false);
 
   const [grade, setGrade] = useState<number | null>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlGrade = params.get("grade");
+      if (urlGrade && !isNaN(Number(urlGrade))) return Number(urlGrade);
+    } catch(e) {}
     const saved = safeGetSession("grade", null);
     return saved ? Number(saved) : null;
   });
