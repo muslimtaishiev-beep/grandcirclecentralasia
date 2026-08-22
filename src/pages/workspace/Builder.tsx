@@ -14,7 +14,7 @@ interface ScreenBlock {
 }
 
 export default function WorkspaceBuilder() {
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
   const { user } = useAuth();
   

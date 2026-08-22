@@ -6,7 +6,7 @@ import { db } from '../../../lib/firebase';
 import { ScheduleEvent } from '../../../types/edu';
 
 export default function ScheduleGrid() {
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
 
   const [events, setEvents] = useState<ScheduleEvent[]>([]);

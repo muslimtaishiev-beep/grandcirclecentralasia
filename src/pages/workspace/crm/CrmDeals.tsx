@@ -5,7 +5,7 @@ import { useCrmDeals, CrmDeal } from '../../../lib/useCrm';
 import CrmIntegrationsModal from '../../../components/crm/CrmIntegrationsModal';
 
 export default function CrmDeals() {
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
   
   const { deals, loading, addDeal, updateDealColumn, deleteDeal } = useCrmDeals(orgId);

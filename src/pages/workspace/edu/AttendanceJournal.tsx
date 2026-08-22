@@ -14,7 +14,7 @@ interface StudentItem {
 }
 
 export default function AttendanceJournal() {
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);

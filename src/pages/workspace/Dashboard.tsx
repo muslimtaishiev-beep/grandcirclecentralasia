@@ -5,7 +5,7 @@ import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 
 export default function WorkspaceDashboard() {
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
 
   const [stats, setStats] = useState({

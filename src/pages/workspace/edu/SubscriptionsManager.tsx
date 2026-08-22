@@ -6,7 +6,7 @@ import { db } from '../../../lib/firebase';
 import { StudentSubscription, FamilyProfile } from '../../../types/edu';
 
 export default function SubscriptionsManager() {
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
 
   const [subscriptions, setSubscriptions] = useState<StudentSubscription[]>([]);

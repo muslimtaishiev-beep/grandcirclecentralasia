@@ -221,9 +221,9 @@ export default function WorkspaceLayout() {
           <div className="w-full h-full bg-[var(--bg-surface)]/80 backdrop-blur-xl border border-[var(--border-color)] rounded-2xl shadow-xl overflow-y-auto">
             {/* Some pages (like Chat) have their own strict layouts, others have normal padding. 
                 For Chat specifically, we might want to override padding, but let's keep it clean for now. */}
-            <div className="h-full p-4 md:p-6">
-               <Outlet context={{ activeTenant, tenants }} />
-            </div>
+            <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-[var(--bg-app)]">
+               <Outlet context={{ activeTenant: activeTenant || (orgId ? { id: orgId, name: orgId, slug: orgId } : null), tenants }} />
+            </main>
           </div>
         </div>
       </div>

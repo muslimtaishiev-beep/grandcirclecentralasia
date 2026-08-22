@@ -7,7 +7,7 @@ import clsx from 'clsx';
 
 export default function GlobalNotifications() {
   const { user } = useAuth();
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications(activeTenant?.id, user?.uid);
   
   const [isOpen, setIsOpen] = useState(false);

@@ -5,7 +5,7 @@ import { Plus, Trash2, Mail, Shield, User, Users, Loader2, CheckSquare, FileText
 import { createNotification } from "../../lib/useNotifications";
 
 export default function WorkspaceSettings() {
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   const { user } = useAuth();
   
   const [members, setMembers] = useState<any[]>([]);

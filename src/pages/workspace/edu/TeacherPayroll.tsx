@@ -15,7 +15,7 @@ interface TeacherPayrollSummary {
 }
 
 export default function TeacherPayroll() {
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
 
   const [month, setMonth] = useState('2026-08');

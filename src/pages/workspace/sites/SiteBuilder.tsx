@@ -18,7 +18,7 @@ export interface SiteBlock {
 }
 
 export default function SiteBuilder() {
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
   const navigate = useNavigate();
 

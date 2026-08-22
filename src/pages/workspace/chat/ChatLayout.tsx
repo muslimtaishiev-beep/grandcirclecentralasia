@@ -20,7 +20,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import VideoCall from '../../../components/chat/VideoCall';
 
 export default function ChatLayout() {
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
   const { user } = useAuth();
   

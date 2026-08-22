@@ -6,7 +6,7 @@ import { collection, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/fi
 import { db } from '../../../lib/firebase';
 
 export default function DocumentList() {
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
   const navigate = useNavigate();
   

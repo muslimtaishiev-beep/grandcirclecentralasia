@@ -4,7 +4,7 @@ import { Search, Plus, FileQuestion, MoreVertical, Play, Settings, Users, Shield
 import { CopyButton } from '../../../components/ui/CopyButton';
 
 export default function TestList() {
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   
   const [tests] = useState([
     { id: '1', title: 'Главный Вступительный Экзамен (10 класс)', status: 'Active', questions: 25, participants: 42, timeLimit: 60, aiProctoring: true },

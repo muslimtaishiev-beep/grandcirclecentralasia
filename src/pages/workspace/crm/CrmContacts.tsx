@@ -4,7 +4,7 @@ import { Search, Plus, User, Mail, Phone, MoreVertical, Filter, Loader2, Trash }
 import { useCrmContacts, CrmContact } from '../../../lib/useCrm';
 
 export default function CrmContacts() {
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
   
   const { contacts, loading, addContact, deleteContact } = useCrmContacts(orgId);

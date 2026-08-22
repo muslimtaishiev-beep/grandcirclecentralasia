@@ -4,7 +4,7 @@ import { Search, Plus, List as ListIcon, Columns, MoreHorizontal, Clock, User, T
 import { useTasks, Task } from '../../../lib/useTasks';
 
 export default function TaskBoard() {
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
   
   const { tasks, loading, addTask, updateTaskColumn, deleteTask } = useTasks(orgId);

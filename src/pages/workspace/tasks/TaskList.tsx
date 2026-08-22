@@ -4,7 +4,7 @@ import { Search, Plus, List as ListIcon, Columns, CheckCircle2, Circle, MoreHori
 import { useTasks, Task } from '../../../lib/useTasks';
 
 export default function TaskList() {
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
   
   const { tasks, loading, addTask, updateTaskColumn, deleteTask } = useTasks(orgId);

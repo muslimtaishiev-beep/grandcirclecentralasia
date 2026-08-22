@@ -4,7 +4,7 @@ import { Zap, Plus, Trash2, CheckCircle, Power, Loader2, ArrowRight, Bell, Check
 import { useAutomations, AutomationRule } from '../../../lib/useAutomations';
 
 export default function AutomationsList() {
-  const { activeTenant } = useOutletContext<any>();
+  const { activeTenant } = useOutletContext<any>() || {};
   const { rules, loading, addRule, toggleRule, deleteRule } = useAutomations(activeTenant?.id);
 
   const [isCreating, setIsCreating] = useState(false);
