@@ -48,32 +48,36 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
     }
   }, [mode, oobCode]);
 
-  const redirectUserByRole = async () => {
-    const loggedUser = auth.currentUser;
-    const userEmail = loggedUser?.email || "";
+  const redirectUserByRole = async (userRecord?: any) => {
+    const loggedUser = userRecord || auth.currentUser;
+    const userEmail = (loggedUser?.email || email || "").toLowerCase();
 
     if (userEmail.endsWith("@studyfreeforum.com") || userEmail === "admin@studyfreeforum.com") {
-      navigate("/super-admin");
+      window.location.href = "/super-admin";
       return;
     }
 
     try {
       const idToken = await loggedUser?.getIdToken();
+      if (!idToken) {
+        window.location.href = "/dashboard";
+        return;
+      }
       const res = await fetch("/api/auth/me", {
         headers: { Authorization: `Bearer ${idToken}` }
       });
       const data = await res.json();
 
       if (data.user?.globalRole === "superadmin") {
-        navigate("/super-admin");
+        window.location.href = "/super-admin";
       } else if (data.memberships && data.memberships.length > 0) {
         const firstOrgSlug = data.memberships[0].tenantId || "org_future_leaders";
-        navigate(`/workspace/${firstOrgSlug}`);
+        window.location.href = `/workspace/${firstOrgSlug}`;
       } else {
-        navigate("/dashboard");
+        window.location.href = "/dashboard";
       }
     } catch (e) {
-      navigate("/dashboard");
+      window.location.href = "/dashboard";
     }
   };
 
@@ -82,10 +86,11 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
     try {
       setError('');
       setLoading(true);
-      await signInWithEmailAndPassword(auth, email, password);
-      await redirectUserByRole();
-    } catch (err) {
-      setError(lang === 'ru' ? 'Ошибка входа. Проверьте почту и пароль.' : lang === 'kg' ? 'Кирүү катасы. Электрондук почтаны жана сырсөздү текшериңиз.' : 'Failed to sign in. Please check your credentials.');
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      await redirectUserByRole(cred.user);
+    } catch (err: any) {
+      console.error("[Login Error]:", err);
+      setError(err.message || (lang === 'ru' ? 'Ошибка входа. Проверьте почту и пароль.' : 'Failed to sign in. Please check your credentials.'));
     } finally {
       setLoading(false);
     }
@@ -96,9 +101,10 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
       setError('');
       setLoading(true);
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      await redirectUserByRole();
+      const cred = await signInWithPopup(auth, provider);
+      await redirectUserByRole(cred.user);
     } catch (err: any) {
+      console.error("[Google Login Error]:", err);
       setError(err.message || (lang === 'ru' ? 'Ошибка входа через Google. Проверьте Authorized Domains в Firebase.' : 'Google sign-in error. Check Authorized Domains in Firebase.'));
     } finally {
       setLoading(false);
