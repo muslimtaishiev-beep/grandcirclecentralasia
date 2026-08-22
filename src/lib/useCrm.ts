@@ -36,13 +36,17 @@ export function useCrmContacts(tenantId: string | undefined) {
     setLoading(true);
     const q = query(
       collection(db, 'crm_contacts'),
-      where('tenantId', '==', tenantId),
-      orderBy('createdAt', 'desc')
+      where('tenantId', '==', tenantId)
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data: CrmContact[] = [];
       snapshot.forEach(doc => data.push({ id: doc.id, ...doc.data() } as CrmContact));
+      data.sort((a, b) => (b.createdAt?.toMillis ? b.createdAt.toMillis() : 0) - (a.createdAt?.toMillis ? a.createdAt.toMillis() : 0));
       setContacts(data);
+      setLoading(false);
+    }, (err) => {
+      console.warn("CRM contacts notice:", err);
+      setContacts([]);
       setLoading(false);
     });
     return () => unsubscribe();
@@ -77,13 +81,17 @@ export function useCrmDeals(tenantId: string | undefined) {
     setLoading(true);
     const q = query(
       collection(db, 'crm_deals'),
-      where('tenantId', '==', tenantId),
-      orderBy('createdAt', 'desc')
+      where('tenantId', '==', tenantId)
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data: CrmDeal[] = [];
       snapshot.forEach(doc => data.push({ id: doc.id, ...doc.data() } as CrmDeal));
+      data.sort((a, b) => (b.createdAt?.toMillis ? b.createdAt.toMillis() : 0) - (a.createdAt?.toMillis ? a.createdAt.toMillis() : 0));
       setDeals(data);
+      setLoading(false);
+    }, (err) => {
+      console.warn("CRM deals notice:", err);
+      setDeals([]);
       setLoading(false);
     });
     return () => unsubscribe();

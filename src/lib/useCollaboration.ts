@@ -34,6 +34,10 @@ export function useDocumentList(tenantId: string | undefined) {
       });
       setDocuments(docs);
       setLoading(false);
+    }, (err) => {
+      console.warn('[useDocumentList notice]:', err);
+      setDocuments([]);
+      setLoading(false);
     });
     return () => unsubscribe();
   }, [tenantId]);

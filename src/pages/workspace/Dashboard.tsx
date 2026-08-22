@@ -30,18 +30,20 @@ export default function WorkspaceDashboard() {
 
     const unsubMembers = onSnapshot(qMembers, snap => {
       setStats(prev => ({ ...prev, membersCount: snap.size }));
-    });
+    }, () => {});
     const unsubTests = onSnapshot(qTests, snap => {
       setStats(prev => ({ ...prev, testsCount: snap.size }));
-    });
+    }, () => {});
     const unsubDeals = onSnapshot(qDeals, snap => {
       setStats(prev => ({ ...prev, dealsCount: snap.size }));
-    });
+    }, () => {});
     const unsubTasks = onSnapshot(qTasks, snap => {
       setStats(prev => ({ ...prev, tasksCount: snap.size }));
-    });
+    }, () => {});
     const unsubDocs = onSnapshot(qDocs, snap => {
       setStats(prev => ({ ...prev, docsCount: snap.size }));
+      setLoading(false);
+    }, () => {
       setLoading(false);
     });
 

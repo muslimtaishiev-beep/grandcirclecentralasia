@@ -27,8 +27,7 @@ export function useTasks(tenantId: string | undefined) {
     setLoading(true);
     const q = query(
       collection(db, 'tasks'),
-      where('tenantId', '==', tenantId),
-      orderBy('createdAt', 'desc')
+      where('tenantId', '==', tenantId)
     );
 
     const unsubscribe = onSnapshot(
@@ -38,12 +37,17 @@ export function useTasks(tenantId: string | undefined) {
         snapshot.forEach((doc) => {
           taskData.push({ id: doc.id, ...doc.data() } as Task);
         });
+        taskData.sort((a, b) => {
+          const t1 = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+          const t2 = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+          return t2 - t1;
+        });
         setTasks(taskData);
         setLoading(false);
       },
       (err) => {
-        console.error("Error fetching tasks:", err);
-        setError(err);
+        console.warn("Tasks query notice:", err);
+        setTasks([]);
         setLoading(false);
       }
     );
