@@ -108,7 +108,7 @@ export default function WorkspaceSettings() {
   return (
     <div className="max-w-5xl mx-auto space-y-8 text-[var(--text-main)]">
       <div>
-        <h1 className="text-2xl font-bold">Управление Командой и Правами Доступа (Bitrix24 Style)</h1>
+        <h1 className="text-2xl font-bold">Управление Командой и Правами Доступа</h1>
         <p className="text-xs text-[var(--text-muted)] mt-1">Регистрация сотрудников и делегирование индивидуальных прав доступа для {activeTenant?.name}. Каждому работнику выдается личный аккаунт без ручного выбора менеджеров.</p>
       </div>
 

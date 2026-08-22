@@ -133,14 +133,17 @@ export default function WorkspaceDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           
           <Link 
-            to={`/workspace/${orgId}/crm/deals`}
-            className="bg-[var(--bg-surface)] border border-[var(--border-color)] p-5 rounded-xl hover:border-[var(--accent)] transition group flex items-center justify-between"
+            to={`/workspace/${orgId}/tests/manage`}
+            className="bg-emerald-950/30 border border-emerald-800/60 p-5 rounded-xl hover:border-emerald-500 transition group flex items-center justify-between"
           >
             <div>
-              <div className="font-bold text-[var(--text-main)] group-hover:text-[var(--accent)] transition">CRM Воронка</div>
-              <div className="text-xs text-[var(--text-muted)] mt-1">Сделки, контакты и WhatsApp интеграция</div>
+              <div className="font-bold text-emerald-400 group-hover:text-emerald-300 transition flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4" />
+                <span>Проверка Тестов Менеджером</span>
+              </div>
+              <div className="text-xs text-[var(--text-muted)] mt-1">Ответы абитуриентов, видео прокторинга и PDF отчеты</div>
             </div>
-            <ArrowRight className="w-5 h-5 text-[var(--text-muted)] group-hover:text-[var(--accent)] group-hover:translate-x-1 transition" />
+            <ArrowRight className="w-5 h-5 text-emerald-400 group-hover:translate-x-1 transition" />
           </Link>
 
           <Link 
@@ -148,19 +151,19 @@ export default function WorkspaceDashboard() {
             className="bg-[var(--bg-surface)] border border-[var(--border-color)] p-5 rounded-xl hover:border-[var(--accent)] transition group flex items-center justify-between"
           >
             <div>
-              <div className="font-bold text-[var(--text-main)] group-hover:text-[var(--accent)] transition">Конструктор Тестов</div>
-              <div className="text-xs text-[var(--text-muted)] mt-1">Создание экзаменов и настройка AI прокторинга</div>
+              <div className="font-bold text-[var(--text-main)] group-hover:text-[var(--accent)] transition">Все Тесты и Экзамены</div>
+              <div className="text-xs text-[var(--text-muted)] mt-1">Создание тестов, банк вопросов и прокторинг</div>
             </div>
             <ArrowRight className="w-5 h-5 text-[var(--text-muted)] group-hover:text-[var(--accent)] group-hover:translate-x-1 transition" />
           </Link>
 
           <Link 
-            to={`/workspace/${orgId}/docs`}
+            to={`/workspace/${orgId}/crm/deals`}
             className="bg-[var(--bg-surface)] border border-[var(--border-color)] p-5 rounded-xl hover:border-[var(--accent)] transition group flex items-center justify-between"
           >
             <div>
-              <div className="font-bold text-[var(--text-main)] group-hover:text-[var(--accent)] transition">Совместные Документы</div>
-              <div className="text-xs text-[var(--text-muted)] mt-1">База знаний TipTap + Yjs в реальном времени</div>
+              <div className="font-bold text-[var(--text-main)] group-hover:text-[var(--accent)] transition">CRM и Воронка</div>
+              <div className="text-xs text-[var(--text-muted)] mt-1">Сделки, контакты и WhatsApp сообщения</div>
             </div>
             <ArrowRight className="w-5 h-5 text-[var(--text-muted)] group-hover:text-[var(--accent)] group-hover:translate-x-1 transition" />
           </Link>

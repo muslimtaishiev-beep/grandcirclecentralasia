@@ -39,16 +39,22 @@ export default function TestList() {
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="flex gap-4">
-        <div className="flex-1 relative">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-          <input 
-            type="text" 
-            placeholder="Поиск тестов..."
-            className="w-full bg-[var(--bg-app)] border border-[var(--border-color)] rounded-xl pl-10 pr-4 py-2 text-xs focus:outline-none focus:border-[var(--accent)] text-[var(--text-main)]"
-          />
+      {/* Manager Test Review Banner */}
+      <div className="bg-emerald-950/40 border border-emerald-800/80 p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+        <div>
+          <h3 className="font-bold text-emerald-400 text-sm flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>Кабинет Проверки Тестов и Результатов для Управляющего</span>
+          </h3>
+          <p className="text-xs text-emerald-200/70 mt-1">Просмотр результатов абитуриентов, ответов на тесты, фрагментов видео прокторинга, PDF-отчетов и генерация сертификатов.</p>
         </div>
+        <Link
+          to={`/workspace/${activeTenant?.id || "org_future_leaders"}/tests/manage`}
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center gap-1.5 shrink-0"
+        >
+          <span>Открыть Кабинет Проверки</span>
+          <span>➔</span>
+        </Link>
       </div>
 
       {/* List */}
