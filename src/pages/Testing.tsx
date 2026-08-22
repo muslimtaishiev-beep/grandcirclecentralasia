@@ -19,14 +19,20 @@ export default function Testing() {
   
   const clearAllTestData = () => {
     try {
+      localStorage.clear();
       sessionStorage.clear();
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith("persist_") || key.startsWith("backup_answers_") || key === "suspendedPhase" || key === "totalBlurTime" || key === "lastBlurTime") {
-          localStorage.removeItem(key);
-        }
-      });
+      console.log('Storage cleared!');
     } catch(e) {}
   };
+
+  useEffect(() => {
+    (window as any).clearTestStorage = () => {
+      localStorage.clear();
+      sessionStorage.clear();
+      console.log('Storage cleared!');
+      window.location.reload();
+    };
+  }, []);
   
   const [studentName, setStudentName] = useState(() => safeGetSession("studentName", ""));
   const [enteredPin, setEnteredPin] = useState(() => safeGetSession("enteredPin", ""));
