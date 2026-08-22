@@ -131,14 +131,14 @@ export default function WorkspaceLayout() {
               <Building className="w-4 h-4 text-white" />
             </div>
             <span className="font-bold text-[var(--text-main)] hidden sm:block">
-              {activeTenant?.name || "GrandCircle"}
+              {activeTenant?.name && !activeTenant.name.startsWith("org_") ? activeTenant.name : "Grand Circle Central Asia"}
             </span>
           </div>
         </div>
 
         {/* Center: Search & Global Tabs */}
         <div className="hidden md:flex flex-1 max-w-2xl px-8 items-center gap-6">
-          {/* Quick links (Bitrix style) */}
+          {/* Quick links */}
           <div className="flex gap-4 font-medium text-sm text-[var(--text-main)] overflow-x-auto whitespace-nowrap hide-scrollbar">
             <Link to={`/workspace/${orgId}/chat`} className="hover:text-[var(--accent)] transition">Чаты</Link>
             <Link to={`/workspace/${orgId}/tasks`} className="hover:text-[var(--accent)] transition">Задачи</Link>

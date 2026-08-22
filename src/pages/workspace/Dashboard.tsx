@@ -61,13 +61,13 @@ export default function WorkspaceDashboard() {
       <div className="bg-gradient-to-r from-[var(--bg-surface)] via-[var(--bg-app)] to-[var(--bg-surface)] border border-[var(--border-color)] p-8 rounded-2xl shadow-sm relative overflow-hidden">
         <div className="relative z-10">
           <div className="flex items-center gap-2 text-xs font-mono text-[var(--accent)] font-bold uppercase tracking-wider mb-2">
-            <Zap className="w-4 h-4" /> Активный Воркспейс • {activeTenant?.name || "Организация"}
+            <Zap className="w-4 h-4" /> {activeTenant?.name && !activeTenant.name.startsWith("org_") ? activeTenant.name : "Grand Circle Central Asia"}
           </div>
           <h1 className="text-3xl font-extrabold text-[var(--text-main)] tracking-tight">
-            Добро пожаловать в панель управления
+            Панель Управления Академией
           </h1>
           <p className="text-[var(--text-muted)] mt-2 max-w-2xl text-sm leading-relaxed">
-            Воркспейс полностью изолирован и работает на защищённой мульти-тенантной архитектуре. Ниже представлена аналитика в реальном времени.
+            Обзор показателей учебного процесса, результаты поступивших абитуриентов, CRM-сделки и аналитика в реальном времени.
           </p>
         </div>
       </div>
