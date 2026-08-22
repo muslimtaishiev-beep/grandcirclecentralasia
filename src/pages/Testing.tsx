@@ -5,6 +5,8 @@ import { Reorder } from "framer-motion";
 import { testsData } from "../data/testsData";
 import { Question } from "../types";
 import { getHourlyPIN, formatMathText, getCEFRLevel, fetchGasAPI } from "../lib/utils";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../lib/firebase";
 
 export default function Testing() {
   const safeGetSession = (key: string, defaultVal: any) => {
@@ -61,6 +63,7 @@ export default function Testing() {
     return {};
   });
   const [testId, setTestId] = useState(() => safeGetSession("testId", ""));
+  const [firestoreTestData, setFirestoreTestData] = useState<any>(null);
   const [shortId, setShortId] = useState(() => {
     const saved = safeGetSession("shortId", "");
     if (saved && saved !== "undefined" && saved !== "null") return saved;
@@ -118,6 +121,21 @@ export default function Testing() {
       setBoth("phase", phase);
     } catch(e) {}
   }, [studentName, grade, started, finished, disqualified, consentGiven, answers, testId, shortId, qrToken, pendingSubmission, resultData, phase]);
+
+  // Load questions & answer keys directly from Firestore collection "tests"
+  useEffect(() => {
+    if (!grade && !testId) return;
+    const docId = testId || `test_grade_${grade}_org_future_leaders`;
+    const docRef = doc(db, 'tests', docId);
+    getDoc(docRef).then(snap => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.questions) {
+          setFirestoreTestData(data);
+        }
+      }
+    }).catch(() => {});
+  }, [grade, testId]);
 
   // Prevent accidental F5/Closing
   useEffect(() => {
@@ -1119,7 +1137,9 @@ export default function Testing() {
     );
   }
 
-  const test = testsData[grade!];
+  const test = (firestoreTestData && firestoreTestData.questions) 
+    ? firestoreTestData.questions 
+    : testsData[grade!];
   if (!test) {
     return <div className="min-h-screen flex items-center justify-center p-4">Ошибка загрузки теста. Обновите страницу.</div>;
   }

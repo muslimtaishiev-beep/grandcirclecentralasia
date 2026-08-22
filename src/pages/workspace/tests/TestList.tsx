@@ -72,6 +72,18 @@ export default function TestList() {
               aiProctoring: true,
               status: 'active',
               details: `Русский (${ruCount}), Математика (${maCount}), Логика (${loCount}), Английский (${enCount})`,
+              questions: {
+                russian: data?.russian || [],
+                math: data?.math || [],
+                logic: data?.logic || [],
+                english: data?.english || [],
+              },
+              answerKeys: {
+                russian: (data?.russian || []).map((q: any) => ({ id: q.id, answer: q.correctAnswer || q.answer || '', points: q.points || 1 })),
+                math: (data?.math || []).map((q: any) => ({ id: q.id, answer: q.correctAnswer || q.answer || '', points: q.points || 1 })),
+                logic: (data?.logic || []).map((q: any) => ({ id: q.id, answer: q.correctAnswer || q.answer || '', points: q.points || 1 })),
+                english: (data?.english || []).map((q: any) => ({ id: q.id, answer: q.correctAnswer || q.answer || '', points: q.points || 1 })),
+              },
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp()
             }, { merge: true });
