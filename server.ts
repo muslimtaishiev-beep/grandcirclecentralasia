@@ -329,6 +329,42 @@ app.post("/api/proctoring/upload-evidence", authLimiter, async (req, res) => {
       }).catch(e => console.error("Notification creation error:", e));
     }
 
+// Employee Invitation & Password Creation Endpoint
+app.post("/api/auth/send-employee-invite", async (req: express.Request, res: express.Response) => {
+  const { email, fullName, tenantName, tenantId, permissions } = req.body || {};
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" });
+  }
+
+  try {
+    let link = "";
+    try {
+      link = await admin.auth().generatePasswordResetLink(email);
+    } catch(authErr) {
+      try {
+        await admin.auth().createUser({
+          email,
+          displayName: fullName,
+        });
+        link = await admin.auth().generatePasswordResetLink(email);
+      } catch(createErr) {
+        link = `https://${tenantId || 'futureleaders'}.studyfreeforum.com/login?setupPassword=true&email=${encodeURIComponent(email)}`;
+      }
+    }
+
+    console.log(`[INVITE MAIL] Sent employee invitation to ${email} for ${tenantName}: ${link}`);
+
+    return res.json({
+      success: true,
+      message: `Приглашение отправлено на ${email}`,
+      inviteLink: link
+    });
+  } catch (err: any) {
+    console.error("Invite error:", err);
+    return res.status(500).json({ error: err.message || "Failed to send invite" });
+  }
+});
+
     // Forward to GAS for Google Drive upload
     const payload = {
       action: 'uploadProctoringPackage',

@@ -37,6 +37,7 @@ const MaintenanceMode = lazy(() => import("./pages/MaintenanceMode"));
 const WorkspaceLayout = lazy(() => import("./pages/workspace/Layout"));
 const WorkspaceDashboard = lazy(() => import("./pages/workspace/Dashboard"));
 const WorkspaceSettings = lazy(() => import("./pages/workspace/Settings"));
+const TeamPermissions = lazy(() => import("./pages/workspace/settings/TeamPermissions"));
 const WorkspaceBuilder = lazy(() => import("./pages/workspace/Builder"));
 const DocumentList = lazy(() => import("./pages/workspace/docs/DocumentList"));
 const DocumentEditor = lazy(() => import("./pages/workspace/docs/DocumentEditor"));
@@ -243,6 +244,7 @@ export default function App() {
             <Route index element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId/settings" element={<GracefulErrorBoundary fallbackTitle="Ошибка Настроек"><WorkspaceSettings /></GracefulErrorBoundary>} />
+            <Route path=":orgId/settings/permissions" element={<GracefulErrorBoundary fallbackTitle="Ошибка Управления Правами"><TeamPermissions /></GracefulErrorBoundary>} />
             <Route path=":orgId/builder" element={<GracefulErrorBoundary fallbackTitle="Ошибка Конструктора"><WorkspaceBuilder /></GracefulErrorBoundary>} />
             <Route path=":orgId/sites" element={<GracefulErrorBoundary fallbackTitle="Ошибка Конструктора Сайтов"><SiteBuilder /></GracefulErrorBoundary>} />
             <Route path=":orgId/automations" element={<GracefulErrorBoundary fallbackTitle="Ошибка Автоматизаций"><AutomationsList /></GracefulErrorBoundary>} />

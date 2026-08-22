@@ -25,7 +25,9 @@ import {
   Calendar,
   UserCheck,
   CreditCard,
-  DollarSign
+  DollarSign,
+  ShieldCheck,
+  Shield
 } from "lucide-react";
 import GlobalNotifications from "../../components/workspace/GlobalNotifications";
 import GlobalSearchModal from "../../components/ui/GlobalSearchModal";
@@ -89,11 +91,13 @@ export default function WorkspaceLayout() {
     { name: "Chat", path: `/workspace/${activeTenant.id}/chat`, icon: MessageSquare },
     { name: "Tasks", path: `/workspace/${activeTenant.id}/tasks`, icon: CheckSquare },
     { name: "CRM", path: `/workspace/${activeTenant.id}/crm/contacts`, icon: Briefcase },
-    { name: "Tests", path: `/workspace/${activeTenant.id}/tests`, icon: FileQuestion },
+    { name: "Тесты", path: `/workspace/${activeTenant.id}/tests`, icon: FileQuestion },
+    { name: "Проверка & Прокторинг", path: `/workspace/${activeTenant.id}/tests/manage`, icon: ShieldCheck },
     { name: "Docs", path: `/workspace/${activeTenant.id}/docs`, icon: FileText },
     { name: "Sheets", path: `/workspace/${activeTenant.id}/sheets`, icon: FileSpreadsheet },
     { name: "Sites", path: `/workspace/${activeTenant.id}/sites`, icon: Globe },
     { name: "Automations", path: `/workspace/${activeTenant.id}/automations`, icon: Zap },
+    { name: "Права & Сотрудники", path: `/workspace/${activeTenant.id}/settings/permissions`, icon: Shield },
     { name: "Settings", path: `/workspace/${activeTenant.id}/settings`, icon: Settings },
   ] : [];
 
