@@ -1,6 +1,7 @@
 import { auth as firebaseAuth } from "../lib/firebase";
 import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import toast, { Toaster } from "react-hot-toast";
 // @ts-ignore
 import { useEffect } from "react";
@@ -1132,6 +1133,7 @@ export default function ManagerDashboard() {
             </div>
           </div>
         )}
+
         {/* Certificate Offscreen Container for PDF Export */}
         {certForExport && (
           <div style={{ width: 0, height: 0, overflow: 'hidden', position: 'absolute', top: -9999, left: -9999 }}>
@@ -1139,30 +1141,36 @@ export default function ManagerDashboard() {
           </div>
         )}
 
-        {/* Floating Action Button for Certificates (Bottom Right) */}
-        <button
-          onClick={() => setIsCertModalOpen(true)}
-          className="fixed bottom-8 right-8 z-40 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold px-6 py-4 rounded-full shadow-2xl hover:shadow-indigo-500/50 transform hover:scale-105 active:scale-95 transition-all flex items-center gap-3 border-2 border-white/20 group"
-          title="Сформировать справку об обучении"
-        >
-          <span className="text-2xl group-hover:rotate-12 transition-transform">📜</span>
-          <span className="text-base tracking-wide hidden sm:inline">Выдать справку</span>
-          {certHistory.length > 0 && (
-            <span className="bg-white/20 text-white text-xs px-2.5 py-1 rounded-full font-mono font-bold">
-              {certHistory.length}
-            </span>
-          )}
-        </button>
+        {/* Screen-pinned Floating Action Buttons for Certificates & Document Generation */}
+        {createPortal(
+          <div className="fixed bottom-6 right-6 z-[999999] flex flex-col items-end gap-3 pointer-events-auto select-none">
+            {/* Floating Action Button for NEW Document Templates */}
+            <button
+              onClick={() => setIsDocIssuerOpen(true)}
+              className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold px-5 py-3.5 rounded-full shadow-2xl hover:shadow-teal-500/50 transform hover:scale-105 active:scale-95 transition-all flex items-center gap-3 border-2 border-white/30 group cursor-pointer"
+              title="Генератор справок по шаблонам"
+            >
+              <span className="text-xl group-hover:rotate-12 transition-transform">🖨️</span>
+              <span className="text-sm font-semibold tracking-wide hidden sm:inline">Выдать документ</span>
+            </button>
 
-        {/* Floating Action Button for NEW Document Templates (Bottom Right, slightly higher) */}
-        <button
-          onClick={() => setIsDocIssuerOpen(true)}
-          className="fixed bottom-28 right-8 z-40 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold px-6 py-4 rounded-full shadow-2xl hover:shadow-teal-500/50 transform hover:scale-105 active:scale-95 transition-all flex items-center gap-3 border-2 border-white/20 group"
-          title="Генератор справок по шаблонам"
-        >
-          <span className="text-2xl group-hover:rotate-12 transition-transform">🖨️</span>
-          <span className="text-base tracking-wide hidden sm:inline">Выдать документ</span>
-        </button>
+            {/* Floating Action Button for Certificates */}
+            <button
+              onClick={() => setIsCertModalOpen(true)}
+              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold px-5 py-3.5 rounded-full shadow-2xl hover:shadow-indigo-500/50 transform hover:scale-105 active:scale-95 transition-all flex items-center gap-3 border-2 border-white/30 group cursor-pointer"
+              title="Сформировать справку об обучении"
+            >
+              <span className="text-xl group-hover:rotate-12 transition-transform">📜</span>
+              <span className="text-sm font-semibold tracking-wide hidden sm:inline">Выдать справку</span>
+              {certHistory.length > 0 && (
+                <span className="bg-white/20 text-white text-xs px-2 py-0.5 rounded-full font-mono font-bold">
+                  {certHistory.length}
+                </span>
+              )}
+            </button>
+          </div>,
+          document.body
+        )}
 
         {/* Certificate Management Modal */}
         {isCertModalOpen && (
