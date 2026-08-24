@@ -4,7 +4,7 @@ import {
   Undo2, Redo2, Printer, Paintbrush, ChevronDown, Bold, Italic, Underline, Baseline, Highlighter, 
   Link, Image as ImageIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify, List, ListOrdered, CheckSquare, 
   Indent, Outdent, RemoveFormatting, Plus, Minus, Download, Code, Quote, Trash2, Eye, FilePlus, Sparkles,
-  Scissors, Copy, Clipboard, BarChart2, Globe, HelpCircle, Keyboard, Info, Check, ShieldCheck, UserCheck, Users, Edit3
+  Scissors, Copy, Clipboard, BarChart2, Globe, HelpCircle, Keyboard, Info, Check, ShieldCheck, UserCheck, Users, Edit3, Upload, FileCheck
 } from 'lucide-react';
 import { db } from '../../../../lib/firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
@@ -35,6 +35,7 @@ interface Props {
   isAuthor: boolean;
   isFullAdmin: boolean;
   onUpdateAccess: (accessLevel: DocAccessLevel, permissionsMap: Record<string, UserDocRole>) => void;
+  onLoadTemplate: (templateBlocks: DocBlock[]) => void;
 }
 
 export default function DocEditorToolbar({ 
@@ -61,7 +62,8 @@ export default function DocEditorToolbar({
   docBlocks,
   isAuthor,
   isFullAdmin,
-  onUpdateAccess
+  onUpdateAccess,
+  onLoadTemplate
 }: Props) {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [docTitle, setDocTitle] = useState(title);
@@ -79,11 +81,14 @@ export default function DocEditorToolbar({
   // Modals
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false);
 
   // Color Pickers
   const [showTextColorPicker, setShowTextColorPicker] = useState(false);
   const [showBgColorPicker, setShowBgColorPicker] = useState(false);
 
+  // File Input Ref for native computer image upload
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -127,10 +132,8 @@ export default function DocEditorToolbar({
     }
   };
 
-  // Helper to execute formatting on highlighted text range or current cursor
   const execFormat = (command: string, value: string = '') => {
     document.execCommand(command, false, value);
-    // Also trigger block update if active block is present
     if (activeBlock) {
       const el = document.getElementById(`block-${activeBlock.id}`);
       if (el) {
@@ -160,9 +163,24 @@ export default function DocEditorToolbar({
     let imgUrl = '/stamp.png';
     if (stampType === 'corner') imgUrl = '/corner_stamp.png';
     else if (stampType === 'logo') imgUrl = '/school_logo.png';
-    else if (stampType === 'signature') imgUrl = 'https://upload.wikimedia.org/wikipedia/commons/f/fa/John_Hancock_signature.svg'; // Director Facsimile Signature SVG
+    else if (stampType === 'signature') imgUrl = 'https://upload.wikimedia.org/wikipedia/commons/f/fa/John_Hancock_signature.svg';
 
     execFormat('insertImage', imgUrl);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) {
+        execFormat('insertImage', dataUrl);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleInsertLink = () => {
@@ -171,10 +189,62 @@ export default function DocEditorToolbar({
     execFormat('createLink', url);
   };
 
-  const handleInsertImage = () => {
-    const url = window.prompt("Введите URL изображения:", "https://images.unsplash.com/photo-1542435503-956c469947f6?w=800");
-    if (!url) return;
-    onAddBlock('image');
+  const handleInsertImagePrompt = () => {
+    const choice = window.confirm("Нажмите ОК чтобы выбрать фото с компьютера, или Отмена чтобы ввести URL интернет-картинки.");
+    if (choice) {
+      fileInputRef.current?.click();
+    } else {
+      const url = window.prompt("Введите URL изображения:", "https://images.unsplash.com/photo-1542435503-956c469947f6?w=800");
+      if (url) execFormat('insertImage', url);
+    }
+  };
+
+  // Corporate Document Templates Generator
+  const applyTemplate = (type: 'order' | 'certificate' | 'contract' | 'protocol') => {
+    const nowStr = new Date().toLocaleDateString('ru-RU');
+    setShowTemplatesModal(false);
+
+    if (type === 'order') {
+      onUpdateTitle("Официальный Приказ организации № " + Math.floor(100 + Math.random() * 900));
+      onLoadTemplate([
+        { id: '1', type: 'heading_1', content: 'ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ', align: 'center', isBold: true },
+        { id: '2', type: 'heading_2', content: 'ПРИКАЗ № ' + Math.floor(100 + Math.random() * 900), align: 'center', isBold: true },
+        { id: '3', type: 'paragraph', content: `<b>г. Бишкек</b> <span style="float:right;"><b>Дата: ${nowStr} г.</b></span>` },
+        { id: '4', type: 'divider', content: '' },
+        { id: '5', type: 'heading_3', content: 'Об утверждении регламента работы образовательного департамента' },
+        { id: '6', type: 'paragraph', content: 'В целях оптимизации рабочих процессов и улучшения качества образовательного процесса ПРИКАЗЫВАЮ:' },
+        { id: '7', type: 'numbered_list', content: 'Утвердить обновленный регламент ведения учебных журналов и проведения диагностики.' },
+        { id: '8', type: 'numbered_list', content: 'Назначить ответственных сотрудников за мониторинг посещаемости учеников.' },
+        { id: '9', type: 'numbered_list', content: 'Контроль за исполнением настоящего приказа оставляю за собой.' },
+        { id: '10', type: 'paragraph', content: '<br><b>Генеральный Директор:</b> ___________________ / Подпись /' },
+        { id: '11', type: 'image', imageUrl: '/stamp.png', content: '/stamp.png' }
+      ]);
+    } else if (type === 'certificate') {
+      onUpdateTitle("Справка с места учебы № " + Math.floor(10 + Math.random() * 90));
+      onLoadTemplate([
+        { id: '1', type: 'heading_1', content: 'АКАДЕМИЯ БУДУЩИХ ЛИДЕРОВ', align: 'center', isBold: true },
+        { id: '2', type: 'paragraph', content: '720005, г. Бишкек, ул. Жуная Мавлянова, 10 • Тел.: +996 558 398 360', align: 'center' },
+        { id: '3', type: 'divider', content: '' },
+        { id: '4', type: 'heading_2', content: 'СПРАВКА № ' + Math.floor(10 + Math.random() * 90), align: 'center', isBold: true },
+        { id: '5', type: 'paragraph', content: `Выдана <b>Иванову Александру Сергеевичу</b> в том, что он(а) действительно является учеником(цей) <b>7 класса</b> школы «Академия Будущих Лидеров».` },
+        { id: '6', type: 'paragraph', content: 'Справка выдана для предъявления по месту требования.' },
+        { id: '7', type: 'paragraph', content: `<br><b>Дата выдачи:</b> ${nowStr} г.` },
+        { id: '8', type: 'paragraph', content: '<b>Директор Академии:</b> ___________________' },
+        { id: '9', type: 'image', imageUrl: '/stamp.png', content: '/stamp.png' }
+      ]);
+    } else if (type === 'contract') {
+      onUpdateTitle("Договор оказания услуг № " + Math.floor(1000 + Math.random() * 9000));
+      onLoadTemplate([
+        { id: '1', type: 'heading_1', content: 'ДОГОВОР ОКАЗАНИЯ ОБРАЗОВАТЕЛЬНЫХ УСЛУГ', align: 'center', isBold: true },
+        { id: '2', type: 'paragraph', content: `<b>г. Бишкек</b> <span style="float:right;"><b>«${nowStr}» г.</b></span>` },
+        { id: '3', type: 'paragraph', content: 'Организация «Академия Будущих Лидеров», именуемая в дальнейшем «Исполнитель», с одной стороны, и Заказчик с другой стороны, заключили настоящий Договор:' },
+        { id: '4', type: 'heading_3', content: '1. ПРЕДМЕТ ДОГОВОРА' },
+        { id: '5', type: 'paragraph', content: '1.1. Исполнитель обязуется предоставить образовательные услуги по обучению, а Заказчик обязуется оплатить оказанные услуги.' },
+        { id: '6', type: 'heading_3', content: '2. РЕКВИЗИТЫ И ПОДПИСИ СТОРОН' },
+        { id: '7', type: 'paragraph', content: '<b>Исполнитель:</b> ИНН 03004202510435, г. Бишкек, ул. Мавлянова 10.' },
+        { id: '8', type: 'image', imageUrl: '/stamp.png', content: '/stamp.png' }
+      ]);
+    }
   };
 
   const totalWords = docBlocks.reduce((acc, b) => acc + (b.content ? b.content.replace(/<[^>]*>/g, '').trim().split(/\s+/).filter(Boolean).length : 0), 0);
@@ -187,6 +257,15 @@ export default function DocEditorToolbar({
 
   return (
     <div ref={menuRef} className="bg-[#f9fbfd] border-b border-slate-200 font-sans text-slate-700 sticky top-0 z-30 select-none shadow-sm">
+      {/* Hidden Native File Input for uploading local images from computer */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleFileUpload} 
+        accept="image/*" 
+        className="hidden" 
+      />
+
       {/* Top Header Bar */}
       <div className="px-4 py-2 flex items-center justify-between gap-4 border-b border-slate-200/60 bg-white">
         <div className="flex items-center gap-3">
@@ -262,7 +341,8 @@ export default function DocEditorToolbar({
               <div className="relative">
                 <button onClick={() => setActiveMenu(activeMenu === 'file' ? null : 'file')} className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'file' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}>Файл</button>
                 {activeMenu === 'file' && (
-                  <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-slate-200 rounded-xl shadow-2xl py-1 z-50 text-xs text-slate-700">
+                  <div className="absolute top-full left-0 mt-1 w-60 bg-white border border-slate-200 rounded-xl shadow-2xl py-1 z-50 text-xs text-slate-700">
+                    <button onClick={() => { setActiveMenu(null); setShowTemplatesModal(true); }} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-blue-700 flex items-center gap-2 font-bold"><FileCheck className="w-4 h-4 text-blue-600" /> Загрузить готовый шаблон</button>
                     <button onClick={() => { setActiveMenu(null); onBack(); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><FilePlus className="w-4 h-4 text-blue-600" /> Вернуться к документам</button>
                     {canManageAccess && <button onClick={() => { setActiveMenu(null); setIsEditingTitle(true); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><FileText className="w-4 h-4 text-slate-500" /> Переименовать документ</button>}
                     <hr className="my-1 border-slate-100" />
@@ -302,15 +382,14 @@ export default function DocEditorToolbar({
                 <button onClick={() => setActiveMenu(activeMenu === 'insert' ? null : 'insert')} className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'insert' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}>Вставка</button>
                 {activeMenu === 'insert' && (
                   <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-2xl py-1 z-50 text-xs text-slate-700">
+                    <button onClick={() => { setActiveMenu(null); fileInputRef.current?.click(); }} className="w-full text-left px-4 py-2 hover:bg-emerald-50 text-emerald-700 flex items-center gap-2 font-bold"><Upload className="w-4 h-4 text-emerald-600" /> Загрузить изображение с ПК</button>
                     <button onClick={() => { setActiveMenu(null); handleInsertStamp('round'); }} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-blue-700 flex items-center gap-2 font-bold"><span>🔵 Круглая печать Академии</span></button>
-                    <button onClick={() => { setActiveMenu(null); handleInsertStamp('signature'); }} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-blue-700 flex items-center gap-2 font-bold"><span>✍️ Подпись Директора</span></button>
+                    <button onClick={() => { setActiveMenu(null); handleInsertStamp('signature'); }} className="w-full text-left px-4 py-2 hover:bg-purple-50 text-purple-700 flex items-center gap-2 font-bold"><span>✍️ Подпись Директора</span></button>
                     <button onClick={() => { setActiveMenu(null); handleInsertStamp('corner'); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><span>🟦 Угольный штамп орг-ции</span></button>
                     <button onClick={() => { setActiveMenu(null); handleInsertStamp('logo'); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><span>🏫 Логотип Академии</span></button>
                     <hr className="my-1 border-slate-100" />
-                    <button onClick={() => { setActiveMenu(null); handleInsertImage(); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><ImageIcon className="w-4 h-4 text-emerald-600" /> Свое изображение (URL)</button>
                     <button onClick={() => { setActiveMenu(null); handleInsertLink(); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><Link className="w-4 h-4 text-blue-600" /> Ссылка</button>
                     <button onClick={() => { setActiveMenu(null); onAddBlock('divider'); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><span>➖ Разделитель</span></button>
-                    <button onClick={() => { setActiveMenu(null); onAddBlock('todo_list'); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><CheckSquare className="w-4 h-4 text-indigo-600" /> Чек-лист задач</button>
                   </div>
                 )}
               </div>
@@ -339,12 +418,13 @@ export default function DocEditorToolbar({
         {/* Right Header Buttons */}
         <div className="flex items-center gap-2">
           <button 
-            onClick={onUndo}
-            data-tooltip="История версий"
+            onClick={() => setShowTemplatesModal(true)}
+            data-tooltip="Выбрать шаблон документа (Приказ, Справка, Договор)"
             data-tooltip-pos="bottom"
-            className="p-2 text-slate-600 hover:bg-slate-100 rounded-full transition cursor-pointer"
+            className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold rounded-full text-xs transition flex items-center gap-1.5 cursor-pointer"
           >
-            <History className="w-5 h-5" />
+            <FileCheck className="w-4 h-4 text-indigo-600" />
+            <span>Шаблоны</span>
           </button>
 
           <button 
@@ -371,7 +451,6 @@ export default function DocEditorToolbar({
         
         <div className="h-4 w-px bg-slate-300 mx-1"></div>
 
-        {/* Paragraph Style */}
         <select 
           value={activeBlock?.type || 'paragraph'}
           data-tooltip="Стиль абзаца"
@@ -389,7 +468,6 @@ export default function DocEditorToolbar({
 
         <div className="h-4 w-px bg-slate-300 mx-1"></div>
 
-        {/* Font Family */}
         <select 
           value={selectedFont}
           onChange={e => setSelectedFont(e.target.value)}
@@ -406,7 +484,6 @@ export default function DocEditorToolbar({
 
         <div className="h-4 w-px bg-slate-300 mx-1"></div>
 
-        {/* BOLD BUTTON: Applies to selected text or toggles for subsequent typing! */}
         <button 
           onMouseDown={e => e.preventDefault()} 
           onClick={() => execFormat('bold')} 
@@ -417,7 +494,6 @@ export default function DocEditorToolbar({
           <Bold className="w-4 h-4" />
         </button>
 
-        {/* ITALIC BUTTON */}
         <button 
           onMouseDown={e => e.preventDefault()} 
           onClick={() => execFormat('italic')} 
@@ -428,7 +504,6 @@ export default function DocEditorToolbar({
           <Italic className="w-4 h-4" />
         </button>
 
-        {/* UNDERLINE BUTTON */}
         <button 
           onMouseDown={e => e.preventDefault()} 
           onClick={() => execFormat('underline')} 
@@ -439,7 +514,6 @@ export default function DocEditorToolbar({
           <Underline className="w-4 h-4" />
         </button>
 
-        {/* TEXT COLOR PICKER */}
         <div className="relative">
           <button 
             onMouseDown={e => e.preventDefault()} 
@@ -465,7 +539,6 @@ export default function DocEditorToolbar({
           )}
         </div>
 
-        {/* HIGHLIGHT COLOR PICKER */}
         <div className="relative">
           <button 
             onMouseDown={e => e.preventDefault()} 
@@ -495,7 +568,6 @@ export default function DocEditorToolbar({
 
         <div className="h-4 w-px bg-slate-300 mx-1"></div>
 
-        {/* ALIGNMENTS */}
         <button onMouseDown={e => e.preventDefault()} onClick={() => execFormat('justifyLeft')} data-tooltip="По левому краю" data-tooltip-pos="bottom" className="p-1.5 rounded hover:bg-slate-200 text-slate-700 cursor-pointer"><AlignLeft className="w-4 h-4" /></button>
         <button onMouseDown={e => e.preventDefault()} onClick={() => execFormat('justifyCenter')} data-tooltip="По центру" data-tooltip-pos="bottom" className="p-1.5 rounded hover:bg-slate-200 text-slate-700 cursor-pointer"><AlignCenter className="w-4 h-4" /></button>
         <button onMouseDown={e => e.preventDefault()} onClick={() => execFormat('justifyRight')} data-tooltip="По правому краю" data-tooltip-pos="bottom" className="p-1.5 rounded hover:bg-slate-200 text-slate-700 cursor-pointer"><AlignRight className="w-4 h-4" /></button>
@@ -503,12 +575,18 @@ export default function DocEditorToolbar({
 
         <div className="h-4 w-px bg-slate-300 mx-1"></div>
 
-        {/* REMOVE FORMATTING */}
-        <button onMouseDown={e => e.preventDefault()} onClick={() => execFormat('removeFormat')} data-tooltip="Очистить форматирование выделенного фрагмента" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><RemoveFormatting className="w-4 h-4" /></button>
+        {/* IMAGE FILE UPLOAD FROM COMPUTER & URL */}
+        <button 
+          onMouseDown={e => e.preventDefault()} 
+          onClick={handleInsertImagePrompt} 
+          data-tooltip="Загрузить картинку с компьютера или по URL" 
+          data-tooltip-pos="bottom" 
+          className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer flex items-center gap-1 font-bold text-[11px]"
+        >
+          <ImageIcon className="w-4 h-4 text-emerald-600" />
+          <span className="hidden sm:inline">Фото</span>
+        </button>
 
-        <div className="h-4 w-px bg-slate-300 mx-1"></div>
-
-        {/* QUICK OFFICIAL STAMPS */}
         <button onMouseDown={e => e.preventDefault()} onClick={() => handleInsertStamp('round')} data-tooltip="Вставить синюю круглую печать Академии" data-tooltip-pos="bottom" className="px-2 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold rounded text-[11px] flex items-center gap-1 cursor-pointer transition"><span>🔵 Печать</span></button>
         <button onMouseDown={e => e.preventDefault()} onClick={() => handleInsertStamp('signature')} data-tooltip="Вставить факсимильную подпись Директора" data-tooltip-pos="bottom" className="px-2 py-1 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 font-bold rounded text-[11px] flex items-center gap-1 cursor-pointer transition"><span>✍️ Подпись</span></button>
 
@@ -523,6 +601,64 @@ export default function DocEditorToolbar({
           </button>
         </div>
       </div>
+
+      {/* CORPORATE TEMPLATES MODAL */}
+      {showTemplatesModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200 text-xs">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                <FileCheck className="w-5 h-5 text-indigo-600" />
+                <span>Корпоративные шаблоны документов</span>
+              </h3>
+              <button onClick={() => setShowTemplatesModal(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+            
+            <p className="text-slate-600 text-xs">
+              Выберите готовый шаблон для моментальной генерации документа с официальной шапкой, структурой, реквизитами и блоками подписи:
+            </p>
+
+            <div className="grid grid-cols-1 gap-3 pt-1">
+              <div 
+                onClick={() => applyTemplate('order')} 
+                className="p-4 border border-slate-200 hover:border-blue-500 rounded-xl hover:bg-blue-50/50 cursor-pointer transition flex items-center justify-between group"
+              >
+                <div>
+                  <h4 className="font-bold text-slate-900 text-sm group-hover:text-blue-600">📜 Официальный Приказ организации</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">С номерами, подписью генерального директора и синей печатью.</p>
+                </div>
+                <span className="px-3 py-1 bg-blue-600 text-white font-bold rounded-lg text-[11px]">Выбрать</span>
+              </div>
+
+              <div 
+                onClick={() => applyTemplate('certificate')} 
+                className="p-4 border border-slate-200 hover:border-blue-500 rounded-xl hover:bg-blue-50/50 cursor-pointer transition flex items-center justify-between group"
+              >
+                <div>
+                  <h4 className="font-bold text-slate-900 text-sm group-hover:text-blue-600">🏫 Справка с места учебы / работы</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Официальный бланковый документ для предъявления по месту требования.</p>
+                </div>
+                <span className="px-3 py-1 bg-blue-600 text-white font-bold rounded-lg text-[11px]">Выбрать</span>
+              </div>
+
+              <div 
+                onClick={() => applyTemplate('contract')} 
+                className="p-4 border border-slate-200 hover:border-blue-500 rounded-xl hover:bg-blue-50/50 cursor-pointer transition flex items-center justify-between group"
+              >
+                <div>
+                  <h4 className="font-bold text-slate-900 text-sm group-hover:text-blue-600">💼 Договор оказания услуг</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Типовой договор с разделом предметов, условий и реквизитами сторон.</p>
+                </div>
+                <span className="px-3 py-1 bg-blue-600 text-white font-bold rounded-lg text-[11px]">Выбрать</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button onClick={() => setShowTemplatesModal(false)} className="px-4 py-2 border rounded-xl font-bold text-slate-600 hover:bg-slate-50">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* GRANULAR ACCESS CONTROL MODAL */}
       {showShareModal && (

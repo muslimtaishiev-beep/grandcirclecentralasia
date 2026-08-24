@@ -226,6 +226,11 @@ export default function DocumentEditorPage() {
     );
   };
 
+  const handleLoadTemplate = (templateBlocks: DocBlock[]) => {
+    if (!doc || !user || !activeTenant?.id || userRole !== 'editor') return;
+    documentService.updateBlocks(activeTenant.id, doc.id, templateBlocks, user.uid);
+  };
+
   return (
     <div className="h-[calc(100vh-3.5rem)] flex flex-col bg-[#f8f9fa] overflow-hidden">
       <DocEditorToolbar 
@@ -257,6 +262,7 @@ export default function DocumentEditorPage() {
         isAuthor={isAuthor}
         isFullAdmin={isFullAdmin}
         onUpdateAccess={handleUpdateAccess}
+        onLoadTemplate={handleLoadTemplate}
       />
 
       {showRuler && (
