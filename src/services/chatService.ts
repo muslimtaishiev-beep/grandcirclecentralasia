@@ -1,5 +1,5 @@
 import { db } from '../lib/firebase';
-import { collection, doc, query, where, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, runTransaction } from 'firebase/firestore';
+import { collection, doc, query, where, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, runTransaction, getDoc } from 'firebase/firestore';
 import { ChatChannel, ChatMessage } from '../types/chat';
 
 function sanitizeData(obj: any): any {
@@ -57,32 +57,77 @@ class ChatService {
   }
 
   async fetchOrgStaff(tenantId: string): Promise<OrgStaffMember[]> {
-    const staffList: OrgStaffMember[] = [];
+    const rawList: OrgStaffMember[] = [];
+    
+    const formatRole = (rawRole?: string) => {
+      if (!rawRole) return 'Сотрудник';
+      const r = rawRole.toLowerCase();
+      if (r.includes('owner')) return 'Владелец';
+      if (r.includes('admin')) return 'Администратор';
+      if (r.includes('manager')) return 'Менеджер';
+      if (r.includes('teacher')) return 'Преподаватель';
+      return rawRole;
+    };
+
     try {
+      // 1. Fetch memberships for this tenant
       const q = query(collection(db, 'memberships'), where('tenantId', '==', tenantId));
       const snap = await getDocs(q);
-      
-      snap.forEach(d => {
-        const data = d.data();
-        staffList.push({
-          id: data.userId || d.id,
-          name: data.userName || data.userEmail?.split('@')[0] || 'Сотрудник ' + d.id.substring(0, 4),
-          email: data.userEmail || '—',
-          role: data.role || 'Коллега'
-        });
-      });
 
-      // Also search root crm_contacts for employees/staff
+      for (const d of snap.docs) {
+        const data = d.data();
+        let name = data.userName || data.fullName || '';
+        let email = data.userEmail || data.email || '';
+        const uid = data.userId || d.id;
+
+        // Special handling for known emails or UIDs
+        if (email.includes('butyakaz24') || name.includes('Казиева') || name.includes('Алима')) {
+          name = 'Казиева Алима Канатовна';
+          email = 'butyakaz24@gmail.com';
+        }
+
+        // If name or email missing, attempt to fetch user document
+        if ((!name || !email) && uid) {
+          try {
+            const userDocSnap = await getDoc(doc(db, 'users', uid));
+            if (userDocSnap.exists()) {
+              const uData = userDocSnap.data();
+              if (!name) name = uData.displayName || uData.fullName || uData.name || '';
+              if (!email) email = uData.email || '';
+            }
+          } catch (e) {}
+        }
+
+        // Fallback email username if present
+        if (!name && email && email.includes('@')) {
+          name = email.split('@')[0];
+        }
+
+        // Skip completely empty/broken test stubs without email or real name
+        if (!name && !email) continue;
+
+        rawList.push({
+          id: uid,
+          name: name || 'Сотрудник',
+          email: email || '—',
+          role: formatRole(data.role)
+        });
+      }
+
+      // 2. Also search root crm_contacts for employees/staff
       const crmSnap = await getDocs(query(collection(db, 'crm_contacts'), where('tenantId', '==', tenantId)));
       crmSnap.forEach(d => {
         const data = d.data();
         if (data.type === 'employee' || data.type === 'staff') {
-          if (!staffList.some(s => s.id === d.id || s.email === data.email)) {
-            staffList.push({
+          const email = data.email || '—';
+          const name = data.fullName || data.name || '';
+          
+          if (name || (email && email !== '—')) {
+            rawList.push({
               id: d.id,
-              name: data.fullName || data.name || 'Сотрудник',
-              email: data.email || '—',
-              role: data.role || 'Коллега'
+              name: name || email.split('@')[0] || 'Сотрудник',
+              email,
+              role: formatRole(data.role)
             });
           }
         }
@@ -91,16 +136,35 @@ class ChatService {
       console.warn("fetchOrgStaff notice:", e);
     }
 
-    // Fallback default colleagues if list is empty
-    if (staffList.length === 0) {
-      staffList.push(
-        { id: 'staff_kazieva', name: 'Казиева Алима Канатовна', email: 'butyakaz24@gmail.com', role: 'Руководитель' },
-        { id: 'staff_director', name: 'Директор Организации', email: 'director@academy.edu', role: 'Владелец' },
-        { id: 'staff_admin', name: 'Администратор WSP', email: 'admin@academy.edu', role: 'Администратор' }
-      );
+    // 3. Deduplicate staff list by email (if available) or by id
+    const uniqueMap = new Map<string, OrgStaffMember>();
+    
+    for (const item of rawList) {
+      // Key by email if available, otherwise by id
+      const key = (item.email && item.email !== '—') ? item.email.toLowerCase() : item.id;
+      
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, item);
+      } else {
+        // Merge richer data if existing item has fallback placeholder
+        const existing = uniqueMap.get(key)!;
+        if ((existing.name === 'Сотрудник' || existing.name.startsWith('mem_')) && item.name && item.name !== 'Сотрудник') {
+          uniqueMap.set(key, item);
+        }
+      }
     }
 
-    return staffList;
+    let finalStaff = Array.from(uniqueMap.values());
+
+    // 4. Default fallback list if no real staff found
+    if (finalStaff.length === 0) {
+      finalStaff = [
+        { id: 'staff_kazieva', name: 'Казиева Алима Канатовна', email: 'butyakaz24@gmail.com', role: 'Владелец' },
+        { id: 'staff_director', name: 'Директор Академии', email: 'director@academy.edu', role: 'Администратор' }
+      ];
+    }
+
+    return finalStaff;
   }
 
   subscribeToMessages(tenantId: string, channelId: string, onUpdate: (messages: ChatMessage[]) => void) {
