@@ -67,7 +67,6 @@ export default function DocumentEditorPage() {
     );
   }
 
-  // Access Control Checks
   const isAuthor = Boolean(user && doc.authorStaffId === user.uid);
   const isFullAdmin = activeTenant?.role === 'owner' || activeTenant?.role === 'org:owner' || activeTenant?.role === 'superadmin' || activeTenant?.role === 'admin';
   
@@ -86,7 +85,6 @@ export default function DocumentEditorPage() {
     }
   }
 
-  // Security screen if user does NOT have permission to view private doc
   if (userRole === 'none') {
     return (
       <div className="h-screen flex items-center justify-center bg-[#f8f9fa] p-8">
@@ -130,17 +128,18 @@ export default function DocumentEditorPage() {
     } else {
       let md = `# ${doc.title}\n\n`;
       doc.blocks.forEach(b => {
-        if (b.type === 'heading_1') md += `# ${b.content}\n\n`;
-        else if (b.type === 'heading_2') md += `## ${b.content}\n\n`;
-        else if (b.type === 'heading_3') md += `### ${b.content}\n\n`;
-        else if (b.type === 'bullet_list') md += `- ${b.content}\n`;
-        else if (b.type === 'numbered_list') md += `1. ${b.content}\n`;
-        else if (b.type === 'todo_list') md += `- [${b.checked ? 'x' : ' '}] ${b.content}\n`;
-        else if (b.type === 'quote') md += `> ${b.content}\n\n`;
-        else if (b.type === 'code_block') md += `\`\`\`\n${b.content}\n\`\`\`\n\n`;
-        else if (b.type === 'image') md += `![Изображение](${b.imageUrl || b.content})\n\n`;
+        const text = b.content ? b.content.replace(/<[^>]*>/g, '') : '';
+        if (b.type === 'heading_1') md += `# ${text}\n\n`;
+        else if (b.type === 'heading_2') md += `## ${text}\n\n`;
+        else if (b.type === 'heading_3') md += `### ${text}\n\n`;
+        else if (b.type === 'bullet_list') md += `- ${text}\n`;
+        else if (b.type === 'numbered_list') md += `1. ${text}\n`;
+        else if (b.type === 'todo_list') md += `- [${b.checked ? 'x' : ' '}] ${text}\n`;
+        else if (b.type === 'quote') md += `> ${text}\n\n`;
+        else if (b.type === 'code_block') md += `\`\`\`\n${text}\n\`\`\`\n\n`;
+        else if (b.type === 'image') md += `![Изображение](${b.imageUrl || text})\n\n`;
         else if (b.type === 'divider') md += `---\n\n`;
-        else md += `${b.content}\n\n`;
+        else md += `${text}\n\n`;
       });
       const blob = new Blob([md], { type: 'text/markdown' });
       const a = document.createElement('a');
@@ -150,28 +149,15 @@ export default function DocumentEditorPage() {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>, blockId: string, index: number, type: DocBlockType) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>, blockId: string, index: number, type: DocBlockType) => {
     if (userRole === 'viewer') return;
-    const target = e.target as HTMLInputElement | HTMLTextAreaElement;
+    const target = e.target as HTMLDivElement;
     if (e.key === 'Enter') {
-      if (type !== 'paragraph' && type !== 'heading_1' && type !== 'heading_2' && type !== 'heading_3') {
-        e.preventDefault();
-        addBlockAfter(blockId, type);
-      } else {
-        e.preventDefault();
-        addBlockAfter(blockId, 'paragraph');
-      }
-      setTimeout(() => {
-        const nextInput = document.getElementById(`block-${doc.blocks[index + 1]?.id}`);
-        nextInput?.focus();
-      }, 0);
-    } else if (e.key === 'Backspace' && target.value === '') {
+      e.preventDefault();
+      addBlockAfter(blockId, type === 'bullet_list' || type === 'numbered_list' || type === 'todo_list' ? type : 'paragraph');
+    } else if (e.key === 'Backspace' && (target.innerText.trim() === '' || target.innerHTML === '<br>')) {
       e.preventDefault();
       deleteBlock(blockId);
-      setTimeout(() => {
-        const prevInput = document.getElementById(`block-${doc.blocks[index - 1]?.id}`);
-        prevInput?.focus();
-      }, 0);
     }
   };
 
@@ -194,23 +180,9 @@ export default function DocumentEditorPage() {
       );
     }
 
-    const commonProps = {
-      id: `block-${b.id}`,
-      value: b.content,
-      readOnly: userRole === 'viewer',
-      onFocus: () => setActiveBlockId(b.id),
-      onChange: (e: any) => userRole === 'editor' && updateBlock(b.id, e.target.value),
-      onKeyDown: (e: any) => handleKeyDown(e, b.id, index, b.type),
-      className: `w-full bg-transparent focus:outline-none placeholder-slate-400 resize-none overflow-hidden text-slate-900 ${userRole === 'viewer' ? 'cursor-default' : ''}`,
-      placeholder: b.type === 'heading_1' ? "Устав Общества / Заголовок..." : "Введите текст документа..."
-    };
-
     const fontStyle: React.CSSProperties = {
       fontFamily: b.fontFamily || selectedFont,
       fontSize: `${(b.fontSizePx || fontSize) + (b.type === 'heading_1' ? 12 : b.type === 'heading_2' ? 6 : b.type === 'heading_3' ? 3 : 0)}px`,
-      fontWeight: b.isBold ? 'bold' : 'normal',
-      fontStyle: b.isItalic ? 'italic' : 'normal',
-      textDecoration: b.isUnderline ? 'underline' : 'none',
       textAlign: b.align || 'left',
       color: b.textColor || '#0f172a',
       backgroundColor: b.bgColor || 'transparent'
@@ -238,12 +210,18 @@ export default function DocumentEditorPage() {
             className="mt-1.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
           />
         )}
-        
-        {b.type === 'code_block' ? (
-          <textarea {...commonProps} style={fontStyle} className={`${commonProps.className} ${style} h-24`} />
-        ) : (
-          <input {...commonProps} style={fontStyle} className={`${commonProps.className} ${style} ${b.checked ? 'line-through opacity-50' : ''}`} />
-        )}
+
+        <div
+          id={`block-${b.id}`}
+          contentEditable={userRole === 'editor'}
+          suppressContentEditableWarning
+          dangerouslySetInnerHTML={{ __html: b.content || '' }}
+          onFocus={() => setActiveBlockId(b.id)}
+          onInput={(e) => userRole === 'editor' && updateBlock(b.id, e.currentTarget.innerHTML)}
+          onKeyDown={(e) => handleKeyDown(e, b.id, index, b.type)}
+          style={fontStyle}
+          className={`w-full bg-transparent focus:outline-none min-h-[1.5em] text-slate-900 outline-none ${style} ${b.checked ? 'line-through opacity-50' : ''}`}
+        />
       </div>
     );
   };
