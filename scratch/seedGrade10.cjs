@@ -28,14 +28,14 @@ const ruQuestions = [
     id: "ru_10_q1",
     type: "multiple_choice",
     points: 1,
-    text: "Задание №1. Выпишите слово, в котором НЕВЕРНО выделен ударный гласный звук:",
+    text: "Задание №1. Укажите слово, в котором НЕВЕРНО выделен ударный гласный звук:",
     options: ["1) цепОчка", "2) газопрОвод", "3) прозорлИва", "4) донЕльзя"]
   },
   {
     id: "ru_10_q2",
     type: "multiple_choice",
     points: 1,
-    text: "Задание №2. Исправьте лексическую ошибку в одном из предложений, подобрав к выделенному слову пароним. Запишите подобранное слово:",
+    text: "Задание №2. Укажите предложение с лексической ошибкой (неверным употреблением паронима):",
     options: [
       "1) Летом в ЛЕСИСТОЙ чащобе появляются полчища комаров.",
       "2) Статья оказалась полезной и ИНФОРМАТИВНОЙ.",
@@ -59,14 +59,14 @@ const ruQuestions = [
     id: "ru_10_q4",
     type: "multiple_choice",
     points: 1,
-    text: "Задание №4. Выделите слово, в котором пропущена безударная проверяемая гласная корня:",
+    text: "Задание №4. Укажите слово, в котором пропущена безударная проверяемая гласная корня:",
     options: ["1) оз..рить", "2) м..литва", "3) заг..рать", "4) соч..тание", "5) к…ллекция"]
   },
   {
     id: "ru_10_q5",
     type: "multiple_choice",
     points: 1,
-    text: "Задание №5. Выпишите ряд, в котором в обоих словах пропущена одна и та же буква:",
+    text: "Задание №5. Укажите ряд, в котором в обоих словах пропущена одна и та же буква:",
     options: [
       "1) бе..защитный, во…произведение;",
       "2) пред..явить, с..езд;",
@@ -79,7 +79,7 @@ const ruQuestions = [
     id: "ru_10_q6",
     type: "multiple_choice",
     points: 1,
-    text: "Задание №6. Выпишите слово, в котором на месте пропуска пишется буква Е:",
+    text: "Задание №6. Укажите слово, в котором на месте пропуска пишется буква Е:",
     options: [
       "1) забол…вать",
       "2) выпяч…вать",
@@ -154,7 +154,7 @@ const maQuestions = [
     type: "multiple_choice", 
     points: 1, 
     text: "20. График какой функции изображен на рисунке?", 
-    html: "<div><p className='font-bold mb-3'>20. График какой функции изображен на рисунке?</p><img src='/math10_20.png' alt='График функции №20' className='max-w-md my-4 rounded-xl border shadow-sm'/></div>",
+    html: "<div><p class='font-bold mb-3'>20. График какой функции изображен на рисунке?</p><img src='/math10_20.png' alt='График функции №20' class='max-w-md my-4 rounded-xl border shadow-sm'/></div>",
     options: ["1) y = x²", "2) y = 2x", "3) y = -x + 3", "4) y = 4/x"] 
   },
   { 
@@ -162,14 +162,14 @@ const maQuestions = [
     type: "multiple_choice", 
     points: 1, 
     text: "21. На рисунке изображена зависимость температуры вещества Т от времени t. Укажите, в течение какого времени температура вещества была постоянна.", 
-    html: "<div><p className='font-bold mb-3'>21. На рисунке изображена зависимость температуры вещества Т от времени t. Укажите, в течение какого времени температура вещества была постоянна.</p><img src='/math10_21.png' alt='График зависимости №21' className='max-w-md my-4 rounded-xl border shadow-sm'/></div>",
+    html: "<div><p class='font-bold mb-3'>21. На рисунке изображена зависимость температуры вещества Т от времени t. Укажите, в течение какого времени температура вещества была постоянна.</p><img src='/math10_21.png' alt='График зависимости №21' class='max-w-md my-4 rounded-xl border shadow-sm'/></div>",
     options: ["1) 2", "2) 3", "3) 1", "4) 4"] 
   }
 ];
 
 const russianKeys = {
   "ru_10_q1": { ans: "2", pts: 1, topic: "Орфоэпия и ударение" },
-  "ru_10_q2": { ans: "1", pts: 1, topic: "Паронимы и лексические нормы" },
+  "ru_10_q2": { ans: "1", pts: 1, topic: "Паронимы и лексические ошибки" },
   "ru_10_q3": { ans: "2", pts: 1, topic: "Пунктуация в предложениях" },
   "ru_10_q4": { ans: "2", pts: 1, topic: "Безударные проверяемые гласные" },
   "ru_10_q5": { ans: "2", pts: 1, topic: "Правописание приставок и Ъ/Ь" },
@@ -181,7 +181,7 @@ const russianKeys = {
 };
 
 const mathKeys = {
-  "ma_10_q1": { ans: "1", pts: 1, topic: "Степени и выражения" },
+  "ma_10_q1": { ans: "2", pts: 1, topic: "Степени и выражения" }, // Corrected to option 2 (4.8)
   "ma_10_q2": { ans: "1", pts: 1, topic: "Квадратные корни" },
   "ma_10_q3": { ans: "1", pts: 1, topic: "Квадратные уравнения" },
   "ma_10_q4": { ans: "1", pts: 1, topic: "Пропорции и задачи" },
@@ -205,7 +205,7 @@ const mathKeys = {
 };
 
 async function seed() {
-  console.log("🚀 Starting seeding of Grade 10 questions and answer keys into Firestore...");
+  console.log("🚀 Starting seeding of corrected Grade 10 questions & answer keys into Firestore...");
 
   const testData = {
     id: "test_grade_10",
@@ -215,9 +215,7 @@ async function seed() {
     description: "Официальный академический тест за 10 класс",
     questions: {
       russian: ruQuestions,
-      math: maQuestions,
-      logic: [],
-      english: []
+      math: maQuestions
     },
     updatedAt: admin.firestore.FieldValue.serverTimestamp()
   };
@@ -228,9 +226,7 @@ async function seed() {
     grade: 10,
     keys: {
       russian: russianKeys,
-      math: mathKeys,
-      logic: {},
-      english: {}
+      math: mathKeys
     },
     updatedAt: admin.firestore.FieldValue.serverTimestamp()
   };
@@ -246,7 +242,7 @@ async function seed() {
   batch.set(db.collection("test_answer_keys").doc("10"), answerKeyData, { merge: true });
 
   await batch.commit();
-  console.log("✅ Successfully seeded Grade 10 tests & answer keys into Firestore!");
+  console.log("⚡ Successfully updated Grade 10 questions & answer keys in Firestore!");
   process.exit(0);
 }
 
