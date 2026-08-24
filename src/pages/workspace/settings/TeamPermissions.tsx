@@ -17,7 +17,7 @@ import {
   Check
 } from 'lucide-react';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../../lib/firebase';
+import { db, auth } from '../../../lib/firebase';
 
 interface PermissionOption {
   key: string;
@@ -129,25 +129,32 @@ export default function TeamPermissions() {
 
     try {
       const docId = editingMemberId || `mem_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const memberDoc = {
+      const memberDoc: any = {
         tenantId: currentOrgId,
         name: fullName.trim(),
         email: email.trim().toLowerCase(),
         role,
         permissions: selectedPermissions,
-        status: editingMemberId ? 'active' : 'pending_invite',
         updatedAt: serverTimestamp(),
-        ...(!editingMemberId && { createdAt: serverTimestamp() })
       };
+      
+      if (!editingMemberId) {
+        memberDoc.createdAt = serverTimestamp();
+        memberDoc.status = 'pending_invite';
+      }
 
       await setDoc(doc(db, 'memberships', docId), memberDoc, { merge: true });
 
       // Send email invite with password creation link if creating new member
       if (!editingMemberId) {
         try {
-          await fetch('/api/auth/send-employee-invite', {
+          const token = await auth.currentUser?.getIdToken();
+          const res = await fetch('/api/auth/send-employee-invite', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify({
               email: email.trim().toLowerCase(),
               fullName: fullName.trim(),
@@ -156,6 +163,10 @@ export default function TeamPermissions() {
               permissions: selectedPermissions
             })
           });
+          
+          if (!res.ok) {
+            console.error("Invite API returned an error:", await res.text());
+          }
         } catch(inviteErr) {
           console.warn("Invite email delivery notice:", inviteErr);
         }
