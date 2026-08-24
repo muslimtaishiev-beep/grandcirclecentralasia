@@ -63,6 +63,8 @@ export default function QuestionFactory({ question, value, onChange }: Props) {
   const isMatrix = rawType === 'matrixgrid' || rawType === 'logicmatrix' || rawType === 'matrix';
   const isOrdering = rawType === 'ordering' || rawType === 'draganddrop';
   const isDropdown = rawType === 'dropdownmultiple' || rawType === 'inlinedropdown' || rawType === 'dropdown';
+  const isInlineInputs = rawType === 'inlineinputs';
+  const isClickableText = rawType === 'clickabletext';
 
   return (
     <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
@@ -304,8 +306,133 @@ export default function QuestionFactory({ question, value, onChange }: Props) {
         );
       })()}
 
+      {/* 6. INLINE INPUTS (e.g. ru_9_q5 - filling in н or нн) */}
+      {isInlineInputs && (() => {
+        const segments = question.inlineSegments || question.content?.inlineSegments || [];
+        let currentInputs: Record<string, string> = {};
+        if (typeof value === 'string' && value.length > 0) {
+          const parts = value.split(',').map(s => s.trim());
+          let inputIdx = 0;
+          segments.forEach((seg: any) => {
+            if (seg.type === 'input') {
+              currentInputs[seg.id || `input_${inputIdx}`] = parts[inputIdx] || '';
+              inputIdx++;
+            }
+          });
+        } else if (typeof value === 'object' && value !== null) {
+          currentInputs = value;
+        }
+
+        const handleInputChange = (inputId: string, textVal: string) => {
+          const updated = { ...currentInputs, [inputId]: textVal };
+          const inputValues: string[] = [];
+          segments.forEach((seg: any, idx: number) => {
+            if (seg.type === 'input') {
+              const k = seg.id || `input_${idx}`;
+              inputValues.push(updated[k] || '');
+            }
+          });
+          onChange(inputValues.join(', '));
+        };
+
+        return (
+          <div className="pt-2">
+            <div className="p-6 bg-slate-50 border-2 border-slate-200 rounded-3xl leading-relaxed text-base font-medium text-slate-800 flex flex-wrap items-center gap-y-3 gap-x-1.5">
+              {segments.map((seg: any, idx: number) => {
+                if (seg.type === 'text') {
+                  return (
+                    <span key={idx} className="whitespace-pre-line">
+                      {seg.text}
+                    </span>
+                  );
+                }
+                if (seg.type === 'input') {
+                  const inputId = seg.id || `input_${idx}`;
+                  const val = currentInputs[inputId] || '';
+                  return (
+                    <input
+                      key={idx}
+                      type="text"
+                      value={val}
+                      onChange={(e) => handleInputChange(inputId, e.target.value)}
+                      placeholder="буква(ы)..."
+                      className="w-28 px-3 py-1.5 bg-white border-2 border-purple-300 focus:border-purple-600 rounded-xl font-bold text-slate-900 text-center focus:outline-none transition-all shadow-xs"
+                    />
+                  );
+                }
+                return null;
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 7. CLICKABLE TEXT / COMMA PLACEMENT (e.g. ru_9_q7) */}
+      {isClickableText && (() => {
+        const segments = question.clickableSegments || question.content?.clickableSegments || [];
+        let selectedIds: string[] = [];
+        if (typeof value === 'string' && value.length > 0) {
+          selectedIds = value.split(',').map(s => s.trim()).filter(Boolean);
+        } else if (Array.isArray(value)) {
+          selectedIds = value.map(String);
+        }
+
+        const toggleSegment = (segId: string) => {
+          let updated: string[];
+          if (selectedIds.includes(segId)) {
+            updated = selectedIds.filter(id => id !== segId);
+          } else {
+            updated = [...selectedIds, segId];
+          }
+          updated.sort((a, b) => {
+            const numA = parseInt(a, 10);
+            const numB = parseInt(b, 10);
+            return (!isNaN(numA) && !isNaN(numB)) ? numA - numB : a.localeCompare(b);
+          });
+          onChange(updated.join(', '));
+        };
+
+        return (
+          <div className="pt-2">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+              Нажимайте на позиции `(1)`, `(2)`..., чтобы поставить или убрать запятую:
+            </p>
+            <div className="p-6 bg-slate-50 border-2 border-slate-200 rounded-3xl leading-loose text-lg font-medium text-slate-800 flex flex-wrap items-center gap-2">
+              {segments.map((seg: any, idx: number) => {
+                const segId = seg.id;
+                if (!segId) {
+                  return (
+                    <span key={idx} className="text-slate-800 font-semibold">
+                      {seg.text}
+                    </span>
+                  );
+                }
+
+                const isSelected = selectedIds.includes(String(segId));
+
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => toggleSegment(String(segId))}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-sm font-bold transition-all cursor-pointer border-2 ${
+                      isSelected
+                        ? 'border-purple-600 bg-purple-600 text-white shadow-md scale-105'
+                        : 'border-slate-300 bg-white text-slate-700 hover:border-purple-400 hover:text-purple-700'
+                    }`}
+                  >
+                    <span>({segId})</span>
+                    {isSelected ? <span className="font-extrabold text-white text-base">,</span> : <span className="text-slate-400 text-xs">+ запятая</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Fallback for unrecognized types */}
-      {!isMultipleChoice && !isTextInput && !isMatrix && !isOrdering && !isDropdown && (
+      {!isMultipleChoice && !isTextInput && !isMatrix && !isOrdering && !isDropdown && !isInlineInputs && !isClickableText && (
         <div className="p-4 bg-amber-50 text-amber-800 rounded-2xl border border-amber-200 text-sm font-medium">
           Вопрос типа <b>{question.type}</b>:
           <div className="mt-2">
