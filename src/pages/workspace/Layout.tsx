@@ -87,28 +87,37 @@ export default function WorkspaceLayout() {
     }
   };
 
+  const hasPerm = (perm: string) => {
+    if (!activeTenant) return false;
+    if (activeTenant.role === 'org:owner' || activeTenant.role === 'superadmin') return true;
+    const p = activeTenant.permissions;
+    if (!p) return false;
+    if (Array.isArray(p)) return p.includes(perm);
+    return !!p[perm];
+  };
+
   const navItems = activeTenant ? [
     { name: "Dashboard", path: `/workspace/${activeTenant.id}`, icon: LayoutDashboard },
-    { name: "Расписание", path: `/workspace/${activeTenant.id}/edu/schedule`, icon: Calendar },
-    { name: "Журнал", path: `/workspace/${activeTenant.id}/edu/attendance`, icon: UserCheck },
-    { name: "Абонементы", path: `/workspace/${activeTenant.id}/edu/subscriptions`, icon: CreditCard },
-    { name: "Зарплаты", path: `/workspace/${activeTenant.id}/edu/payroll`, icon: DollarSign },
+    hasPerm('edu:schedule') && { name: "Расписание", path: `/workspace/${activeTenant.id}/edu/schedule`, icon: Calendar },
+    hasPerm('edu:schedule') && { name: "Журнал", path: `/workspace/${activeTenant.id}/edu/attendance`, icon: UserCheck },
+    hasPerm('edu:schedule') && { name: "Абонементы", path: `/workspace/${activeTenant.id}/edu/subscriptions`, icon: CreditCard },
+    hasPerm('edu:schedule') && { name: "Зарплаты", path: `/workspace/${activeTenant.id}/edu/payroll`, icon: DollarSign },
     { name: "Chat", path: `/workspace/${activeTenant.id}/chat`, icon: MessageSquare },
     { name: "Tasks", path: `/workspace/${activeTenant.id}/tasks`, icon: CheckSquare },
-    { name: "CRM", path: `/workspace/${activeTenant.id}/crm/contacts`, icon: Briefcase },
-    { name: "Тесты", path: `/workspace/${activeTenant.id}/tests`, icon: FileQuestion },
-    { name: "Проверка & Прокторинг", path: `/workspace/${activeTenant.id}/tests/manage`, icon: ShieldCheck },
-    { name: "Заявки & QR", path: `/workspace/${activeTenant.id}/builder/forms`, icon: FileCheck2 },
-    { name: "Function Studio", path: `/workspace/${activeTenant.id}/functions/studio`, icon: Settings2 },
-    { name: "Оргструктура & Отделы", path: `/workspace/${activeTenant.id}/settings/departments`, icon: FolderTree },
-    { name: "Матрица Доступов PBAC", path: `/workspace/${activeTenant.id}/settings/permission-matrix`, icon: Sliders },
-    { name: "Права & Сотрудники", path: `/workspace/${activeTenant.id}/settings/permissions`, icon: Shield },
+    (hasPerm('crm:read') || hasPerm('crm:manage')) && { name: "CRM", path: `/workspace/${activeTenant.id}/crm/contacts`, icon: Briefcase },
+    (hasPerm('tests:read') || hasPerm('tests:manage')) && { name: "Тесты", path: `/workspace/${activeTenant.id}/tests`, icon: FileQuestion },
+    (hasPerm('tests:review') || hasPerm('tests:manage')) && { name: "Проверка & Прокторинг", path: `/workspace/${activeTenant.id}/tests/manage`, icon: ShieldCheck },
+    hasPerm('team:manage') && { name: "Заявки & QR", path: `/workspace/${activeTenant.id}/builder/forms`, icon: FileCheck2 },
+    hasPerm('team:manage') && { name: "Function Studio", path: `/workspace/${activeTenant.id}/functions/studio`, icon: Settings2 },
+    hasPerm('team:manage') && { name: "Оргструктура & Отделы", path: `/workspace/${activeTenant.id}/settings/departments`, icon: FolderTree },
+    hasPerm('team:manage') && { name: "Матрица Доступов PBAC", path: `/workspace/${activeTenant.id}/settings/permission-matrix`, icon: Sliders },
+    hasPerm('team:manage') && { name: "Права & Сотрудники", path: `/workspace/${activeTenant.id}/settings/permissions`, icon: Shield },
     { name: "Docs", path: `/workspace/${activeTenant.id}/docs`, icon: FileText },
     { name: "Sheets", path: `/workspace/${activeTenant.id}/sheets`, icon: FileSpreadsheet },
-    { name: "Site Builder", path: `/workspace/${activeTenant.id}/sites`, icon: Globe },
-    { name: "Тарифы и Биллинг", path: `/workspace/${activeTenant.id}/billing`, icon: CreditCard },
-    { name: "Automations", path: `/workspace/${activeTenant.id}/automations`, icon: Zap },
-  ] : [];
+    hasPerm('team:manage') && { name: "Site Builder", path: `/workspace/${activeTenant.id}/sites`, icon: Globe },
+    (activeTenant.role === 'org:owner') && { name: "Тарифы и Биллинг", path: `/workspace/${activeTenant.id}/billing`, icon: CreditCard },
+    hasPerm('team:manage') && { name: "Automations", path: `/workspace/${activeTenant.id}/automations`, icon: Zap },
+  ].filter(Boolean) as Array<{ name: string, path: string, icon: any }> : [];
 
   if (loading) {
     return <div className="min-h-dvh bg-[var(--bg-app)] flex items-center justify-center text-[var(--text-muted)] font-mono text-sm">Loading Workspace...</div>;

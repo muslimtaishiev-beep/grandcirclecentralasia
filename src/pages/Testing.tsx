@@ -37,6 +37,8 @@ export default function Testing() {
   }, []);
   
   const [studentName, setStudentName] = useState(() => safeGetSession("studentName", ""));
+  const [studentPhone, setStudentPhone] = useState(() => safeGetSession("studentPhone", ""));
+  const [studentEmail, setStudentEmail] = useState(() => safeGetSession("studentEmail", ""));
   const [enteredPin, setEnteredPin] = useState(() => safeGetSession("enteredPin", ""));
   const [phase, setPhase] = useState<"login" | "core" | "intermediate" | "english" | "final" | "suspended">(
     () => (safeGetSession("phase", "") as any) || "login"
@@ -114,6 +116,8 @@ export default function Testing() {
       };
       
       setBoth("studentName", studentName);
+      setBoth("studentPhone", studentPhone);
+      setBoth("studentEmail", studentEmail);
       if (grade) setBoth("grade", String(grade));
       setBoth("started", String(started));
       setBoth("finished", String(finished));
@@ -133,7 +137,7 @@ export default function Testing() {
       if (resultData) setBoth("resultData", JSON.stringify(resultData));
       setBoth("phase", phase);
     } catch(e) {}
-  }, [studentName, grade, started, finished, disqualified, consentGiven, answers, testId, shortId, qrToken, pendingSubmission, resultData, phase]);
+  }, [studentName, studentPhone, studentEmail, grade, started, finished, disqualified, consentGiven, answers, testId, shortId, qrToken, pendingSubmission, resultData, phase]);
 
   // Load questions & answer keys directly from Firestore collection "tests"
   useEffect(() => {
@@ -421,6 +425,12 @@ export default function Testing() {
       if (!studentName.trim() || !/^[А-Яа-яЁёA-Za-z-]+\s+[А-Яа-яЁёA-Za-z-]+/u.test(studentName.trim())) {
         return alert("Введите полное Фамилию и Имя через пробел.");
       }
+      if (!studentPhone.trim() || studentPhone.trim().length < 9) {
+        return alert("Введите корректный номер телефона.");
+      }
+      if (!studentEmail.trim() || !studentEmail.includes("@")) {
+        return alert("Введите корректный E-mail адрес.");
+      }
       if (!consentGiven) {
         return alert("Пожалуйста, подтвердите согласие на обработку данных.");
       }
@@ -454,6 +464,8 @@ export default function Testing() {
          testId: newTestId,
          shortId: shortId,
          studentName,
+         studentPhone,
+         studentEmail,
          grade,
          isTester: TESTER_PIN && enteredPin === TESTER_PIN
       }).catch(e => console.error("Failed to register student:", e));
@@ -1034,6 +1046,28 @@ export default function Testing() {
                     className="w-full border rounded-xl p-3 bg-slate-50"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Номер телефона:</label>
+                  <input
+                    type="tel" 
+                    placeholder="+996 555 123 456"
+                    value={studentPhone}
+                    onChange={(e) => setStudentPhone(e.target.value)}
+                    className="w-full border rounded-xl p-3 bg-slate-50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">E-mail (для результатов):</label>
+                  <input
+                    type="email" 
+                    placeholder="student@example.com"
+                    value={studentEmail}
+                    onChange={(e) => setStudentEmail(e.target.value)}
+                    className="w-full border rounded-xl p-3 bg-slate-50"
+                  />
+                </div>
                 
                 <div>
                   <label className="block text-sm font-medium mb-2">Выберите ваш класс:</label>
@@ -1098,7 +1132,7 @@ export default function Testing() {
             <>
               <button 
                 onClick={startTest}
-                disabled={!grade || !studentName.trim() || !enteredPin.trim() || !consentGiven}
+                disabled={!grade || !studentName.trim() || !studentPhone.trim() || !studentEmail.trim() || !enteredPin.trim() || !consentGiven}
                 className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-lg disabled:opacity-50 hover:bg-blue-700 transition shadow-lg mb-3"
               >
                 Начать тест

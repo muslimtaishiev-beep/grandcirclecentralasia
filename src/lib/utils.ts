@@ -92,6 +92,8 @@ export function getCEFRLevel(grade: number, maxPoints: number, score: number) {
   };
 }
 
+import { auth } from "./firebase";
+
 export async function fetchGasAPI(url: string, payload: any, token: string = ""): Promise<any> {
   let delay = 1500;
   const MAX_RETRIES = 4;
@@ -100,6 +102,15 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
   // ⚠️ SECURITY: API key is NEVER sent from the client.
   // The server proxy (server.ts /api/gas) injects GAS_API_KEY from process.env.
   const fullPayload = { ...payload };
+
+  // If token is missing, attempt to grab it directly from Firebase Auth
+  if (!token && auth.currentUser) {
+    try {
+      token = await auth.currentUser.getIdToken();
+    } catch (e) {
+      console.warn("fetchGasAPI: Could not fetch Firebase ID token", e);
+    }
+  }
 
   while (attempt < MAX_RETRIES) {
     attempt++;
