@@ -166,6 +166,11 @@ export default function TeamPermissions() {
           
           if (!res.ok) {
             console.error("Invite API returned an error:", await res.text());
+          } else {
+            const data = await res.json();
+            if (data.success && data.uid) {
+              await setDoc(doc(db, 'memberships', docId), { userId: data.uid }, { merge: true });
+            }
           }
         } catch(inviteErr) {
           console.warn("Invite email delivery notice:", inviteErr);
