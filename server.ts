@@ -752,12 +752,56 @@ app.post("/api/exams/submit", async (req, res) => {
         
         console.log(`[Exams/Submit] Firestore write SUCCESS: ${submissionId}`);
 
+        // 🎯 AUTOMATIC CRM SYNC: Save student to CRM Contacts & CRM Deals
+        const contactId = `cnt_${resolvedTenantId}_${shortId}`;
+        const contactDoc = {
+          id: contactId,
+          tenantId: resolvedTenantId,
+          fullName: studentName,
+          name: studentName,
+          email: req.body.studentEmail || `${shortId}@student.edu`,
+          phone: req.body.studentPhone || '—',
+          shortId: shortId,
+          type: 'student',
+          grade: Number(grade),
+          totalScore: scores.total || 0,
+          scores: scores,
+          status: 'test_completed',
+          totalDealsCount: 1,
+          totalRevenueGenerated: 0,
+          createdAt: admin.firestore.Timestamp.now(),
+          updatedAt: admin.firestore.Timestamp.now()
+        };
+        await admin.firestore().collection("crm_contacts").doc(contactId).set(contactDoc, { merge: true });
+        await admin.firestore().collection("tenants").doc(resolvedTenantId).collection("crm_contacts").doc(contactId).set(contactDoc, { merge: true });
+
+        const dealId = `deal_${resolvedTenantId}_${shortId}`;
+        const dealDoc = {
+          id: dealId,
+          tenantId: resolvedTenantId,
+          title: `Поступление: ${studentName} (${grade} класс)`,
+          contactName: studentName,
+          contactPhone: req.body.studentPhone || '—',
+          contactEmail: req.body.studentEmail || '—',
+          shortId: shortId,
+          grade: Number(grade),
+          stageId: 'stage_new',
+          value: 15000,
+          testScore: scores.total || 0,
+          cheated: Boolean(cheated),
+          createdAt: admin.firestore.Timestamp.now(),
+          updatedAt: admin.firestore.Timestamp.now()
+        };
+        await admin.firestore().collection("crm_deals").doc(dealId).set(dealDoc, { merge: true });
+        await admin.firestore().collection("tenants").doc(resolvedTenantId).collection("crm_deals").doc(dealId).set(dealDoc, { merge: true });
+        console.log(`[Exams/Submit] Auto CRM Sync SUCCESS: Created Contact ${contactId} & Deal ${dealId}`);
+
         // Write Audit Log for exam submission
         admin.firestore().collection("audit_logs").add({
           timestamp: admin.firestore.Timestamp.now(),
           createdAt: new Date().toISOString(),
           action: "EXAM_SUBMITTED",
-          tenantId: tenant.org_id,
+          tenantId: resolvedTenantId,
           sessionId: submissionId,
           studentName: studentName || "Неизвестно",
           studentShortId: shortId || "000000",
