@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { useOutletContext, Link } from 'react-router-dom';
 import { useTaskManager } from '../../../hooks/useTaskManager';
 import { WorkspaceTask } from '../../../types/tasks';
+import { Plus, List, LayoutGrid } from 'lucide-react';
 import TaskFiltersToolbar from './components/TaskFiltersToolbar';
 import CreateTaskModal from './components/CreateTaskModal';
+import TaskModal from './components/TaskModal';
 
 export default function TasksListPage() {
   const { activeTenant } = useOutletContext<any>();
