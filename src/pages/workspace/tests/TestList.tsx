@@ -4,6 +4,7 @@ import { FileQuestion, ShieldCheck, Play, Plus, Loader2, Database } from 'lucide
 import { CopyButton } from '../../../components/ui/CopyButton';
 import { collection, query, where, onSnapshot, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
+import { testsData } from '../../../data/testsData';
 
 export default function TestList() {
   const { activeTenant } = useOutletContext<any>() || {};
@@ -32,7 +33,44 @@ export default function TestList() {
       });
 
       if (fetched.length === 0 && !syncing) {
-        setSyncing(false);
+        setSyncing(true);
+        // Auto-seed entrance tests for the tenant
+        try {
+          const grades = [7, 8, 9, 10, 11];
+          for (const g of grades) {
+            const rawData = testsData[g] || testsData[`grade_${g}`];
+            const questionsGrouped = rawData?.questions || {
+              russian: rawData?.russian || [],
+              math: rawData?.math || [],
+              logic: rawData?.logic || [],
+              english: rawData?.english || []
+            };
+            const ruCount = (questionsGrouped.russian || []).length;
+            const maCount = (questionsGrouped.math || []).length;
+            const loCount = (questionsGrouped.logic || []).length;
+            const enCount = (questionsGrouped.english || []).length;
+            const totalCount = ruCount + maCount + loCount + enCount;
+
+            const docId = `test_grade_${g}_${currentOrgId}`;
+            await setDoc(doc(db, 'tests', docId), {
+              id: docId,
+              tenantId: currentOrgId,
+              grade: g,
+              title: `Вступительный экзамен — ${g} класс`,
+              status: 'Active',
+              timeLimit: 90,
+              questionsCount: totalCount,
+              details: `Русский (${ruCount}), Математика (${maCount}), Логика (${loCount}), Английский (${enCount})`,
+              questions: questionsGrouped,
+              createdAt: serverTimestamp()
+            }, { merge: true });
+          }
+        } catch (e) {
+          console.warn("Auto-seed tests notice:", e);
+        } finally {
+          setSyncing(false);
+          setLoading(false);
+        }
       } else {
         fetched.sort((a, b) => (a.grade || 0) - (b.grade || 0));
         setDbTests(fetched);
