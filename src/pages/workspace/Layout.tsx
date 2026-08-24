@@ -89,7 +89,7 @@ export default function WorkspaceLayout() {
 
   const hasPerm = (perm: string) => {
     if (!activeTenant) return false;
-    if (activeTenant.role === 'owner' || activeTenant.role === 'superadmin') return true;
+    if (activeTenant.role === 'owner' || activeTenant.role === 'org:owner' || activeTenant.role === 'superadmin') return true;
     const p = activeTenant.permissions;
     if (!p) return false;
     if (Array.isArray(p)) return p.includes(perm);
