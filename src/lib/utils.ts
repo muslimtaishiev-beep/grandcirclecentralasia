@@ -5,6 +5,10 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function generateShortId(): string {
+  return Math.random().toString(36).substring(2, 9);
+}
+
 // Generates a deterministic 4-digit PIN that changes every hour
 export function getHourlyPIN(hourOffset: number = 0): string {
   const d = new Date();

@@ -1053,7 +1053,7 @@ export default function AdminCMS({ lang, onDataChange }: AdminCMSProps) {
       {/* TAB: UNIVERSITIES */}
       {currentTab === "universities" && (
         <div className="space-y-6">
-          <div className="min-h-screen bg-[#EDE9FE] text-slate-800 font-sans py-8 px-2 sm:px-6 lg:px-8 relative">
+          <div className="min-h-dvh bg-[#EDE9FE] text-slate-800 font-sans py-8 px-2 sm:px-6 lg:px-8 relative">
             <div className="absolute top-0 inset-x-0 h-64 bg-gradient-to-b from-white/40 to-transparent pointer-events-none" />
             <div className="mx-auto max-w-7xl relative z-10">
               <div className="flex border-b border-dashed border-purple-200/30 pb-4 justify-between items-center text-left">

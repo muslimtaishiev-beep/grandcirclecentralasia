@@ -1,0 +1,90 @@
+{
+  "id": "func_academic_transcript_001",
+  "tenantId": "school_logos",
+  "name": "Выписка академической справки с QR-валидацией",
+  "slug": "issue-academic-transcript",
+  "targetAudience": "hybrid",
+  "icon": "FileCheck2",
+  "description": "Автоматическая сборка академической справки студента с генерацией PDF, защищенного QR-паспортом подлинности",
+  
+  "formFields": [
+    {
+      "id": "studentFullName",
+      "label": "ФИО Студента / Абитуриента",
+      "type": "text",
+      "required": true,
+      "placeholder": "Асанов Бектур Алмазович"
+    },
+    {
+      "id": "studentIdNumber",
+      "label": "Номер Зачетной Книжки / ИНН",
+      "type": "text",
+      "required": true,
+      "placeholder": "2010200501234"
+    },
+    {
+      "id": "facultyGrade",
+      "label": "Факультет / Класс обучения",
+      "type": "select",
+      "required": true,
+      "options": ["10 класс - Естественно-научный", "11 класс - IT и Робототехника", "Выпускник 2025"]
+    },
+    {
+      "id": "gpaScore",
+      "label": "Средний Балл (GPA)",
+      "type": "number",
+      "required": true,
+      "placeholder": "4.8"
+    },
+    {
+      "id": "issueReason",
+      "label": "Цель запроса справки",
+      "type": "select",
+      "required": false,
+      "options": ["Для предъявления по месту требования", "Для участия в олимпиаде", "Для зачисления в ВУЗ"]
+    }
+  ],
+
+  "pipeline": {
+    "trigger": "on_form_submit",
+    "conditions": [
+      {
+        "field": "gpaScore",
+        "operator": "greater_than",
+        "value": 2.5
+      }
+    ],
+    "actions": [
+      {
+        "type": "GENERATE_PDF",
+        "templateHtml": "<div style='font-family:Arial;padding:30px;'><h1>ОФИЦИАЛЬНАЯ АКАДЕМИЧЕСКАЯ СПРАВКА</h1><p>Настоящим подтверждается, что <strong>{{studentFullName}}</strong> (ИНН: {{studentIdNumber}}) является обучающимся по направлению {{facultyGrade}}.</p><p>Средний балл успеваемости (GPA): <strong>{{gpaScore}}</strong>.</p><p>Справка выдана для: {{issueReason}}.</p></div>",
+        "outputFileName": "Академическая_Справка_{{studentIdNumber}}.pdf",
+        "attachQrTracker": true
+      },
+      {
+        "type": "SEND_EMAIL",
+        "templateId": "tmpl_transcript_ready",
+        "toField": "email",
+        "fromAlias": "admissions@logos.kg",
+        "subject": "Ваша академическая справка готова (с QR-валидацией)"
+      },
+      {
+        "type": "SEND_TELEGRAM_NOTIFICATION",
+        "chatTarget": "staff_group",
+        "textTemplate": "📜 Сформирована академическая справка для {{studentFullName}} (GPA: {{gpaScore}}). Проверить QR-паспорт."
+      },
+      {
+        "type": "CREATE_CRM_LEAD",
+        "pipelineId": "pipeline_transcripts",
+        "initialStage": "approved"
+      }
+    ]
+  },
+
+  "accessControl": {
+    "allowedDepartments": ["dept_admissions", "dept_registrar"],
+    "allowedRoles": ["owner", "admin", "manager"],
+    "requiresApproval": true,
+    "approverRoleId": "dept_head_registrar"
+  }
+}

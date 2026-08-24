@@ -10,7 +10,7 @@ const Landing: React.FC<LandingProps> = ({ lang = "ru" }) => {
   const navigate = useNavigate();
 
   return (
-    <div className="relative min-h-screen bg-black text-white overflow-hidden font-sans">
+    <div className="relative min-h-dvh bg-black text-white overflow-hidden font-sans">
       {/* Background Video placeholder */}
       <div className="absolute inset-0 z-0 opacity-50 bg-slate-900">
         <video 
@@ -71,7 +71,7 @@ const Landing: React.FC<LandingProps> = ({ lang = "ru" }) => {
         </svg>
       </div>
 
-      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-6 text-center">
+      <div className="relative z-10 flex flex-col items-center justify-center min-h-dvh p-6 text-center">
         <motion.div
           initial={{ y: 40, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}

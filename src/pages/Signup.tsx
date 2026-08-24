@@ -149,7 +149,7 @@ const Signup: React.FC<SignupProps> = ({ lang = "ru" }) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+    <div className="min-h-dvh bg-slate-50 flex items-center justify-center p-6">
       <motion.div 
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}

@@ -12,9 +12,10 @@ const PartnersPanel = lazy(() => import("./components/PartnersPanel"));
 const Newsletter = lazy(() => import("./components/Newsletter"));
 const FAQSection = lazy(() => import("./components/FAQSection"));
 const AdminCMS = lazy(() => import("./components/AdminCMS"));
+const SubscriptionBillingDashboard = React.lazy(() => import('./pages/workspace/billing/SubscriptionBillingDashboard'));
 const GlobalWatermarks = lazy(() => import("./components/GlobalWatermarks"));
 const MetricsCarousel = lazy(() => import("./components/MetricsCarousel").then(m => ({ default: m.MetricsCarousel })));
-import { Routes, Route, useLocation, useNavigate, Link } from "react-router-dom";
+import { Routes, Route, useLocation, useNavigate, Link, Navigate } from "react-router-dom";
 
 // New Pages
 const Login = lazy(() => import("./pages/Login"));
@@ -38,28 +39,37 @@ const WorkspaceLayout = lazy(() => import("./pages/workspace/Layout"));
 const WorkspaceDashboard = lazy(() => import("./pages/workspace/Dashboard"));
 const WorkspaceSettings = lazy(() => import("./pages/workspace/Settings"));
 const TeamPermissions = lazy(() => import("./pages/workspace/settings/TeamPermissions"));
+const TeamPermissionMatrix = lazy(() => import("./pages/workspace/settings/TeamPermissionMatrix"));
+const OrgStructure = lazy(() => import("./pages/workspace/settings/OrgStructure"));
+const DocumentTemplates = lazy(() => import("./pages/workspace/settings/DocumentTemplates"));
 const WorkspaceBuilder = lazy(() => import("./pages/workspace/Builder"));
-const DocumentList = lazy(() => import("./pages/workspace/docs/DocumentList"));
-const DocumentEditor = lazy(() => import("./pages/workspace/docs/DocumentEditor"));
-const SpreadsheetList = lazy(() => import("./pages/workspace/sheets/SpreadsheetList"));
-const SpreadsheetEditor = lazy(() => import("./pages/workspace/sheets/SpreadsheetEditor"));
-const CrmContacts = lazy(() => import("./pages/workspace/crm/CrmContacts"));
-const CrmDeals = lazy(() => import("./pages/workspace/crm/CrmDeals"));
+const FormBuilder = lazy(() => import("./pages/workspace/builder/FormBuilder"));
+const FunctionStudio = lazy(() => import("./pages/workspace/functions/FunctionStudio"));
+const QrTracker = lazy(() => import("./pages/public/QrTracker"));
+const DocumentsListPage = lazy(() => import("./pages/workspace/docs/DocumentsListPage"));
+const DocumentEditorPage = lazy(() => import("./pages/workspace/docs/DocumentEditorPage"));
+const SheetsListPage = lazy(() => import("./pages/workspace/sheets/SheetsListPage"));
+const SheetSpreadsheetPage = lazy(() => import("./pages/workspace/sheets/SheetSpreadsheetPage"));
+const CrmContacts = lazy(() => import("./pages/workspace/crm/ContactsDirectoryPage"));
+const CrmDeals = lazy(() => import("./pages/workspace/crm/DealsKanbanPage"));
 const TestList = lazy(() => import("./pages/workspace/tests/TestList"));
 const TestEditor = lazy(() => import("./pages/workspace/tests/TestEditor"));
-const TaskBoard = lazy(() => import("./pages/workspace/tasks/TaskBoard"));
-const TaskList = lazy(() => import("./pages/workspace/tasks/TaskList"));
+const TaskBoard = lazy(() => import("./pages/workspace/tasks/TasksBoardPage"));
+const TaskList = lazy(() => import("./pages/workspace/tasks/TasksListPage"));
 const ChatLayout = lazy(() => import("./pages/workspace/chat/ChatLayout"));
-const SiteBuilder = lazy(() => import("./pages/workspace/sites/SiteBuilder"));
-const SiteRenderer = lazy(() => import("./pages/workspace/sites/SiteRenderer"));
-const AutomationsList = lazy(() => import("./pages/workspace/automations/AutomationsList"));
-const ScheduleGrid = lazy(() => import("./pages/workspace/edu/ScheduleGrid"));
-const AttendanceJournal = lazy(() => import("./pages/workspace/edu/AttendanceJournal"));
-const SubscriptionsManager = lazy(() => import("./pages/workspace/edu/SubscriptionsManager"));
-const TeacherPayroll = lazy(() => import("./pages/workspace/edu/TeacherPayroll"));
+const SiteBuilder = lazy(() => import("./pages/workspace/site/SiteBuilder"));
+const PublicSiteRenderer = lazy(() => import("./pages/public/PublicSiteRenderer"));
+const PublicPageEngine = lazy(() => import("./pages/public/PublicPageEngine"));
+const AutomationsDirectoryPage = lazy(() => import("./pages/workspace/automations/AutomationsDirectoryPage"));
+const AutomationLogsPage = lazy(() => import("./pages/workspace/automations/AutomationLogsPage"));
+const ScheduleGrid = lazy(() => import("./pages/workspace/edu/ScheduleCalendarPage"));
+const AttendanceJournal = lazy(() => import("./pages/workspace/edu/AttendanceJournalPage"));
+const SubscriptionsManager = lazy(() => import("./pages/workspace/edu/SubscriptionsDirectoryPage"));
+const TeacherPayroll = lazy(() => import("./pages/workspace/edu/TeacherPayrollPage"));
 
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { GracefulErrorBoundary } from "./components/ui/GracefulErrorBoundary";
+import { TenantProvider } from './context/TenantContext';
 import DashboardSkeleton from "./components/skeletons/DashboardSkeleton";
 import CrmSkeleton from "./components/skeletons/CrmSkeleton";
 import TaskSkeleton from "./components/skeletons/TaskSkeleton";
@@ -152,10 +162,11 @@ export default function App() {
   const isMaintenanceActive = Boolean(maintenanceInfo.enabled) && !isSuperAdminPath;
   if (isMaintenanceActive) {
     return (
-    <div className="min-h-screen flex flex-col bg-slate-50 font-sans selection:bg-[#9F7AEA] selection:text-white relative">
+    <TenantProvider>
+    <div className="min-h-dvh flex flex-col bg-slate-50 font-sans selection:bg-[#9F7AEA] selection:text-white relative">
       <SkipToContent targetId="main-content" />
       <CookieBanner />
-      <Suspense fallback={<div className="min-h-screen bg-[#050508] text-white flex items-center justify-center">Loading...</div>}>
+      <Suspense fallback={<div className="min-h-dvh bg-[#050508] text-white flex items-center justify-center">Loading...</div>}>
         <MaintenanceMode 
           message={maintenanceInfo.message}
           estimatedTime={maintenanceInfo.estimatedTime}
@@ -163,11 +174,13 @@ export default function App() {
         />
       </Suspense>
     </div>
+    </TenantProvider>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#EDE9FE] text-slate-800 antialiased font-sans flex flex-col justify-between" id="main_app_wrapper">
+    <TenantProvider>
+    <div className="min-h-dvh bg-[#EDE9FE] text-slate-800 antialiased font-sans flex flex-col justify-between" id="main_app_wrapper">
       <SkipToContent targetId="main-content" />
       <CookieBanner />
       
@@ -194,7 +207,7 @@ export default function App() {
       )}
 
       <main className="flex-grow">
-        <Suspense fallback={<div className="min-h-screen flex flex-col items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-slate-400 mb-4" /><div className="text-slate-500 text-sm font-medium uppercase tracking-widest">Loading...</div></div>}>
+        <Suspense fallback={<div className="min-h-dvh flex flex-col items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-slate-400 mb-4" /><div className="text-slate-500 text-sm font-medium uppercase tracking-widest">Loading...</div></div>}>
         <Routes>
           <Route path="/admin" element={
             <div className="bg-[#EDE9FE] min-h-[75vh]">
@@ -228,7 +241,6 @@ export default function App() {
             </ProtectedRoute>
           } />
           
-          <Route path="/test" element={<ProtectedRoute><Testing /></ProtectedRoute>} />
           <Route path="/test/:testId" element={<ProtectedRoute><Testing /></ProtectedRoute>} />
           <Route path="/manager/form" element={<ProtectedRoute><ManagerForm /></ProtectedRoute>} />
           <Route path="/manager-dashboard" element={<ProtectedRoute><ManagerDashboard /></ProtectedRoute>} />
@@ -236,24 +248,36 @@ export default function App() {
           <Route path="/psychologist/:shortId" element={<ProtectedRoute><PsychologistForm /></ProtectedRoute>} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/terms" element={<TermsOfUse />} />
+
           <Route path="/sandbox/proctor" element={<ProtectedRoute><ProctorSandbox /></ProtectedRoute>} />
-          <Route path="/super-admin" element={<SuperAdminDashboard />} />
-          <Route path="/site/:siteId" element={<SiteRenderer />} />
+          <Route path="/super-admin" element={<GracefulErrorBoundary fallbackTitle="Ошибка Superadmin"><SuperAdminDashboard /></GracefulErrorBoundary>} />
+          <Route path="/superadmin" element={<GracefulErrorBoundary fallbackTitle="Ошибка Superadmin"><SuperAdminDashboard /></GracefulErrorBoundary>} />
+          <Route path="/sites/:orgId/:slug" element={<GracefulErrorBoundary fallbackTitle="Ошибка Сайта"><PublicSiteRenderer /></GracefulErrorBoundary>} />
+          <Route path="/site/:subdomain/:slug" element={<GracefulErrorBoundary fallbackTitle="Ошибка Сайта"><PublicPageEngine /></GracefulErrorBoundary>} />
+          <Route path="/p/:slug" element={<GracefulErrorBoundary fallbackTitle="Ошибка Сайта"><PublicPageEngine /></GracefulErrorBoundary>} />
+          <Route path="/track/:qrToken" element={<GracefulErrorBoundary fallbackTitle="Ошибка QR-Трекера"><QrTracker /></GracefulErrorBoundary>} />
           
           <Route path="/workspace" element={<ProtectedRoute><WorkspaceLayout /></ProtectedRoute>}>
             <Route index element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId/settings" element={<GracefulErrorBoundary fallbackTitle="Ошибка Настроек"><WorkspaceSettings /></GracefulErrorBoundary>} />
             <Route path=":orgId/settings/permissions" element={<GracefulErrorBoundary fallbackTitle="Ошибка Управления Правами"><TeamPermissions /></GracefulErrorBoundary>} />
+            <Route path=":orgId/settings/permission-matrix" element={<GracefulErrorBoundary fallbackTitle="Ошибка Матрицы Доступов PBAC"><TeamPermissionMatrix /></GracefulErrorBoundary>} />
+            <Route path=":orgId/settings/departments" element={<GracefulErrorBoundary fallbackTitle="Ошибка Оргструктуры"><OrgStructure /></GracefulErrorBoundary>} />
+            <Route path=":orgId/settings/templates" element={<GracefulErrorBoundary fallbackTitle="Ошибка Шаблонов"><DocumentTemplates /></GracefulErrorBoundary>} />
             <Route path=":orgId/builder" element={<GracefulErrorBoundary fallbackTitle="Ошибка Конструктора"><WorkspaceBuilder /></GracefulErrorBoundary>} />
+            <Route path=":orgId/builder/forms" element={<GracefulErrorBoundary fallbackTitle="Ошибка Конструктора Заявок"><FormBuilder /></GracefulErrorBoundary>} />
+            <Route path=":orgId/functions/studio" element={<GracefulErrorBoundary fallbackTitle="Ошибка Визуального Конструктора"><FunctionStudio /></GracefulErrorBoundary>} />
             <Route path=":orgId/sites" element={<GracefulErrorBoundary fallbackTitle="Ошибка Конструктора Сайтов"><SiteBuilder /></GracefulErrorBoundary>} />
-            <Route path=":orgId/automations" element={<GracefulErrorBoundary fallbackTitle="Ошибка Автоматизаций"><AutomationsList /></GracefulErrorBoundary>} />
-            <Route path=":orgId/docs" element={<GracefulErrorBoundary fallbackTitle="Ошибка Документов"><Suspense fallback={<DocsSkeleton />}><DocumentList /></Suspense></GracefulErrorBoundary>} />
-            <Route path=":orgId/docs/new" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Документов"><Suspense fallback={<DocsSkeleton />}><DocumentEditor /></Suspense></GracefulErrorBoundary>} />
-            <Route path=":orgId/docs/:id" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Документов"><Suspense fallback={<DocsSkeleton />}><DocumentEditor /></Suspense></GracefulErrorBoundary>} />
-            <Route path=":orgId/sheets" element={<GracefulErrorBoundary fallbackTitle="Ошибка Таблиц"><Suspense fallback={<SheetsSkeleton />}><SpreadsheetList /></Suspense></GracefulErrorBoundary>} />
-            <Route path=":orgId/sheets/new" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Таблиц"><Suspense fallback={<SheetsSkeleton />}><SpreadsheetEditor /></Suspense></GracefulErrorBoundary>} />
-            <Route path=":orgId/sheets/:sheetId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Таблиц"><Suspense fallback={<SheetsSkeleton />}><SpreadsheetEditor /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/billing" element={<GracefulErrorBoundary fallbackTitle="Ошибка Биллинга"><SubscriptionBillingDashboard /></GracefulErrorBoundary>} />
+            <Route path=":orgId/automations" element={<GracefulErrorBoundary fallbackTitle="Ошибка Автоматизаций"><AutomationsDirectoryPage /></GracefulErrorBoundary>} />
+            <Route path=":orgId/automations/logs" element={<GracefulErrorBoundary fallbackTitle="Ошибка Журнала Автоматизаций"><AutomationLogsPage /></GracefulErrorBoundary>} />
+            <Route path=":orgId/docs" element={<GracefulErrorBoundary fallbackTitle="Ошибка Документов"><Suspense fallback={<DocsSkeleton />}><DocumentsListPage /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/docs/new" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Документов"><Suspense fallback={<DocsSkeleton />}><DocumentEditorPage /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/docs/:id" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Документов"><Suspense fallback={<DocsSkeleton />}><DocumentEditorPage /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/sheets" element={<GracefulErrorBoundary fallbackTitle="Ошибка Таблиц"><Suspense fallback={<SheetsSkeleton />}><SheetsListPage /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/sheets/new" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Таблиц"><Suspense fallback={<SheetsSkeleton />}><SheetSpreadsheetPage /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/sheets/:sheetId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Таблиц"><Suspense fallback={<SheetsSkeleton />}><SheetSpreadsheetPage /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId/crm/contacts" element={<GracefulErrorBoundary fallbackTitle="Ошибка CRM Контактов"><Suspense fallback={<CrmSkeleton />}><CrmContacts /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId/crm/deals" element={<GracefulErrorBoundary fallbackTitle="Ошибка CRM Сделок"><Suspense fallback={<CrmSkeleton />}><CrmDeals /></Suspense></GracefulErrorBoundary>} />
             
@@ -383,5 +407,6 @@ export default function App() {
         </div>
       </footer>
     </div>
+    </TenantProvider>
   );
 }

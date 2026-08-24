@@ -27,10 +27,15 @@ import {
   CreditCard,
   DollarSign,
   ShieldCheck,
-  Shield
+  Shield,
+  FolderTree,
+  FileCheck2,
+  Sliders,
+  Settings2
 } from "lucide-react";
 import GlobalNotifications from "../../components/workspace/GlobalNotifications";
-import GlobalSearchModal from "../../components/ui/GlobalSearchModal";
+import SpotlightCommandBar from "../../components/common/SpotlightCommandBar";
+import DemoSeedButton from "../../components/common/DemoSeedButton";
 
 export default function WorkspaceLayout() {
   const { user, logout } = useAuth();
@@ -93,26 +98,27 @@ export default function WorkspaceLayout() {
     { name: "CRM", path: `/workspace/${activeTenant.id}/crm/contacts`, icon: Briefcase },
     { name: "Тесты", path: `/workspace/${activeTenant.id}/tests`, icon: FileQuestion },
     { name: "Проверка & Прокторинг", path: `/workspace/${activeTenant.id}/tests/manage`, icon: ShieldCheck },
+    { name: "Заявки & QR", path: `/workspace/${activeTenant.id}/builder/forms`, icon: FileCheck2 },
+    { name: "Function Studio", path: `/workspace/${activeTenant.id}/functions/studio`, icon: Settings2 },
+    { name: "Оргструктура & Отделы", path: `/workspace/${activeTenant.id}/settings/departments`, icon: FolderTree },
+    { name: "Матрица Доступов PBAC", path: `/workspace/${activeTenant.id}/settings/permission-matrix`, icon: Sliders },
+    { name: "Права & Сотрудники", path: `/workspace/${activeTenant.id}/settings/permissions`, icon: Shield },
     { name: "Docs", path: `/workspace/${activeTenant.id}/docs`, icon: FileText },
     { name: "Sheets", path: `/workspace/${activeTenant.id}/sheets`, icon: FileSpreadsheet },
-    { name: "Sites", path: `/workspace/${activeTenant.id}/sites`, icon: Globe },
+    { name: "Site Builder", path: `/workspace/${activeTenant.id}/sites`, icon: Globe },
+    { name: "Тарифы и Биллинг", path: `/workspace/${activeTenant.id}/billing`, icon: CreditCard },
     { name: "Automations", path: `/workspace/${activeTenant.id}/automations`, icon: Zap },
-    { name: "Права & Сотрудники", path: `/workspace/${activeTenant.id}/settings/permissions`, icon: Shield },
     { name: "Settings", path: `/workspace/${activeTenant.id}/settings`, icon: Settings },
   ] : [];
 
   if (loading) {
-    return <div className="min-h-screen bg-[var(--bg-app)] flex items-center justify-center text-[var(--text-muted)] font-mono text-sm">Loading Workspace...</div>;
+    return <div className="min-h-dvh bg-[var(--bg-app)] flex items-center justify-center text-[var(--text-muted)] font-mono text-sm">Loading Workspace...</div>;
   }
 
   return (
     <div 
-      className="h-screen w-full flex flex-col overflow-hidden transition-colors duration-300 relative"
-      style={{
-        backgroundImage: theme === 'light' 
-          ? 'linear-gradient(135deg, #e0f2fe 0%, #dbeafe 100%)' 
-          : 'linear-gradient(135deg, #0f172a 0%, #1e1e1e 100%)'
-      }}
+      className="h-dvh w-full flex flex-col overflow-hidden transition-colors duration-300 relative"
+      style={{ background: activeTenant?.brandColor || (theme === 'light' ? '#e0f2fe' : '#0f172a') }}
     >
       {/* Background Decor (optional glassmorphism base) */}
       <div className="absolute inset-0 bg-white/30 dark:bg-black/30 backdrop-blur-[2px] z-0 pointer-events-none"></div>
@@ -161,10 +167,11 @@ export default function WorkspaceLayout() {
           </div>
         </div>
 
-        <GlobalSearchModal isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
+        <SpotlightCommandBar isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
 
         {/* Right: User Profile & Tools */}
         <div className="flex items-center gap-3">
+          <DemoSeedButton />
           <button onClick={toggleTheme} className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full text-[var(--text-main)] transition">
             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
           </button>

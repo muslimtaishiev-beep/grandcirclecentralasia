@@ -36,6 +36,7 @@ import {
   AlertTriangle,
   Ban
 } from "lucide-react";
+import { CreateTenantModal } from './superadmin/components/CreateTenantModal';
 import { collection, onSnapshot, updateDoc, doc, query, orderBy, limit } from "firebase/firestore";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { db, auth } from "../lib/firebase";
@@ -138,10 +139,31 @@ export default function SuperAdminDashboard() {
   };
 
   const handleAdminLogout = async () => {
+    try { await fetch("/api/admin/logout", { method: "POST" }); } catch(e) {}
     await signOut(auth);
     localStorage.removeItem("admin_token");
     sessionStorage.removeItem("admin_token");
     setIsAuthenticated(false);
+  };
+
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const handleOptimizeDb = async () => {
+    if (isOptimizing) return;
+    setIsOptimizing(true);
+    const tid = toast.loading("Оптимизация БД...");
+    try {
+      const res = await fetch("/api/admin/db/optimize", { method: "POST", headers: { "Content-Type": "application/json" } });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(`БД оптимизирована: ${data.results.updatedSubmissions} submissions, ${data.results.updatedDeals} deals updated.`, { id: tid });
+      } else {
+        throw new Error(data.error);
+      }
+    } catch(e: any) {
+      toast.error(`Ошибка оптимизации: ${e.message}`, { id: tid });
+    } finally {
+      setIsOptimizing(false);
+    }
   };
 
   const [projects, setProjects] = useState<OrganizationProject[]>([]);
@@ -170,6 +192,8 @@ export default function SuperAdminDashboard() {
   const [maintenanceTime, setMaintenanceTime] = useState("30-45 минут");
   const [isSavingMaintenance, setIsSavingMaintenance] = useState(false);
   const [maintenanceSuccess, setMaintenanceSuccess] = useState(false);
+
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   // Subscribe to live Firestore collections (only when authenticated)
   useEffect(() => {
@@ -430,7 +454,7 @@ export default function SuperAdminDashboard() {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-[#000000] text-[#ededed] flex items-center justify-center p-4 font-sans">
+      <div className="min-h-dvh bg-[#000000] text-[#ededed] flex items-center justify-center p-4 font-sans">
         <div className="w-full max-w-md bg-[#111111] border border-[#333333] rounded-2xl p-8 shadow-2xl relative overflow-hidden">
           <div className="flex flex-col items-center text-center mb-8">
             <div className="w-12 h-12 bg-[#1a1a1a] border border-[#333333] rounded-xl flex items-center justify-center text-[#9F7AEA] mb-4 shadow-inner">
@@ -507,7 +531,7 @@ export default function SuperAdminDashboard() {
   );
 
   return (
-    <div className="min-h-screen bg-[#000000] text-[#ededed] font-sans antialiased selection:bg-[#fff] selection:text-[#000]">
+    <div className="min-h-dvh bg-[#000000] text-[#ededed] font-sans antialiased selection:bg-[#fff] selection:text-[#000]">
       
       {/* ── HEADER ── */}
       <header className="border-b border-[#333333] bg-[#000000] sticky top-0 z-40">
@@ -526,6 +550,13 @@ export default function SuperAdminDashboard() {
           </div>
 
           <div className="flex items-center gap-3 text-xs">
+            <button
+              onClick={handleOptimizeDb}
+              disabled={isOptimizing}
+              className={`flex items-center gap-1.5 text-xs text-[#50e3c2] hover:text-[#70f3d2] bg-[#112222] border border-[#224444] px-3 py-1.5 rounded transition font-medium ${isOptimizing ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+            >
+              <Database className="w-3.5 h-3.5" /> Optimize DB
+            </button>
             <button
               onClick={handleAdminLogout}
               className="flex items-center gap-1.5 text-xs text-[#ff6666] hover:text-[#ff8888] bg-[#221111] border border-[#442222] px-3 py-1.5 rounded transition font-medium cursor-pointer"
@@ -628,10 +659,26 @@ export default function SuperAdminDashboard() {
                   className="w-full bg-[#0a0a0a] border border-[#333333] rounded-md pl-9 pr-3 py-1.5 text-xs text-[#ededed] placeholder-[#666666] focus:outline-none"
                 />
               </div>
-              <div className="text-xs text-[#888888] font-mono">
-                Всего организаций: {filteredProjects.length}
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="flex items-center gap-1.5 px-4 py-1.5 bg-[#50e3c2] hover:bg-[#40c3a2] text-black font-bold text-xs rounded-md shadow transition cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Создать Организацию</span>
+                </button>
+                <div className="text-xs text-[#888888] font-mono">
+                  Всего: {filteredProjects.length}
+                </div>
               </div>
             </div>
+
+            {isCreateModalOpen && (
+              <CreateTenantModal 
+                onClose={() => setIsCreateModalOpen(false)}
+                onSuccess={() => setIsCreateModalOpen(false)}
+              />
+            )}
 
             {loading ? (
               <div className="flex justify-center py-12">

@@ -192,7 +192,7 @@ const Admin: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans p-6 md:p-12">
+    <div className="min-h-dvh bg-slate-50 font-sans p-6 md:p-12">
       <div className="max-w-5xl mx-auto">
         <h1 className="text-3xl font-display uppercase tracking-tight mb-8">Admin Control Panel</h1>
 

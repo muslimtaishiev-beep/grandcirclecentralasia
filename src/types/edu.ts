@@ -1,82 +1,99 @@
-export type AttendanceStatus = 'present' | 'absent' | 'sick' | 'trial';
+export type LessonStatus = 'scheduled' | 'in_progress' | 'completed' | 'canceled';
+export type AttendanceStatus = 'present' | 'absent_unexcused' | 'absent_excused' | 'late';
+export type SubscriptionType = 'lessons_pack' | 'time_period' | 'deposit_balance';
+export type PayrollCalculationType = 'fixed_per_lesson' | 'hourly_rate' | 'revenue_share_percent';
 
-export interface ScheduleEvent {
+export interface ClassroomRoom {
   id: string;
   tenantId: string;
-  title: string;
-  groupName: string;
+  name: string;
+  capacity: number;
+  colorTag: string;
+}
+
+export interface AcademicGroup {
+  id: string;
+  tenantId: string;
+  name: string;
   subject: string;
-  teacherId: string;
+  primaryTeacherStaffId: string;
+  defaultRoomId?: string;
+  studentContactIds: string[];
+  color: string;
+  status: 'active' | 'archived';
+  createdAt: number;
+}
+
+export interface ScheduleLessonSlot {
+  id: string;
+  tenantId: string;
+  groupId: string;
+  groupName: string;
+  teacherStaffId: string;
   teacherName: string;
   roomId: string;
   roomName: string;
-  dayOfWeek: number; // 1 (Mon) - 7 (Sun)
-  startTime: string; // HH:mm format, e.g. "14:00"
-  endTime: string;   // HH:mm format, e.g. "15:30"
-  color?: string;
-  studentIds?: string[];
-  createdAt?: any;
+  startTime: string; // ISO 8601 string
+  endTime: string;   // ISO 8601 string
+  topic?: string;
+  homework?: string;
+  status: LessonStatus;
+  webrtcRoomId?: string;
+  createdAt: number;
 }
 
 export interface AttendanceRecord {
   id: string;
   tenantId: string;
-  eventId: string;
-  eventTitle: string;
-  studentId: string;
+  lessonId: string;
+  studentContactId: string;
   studentName: string;
-  date: string; // YYYY-MM-DD
   status: AttendanceStatus;
-  notes?: string;
-  deductedFromSubscriptionId?: string;
-  markedByUserId: string;
-  markedAt: any;
+  grade?: number;
+  comment?: string;
+  isDeductedFromSubscription: boolean;
+  updatedByStaffId: string;
+  updatedAt: number;
 }
 
 export interface StudentSubscription {
   id: string;
   tenantId: string;
-  studentId: string;
+  studentContactId: string;
   studentName: string;
-  parentId?: string;
-  parentName?: string;
-  parentPhone?: string;
-  packageName: string; // e.g. "8 уроков", "12 уроков", "Индивидуальный"
+  groupId?: string;
+  type: SubscriptionType;
   totalLessons: number;
   remainingLessons: number;
-  price: number;
-  isPaid: boolean;
-  status: 'active' | 'frozen' | 'expired';
-  validUntil: string; // YYYY-MM-DD
-  createdAt: any;
+  pricePaid: number;
+  currency: 'USD' | 'KGS' | 'KZT';
+  startDate: string;
+  expiryDate: string;
+  isFrozen: boolean;
+  frozenUntilDate?: string;
+  status: 'active' | 'expired' | 'depleted' | 'frozen';
+  createdAt: number;
 }
 
-export interface FamilyProfile {
-  id: string;
-  tenantId: string;
-  parentName: string;
-  parentPhone: string;
-  parentEmail?: string;
-  children: {
-    studentId: string;
-    studentName: string;
-    grade?: string;
-  }[];
-  familyBalance: number; // Single family wallet in KZT/KGS/UZS/USD
-  createdAt: any;
+export interface TeacherPayrollRate {
+  teacherStaffId: string;
+  calculationType: PayrollCalculationType;
+  rateValue: number;
 }
 
 export interface TeacherPayrollRecord {
   id: string;
   tenantId: string;
-  teacherId: string;
+  teacherStaffId: string;
   teacherName: string;
-  month: string; // YYYY-MM
-  totalLessonsTaught: number;
-  totalStudentsAttended: number;
-  calculatedSalary: number;
-  rateType: 'hourly' | 'per_student' | 'percentage';
-  rateValue: number;
+  monthPeriod: string; // "2026-08"
+  totalLessonsConducted: number;
+  totalHours: number;
+  baseEarnings: number;
+  bonuses: number;
+  deductions: number;
+  finalTotal: number;
+  currency: 'USD' | 'KGS' | 'KZT';
   status: 'draft' | 'approved' | 'paid';
-  updatedAt: any;
+  paidAt?: number;
 }

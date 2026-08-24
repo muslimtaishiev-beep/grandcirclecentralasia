@@ -56,7 +56,7 @@ export default function Receipt() {
           }
         `}
       </style>
-      <div className="min-h-screen bg-gray-200 py-10 px-4 print:bg-white print:p-0 flex flex-col items-center">
+      <div className="min-h-dvh bg-gray-200 py-10 px-4 print:bg-white print:p-0 flex flex-col items-center">
         {/* Document Container */}
         <div id="printable-receipt" className="bg-white shadow-2xl p-10 max-w-2xl w-full border border-gray-400 print:shadow-none print:border-none print:w-full print:max-w-none text-black font-serif relative">
         

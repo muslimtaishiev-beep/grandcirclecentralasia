@@ -179,6 +179,8 @@ export interface ExamSession {
 export interface Submission {
   id: string;
   tenantId: string;
+  departmentId?: string;
+  branchId?: string;
 
   testId: string;                  // Link to Test
   sessionId: string;               // Link to ExamSession
@@ -274,6 +276,8 @@ export interface Membership {
   id: string;
   userId: string;
   tenantId: string;
+  departmentId?: string;
+  branchId?: string;
   displayName?: string;
   role: string;                  // "Управляющий" | "Работник" | customRole.name
   customRoleId?: string;
@@ -301,6 +305,29 @@ export interface TenantInvite {
   rejectReason: string | null;
 }
 
+export interface Branch {
+  id: string;
+  tenantId: string;
+  name: string;
+  city?: string;
+  address?: string;
+  headUserId?: string;
+  createdAt: Timestamp;
+}
+
+export interface Department {
+  id: string;
+  tenantId: string;
+  branchId?: string;
+  parentId?: string | null;
+  name: string;
+  description?: string;
+  headUserId?: string | null;
+  memberIds: string[];
+  color?: string;
+  createdAt: Timestamp;
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // COLLECTION PATHS (for use in queries)
 // ────────────────────────────────────────────────────────────────────────────
@@ -310,8 +337,59 @@ export const FIRESTORE_COLLECTIONS = {
   TENANT_INVITES: "tenant_invites",
   USERS: "users",
   MEMBERSHIPS: "memberships",
+  DEPARTMENTS: "departments",
+  BRANCHES: "branches",
   TESTS: "tests",
   QUESTIONS: "questions",
   EXAM_SESSIONS: "exam_sessions",
   SUBMISSIONS: "submissions",
+  CRM_CONTACTS: "crm_contacts",
+  CRM_DEALS: "crm_deals",
+  TASKS: "tasks",
+  DOCUMENTS: "documents",
+  SPREADSHEETS: "spreadsheets",
+  CHAT_CHANNELS: "chat_channels",
+  CHAT_MESSAGES: "chat_messages",
+  NOTIFICATIONS: "notifications",
+  AUTOMATIONS: "automations",
+  SITES: "sites",
+  AUDIT_LOGS: "audit_logs",
+  CUSTOM_FORMS: "custom_forms",
+  FORM_SUBMISSIONS: "form_submissions"
 } as const;
+
+export interface FormField {
+  id: string;
+  label: string;
+  type: "text" | "textarea" | "select" | "file" | "date" | "number" | "checkbox";
+  required: boolean;
+  options?: string[];
+  placeholder?: string;
+}
+
+export interface CustomForm {
+  id: string;
+  tenantId: string;
+  departmentId?: string;
+  title: string;
+  description?: string;
+  fields: FormField[];
+  qrTrackingEnabled: boolean;
+  active: boolean;
+  createdAt: Timestamp;
+}
+
+export interface FormSubmissionData {
+  id: string;
+  tenantId: string;
+  formId: string;
+  formTitle: string;
+  qrToken: string;
+  applicantName: string;
+  applicantEmail?: string;
+  applicantPhone?: string;
+  status: "new" | "review" | "testing" | "approved" | "rejected";
+  data: Record<string, any>;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}

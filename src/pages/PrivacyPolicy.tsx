@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 
 export default function PrivacyPolicy() {
   return (
-    <div className="min-h-screen bg-slate-50 py-12 px-4">
+    <div className="min-h-dvh bg-slate-50 py-12 px-4">
       <div className="max-w-4xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden p-8 sm:p-12 text-slate-800">
         <Link to="/" className="text-blue-600 hover:underline mb-6 inline-block font-medium">&larr; Вернуться на главную</Link>
         <h1 className="text-3xl font-bold mb-8">ПОЛИТИКА КОНФИДЕНЦИАЛЬНОСТИ И СОГЛАСИЕ НА ОБРАБОТКУ ПЕРСОНАЛЬНЫХ ДАННЫХ</h1>

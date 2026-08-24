@@ -2,7 +2,8 @@ import { auth as firebaseAuth } from "../lib/firebase";
 import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import React, { useState, useEffect } from "react";
 import { useSearchParams, useNavigate, useParams } from "react-router-dom";
-import { testsData } from "../data/testsData";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../lib/firebase";
 import { fetchGasAPI } from "../lib/utils";
 import html2pdf from "html2pdf.js";
 import { DiagnosticReportPdf } from "../components/DiagnosticReportPdf";
@@ -13,13 +14,14 @@ export default function ManagerForm() {
   const { orgId: routeOrgId, shortId: routeShortId } = useParams();
 
   const urlShortId = routeShortId || searchParams.get("shortId") || searchParams.get("testId") || "";
-  const tenantId = routeOrgId || searchParams.get("tenantId") || "org_future_leaders";
+  const tenantId = routeOrgId || searchParams.get("tenantId");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [shortId, setShortId] = useState(urlShortId);
   const [student, setStudent] = useState<any>(null);
+  const [gradeData, setGradeData] = useState<any>(null);
 
   const [managerName, setManagerName] = useState(() => {
     return firebaseAuth.currentUser?.displayName || firebaseAuth.currentUser?.email || "Менеджер Академии";
@@ -118,6 +120,14 @@ export default function ManagerForm() {
       if (data.success) {
         setStudent(data.student);
         setChildName(data.student.studentName);
+        if (data.student.grade) {
+          try {
+            const snap = await getDoc(doc(db, 'tests', `test_grade_${data.student.grade}_${tenantId}`));
+            if (snap.exists()) {
+              setGradeData(snap.data().questions);
+            }
+          } catch(e) {}
+        }
       } else {
         setError(data.error);
       }
@@ -161,7 +171,7 @@ export default function ManagerForm() {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="min-h-dvh bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-sm">
           <h2 className="text-2xl font-bold mb-6 text-center text-slate-800">Вход для менеджеров</h2>
           <form onSubmit={handleLogin} className="space-y-4">
@@ -192,7 +202,7 @@ export default function ManagerForm() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 py-12 px-4">
+    <div className="min-h-dvh bg-slate-50 py-12 px-4">
       {student && (
         <div style={{ width: 0, height: 0, overflow: "hidden" }}>
           <DiagnosticReportPdf student={student} />
@@ -231,12 +241,11 @@ export default function ManagerForm() {
             <div className="space-y-6">
               {(() => {
                 let maxRu = 0, maxMa = 0, maxLo = 0;
-                if (student.grade && testsData[student.grade as any]) {
-                  const gradeData = testsData[student.grade as any];
-                  maxRu = gradeData.russian.reduce((sum, q) => sum + (q.points || 1), 0);
-                  maxMa = gradeData.math.reduce((sum, q) => sum + (q.points || 1), 0);
+                if (student.grade && gradeData) {
+                  maxRu = gradeData.russian?.reduce((sum: any, q: any) => sum + (q.points || 1), 0) || 0;
+                  maxMa = gradeData.math?.reduce((sum: any, q: any) => sum + (q.points || 1), 0) || 0;
                   if (gradeData.logic) {
-                    maxLo = gradeData.logic.reduce((sum, q) => sum + (q.points || 1), 0);
+                    maxLo = gradeData.logic.reduce((sum: any, q: any) => sum + (q.points || 1), 0);
                   }
                 }
                 const totalMax = maxRu + maxMa + maxLo;

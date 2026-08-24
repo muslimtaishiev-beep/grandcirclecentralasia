@@ -1,0 +1,63 @@
+import { db } from '../../lib/firebase';
+import { collection, doc, query, where, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { ScheduleLessonSlot } from '../../types/edu';
+
+class ScheduleService {
+  subscribeToSchedule(tenantId: string, startDateIso: string, endDateIso: string, onUpdate: (slots: ScheduleLessonSlot[]) => void) {
+    // In a real app we'd query by date range. Firestore inequality filters have limits,
+    // so we typically filter in memory if the dataset is small, or use a composite index.
+    const q = query(
+      collection(db, 'tenants', tenantId, 'edu_schedule'),
+      where('startTime', '>=', startDateIso),
+      where('startTime', '<=', endDateIso)
+    );
+    return onSnapshot(q, (snap) => {
+      onUpdate(snap.docs.map(d => ({ ...d.data(), id: d.id } as ScheduleLessonSlot)));
+    });
+  }
+
+  async validateScheduleConflict(tenantId: string, roomId: string, teacherStaffId: string, startTime: string, endTime: string, ignoreLessonId?: string) {
+    const q = query(
+      collection(db, 'tenants', tenantId, 'edu_schedule'),
+      where('startTime', '<', endTime)
+    );
+    
+    const snap = await getDocs(q);
+    const overlapping = snap.docs
+      .map(d => ({ ...d.data(), id: d.id } as ScheduleLessonSlot))
+      .filter(l => l.endTime > startTime && l.id !== ignoreLessonId);
+
+    const roomConflict = overlapping.find(l => l.roomId === roomId);
+    if (roomConflict) {
+      throw new Error(`Конфликт кабинета: ${roomConflict.roomName} уже занят группой ${roomConflict.groupName}`);
+    }
+
+    const teacherConflict = overlapping.find(l => l.teacherStaffId === teacherStaffId);
+    if (teacherConflict) {
+      throw new Error(`Конфликт преподавателя: ${teacherConflict.teacherName} уже ведет урок у ${teacherConflict.groupName}`);
+    }
+  }
+
+  async createLesson(tenantId: string, lesson: Omit<ScheduleLessonSlot, 'id' | 'createdAt'>) {
+    await this.validateScheduleConflict(tenantId, lesson.roomId, lesson.teacherStaffId, lesson.startTime, lesson.endTime);
+    
+    const ref = doc(collection(db, 'tenants', tenantId, 'edu_schedule'));
+    await setDoc(ref, {
+      ...lesson,
+      createdAt: Date.now()
+    });
+    return ref.id;
+  }
+
+  async updateLesson(tenantId: string, lessonId: string, updates: Partial<ScheduleLessonSlot>) {
+    const ref = doc(db, 'tenants', tenantId, 'edu_schedule', lessonId);
+    await updateDoc(ref, updates);
+  }
+
+  async deleteLesson(tenantId: string, lessonId: string) {
+    const ref = doc(db, 'tenants', tenantId, 'edu_schedule', lessonId);
+    await deleteDoc(ref);
+  }
+}
+
+export const scheduleService = new ScheduleService();

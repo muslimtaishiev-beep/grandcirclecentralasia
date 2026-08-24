@@ -36,7 +36,7 @@ export default function MaintenanceMode({
   };
 
   return (
-    <div className="min-h-screen bg-[#050508] text-white font-sans antialiased flex flex-col justify-between relative overflow-hidden select-none">
+    <div className="min-h-dvh bg-[#050508] text-white font-sans antialiased flex flex-col justify-between relative overflow-hidden select-none">
       
       {/* ── AMBIENT BACKGROUND GLOWS ── */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-amber-500/10 rounded-full blur-[140px] pointer-events-none" />

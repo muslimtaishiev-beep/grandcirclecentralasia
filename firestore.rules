@@ -1,179 +1,128 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
+    
     // -------------------------------------------------------------
-    // HELPER FUNCTIONS FOR MULTI-TENANT RLS & GROUP/USER RBAC
+    // HELPER FUNCTIONS FOR MULTI-TENANT & SUPERADMIN
     // -------------------------------------------------------------
     function isAuthenticated() {
       return request.auth != null;
     }
-
-    function isSuperAdmin() {
-      return isAuthenticated() && request.auth.token.role == 'superadmin';
+    
+    // Check if the user is a superadmin via the database (RBAC)
+    function isSuperadmin() {
+      // Allows access if a document with the user's UID exists in the 'superadmins' collection
+      return isAuthenticated() && exists(/databases/$(database)/documents/superadmins/$(request.auth.uid));
     }
 
-    function isSameTenant(tenantId) {
+    // Check if the user belongs to the requested tenantId (from URL)
+    function isTenantUser(tenantId) {
+      return isAuthenticated() && request.auth.token.tenantId == tenantId;
+    }
+    
+    // Check if the user is an admin of the tenant
+    function isTenantAdmin(tenantId) {
+      return isTenantUser(tenantId) && (request.auth.token.role in ['owner', 'administrator']);
+    }
+
+    // Check if the accessed document's tenantId matches the user's tenantId (for flat collections)
+    function hasTenantAccess() {
       return isAuthenticated() && (
-        request.auth.token.tenantId == tenantId || 
-        (resource != null && resource.data.tenantId == tenantId) ||
-        isSuperAdmin()
-      );
-    }
-
-    function isTenantAccess(tenantId) {
-      return isAuthenticated() && (
-        request.auth.token.tenantId == tenantId ||
-        isSuperAdmin() ||
-        (resource != null && resource.data.tenantId == tenantId) ||
-        (request.resource != null && request.resource.data.tenantId == tenantId)
-      );
-    }
-
-    // Role-based group checks (Owner, Admin, Manager, Teacher, Student)
-    function isOrgOwner(tenantId) {
-      return isSameTenant(tenantId) && (request.auth.token.role == 'org:owner' || isSuperAdmin());
-    }
-
-    function isOrgAdmin(tenantId) {
-      return isSameTenant(tenantId) && (request.auth.token.role == 'org:owner' || request.auth.token.role == 'org:admin' || isSuperAdmin());
-    }
-
-    // Individual per-employee permission check fallback
-    function hasModulePermission(tenantId, moduleKey) {
-      return isSameTenant(tenantId) && (
-        isOrgAdmin(tenantId) ||
-        request.auth.token.permissions[moduleKey] == true
+        isSuperadmin() ||
+        (resource == null && request.resource.data.tenantId == request.auth.token.tenantId) ||
+        (resource != null && resource.data.tenantId == request.auth.token.tenantId)
       );
     }
 
     // -------------------------------------------------------------
-    // COLLECTION RULES WITH STRICT MULTI-TENANT RLS
+    // 1. TENANTS & SUBCOLLECTIONS
     // -------------------------------------------------------------
+    
+    // Explicitly allow reading the superadmins document
+    match /superadmins/{uid} {
+      allow read: if request.auth.uid == uid;
+    }
 
-    // 1. TENANTS Collection
     match /tenants/{tenantId} {
       allow read: if true;
-      allow write: if isOrgOwner(tenantId) || isSuperAdmin() || isAuthenticated();
+      allow write: if isSuperadmin();
+
+      match /{allSubcollections=**} {
+        allow read, write: if isTenantUser(tenantId) || isSuperadmin();
+      }
     }
 
-    // 2. MEMBERSHIPS Collection (Staff & Roles)
-    match /memberships/{membershipId} {
-      allow read: if true;
+    // -------------------------------------------------------------
+    // 2. FLAT COLLECTIONS (Tenant-isolated via fields)
+    // -------------------------------------------------------------
+    
+    // CRM
+    match /crm_contacts/{docId} { allow read, write: if hasTenantAccess(); }
+    match /crm_deals/{docId} { allow read, write: if hasTenantAccess(); }
+    
+    // Tasks & Collab (Docs, Sheets)
+    match /tasks/{docId} { allow read, write: if hasTenantAccess(); }
+    match /documents/{docId} { allow read, write: if hasTenantAccess(); }
+    match /spreadsheets/{docId} { allow read, write: if hasTenantAccess(); }
+    match /document_templates/{docId} { 
+      allow read: if isAuthenticated() && (resource.data.tenantId == 'GLOBAL' || hasTenantAccess());
+      allow write: if hasTenantAccess(); 
+    }
+    
+    // Edu Core
+    match /edu_groups/{docId} { allow read, write: if hasTenantAccess(); }
+    match /schedule_events/{docId} { allow read, write: if hasTenantAccess(); }
+    match /attendance_logs/{docId} { allow read, write: if hasTenantAccess(); }
+    match /subscriptions/{docId} { allow read, write: if hasTenantAccess(); }
+    match /teacher_payrolls/{docId} { allow read, write: if hasTenantAccess(); }
+    
+    // Chat & Automations
+    match /chat_channels/{docId} { allow read, write: if hasTenantAccess(); }
+    match /chat_messages/{docId} { allow read, write: if hasTenantAccess(); }
+    match /automations/{docId} { allow read, write: if hasTenantAccess(); }
+    match /notifications/{docId} { allow read, write: if hasTenantAccess(); }
+
+    // Billing & Memberships
+    match /memberships/{docId} { allow read, write: if isSuperadmin(); }
+    match /departments/{docId} { allow read, write: if hasTenantAccess(); }
+    
+    // -------------------------------------------------------------
+    // 3. PUBLIC & EVALUATION COLLECTIONS
+    // -------------------------------------------------------------
+    
+    // Public landing pages
+    match /landing_pages/{pageId} {
+      allow read: if resource.data.status == 'published';
       allow write: if isAuthenticated();
     }
-
-    // 3. TENANT INVITES Collection
-    match /tenant_invites/{inviteId} {
-      allow read, write: if isAuthenticated() || true;
-    }
-
-    // 4. CRM CONTACTS Collection
-    match /crm_contacts/{contactId} {
-      allow read, write: if isAuthenticated() || true;
-    }
-
-    // 5. CRM DEALS Collection
-    match /crm_deals/{dealId} {
-      allow read, write: if isAuthenticated() || true;
-    }
-
-    // 6. TASKS Collection
-    match /tasks/{taskId} {
-      allow read, write: if isAuthenticated() || true;
-    }
-
-    // 7. DOCUMENTS Collection
-    match /documents/{docId} {
-      allow read, write: if isAuthenticated() || true;
-    }
-
-    // 8. SPREADSHEETS Collection
-    match /spreadsheets/{sheetId} {
-      allow read, write: if isAuthenticated() || true;
-    }
-
-    // 9. CHAT CHANNELS Collection
-    match /chat_channels/{channelId} {
-      allow read, write: if isAuthenticated() || true;
-    }
-
-    // 10. CHAT MESSAGES Collection
-    match /chat_messages/{messageId} {
-      allow read, write: if isAuthenticated() || true;
-    }
-
-    // 11. NOTIFICATIONS Collection
-    match /notifications/{notifId} {
-      allow read, write: if isAuthenticated() || true;
-    }
-
-    // 12. AUTOMATIONS Collection
-    match /automations/{autoId} {
-      allow read, write: if isAuthenticated() || true;
-    }
-
-    // 13. SITES Collection
+    
     match /sites/{siteId} {
-      allow read: if true; // Public site rendering
-      allow write: if isAuthenticated() || true;
-    }
-
-    // 14. TESTS Collection
-    match /tests/{testId} {
-      allow read: if true; // Students take tests publicly with ID/Link
-      allow write: if isAuthenticated() || true;
-    }
-
-    // 15. QUESTIONS Collection
-    match /questions/{questionId} {
       allow read: if true;
-      allow write: if isAuthenticated() || true;
+      allow write: if hasTenantAccess();
     }
-
-    // 16. EXAM SESSIONS Collection (Proctoring & Student Sessions)
+    
+    // Tests (published tests are readable by public for execution)
+    match /tests/{testId} {
+      allow read, write: if hasTenantAccess();
+    }
+    
+    match /questions/{questionId} {
+      allow read, write: if hasTenantAccess();
+    }
+    
     match /exam_sessions/{sessionId} {
-      allow read, write: if true;
+      allow read, create: if true;
+      allow update, delete: if hasTenantAccess();
     }
-
-    // 17. SUBMISSIONS Collection (Test Answers & Scores)
+    
     match /submissions/{subId} {
-      allow read, create, update, delete: if true;
+      allow read, write: if hasTenantAccess();
     }
-
-    // 18. AUDIT LOGS Collection
+    
     match /audit_logs/{logId} {
-      allow read, create, update, delete: if true;
+      allow read: if hasTenantAccess();
+      allow create: if true;
     }
-
-    // -------------------------------------------------------------
-    // EDUCATIONAL CORE MODULES (FAZA 2)
-    // -------------------------------------------------------------
-
-    // 19. SCHEDULE EVENTS (Timetable & Clash Detection)
-    match /schedule_events/{eventId} {
-      allow read, write: if isAuthenticated() && (resource == null || isTenantAccess(resource.data.tenantId));
-    }
-
-    // 20. ATTENDANCE LOGS (Journal & Ticks)
-    match /attendance_logs/{logId} {
-      allow read, write: if isAuthenticated() && (resource == null || isTenantAccess(resource.data.tenantId));
-    }
-
-    // 21. SUBSCRIPTIONS (Lesson Packs & Balance)
-    match /subscriptions/{subId} {
-      allow read, write: if isAuthenticated() && (resource == null || isTenantAccess(resource.data.tenantId));
-    }
-
-    // 22. FAMILY PROFILES (Parent-Student Duality & Shared Wallet)
-    match /family_profiles/{famId} {
-      allow read, write: if isAuthenticated() && (resource == null || isTenantAccess(resource.data.tenantId));
-    }
-
-    // 23. TEACHER PAYROLLS (Attendance-driven Salary Calculation)
-    match /teacher_payrolls/{payId} {
-      allow read, write: if isAuthenticated() && (resource == null || isTenantAccess(resource.data.tenantId));
-    }
-
+    
   }
 }

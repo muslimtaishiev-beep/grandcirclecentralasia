@@ -1,20 +1,30 @@
 import { auth as firebaseAuth } from "../lib/firebase";
 import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import toast, { Toaster } from "react-hot-toast";
+// @ts-ignore
+import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getHourlyPIN, getCEFRLevel, fetchGasAPI, toGenitiveCase } from "../lib/utils";
-import { testsData } from "../data/testsData";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "../lib/firebase";
 import html2pdf from "html2pdf.js";
+import Papa from "papaparse";
 import { DiagnosticReportPdf } from "../components/DiagnosticReportPdf";
 import { SchoolCertificatePdf } from "../components/SchoolCertificatePdf";
+import { useTenant } from "../context/TenantContext";
+import { DocumentIssuerModal } from "../components/DocumentIssuerModal";
 
 export default function ManagerDashboard() {
+  const { tenant } = useTenant();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [students, setStudents] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [gradeFilter, setGradeFilter] = useState("ALL");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -47,6 +57,7 @@ export default function ManagerDashboard() {
 
   // Certificate System State
   const [isCertModalOpen, setIsCertModalOpen] = useState(false);
+  const [isDocIssuerOpen, setIsDocIssuerOpen] = useState(false);
   const [certTab, setCertTab] = useState<"GENERATE" | "HISTORY">("GENERATE");
   const [selectedStudentForCert, setSelectedStudentForCert] = useState<string>("MANUAL");
   const [certManagerName, setCertManagerName] = useState<string>(() => {
@@ -89,7 +100,7 @@ export default function ManagerDashboard() {
     if (item?.pdfUrl) {
       window.open(item.pdfUrl, "_blank");
     } else {
-      alert("Ссылка на документ недоступна.");
+      toast.success("Ссылка на документ недоступна.");
     }
   };
 
@@ -138,9 +149,75 @@ export default function ManagerDashboard() {
 
 
 
+  const getFilteredStudents = () => {
+    if (!Array.isArray(students)) return [];
+    return students.filter(s => {
+      if (gradeFilter !== "ALL" && String(s.grade) !== gradeFilter) return false;
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const name = String(s.childName || s.studentName || "").toLowerCase();
+        const id = String(s.shortId || "").toLowerCase();
+        if (!name.includes(query) && !id.includes(query)) return false;
+      }
+      return true;
+    });
+  };
+
+  const sanitizeCSV = (val: any) => {
+    if (typeof val === "string" && (val.startsWith("=") || val.startsWith("+") || val.startsWith("-") || val.startsWith("@"))) {
+      return "\'" + val;
+    }
+    return val;
+  };
+
+  const handleExportCSV = () => {
+    const filtered = getFilteredStudents();
+    if (filtered.length === 0) {
+       toast.error("Нет данных для экспорта");
+       return;
+    }
+    const csvData = filtered.map(s => ({
+      ID: sanitizeCSV(s.shortId),
+      Name: sanitizeCSV(s.childName || s.studentName),
+      Grade: s.grade,
+      Parent: sanitizeCSV(s.parentName),
+      Phone: sanitizeCSV(s.phone),
+      Status: sanitizeCSV(s.status),
+      Decision: sanitizeCSV(s.finalDecision),
+      RuScore: s.ru,
+      MathScore: s.ma,
+      LogicScore: s.lo,
+      EnglishScore: s.en
+    }));
+    const csv = Papa.unparse(csvData);
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `students_export_${new Date().toISOString().split("T")[0]}.csv`;
+    link.click();
+  };
+
+  const [dbTests, setDbTests] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchDbTests = async () => {
+      try {
+        const testsSnap = await getDocs(collection(db, 'tests'));
+        const fetched: any[] = [];
+        testsSnap.forEach(d => {
+          fetched.push({ id: d.id, ...d.data() });
+        });
+        setDbTests(fetched);
+      } catch (e) {
+        console.warn("Failed to fetch dbTests:", e);
+      }
+    };
+    fetchDbTests();
+  }, []);
+
   const handleGenerateFromGoogleDocs = async (formatType: "ONLINE" | "PRINT") => {
     if (!certStudentNameGenitive.trim()) {
-      alert("Введите ФИО ученика в дательном падеже (Кому?)!");
+      toast.success("Введите ФИО ученика в дательном падеже (Кому?)!");
       return;
     }
     
@@ -245,9 +322,9 @@ export default function ManagerDashboard() {
         }
         
         if (formatType === "PRINT") {
-          alert(`📄 Справка для печати сформирована и скачивается!\n\nИсходящий номер для журнала: № ${record.refNumber}\n\nПечати и угловой штамп проставляются физически на распечатанном листе бумаге.`);
+          toast.success(`📄 Справка для печати сформирована и скачивается!\n\nИсходящий номер для журнала: № ${record.refNumber}\n\nПечати и угловой штамп проставляются физически на распечатанном листе бумаге.`);
         } else {
-          alert(`🎉 Онлайн-справка с синим векторным штампом успешно создана и скачивается!\n\nИсходящий номер: № ${record.refNumber}`);
+          toast.success(`🎉 Онлайн-справка с синим векторным штампом успешно создана и скачивается!\n\nИсходящий номер: № ${record.refNumber}`);
         }
         
         const newEntry = { id: 'cert_' + record.timestamp, ...record, pdfUrl: res.pdfUrl, formatType };
@@ -259,7 +336,7 @@ export default function ManagerDashboard() {
         fetchNextCertRefNumber();
       } else {
         if (res?.isDuplicateRef) {
-          alert(`❌ ОШИБКА ДУБЛИКАТА НОМЕРА:\n${res.error}\n\nПожалуйста, обновите исходящий номер на следующий свободной.`);
+          toast.success(`❌ ОШИБКА ДУБЛИКАТА НОМЕРА:\n${res.error}\n\nПожалуйста, обновите исходящий номер на следующий свободной.`);
           fetchNextCertRefNumber();
         } else {
           const errMsg = res?.error || "Проверьте ссылку на шаблон и доступ к файлу в Google Диске.";
@@ -277,13 +354,13 @@ export default function ManagerDashboard() {
               }
             }
           } else {
-            alert("⚠️ Ошибка шаблона Google Docs: " + errMsg);
+            toast.success("⚠️ Ошибка шаблона Google Docs: " + errMsg);
           }
         }
       }
     } catch(err: any) {
       console.error(err);
-      alert("Ошибка запроса генерации шаблона: " + (err.message || err));
+      toast.success("Ошибка запроса генерации шаблона: " + (err.message || err));
     } finally {
       setIsGeneratingCertPdf(false);
     }
@@ -298,12 +375,12 @@ export default function ManagerDashboard() {
         if (data && data.success && data.student && data.student.diagnosticsRaw) {
           currentStudent = { ...student, diagnosticsRaw: data.student.diagnosticsRaw };
         } else {
-          alert("У данного ученика нет сохраненных данных аналитики.");
+          toast.success("У данного ученика нет сохраненных данных аналитики.");
           setAnalyzingId(null);
           return;
         }
       } catch (e: any) {
-        alert("Ошибка подгрузки аналитики: " + e.message);
+        toast.success("Ошибка подгрузки аналитики: " + e.message);
         setAnalyzingId(null);
         return;
       }
@@ -338,12 +415,12 @@ export default function ManagerDashboard() {
             }, "");
             
             if (res.success) {
-              alert("PDF успешно сохранен на Google Диск!");
+              toast.success("PDF успешно сохранен на Google Диск!");
             } else {
-              alert("Ошибка при сохранении на Диск: " + (res.error || JSON.stringify(res)));
+              toast.success("Ошибка при сохранении на Диск: " + (res.error || JSON.stringify(res)));
             }
           } catch(err: any) {
-            alert("Критическая ошибка сети при сохранении: " + err.message);
+            toast.success("Критическая ошибка сети при сохранении: " + err.message);
             console.error("Failed to upload PDF", err);
           }
         }).then(() => {
@@ -387,7 +464,7 @@ export default function ManagerDashboard() {
 
   // Multi-tenant Org Context
   const { orgId: routeOrgId } = useParams();
-  const activeTenantId = routeOrgId || "org_future_leaders";
+  const activeTenantId = routeOrgId;
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -404,7 +481,7 @@ export default function ManagerDashboard() {
       if (data.success) {
         const rawList = data.students || data.data || [];
         // Filter strictly by tenantId to enforce total multi-tenant isolation
-        const filtered = rawList.filter((s: any) => s.tenantId === activeTenantId || (!s.tenantId && activeTenantId === "org_future_leaders"));
+        const filtered = rawList.filter((s: any) => s.tenantId === activeTenantId );
         setStudents(filtered);
       } else {
         setError(data.error);
@@ -419,27 +496,35 @@ export default function ManagerDashboard() {
   };
 
   const allowRetake = async (shortId: string) => {
-    if (!confirm(`Разрешить ученику ${shortId} продолжить прерванный тест?`)) return;
-    try {
-      // 1. Try server retake authorization
-      fetch("/api/manager/allow-retake", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shortId })
-      }).catch(() => {});
-
-      // 2. GAS unblock
-      const data = await fetchGasAPI("/api/gas", { action: "unblockStudent", shortId }, "");
-      if (data && data.success) {
-        setStudents(prev => (prev || []).map(s => s.shortId === shortId ? { ...s, status: "В ПРОЦЕССЕ" } : s));
-        alert("Разрешение успешно выдано! Экран ученика автоматически разблокируется.");
-      } else {
-        setStudents(prev => (prev || []).map(s => s.shortId === shortId ? { ...s, status: "В ПРОЦЕССЕ" } : s));
-        alert("Разрешение отправлено на сервер!");
-      }
-    } catch (e: any) {
-      alert("Ошибка: " + e.message);
-    }
+    toast((t) => (
+      <div>
+        <p className="mb-2">Разрешить ученику <b>{shortId}</b> продолжить тест?</p>
+        <div className="flex gap-2 justify-end">
+          <button className="px-2 py-1 bg-gray-200 rounded text-xs" onClick={() => toast.dismiss(t.id)}>Отмена</button>
+          <button className="px-2 py-1 bg-amber-500 text-white rounded text-xs" onClick={async () => {
+            toast.dismiss(t.id);
+            toast.loading("Отправка...", { id: "retake" });
+            try {
+              fetch("/api/manager/allow-retake", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ shortId })
+              }).catch(() => {});
+              const data = await fetchGasAPI("/api/gas", { action: "unblockStudent", shortId }, "");
+              if (data && data.success) {
+                setStudents(prev => (prev || []).map(s => s.shortId === shortId ? { ...s, status: "В ПРОЦЕССЕ" } : s));
+                toast.success("Разрешение успешно выдано!", { id: "retake" });
+              } else {
+                setStudents(prev => (prev || []).map(s => s.shortId === shortId ? { ...s, status: "В ПРОЦЕССЕ" } : s));
+                toast.success("Разрешение отправлено на сервер!", { id: "retake" });
+              }
+            } catch (e: any) {
+              toast.error("Ошибка: " + e.message, { id: "retake" });
+            }
+          }}>Подтвердить</button>
+        </div>
+      </div>
+    ), { duration: Infinity });
   };
 
   const openAcceptModal = (shortId: string) => {
@@ -469,12 +554,12 @@ export default function ManagerDashboard() {
   const getMaxScore = (gradeStr: string | undefined, subject: "russian" | "math" | "logic" | "english") => {
     if (!gradeStr) return "?";
     const grade = parseInt(gradeStr, 10);
-    const d = testsData[grade];
-    if (!d) return "?";
-    if (subject === "logic") return d.logic?.reduce((acc, curr) => acc + (curr.points || 1), 0) || "?";
-    if (subject === "math") return d.math?.reduce((acc, curr) => acc + (curr.points || 1), 0) || "?";
-    if (subject === "russian") return d.russian?.reduce((acc, curr) => acc + (curr.points || 1), 0) || "?";
-    if (subject === "english") return d.english?.reduce((acc, curr) => acc + (curr.points || 1), 0) || "?";
+    const gradeData = dbTests.find(t => t.grade === grade)?.questions;
+    if (!gradeData) return "?";
+    if (subject === "logic") return gradeData.logic?.reduce((acc: any, curr: any) => acc + (curr.points || 1), 0) || "?";
+    if (subject === "math") return gradeData.math?.reduce((acc: any, curr: any) => acc + (curr.points || 1), 0) || "?";
+    if (subject === "russian") return gradeData.russian?.reduce((acc: any, curr: any) => acc + (curr.points || 1), 0) || "?";
+    if (subject === "english") return gradeData.english?.reduce((acc: any, curr: any) => acc + (curr.points || 1), 0) || "?";
     return "?";
   };
 
@@ -502,16 +587,16 @@ export default function ManagerDashboard() {
         setStudents(prev => (prev || []).map(s => s.shortId === selectedStudent ? { ...s, finalDecision: decision } : s));
         closeModals();
       } else {
-        alert("Ошибка: " + data.error);
+        toast.success("Ошибка: " + data.error);
       }
     } catch (err) {
-      alert("Ошибка сети");
+      toast.success("Ошибка сети");
     }
   };
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="min-h-dvh bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center">
           <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">📊</div>
           <h2 className="text-2xl font-bold mb-4">Кабинет Менеджера</h2>
@@ -540,7 +625,7 @@ export default function ManagerDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8 relative">
+    <div className="min-h-dvh bg-slate-50 p-8 relative">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-6">
@@ -551,6 +636,26 @@ export default function ManagerDashboard() {
             </div>
           </div>
           <div className="flex gap-4">
+            <input 
+              type="text" 
+              placeholder="Поиск по имени/ID..." 
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="border border-slate-300 px-3 py-2 rounded-xl text-sm"
+            />
+            <select
+              value={gradeFilter}
+              onChange={e => setGradeFilter(e.target.value)}
+              className="border border-slate-300 px-3 py-2 rounded-xl text-sm bg-white"
+            >
+              <option value="ALL">Все классы</option>
+              <option value="7">7 класс</option>
+              <option value="8">8 класс</option>
+              <option value="9">9 класс</option>
+              <option value="10">10 класс</option>
+              <option value="11">11 класс</option>
+            </select>
+            <button onClick={handleExportCSV} className="bg-emerald-600 text-white px-4 py-2 rounded-xl shadow font-medium hover:bg-emerald-700">↓ CSV</button>
             <button onClick={fetchStudents} className="bg-white text-slate-600 px-4 py-2 rounded-xl shadow border font-medium hover:bg-slate-50">Обновить</button>
             <button onClick={() => navigate("/manager/form")} className="bg-blue-600 text-white px-4 py-2 rounded-xl shadow font-medium hover:bg-blue-700">+ Новая анкета</button>
           </div>
@@ -575,11 +680,13 @@ export default function ManagerDashboard() {
                 {Array.isArray(students) && students.filter(s => s && typeof s === 'object').map((s, idx) => {
                   const totalScore = Number(s.ru || 0) + Number(s.ma || 0) + Number(s.lo || 0);
                   let maxScore = 0;
-                  if (s.grade && testsData[s.grade as any]) {
-                    const gradeData = testsData[s.grade as any];
-                    const maxRu = gradeData.russian.reduce((sum, q) => sum + (q.points || 1), 0);
-                    const maxMa = gradeData.math.reduce((sum, q) => sum + (q.points || 1), 0);
-                    const maxLo = gradeData.logic ? gradeData.logic.reduce((sum, q) => sum + (q.points || 1), 0) : 0;
+                  const gradeData = s.grade ? dbTests.find(t => t.grade === parseInt(s.grade, 10))?.questions : null;
+                  if (s.maxScoreSnapshot) {
+                    maxScore = s.maxScoreSnapshot;
+                  } else if (gradeData) {
+                    const maxRu = gradeData.russian?.reduce((sum: any, q: any) => sum + (q.points || 1), 0) || 0;
+                    const maxMa = gradeData.math?.reduce((sum: any, q: any) => sum + (q.points || 1), 0) || 0;
+                    const maxLo = gradeData.logic ? gradeData.logic.reduce((sum: any, q: any) => sum + (q.points || 1), 0) : 0;
                     maxScore = maxRu + maxMa + maxLo;
                   }
                   if (maxScore === 0) maxScore = 22; // Fallback
@@ -711,7 +818,7 @@ export default function ManagerDashboard() {
                             </a>
                           ) : (
                             <button
-                              onClick={() => alert(`Прокторинг для ученика ${s.childName || s.shortId}: Нарушений не зафиксировано, отчёт сохранён в архиве.`)}
+                              onClick={() => toast.success(`Прокторинг для ученика ${s.childName || s.shortId}: Нарушений не зафиксировано, отчёт сохранён в архиве.`)}
                               className="text-xs px-2 py-1 rounded shadow-sm w-full font-medium flex items-center justify-center gap-1 bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200"
                             >
                               🛡️ Прокторинг: Норма
@@ -728,11 +835,11 @@ export default function ManagerDashboard() {
                             const data = await fetchGasAPI("/api/gas", { action: "recheckScores", shortId: s.shortId }, "");
                             if (data.success) {
                               setStudents(prev => prev.map(st => st.shortId === s.shortId ? { ...st, ru: data.scores.russian, ma: data.scores.math, lo: data.scores.logic, en: data.scores.english, diagnosticsRaw: data.diagnosticsRaw } : st));
-                              alert(`✅ Перепроверка завершена!\nРус: ${data.scores.russian} | Мат: ${data.scores.math} | Лог: ${data.scores.logic} | Англ: ${data.scores.english}`);
+                              toast.success(`✅ Перепроверка завершена!\nРус: ${data.scores.russian} | Мат: ${data.scores.math} | Лог: ${data.scores.logic} | Англ: ${data.scores.english}`);
                             } else {
-                              alert("Ошибка: " + data.error);
+                              toast.success("Ошибка: " + data.error);
                             }
-                          } catch (e: any) { alert("Ошибка: " + e.message); }
+                          } catch (e: any) { toast.success("Ошибка: " + e.message); }
                           finally { setRecheckingId(null); }
                         }}
                         disabled={recheckingId === s.shortId}
@@ -753,9 +860,9 @@ export default function ManagerDashboard() {
                             if (data.success) {
                               setReviewData(data);
                             } else {
-                              alert("Ошибка: " + data.error);
+                              toast.success("Ошибка: " + data.error);
                             }
-                          } catch (e: any) { alert("Ошибка: " + e.message); }
+                          } catch (e: any) { toast.success("Ошибка: " + e.message); }
                           finally { setReviewLoading(false); }
                         }}
                         disabled={reviewLoading}
@@ -774,11 +881,11 @@ export default function ManagerDashboard() {
                               const data = await fetchGasAPI("/api/gas", { action: "unblockStudent", shortId: s.shortId }, "");
                               if (data.success) {
                                 setStudents(prev => prev.map(st => st.shortId === s.shortId ? { ...st, status: "В ПРОЦЕССЕ" } : st));
-                                alert("Разрешение предоставлено! Ученик может продолжить тест.");
+                                toast.success("Разрешение предоставлено! Ученик может продолжить тест.");
                               } else {
-                                alert("Ошибка: " + data.error);
+                                toast.success("Ошибка: " + data.error);
                               }
-                            } catch (e: any) { alert("Ошибка: " + e.message); }
+                            } catch (e: any) { toast.success("Ошибка: " + e.message); }
                             finally { setUnblockingId(null); }
                           }}
                           disabled={unblockingId === s.shortId}
@@ -960,6 +1067,16 @@ export default function ManagerDashboard() {
               {certHistory.length}
             </span>
           )}
+        </button>
+
+        {/* Floating Action Button for NEW Document Templates (Bottom Right, slightly higher) */}
+        <button
+          onClick={() => setIsDocIssuerOpen(true)}
+          className="fixed bottom-28 right-8 z-40 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold px-6 py-4 rounded-full shadow-2xl hover:shadow-teal-500/50 transform hover:scale-105 active:scale-95 transition-all flex items-center gap-3 border-2 border-white/20 group"
+          title="Генератор справок по шаблонам"
+        >
+          <span className="text-2xl group-hover:rotate-12 transition-transform">🖨️</span>
+          <span className="text-base tracking-wide hidden sm:inline">Выдать документ</span>
         </button>
 
         {/* Certificate Management Modal */}
@@ -1228,7 +1345,7 @@ export default function ManagerDashboard() {
                           }
                           setCertDocTemplateOnlineId(clean);
                           localStorage.setItem("cert_template_id_online", clean);
-                          alert("✅ Ссылка на Онлайн-шаблон сохранена!");
+                          toast.success("✅ Ссылка на Онлайн-шаблон сохранена!");
                         }
                       }}
                       className="px-2 py-1 text-xs text-blue-600 font-bold hover:underline border border-blue-200 rounded-lg bg-blue-50"
@@ -1247,7 +1364,7 @@ export default function ManagerDashboard() {
                           }
                           setCertDocTemplatePrintId(clean);
                           localStorage.setItem("cert_template_id_print", clean);
-                          alert("✅ Ссылка на Шаблон для печати сохранена!");
+                          toast.success("✅ Ссылка на Шаблон для печати сохранена!");
                         }
                       }}
                       className="px-2 py-1 text-xs text-slate-600 font-bold hover:underline border border-slate-300 rounded-lg bg-slate-100"
@@ -1298,6 +1415,14 @@ export default function ManagerDashboard() {
             </div>
           </div>
         )}
+        {/* New Document Issuer Modal */}
+        {isDocIssuerOpen && tenant && (
+          <DocumentIssuerModal 
+            tenantId={tenant.id} 
+            onClose={() => setIsDocIssuerOpen(false)} 
+          />
+        )}
+
       </div>
     </div>
   );

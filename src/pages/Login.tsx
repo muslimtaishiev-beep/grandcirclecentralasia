@@ -50,34 +50,37 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
 
   const redirectUserByRole = async (userRecord?: any) => {
     const loggedUser = userRecord || auth.currentUser;
-    const userEmail = (loggedUser?.email || email || "").toLowerCase();
-
-    if (userEmail.endsWith("@studyfreeforum.com") || userEmail === "admin@studyfreeforum.com") {
-      window.location.href = "/super-admin";
-      return;
-    }
 
     try {
-      const idToken = await loggedUser?.getIdToken();
-      if (!idToken) {
-        window.location.href = "/dashboard";
+      const idTokenResult = await loggedUser?.getIdTokenResult();
+      
+      if (idTokenResult?.claims?.isSuperadmin) {
+        navigate("/superadmin");
         return;
       }
+
+      if (!idTokenResult) {
+        navigate("/workspace/dashboard");
+        return;
+      }
+
+      
       const res = await fetch("/api/auth/me", {
-        headers: { Authorization: `Bearer ${idToken}` }
+        headers: { Authorization: `Bearer ${idTokenResult.token}` }
       });
       const data = await res.json();
 
       if (data.user?.globalRole === "superadmin") {
-        window.location.href = "/super-admin";
+        navigate("/superadmin");
       } else if (data.memberships && data.memberships.length > 0) {
-        const firstOrgSlug = data.memberships[0].tenantId || "org_future_leaders";
-        window.location.href = `/workspace/${firstOrgSlug}`;
+        const firstOrgSlug = data.memberships[0].tenantId ;
+        navigate(`/workspace/${firstOrgSlug}/dashboard`);
       } else {
-        window.location.href = "/dashboard";
+        navigate("/workspace/dashboard");
       }
     } catch (e) {
-      window.location.href = "/dashboard";
+      // In demo mode without backend, redirect to default tenant dashboard
+      navigate("/workspace/dashboard");
     }
   };
 
@@ -163,7 +166,7 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans relative">
+    <div className="min-h-dvh bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans relative">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <h2 className="mt-6 text-center text-3xl font-display font-black text-slate-900 uppercase tracking-tight">
           {lang === 'ru' ? 'Вход участника' : lang === 'kg' ? 'Катышуучунун кирүүсү' : 'Participant Login'}

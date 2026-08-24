@@ -307,7 +307,7 @@ export default function ProctorSandbox() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white select-none relative">
+    <div className="min-h-dvh bg-slate-950 text-white select-none relative">
       {/* ── PERSISTENT HIDDEN MEDIA ELEMENTS ── */}
       {/* These elements stay in DOM at all times so video stream & canvas are never lost */}
       <video
@@ -343,7 +343,7 @@ export default function ProctorSandbox() {
       {/* MODE 1: SETUP SCREEN */}
       {/* ══════════════════════════════════════════════ */}
       {mode === "setup" && (
-        <div className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6">
+        <div className="min-h-dvh flex flex-col items-center justify-center p-4 sm:p-6">
           <canvas ref={canvasRef} className="hidden" />
 
           <div className="w-full max-w-xl">
@@ -446,7 +446,7 @@ export default function ProctorSandbox() {
       {/* MODE 2: STUDENT TEST MODE */}
       {/* ══════════════════════════════════════════════ */}
       {mode === "student" && (
-        <div className="min-h-screen p-4 sm:p-8">
+        <div className="min-h-dvh p-4 sm:p-8">
           <canvas ref={canvasRef} className="hidden" />
 
           <div className="max-w-3xl mx-auto">
@@ -601,7 +601,7 @@ export default function ProctorSandbox() {
       {/* MODE 3: ADMIN / MANAGER MONITORING VIEW */}
       {/* ══════════════════════════════════════════════ */}
       {mode === "admin" && (
-        <div className="flex flex-col lg:flex-row h-screen">
+        <div className="flex flex-col lg:flex-row h-dvh">
           {/* LEFT: Video Canvas + Timeline (70%) */}
           <div className="flex-1 lg:w-[70%] flex flex-col p-3 sm:p-4 gap-3">
             {/* Header */}

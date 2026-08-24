@@ -40,7 +40,7 @@ export function useExamSession(config: ExamSessionConfig) {
         const parsed = JSON.parse(saved);
         setState((prev) => ({ ...prev, answers: parsed }));
       }
-    } catch (e) {}
+    } catch (e) { console.warn("Failed to read from localStorage", e); }
 
     // Register session with backend
     fetch("/api/exams/start", {
@@ -74,7 +74,7 @@ export function useExamSession(config: ExamSessionConfig) {
       const updated = { ...prev.answers, [questionId]: value };
       try {
         localStorage.setItem(storageKeyRef.current, JSON.stringify(updated));
-      } catch (e) {}
+      } catch (e) { console.warn("Failed to save to localStorage (Quota Exceeded?)", e); }
       return { ...prev, answers: updated };
     });
   }, []);
@@ -106,7 +106,7 @@ export function useExamSession(config: ExamSessionConfig) {
           // Clear local storage on success
           try {
             localStorage.removeItem(storageKeyRef.current);
-          } catch (e) {}
+          } catch (e) { console.warn("Failed to clear localStorage", e); }
 
           setState((prev) => ({ ...prev, status: "SUBMITTED" }));
           return data;

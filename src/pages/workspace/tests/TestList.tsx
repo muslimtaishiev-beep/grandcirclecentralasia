@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useOutletContext, Link, useParams } from 'react-router-dom';
 import { FileQuestion, ShieldCheck, Play, Plus, Loader2, Database } from 'lucide-react';
 import { CopyButton } from '../../../components/ui/CopyButton';
-import { testsData } from '../../../data/testsData';
 import { collection, query, where, onSnapshot, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
 
@@ -15,26 +14,7 @@ export default function TestList() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
-  // Fallback static list while syncing or if Firestore has default items
-  const fallbackTests = [7, 8, 9, 10, 11].map(grade => {
-    const data = testsData[grade];
-    const ruCount = data?.russian?.length || 0;
-    const maCount = data?.math?.length || 0;
-    const loCount = data?.logic?.length || 0;
-    const enCount = data?.english?.length || 0;
-    const totalQuestions = ruCount + maCount + loCount + enCount;
 
-    return {
-      id: `test_grade_${grade}_${currentOrgId}`,
-      grade,
-      title: `Вступительный Экзамен (${grade} Класс) • Академия Будущих Лидеров`,
-      questionsCount: totalQuestions,
-      details: `Русский (${ruCount}), Математика (${maCount}), Логика (${loCount}), Английский (${enCount})`,
-      timeLimit: 90,
-      status: 'active',
-      aiProctoring: true,
-    };
-  });
 
   useEffect(() => {
     if (!currentOrgId) return;
@@ -52,47 +32,7 @@ export default function TestList() {
       });
 
       if (fetched.length === 0 && !syncing) {
-        setSyncing(true);
-        try {
-          for (const grade of [7, 8, 9, 10, 11]) {
-            const data = testsData[grade];
-            const ruCount = data?.russian?.length || 0;
-            const maCount = data?.math?.length || 0;
-            const loCount = data?.logic?.length || 0;
-            const enCount = data?.english?.length || 0;
-            const totalQuestions = ruCount + maCount + loCount + enCount;
-
-            const testDocId = `test_grade_${grade}_${currentOrgId}`;
-            await setDoc(doc(db, 'tests', testDocId), {
-              tenantId: currentOrgId,
-              grade,
-              title: `Вступительный Экзамен (${grade} Класс) • Академия Будущих Лидеров`,
-              questionsCount: totalQuestions,
-              timeLimit: 90,
-              aiProctoring: true,
-              status: 'active',
-              details: `Русский (${ruCount}), Математика (${maCount}), Логика (${loCount}), Английский (${enCount})`,
-              questions: {
-                russian: data?.russian || [],
-                math: data?.math || [],
-                logic: data?.logic || [],
-                english: data?.english || [],
-              },
-              answerKeys: {
-                russian: (data?.russian || []).map((q: any) => ({ id: q.id, answer: q.correctAnswer || q.answer || '', points: q.points || 1 })),
-                math: (data?.math || []).map((q: any) => ({ id: q.id, answer: q.correctAnswer || q.answer || '', points: q.points || 1 })),
-                logic: (data?.logic || []).map((q: any) => ({ id: q.id, answer: q.correctAnswer || q.answer || '', points: q.points || 1 })),
-                english: (data?.english || []).map((q: any) => ({ id: q.id, answer: q.correctAnswer || q.answer || '', points: q.points || 1 })),
-              },
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp()
-            }, { merge: true });
-          }
-        } catch (e) {
-          console.warn("Auto-seed notice:", e);
-        } finally {
-          setSyncing(false);
-        }
+        setSyncing(false);
       } else {
         fetched.sort((a, b) => (a.grade || 0) - (b.grade || 0));
         setDbTests(fetched);
@@ -106,7 +46,7 @@ export default function TestList() {
     return () => unsubscribe();
   }, [currentOrgId]);
 
-  const displayTests = dbTests.length > 0 ? dbTests : fallbackTests;
+  const displayTests = dbTests;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 text-[var(--text-main)]">
@@ -178,7 +118,8 @@ export default function TestList() {
             <tbody className="divide-y divide-[var(--border-color)]">
               {displayTests.map(test => {
                 const gradeNum = test.grade || 10;
-                const studentLink = `${window.location.origin}/test?grade=${gradeNum}`;
+                const testDocId = test.id || `test_grade_${gradeNum}_${currentOrgId}`;
+                const studentLink = `${window.location.origin}/test/${testDocId}`;
                 return (
                   <tr key={test.id || gradeNum} className="hover:bg-black/5 dark:hover:bg-white/5 transition group">
                     <td className="px-6 py-4">
@@ -206,7 +147,7 @@ export default function TestList() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <a
-                          href={`/test?grade=${gradeNum}`}
+                          href={`/test/${testDocId}`}
                           target="_blank"
                           rel="noreferrer"
                           className="px-3 py-1.5 bg-purple-600/10 hover:bg-purple-600/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 rounded-lg font-bold text-[11px] flex items-center gap-1.5 transition"

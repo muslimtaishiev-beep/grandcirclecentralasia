@@ -22,7 +22,7 @@ const Dashboard: React.FC<DashboardProps> = ({ lang = "ru" }) => {
   const isAccepted = userData?.decisionStatus === 'accepted';
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans">
+    <div className="min-h-dvh bg-slate-50 font-sans">
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">

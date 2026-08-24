@@ -80,7 +80,7 @@ export default function SiteRenderer() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">
+      <div className="min-h-dvh bg-slate-950 text-white flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
       </div>
     );
@@ -88,7 +88,7 @@ export default function SiteRenderer() {
 
   if (blocks.length === 0) {
     return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-4">
+      <div className="min-h-dvh bg-slate-950 text-white flex flex-col items-center justify-center p-4">
         <h1 className="text-2xl font-bold mb-2">Сайт не найден</h1>
         <p className="text-slate-400 text-sm">Сайт не существует или еще не был опубликован</p>
       </div>
@@ -96,10 +96,10 @@ export default function SiteRenderer() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans">
+    <div className="min-h-dvh bg-slate-950 text-slate-100 font-sans">
       <title>{siteTitle}</title>
 
-      <div className="max-w-5xl mx-auto border-x border-slate-800/60 min-h-screen">
+      <div className="max-w-5xl mx-auto border-x border-slate-800/60 min-h-dvh">
         {blocks.map((block) => (
           <section key={block.id} className="p-8 sm:p-16 border-b border-slate-800/60 last:border-b-0">
             

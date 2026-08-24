@@ -70,8 +70,30 @@ app.use(cors({
   },
   credentials: true
 }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.text({ limit: '50mb', type: 'text/plain' }));
+app.use(express.json({ limit: '5mb' }));
+app.use(express.text({ limit: '5mb', type: 'text/plain' }));
+
+// [Added by Round 4] GET /api/auth/me stub to prevent 404
+app.get("/api/auth/me", (req, res) => {
+  res.json({ success: true, user: req.user || null });
+});
+
+// [Added by Round 4] GET /api/tenant/config stub for SubdomainHostResolver
+app.get("/api/tenant/config", async (req, res) => {
+  try {
+    const subdomain = req.query.subdomain;
+    if (!subdomain) return res.status(400).json({ error: "Missing subdomain" });
+    const snap = await admin.firestore().collection("tenants").where("slug", "==", subdomain).limit(1).get();
+    if (snap.empty) {
+      return res.status(404).json({ error: "Tenant not found" });
+    }
+    const data = snap.docs[0].data();
+    res.json({ id: snap.docs[0].id, slug: data.slug, name: data.name, logoUrl: data.logoUrl, brandColor: data.brandColor });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 
 const PORT = Number(process.env.PORT) || 3005;
 const DB_PATH = path.join(process.cwd(), "data", "db.json");
@@ -212,6 +234,31 @@ async function writeDb(data: any) {
 }
 
 // Authentication middleware (Pure Firebase Auth verification)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUPERADMIN MIDDLEWARE (Added in Round 6)
+// ─────────────────────────────────────────────────────────────────────────────
+async function requireSuperadmin(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers["authorization"] || "";
+  const token = authHeader.replace("Bearer ", "").trim();
+  
+  if (!token || token === "null" || token === "undefined") {
+    return res.status(401).json({ error: "Unauthorized access: missing token." });
+  }
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    const snap = await admin.firestore().collection("superadmins").doc(decoded.uid).get();
+    if (!snap.exists) {
+      return res.status(403).json({ error: "Forbidden: Superadmin role required." });
+    }
+    (req as any).user = decoded;
+    return next();
+  } catch (e) {
+    return res.status(401).json({ error: "Unauthorized access: invalid token." });
+  }
+}
+
 async function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
   const authHeader = req.headers["authorization"] || "";
   const token = authHeader.replace("Bearer ", "").trim();
@@ -329,41 +376,6 @@ app.post("/api/proctoring/upload-evidence", authLimiter, async (req, res) => {
       }).catch(e => console.error("Notification creation error:", e));
     }
 
-// Employee Invitation & Password Creation Endpoint
-app.post("/api/auth/send-employee-invite", async (req: express.Request, res: express.Response) => {
-  const { email, fullName, tenantName, tenantId, permissions } = req.body || {};
-  if (!email) {
-    return res.status(400).json({ error: "Email is required" });
-  }
-
-  try {
-    let link = "";
-    try {
-      link = await admin.auth().generatePasswordResetLink(email);
-    } catch(authErr) {
-      try {
-        await admin.auth().createUser({
-          email,
-          displayName: fullName,
-        });
-        link = await admin.auth().generatePasswordResetLink(email);
-      } catch(createErr) {
-        link = `https://${tenantId || 'futureleaders'}.studyfreeforum.com/login?setupPassword=true&email=${encodeURIComponent(email)}`;
-      }
-    }
-
-    console.log(`[INVITE MAIL] Sent employee invitation to ${email} for ${tenantName}: ${link}`);
-
-    return res.json({
-      success: true,
-      message: `Приглашение отправлено на ${email}`,
-      inviteLink: link
-    });
-  } catch (err: any) {
-    console.error("Invite error:", err);
-    return res.status(500).json({ error: err.message || "Failed to send invite" });
-  }
-});
 
     // Forward to GAS for Google Drive upload
     const payload = {
@@ -419,24 +431,159 @@ app.post("/api/auth/send-employee-invite", async (req: express.Request, res: exp
 // SAAS EXAM API ENDPOINTS (High-Speed Vercel Routes)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// 1. POST /api/exams/start — Register or resume an exam session
+// Employee Invitation & Password Creation Endpoint
+app.post("/api/auth/send-employee-invite", async (req: express.Request, res: express.Response) => {
+  const { email, fullName, tenantName, tenantId, permissions } = req.body || {};
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" });
+  }
+
+  try {
+    let link = "";
+    try {
+      link = await admin.auth().generatePasswordResetLink(email);
+    } catch(authErr) {
+      try {
+        await admin.auth().createUser({
+          email,
+          displayName: fullName,
+        });
+        link = await admin.auth().generatePasswordResetLink(email);
+      } catch(createErr) {
+        link = `https://${tenantId || 'futureleaders'}.studyfreeforum.com/login?setupPassword=true&email=${encodeURIComponent(email)}`;
+      }
+    }
+
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+        <h2 style="color: #059669;">Приглашение в корпоративную платформу</h2>
+        <p>Здравствуйте, <strong>${fullName || 'Коллега'}</strong>!</p>
+        <p>Администрация организации <strong>${tenantName || 'Академия'}</strong> приглашает вас присоединиться к рабочей платформе.</p>
+        <p style="margin: 20px 0;">
+          <a href="${link}" style="background-color: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Установить Пароль и Войти</a>
+        </p>
+        <p style="color: #64748b; font-size: 12px;">Если кнопка не нажимается, скопируйте эту ссылку в браузер: <br/><code>${link}</code></p>
+      </div>
+    `;
+
+    console.log(`[INVITE MAIL] Generated invitation for ${email} (${tenantName}): ${link}`);
+
+    return res.json({
+      success: true,
+      message: `Приглашение отправлено на ${email}`,
+      inviteLink: link,
+      previewHtml: htmlContent
+    });
+  } catch (err: any) {
+    console.error("Invite error:", err);
+    return res.status(500).json({ error: err.message || "Failed to send invite" });
+  }
+});
+
+// Database Optimization & Data Migration Endpoint
+app.post("/api/admin/db/optimize", requireSuperadmin, async (req: express.Request, res: express.Response) => {
+  try {
+    const defaultTenantId = req.body?.tenantId || 'org_future_leaders';
+    const db = admin.firestore();
+    const results = { updatedSubmissions: 0, updatedDeals: 0, seededDepts: 0 };
+
+    // 1. Optimize Submissions (backfill tenantId & indexing fields)
+    const subSnap = await db.collection("submissions").get();
+    const batch1 = db.batch();
+    subSnap.docs.forEach(d => {
+      const data = d.data();
+      if (!data.tenantId) {
+        batch1.update(d.ref, { tenantId: defaultTenantId });
+        results.updatedSubmissions++;
+      }
+    });
+    if (results.updatedSubmissions > 0) await batch1.commit();
+
+    // 2. Optimize CRM Deals (backfill default departmentId)
+    const dealSnap = await db.collection("crm_deals").get();
+    const batch2 = db.batch();
+    dealSnap.docs.forEach(d => {
+      const data = d.data();
+      if (!data.departmentId) {
+        batch2.update(d.ref, { departmentId: 'dept_3', tenantId: data.tenantId || defaultTenantId });
+        results.updatedDeals++;
+      }
+    });
+    if (results.updatedDeals > 0) await batch2.commit();
+
+    console.log(`[DB OPTIMIZE] Optimized Firestore database for tenant ${defaultTenantId}:`, results);
+
+    return res.json({
+      success: true,
+      message: "База данных Firestore успешно оптимизирована",
+      results
+    });
+  } catch (err: any) {
+    console.error("[DB OPTIMIZE ERROR]", err);
+    return res.status(500).json({ error: err.message || "DB optimization failed" });
+  }
+});
+
+
+
+app.get("/api/tenant/config", async (req, res) => {
+  try {
+    const subdomain = req.query.subdomain as string;
+    if (!subdomain) {
+      return res.status(400).json({ success: false, error: "Missing subdomain" });
+    }
+
+    if (useFirebase) {
+      const snap = await admin.firestore().collection("tenants")
+        .where("subdomain", "==", subdomain)
+        .limit(1)
+        .get();
+
+      if (!snap.empty) {
+        return res.json({ success: true, tenant: snap.docs[0].data() });
+      }
+    }
+    
+    // Fallback or not found
+    return res.status(404).json({ success: false, error: "Tenant not found for subdomain: " + subdomain });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+function getHourlyPIN(hourOffset = 0): string {
+  const d = new Date();
+  d.setUTCHours(d.getUTCHours() + hourOffset);
+  const seed = d.getUTCFullYear() * 1000000 + (d.getUTCMonth() + 1) * 10000 + d.getUTCDate() * 100 + d.getUTCHours();
+  const pin = (seed * 1103515245 + 12345) % 9000 + 1000;
+  return Math.abs(pin).toString();
+}
+
 app.post("/api/exams/start", async (req, res) => {
   try {
-    const { testId, studentName, grade, shortId, isTester } = req.body;
+    const { testId, studentName, grade, shortId, enteredPin, tenantId } = req.body;
     if (!studentName || !grade) {
       return res.status(400).json({ success: false, error: "Missing studentName or grade" });
     }
 
+    const EXPECTED_PIN = getHourlyPIN();
+    const TESTER_PIN = process.env.VITE_TESTER_PIN || process.env.TESTER_PIN;
+    const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
+
+    if (enteredPin !== EXPECTED_PIN && !isTester) {
+      return res.status(403).json({ success: false, error: "Неверный PIN-код. Узнайте актуальный PIN у менеджера." });
+    }
+
     const studentShortId = shortId || Math.floor(100000 + Math.random() * 900000).toString();
     const sessionId = testId || `test_${studentShortId}_${Date.now()}`;
-    const tenant = resolveTenantFromApiKey(process.env.GAS_API_KEY);
+    const resolvedTenantId = tenantId || 'org_future_leaders';
 
     // Save session in Firestore if available
     if (useFirebase) {
       try {
         await admin.firestore().collection("exam_sessions").doc(sessionId).set({
           id: sessionId,
-          tenantId: tenant.org_id,
+          tenantId: resolvedTenantId,
           studentName,
           studentShortId,
           grade: Number(grade),
@@ -451,12 +598,52 @@ app.post("/api/exams/start", async (req, res) => {
       }
     }
 
+    let testData: any = null;
+    if (useFirebase) {
+      try {
+        const testSlug = resolvedTenantId === 'org_future_leaders' ? `future_leaders_grade_${grade}` : `test_grade_${grade}`;
+        const testRef = admin.firestore().collection("tests").doc(testSlug);
+        const testSnap = await testRef.get();
+        
+        if (testSnap.exists) {
+          testData = testSnap.data();
+          // Fetch questions subcollection
+          const qSnap = await testRef.collection("questions").get();
+          const questionsList = qSnap.docs.map(d => d.data());
+          
+          // Group by section and strip correct answers
+          const grouped: any = { russian: [], math: [], logic: [], english: [] };
+          questionsList.forEach((q: any) => {
+            const safeQ = { ...q };
+            delete safeQ.correctAnswer; // NEVER send to client
+            if (grouped[q.section]) {
+              grouped[q.section].push(safeQ);
+            } else {
+              grouped[q.section] = [safeQ];
+            }
+          });
+          
+          // Sort by orderIndex
+          Object.keys(grouped).forEach(k => {
+            grouped[k].sort((a: any, b: any) => (a.orderIndex || 0) - (b.orderIndex || 0));
+          });
+          
+          testData.questions = grouped;
+        } else {
+          return res.status(404).json({ success: false, error: "Тест для данного класса не найден" });
+        }
+      } catch (e) {
+        console.warn("[Exams/Start] Failed to fetch test data:", e);
+      }
+    }
+
     return res.json({
       success: true,
       sessionId,
       studentShortId,
       timeLimitMinutes: 90,
-      status: "IN_PROGRESS"
+      status: "IN_PROGRESS",
+      testData
     });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
@@ -490,24 +677,51 @@ app.post("/api/exams/telemetry", async (req, res) => {
 // 3. POST /api/exams/submit — High-speed TS scoring + Firestore + GAS Dual-Write
 app.post("/api/exams/submit", async (req, res) => {
   try {
-    const { sessionId, shortId, studentName, grade, answers, cheated, isTester, isRetake } = req.body;
+    const { sessionId, shortId, studentName, grade, answers, cheated, isTester, isRetake, tenantId } = req.body;
     if (!shortId || !studentName || !grade) {
       return res.status(400).json({ success: false, error: "Missing required submission fields" });
     }
 
-    const tenant = resolveTenantFromApiKey(process.env.GAS_API_KEY);
+    const resolvedTenantId = tenantId || 'org_future_leaders';
 
-    // 1. Calculate Scores using TypeScript Engine (100% accuracy)
-    const result = calculateScoresTs(grade, answers);
+    // 1. Fetch answer keys from Firestore
+    let keys = {};
+    let testSnapshot: any = null;
+    if (useFirebase) {
+      try {
+        const keySnap = await admin.firestore().collection("test_answer_keys")
+          .where("tenantId", "==", resolvedTenantId)
+          .where("grade", "==", Number(grade))
+          .limit(1)
+          .get();
+        if (!keySnap.empty) {
+          keys = keySnap.docs[0].data()?.keys || {};
+        }
+      } catch (e) {
+        console.warn("[Exams/Submit] Failed to fetch answer keys:", e);
+      }
+    }
+
+    // 2. Calculate Scores using TypeScript Engine (100% accuracy)
+    const result = calculateScoresTs(grade, answers, keys as any);
     const { scores, diagnosticsRaw, summaryText } = result;
 
-    // 2. Write to Firestore `submissions` collection
-    let submissionId = `sub_${shortId}_${Date.now()}`;
+    // Calculate Max Score Snapshot directly from keys
+    let maxScoreSnapshot = 0;
+    if (keys) {
+      const maxRu = Object.values((keys as any).russian || {}).reduce((acc: number, curr: any) => acc + (curr.pts || 1), 0);
+      const maxMa = Object.values((keys as any).math || {}).reduce((acc: number, curr: any) => acc + (curr.pts || 1), 0);
+      const maxLo = Object.values((keys as any).logic || {}).reduce((acc: number, curr: any) => acc + (curr.pts || 1), 0);
+      maxScoreSnapshot = maxRu + maxMa + maxLo;
+    }
+
+    // 3. Write to Firestore `submissions` collection
+    let submissionId = sessionId ? `sub_${sessionId}` : `sub_${shortId}_${Date.now()}`;
     if (useFirebase) {
       try {
         const subDoc = {
           id: submissionId,
-          tenantId: tenant.org_id,
+          tenantId: resolvedTenantId,
           testId: sessionId || `test_${shortId}`,
           sessionId: sessionId || `test_${shortId}`,
           studentName,
@@ -516,11 +730,26 @@ app.post("/api/exams/submit", async (req, res) => {
           submittedAt: admin.firestore.Timestamp.now(),
           cheated: Boolean(cheated),
           scores,
+          maxScoreSnapshot,
           answersJson: typeof answers === 'string' ? answers : JSON.stringify(answers || {}),
           diagnosticSummary: summaryText,
+          diagnosticsRaw,
+          testSnapshot,
           status: "ЗАВЕРШЕН"
         };
-        await admin.firestore().collection("submissions").doc(submissionId).set(subDoc);
+        const submissionRef = admin.firestore().collection("submissions").doc(submissionId);
+        const isDuplicate = await admin.firestore().runTransaction(async (t) => {
+          const doc = await t.get(submissionRef);
+          if (doc.exists) return true;
+          t.set(submissionRef, subDoc);
+          return false;
+        });
+
+        if (isDuplicate) {
+          console.log(`[Exams/Submit] Idempotent skip: ${submissionId} already exists.`);
+          return res.json({ success: true, warning: "Duplicate submission ignored", result: { scores, diagnosticsRaw, summaryText } });
+        }
+        
         console.log(`[Exams/Submit] Firestore write SUCCESS: ${submissionId}`);
 
         // Write Audit Log for exam submission
@@ -620,7 +849,7 @@ app.get("/api/public/maintenance", async (req, res) => {
   }
 });
 
-app.post("/api/admin/maintenance", requireAuth, async (req, res) => {
+app.post("/api/admin/maintenance", requireSuperadmin, async (req, res) => {
   const { enabled, message, estimatedTime } = req.body;
   const db = await readDb();
   if (!db.settings) db.settings = {};
@@ -670,9 +899,13 @@ app.get("/api/public/check-retake/:shortId", async (req, res) => {
     // 1. Try Firebase if enabled
     if (useFirebase) {
       try {
+        const tenantId = req.query.tenantId || "org_future_leaders";
         const doc = await admin.firestore().collection("retakes").doc(req.params.shortId).get();
         if (doc.exists && doc.data()?.allowed === true) {
-          allowed = true;
+          const docTenantId = doc.data()?.tenantId;
+          if (!docTenantId || docTenantId === tenantId) {
+            allowed = true;
+          }
         }
       } catch (fe) {}
     }
@@ -840,8 +1073,10 @@ app.post("/api/gas", async (req, res) => {
         const decisionStatus = payload.finalDecision === "ПРИНЯТ" ? "accepted" : "rejected";
         const childName = payload.childName.trim().toLowerCase();
         
-        // Find user by matching first/last name
-        const snapshot = await admin.firestore().collection('users').get();
+        // Find user by matching first/last name, scoped to tenant
+        const snapshot = await admin.firestore().collection('users')
+          .where("tenantId", "==", payload.tenantId || "org_future_leaders")
+          .get();
         let matchedUserId = null;
         
         snapshot.forEach(doc => {
@@ -1052,6 +1287,8 @@ app.post("/api/manager/allow-retake", requireAuth, async (req, res) => {
   
   try {
     await admin.firestore().collection("retakes").doc(shortId).set({
+      shortId,
+      tenantId: req.body.tenantId || "org_future_leaders",
       allowed: true,
       timestamp: new Date().toISOString()
     }, { merge: true });
@@ -1062,13 +1299,13 @@ app.post("/api/manager/allow-retake", requireAuth, async (req, res) => {
 });
 
 // 4. Get administrative state (with subscribers & actual settings with password)
-app.get("/api/admin/data", requireAuth, async (req, res) => {
+app.get("/api/admin/data", requireSuperadmin, async (req, res) => {
   const db = await readDb();
   res.json(db);
 });
 
 // Update Administrative Settings
-app.put("/api/admin/settings", requireAuth, async (req, res) => {
+app.put("/api/admin/settings", requireSuperadmin, async (req, res) => {
   const { eventDate, eventVenue, contactEmail, contactPhone } = req.body;
   const db = await readDb();
 
@@ -1084,7 +1321,7 @@ app.put("/api/admin/settings", requireAuth, async (req, res) => {
 });
 
 // --- Speakers CRUD ---
-app.post("/api/admin/speakers", requireAuth, async (req, res) => {
+app.post("/api/admin/speakers", requireSuperadmin, async (req, res) => {
   const { name_ru, name_en, university, major_ru, major_en, admissionYear, story_ru, story_en, lectureTopic_ru, lectureTopic_en, lectureTime, colorTheme, isFeatured, avatarBase64, lat, lng } = req.body;
   
   if (!name_en || !university || !lectureTopic_en) {
@@ -1120,7 +1357,7 @@ app.post("/api/admin/speakers", requireAuth, async (req, res) => {
   res.status(201).json({ success: true, speaker: newSpeaker });
 });
 
-app.post("/api/admin/speakers/bulk", requireAuth, async (req, res) => {
+app.post("/api/admin/speakers/bulk", requireSuperadmin, async (req, res) => {
   const { speakers } = req.body;
   if (!Array.isArray(speakers)) {
     return res.status(400).json({ error: "Invalid data format. Expected an array of speakers." });
@@ -1177,7 +1414,7 @@ app.post("/api/admin/speakers/bulk", requireAuth, async (req, res) => {
   res.status(201).json({ success: true, count: speakers.length, newUniversitiesAdded });
 });
 
-app.put("/api/admin/speakers/:id", requireAuth, async (req, res) => {
+app.put("/api/admin/speakers/:id", requireSuperadmin, async (req, res) => {
   const { id } = req.params;
   const db = await readDb();
   const index = db.speakers.findIndex((s: any) => s.id === id);
@@ -1212,7 +1449,7 @@ app.put("/api/admin/speakers/:id", requireAuth, async (req, res) => {
   res.json({ success: true, speaker: db.speakers[index] });
 });
 
-app.delete("/api/admin/speakers/:id", requireAuth, async (req, res) => {
+app.delete("/api/admin/speakers/:id", requireSuperadmin, async (req, res) => {
   const { id } = req.params;
   const db = await readDb();
   
@@ -1224,7 +1461,7 @@ app.delete("/api/admin/speakers/:id", requireAuth, async (req, res) => {
 });
 
 // --- Schedule / Program CRUD ---
-app.post("/api/admin/program", requireAuth, async (req, res) => {
+app.post("/api/admin/program", requireSuperadmin, async (req, res) => {
   const { time, title_ru, title_en, description_ru, description_en, speakerId } = req.body;
 
   if (!time || !title_en) {
@@ -1249,7 +1486,7 @@ app.post("/api/admin/program", requireAuth, async (req, res) => {
   res.status(201).json({ success: true, slot: newSlot });
 });
 
-app.put("/api/admin/program/:id", requireAuth, async (req, res) => {
+app.put("/api/admin/program/:id", requireSuperadmin, async (req, res) => {
   const { id } = req.params;
   const db = await readDb();
   const index = db.program.findIndex((slot: any) => slot.id === id);
@@ -1274,7 +1511,7 @@ app.put("/api/admin/program/:id", requireAuth, async (req, res) => {
   res.json({ success: true, slot: db.program[index] });
 });
 
-app.delete("/api/admin/program/:id", requireAuth, async (req, res) => {
+app.delete("/api/admin/program/:id", requireSuperadmin, async (req, res) => {
   const { id } = req.params;
   const db = await readDb();
   
@@ -1287,7 +1524,7 @@ app.delete("/api/admin/program/:id", requireAuth, async (req, res) => {
 
 // --- Universities CRUD ---
 
-app.post("/api/admin/universities", requireAuth, async (req, res) => {
+app.post("/api/admin/universities", requireSuperadmin, async (req, res) => {
   const db = await readDb();
   if (!db.universities) db.universities = [];
   
@@ -1303,7 +1540,7 @@ app.post("/api/admin/universities", requireAuth, async (req, res) => {
   res.status(201).json({ success: true, university: newUniversity });
 });
 
-app.put("/api/admin/universities/:id", requireAuth, async (req, res) => {
+app.put("/api/admin/universities/:id", requireSuperadmin, async (req, res) => {
   const db = await readDb();
   if (!db.universities) db.universities = [];
   const idx = db.universities.findIndex((u: any) => String(u.id) === String(req.params.id));
@@ -1316,7 +1553,7 @@ app.put("/api/admin/universities/:id", requireAuth, async (req, res) => {
   }
 });
 
-app.delete("/api/admin/universities/:id", requireAuth, async (req, res) => {
+app.delete("/api/admin/universities/:id", requireSuperadmin, async (req, res) => {
   const db = await readDb();
   if (!db.universities) db.universities = [];
   db.universities = db.universities.filter((u: any) => String(u.id) !== String(req.params.id));
@@ -1325,7 +1562,7 @@ app.delete("/api/admin/universities/:id", requireAuth, async (req, res) => {
 });
 
 // --- Partners CRUD ---
-app.post("/api/admin/partners", requireAuth, async (req, res) => {
+app.post("/api/admin/partners", requireSuperadmin, async (req, res) => {
   const { name, role_ru, role_en, tier, url, logoUrl, logoBase64 } = req.body;
 
   if (!name) {
@@ -1351,7 +1588,7 @@ app.post("/api/admin/partners", requireAuth, async (req, res) => {
   res.status(201).json({ success: true, partner: newPartner });
 });
 
-app.put("/api/admin/partners/:id", requireAuth, async (req, res) => {
+app.put("/api/admin/partners/:id", requireSuperadmin, async (req, res) => {
   const { id } = req.params;
   const db = await readDb();
   const index = db.partners.findIndex((p: any) => p.id === id);
@@ -1377,7 +1614,7 @@ app.put("/api/admin/partners/:id", requireAuth, async (req, res) => {
   res.json({ success: true, partner: db.partners[index] });
 });
 
-app.delete("/api/admin/partners/:id", requireAuth, async (req, res) => {
+app.delete("/api/admin/partners/:id", requireSuperadmin, async (req, res) => {
   const { id } = req.params;
   const db = await readDb();
 
@@ -1389,7 +1626,7 @@ app.delete("/api/admin/partners/:id", requireAuth, async (req, res) => {
 });
 
 // --- Tickets CRUD ---
-app.post("/api/admin/tickets", requireAuth, async (req, res) => {
+app.post("/api/admin/tickets", requireSuperadmin, async (req, res) => {
   const { name_ru, name_en, name_kg, price, features_ru, features_en, features_kg, url } = req.body;
   if (!name_en) return res.status(400).json({ error: "Ticket name is required." });
   
@@ -1404,7 +1641,7 @@ app.post("/api/admin/tickets", requireAuth, async (req, res) => {
 
 
 
-app.delete("/api/admin/tickets/:id", requireAuth, async (req, res) => {
+app.delete("/api/admin/tickets/:id", requireSuperadmin, async (req, res) => {
   const { id } = req.params;
   const db = await readDb();
   if (db.tickets) {
@@ -1415,7 +1652,7 @@ app.delete("/api/admin/tickets/:id", requireAuth, async (req, res) => {
 });
 
 // --- Metrics CRUD ---
-app.post("/api/admin/metrics", requireAuth, async (req, res) => {
+app.post("/api/admin/metrics", requireSuperadmin, async (req, res) => {
   const { value, label_ru, label_en, sublabel_ru, sublabel_en, order } = req.body;
   if (!value || !label_en) {
     return res.status(400).json({ error: "Value and English Label are required." });
@@ -1441,7 +1678,7 @@ app.post("/api/admin/metrics", requireAuth, async (req, res) => {
   res.status(201).json({ success: true, metric: newMetric });
 });
 
-app.put("/api/admin/metrics/:id", requireAuth, async (req, res) => {
+app.put("/api/admin/metrics/:id", requireSuperadmin, async (req, res) => {
   const { id } = req.params;
   const db = await readDb();
   if (!db.metrics) db.metrics = [];
@@ -1468,7 +1705,7 @@ app.put("/api/admin/metrics/:id", requireAuth, async (req, res) => {
   res.json({ success: true, metric: db.metrics[index] });
 });
 
-app.delete("/api/admin/metrics/:id", requireAuth, async (req, res) => {
+app.delete("/api/admin/metrics/:id", requireSuperadmin, async (req, res) => {
   const { id } = req.params;
   const db = await readDb();
   if (!db.metrics) db.metrics = [];
@@ -1479,7 +1716,7 @@ app.delete("/api/admin/metrics/:id", requireAuth, async (req, res) => {
 });
 
 // --- Tickets Configuration ---
-app.put("/api/admin/tickets/:id", requireAuth, async (req, res) => {
+app.put("/api/admin/tickets/:id", requireSuperadmin, async (req, res) => {
   const { id } = req.params;
   const db = await readDb();
   const index = db.tickets.findIndex((t: any) => t.id === id);
@@ -1508,7 +1745,7 @@ app.put("/api/admin/tickets/:id", requireAuth, async (req, res) => {
 });
 
 // Export Subscribers to CSV
-app.get("/api/admin/subscribers/export", requireAuth, async (req, res) => {
+app.get("/api/admin/subscribers/export", requireSuperadmin, async (req, res) => {
   try {
     const db = await readDb();
     const subs = db.subscribers || [];

@@ -95,7 +95,7 @@ export default function PsychologistForm() {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="min-h-dvh bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center">
           <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">🧠</div>
           <h2 className="text-2xl font-bold mb-4">Вход Психолога</h2>
@@ -125,7 +125,7 @@ export default function PsychologistForm() {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="min-h-dvh bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-md w-full text-center">
           <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
           <h2 className="text-2xl font-bold mb-2">Вердикт сохранен!</h2>
@@ -137,7 +137,7 @@ export default function PsychologistForm() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 py-12 px-4">
+    <div className="min-h-dvh bg-slate-50 py-12 px-4">
       <div className="max-w-lg mx-auto bg-white rounded-3xl shadow-xl overflow-hidden">
         <div className="bg-purple-600 px-8 py-6 text-white text-center">
           <h1 className="text-2xl font-bold">Оценка Психолога</h1>
