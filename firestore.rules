@@ -83,7 +83,7 @@ service cloud.firestore {
     match /notifications/{docId} { allow read, write: if hasTenantAccess(); }
 
     // Billing & Memberships
-    match /memberships/{docId} { allow read, write: if isSuperadmin(); }
+    match /memberships/{docId} { allow read, write: if hasTenantAccess(); }
     match /departments/{docId} { allow read, write: if hasTenantAccess(); }
     
     // -------------------------------------------------------------
