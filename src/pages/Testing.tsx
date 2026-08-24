@@ -1212,9 +1212,25 @@ export default function Testing() {
 
   const test = (firestoreTestData && firestoreTestData.questions) 
     ? firestoreTestData.questions 
-    : testsData[grade!];
-  if (!test) {
-    return <div className="min-h-screen flex items-center justify-center p-4">Ошибка загрузки теста. Обновите страницу.</div>;
+    : (testsData[grade!]?.questions || testsData[grade!]);
+
+  const hasQuestions = test && (
+    (test.russian && test.russian.length > 0) || 
+    (test.math && test.math.length > 0) || 
+    (test.english && test.english.length > 0) ||
+    (test.logic && test.logic.length > 0)
+  );
+
+  if (!hasQuestions) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center space-y-4 border border-slate-200">
+          <div className="animate-spin h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
+          <h3 className="text-xl font-bold text-slate-800">Загрузка теста из базы данных...</h3>
+          <p className="text-sm text-slate-500">Загружаются официальные задания из БД для {grade} класса.</p>
+        </div>
+      </div>
+    );
   }
 
   return (
