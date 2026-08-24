@@ -63,6 +63,7 @@ service cloud.firestore {
     // Tasks & Collab (Docs, Sheets)
     match /tasks/{docId} { allow read, write: if hasTenantAccess(); }
     match /documents/{docId} { allow read, write: if hasTenantAccess(); }
+    match /workspace_documents/{docId} { allow read, write: if hasTenantAccess(); }
     match /spreadsheets/{docId} { allow read, write: if hasTenantAccess(); }
     match /document_templates/{docId} { 
       allow read: if isAuthenticated() && (resource.data.tenantId == 'GLOBAL' || hasTenantAccess());

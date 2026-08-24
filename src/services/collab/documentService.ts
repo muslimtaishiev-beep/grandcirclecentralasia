@@ -3,6 +3,21 @@ import { collection, doc, query, onSnapshot, setDoc, updateDoc, deleteDoc, getDo
 import { WorkspaceDocument, DocBlock, DocAccessLevel, UserDocRole } from '../../types/collab';
 import { generateShortId } from '../../lib/utils';
 
+// Helper to remove 'undefined' values which cause Firestore write errors
+function sanitizeData(obj: any): any {
+  if (obj === null || obj === undefined) return null;
+  if (Array.isArray(obj)) return obj.map(sanitizeData);
+  if (typeof obj === 'object') {
+    const cleaned: any = {};
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      cleaned[key] = val === undefined ? null : sanitizeData(val);
+    }
+    return cleaned;
+  }
+  return obj;
+}
+
 class DocumentService {
   subscribeToList(
     tenantId: string, 
@@ -15,13 +30,12 @@ class DocumentService {
       const allDocs = snap.docs.map(d => ({ ...d.data(), id: d.id } as WorkspaceDocument));
       
       const filtered = allDocs.filter(d => {
-        // Admins or Document Author always see the document
         if (isFullAdmin || d.authorStaffId === staffId) return true;
 
         const level = d.accessLevel || 'company_edit';
 
-        if (level === 'private') return false; // Private docs hidden from everyone else
-        if (level === 'company_view' || level === 'company_edit') return true; // Visible to company
+        if (level === 'private') return false;
+        if (level === 'company_view' || level === 'company_edit') return true;
 
         if (level === 'specific_users') {
           return d.permissionsMap && Boolean(d.permissionsMap[staffId]);
@@ -63,33 +77,33 @@ class DocumentService {
       lastEditedByStaffId: authorStaffId,
       blocks: initialBlocks,
       isLocked: false,
-      accessLevel: 'private', // New documents default to private for the author!
+      accessLevel: 'private',
       permissionsMap: { [authorStaffId]: 'editor' },
       tags: [],
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
 
-    await setDoc(ref, newDoc);
+    await setDoc(ref, sanitizeData(newDoc));
     return ref.id;
   }
 
   async updateBlocks(tenantId: string, docId: string, blocks: DocBlock[], staffId: string) {
     const ref = doc(db, 'tenants', tenantId, 'workspace_documents', docId);
-    await updateDoc(ref, {
+    await updateDoc(ref, sanitizeData({
       blocks,
       lastEditedByStaffId: staffId,
       updatedAt: Date.now()
-    });
+    }));
   }
 
   async updateTitle(tenantId: string, docId: string, title: string, staffId: string) {
     const ref = doc(db, 'tenants', tenantId, 'workspace_documents', docId);
-    await updateDoc(ref, {
+    await updateDoc(ref, sanitizeData({
       title,
       lastEditedByStaffId: staffId,
       updatedAt: Date.now()
-    });
+    }));
   }
 
   async updateAccessControl(
@@ -100,12 +114,12 @@ class DocumentService {
     staffId: string
   ) {
     const ref = doc(db, 'tenants', tenantId, 'workspace_documents', docId);
-    await updateDoc(ref, {
+    await updateDoc(ref, sanitizeData({
       accessLevel,
       permissionsMap,
       lastEditedByStaffId: staffId,
       updatedAt: Date.now()
-    });
+    }));
   }
 
   async deleteDocument(tenantId: string, docId: string) {
