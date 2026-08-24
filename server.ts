@@ -674,234 +674,194 @@ app.post("/api/exams/telemetry", async (req, res) => {
   }
 });
 
+// Helper: process exam submission locally using Firestore keys and TypeScript scoring engine
+async function processExamSubmission(payload: any) {
+  const { sessionId, shortId, studentName, grade, answers, cheated, isTester, isRetake, tenantId, action } = payload;
+  const studentEmail = payload.studentEmail || payload.email || '';
+  const studentPhone = payload.studentPhone || payload.phone || '';
+  const resolvedTenantId = tenantId || 'org_future_leaders';
+
+  if (!shortId || !studentName || !grade) {
+    return { success: false, error: "Missing required submission fields" };
+  }
+
+  // 1. Fetch answer keys from Firestore
+  let keys: any = {};
+  if (useFirebase) {
+    try {
+      const candidateIds = [
+        `test_grade_${grade}_${resolvedTenantId}`,
+        `test_grade_${grade}`,
+        `${grade}`
+      ];
+      for (const candId of candidateIds) {
+        const docSnap = await admin.firestore().collection("test_answer_keys").doc(candId).get();
+        if (docSnap.exists) {
+          const docKeys = docSnap.data()?.keys || {};
+          if (Object.keys(docKeys).length > 0) {
+            keys = docKeys;
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[Exams/Submit] Failed to fetch answer keys from Firestore:", e);
+    }
+  }
+
+  // 2. Parse answers if string
+  let parsedAnswers = answers;
+  if (typeof answers === 'string') {
+    try { parsedAnswers = JSON.parse(answers); } catch (e) { parsedAnswers = {}; }
+  }
+
+  // 3. Calculate Scores using TypeScript Engine (100% accuracy)
+  const result = calculateScoresTs(grade, parsedAnswers, keys as any);
+  const { scores, diagnosticsRaw, summaryText } = result;
+
+  // Calculate Max Score Snapshot
+  let maxScoreSnapshot = 0;
+  if (keys) {
+    const maxRu = Object.values((keys as any).russian || {}).reduce((acc: number, curr: any) => acc + (curr.pts || 1), 0);
+    const maxMa = Object.values((keys as any).math || {}).reduce((acc: number, curr: any) => acc + (curr.pts || 1), 0);
+    const maxLo = Object.values((keys as any).logic || {}).reduce((acc: number, curr: any) => acc + (curr.pts || 1), 0);
+    const maxEn = Object.values((keys as any).english || {}).reduce((acc: number, curr: any) => acc + (curr.pts || 1), 0);
+    maxScoreSnapshot = maxRu + maxMa + maxLo + maxEn;
+  }
+
+  // 4. Write to Firestore `submissions`
+  const submissionId = sessionId ? `sub_${sessionId}` : `sub_${shortId}_${Date.now()}`;
+  if (useFirebase) {
+    try {
+      const subDoc = {
+        id: submissionId,
+        tenantId: resolvedTenantId,
+        testId: sessionId || `test_${shortId}`,
+        sessionId: sessionId || `test_${shortId}`,
+        studentName: studentName || 'Неизвестно',
+        studentEmail: studentEmail || `${shortId}@student.edu`,
+        studentPhone: studentPhone || '—',
+        studentShortId: String(shortId),
+        grade: Number(grade),
+        submittedAt: admin.firestore.Timestamp.now(),
+        cheated: Boolean(cheated),
+        scores,
+        maxScoreSnapshot,
+        answersJson: typeof answers === 'string' ? answers : JSON.stringify(answers || {}),
+        diagnosticSummary: summaryText,
+        diagnosticsRaw,
+        status: "ЗАВЕРШЕН"
+      };
+
+      await admin.firestore().collection("submissions").doc(submissionId).set(subDoc, { merge: true });
+
+      // AUTOMATIC CRM SYNC: Save student to CRM Contacts & CRM Deals
+      const contactId = `cnt_${resolvedTenantId}_${shortId}`;
+      const contactDoc = {
+        id: contactId,
+        tenantId: resolvedTenantId,
+        fullName: studentName,
+        name: studentName,
+        email: studentEmail || `${shortId}@student.edu`,
+        phone: studentPhone || '—',
+        shortId: String(shortId),
+        type: 'student',
+        grade: Number(grade),
+        totalScore: scores.total || 0,
+        scores: scores,
+        status: 'test_completed',
+        updatedAt: admin.firestore.Timestamp.now()
+      };
+      await admin.firestore().collection("crm_contacts").doc(contactId).set(contactDoc, { merge: true });
+
+      const dealId = `deal_${resolvedTenantId}_${shortId}`;
+      const dealDoc = {
+        id: dealId,
+        tenantId: resolvedTenantId,
+        title: `Поступление: ${studentName} (${grade} класс)`,
+        contactName: studentName,
+        contactPhone: studentPhone || '—',
+        contactEmail: studentEmail || '—',
+        shortId: String(shortId),
+        grade: Number(grade),
+        stageId: 'stage_new',
+        value: 15000,
+        testScore: scores.total || 0,
+        cheated: Boolean(cheated),
+        updatedAt: admin.firestore.Timestamp.now()
+      };
+      await admin.firestore().collection("crm_deals").doc(dealId).set(dealDoc, { merge: true });
+
+      // Audit Log
+      admin.firestore().collection("audit_logs").add({
+        timestamp: admin.firestore.Timestamp.now(),
+        createdAt: new Date().toISOString(),
+        action: "EXAM_SUBMITTED",
+        tenantId: resolvedTenantId,
+        sessionId: submissionId,
+        studentName: studentName || "Неизвестно",
+        studentShortId: String(shortId),
+        grade: Number(grade) || 0,
+        scores: scores,
+        cheated: Boolean(cheated)
+      }).catch(e => console.error("Audit log write notice:", e));
+    } catch (fsErr) {
+      console.warn("[Exams/Submit] Firestore write notice:", fsErr);
+    }
+  }
+
+  // 5. Asynchronous Dual-Write to GAS in background
+  const gasUrl = process.env.VITE_GAS_URL || process.env.GAS_URL;
+  const gasApiKey = process.env.GAS_API_KEY || process.env.VITE_GAS_API_KEY;
+  if (gasUrl && gasApiKey) {
+    const gasPayload = {
+      action: action || "submitTest",
+      apiKey: gasApiKey,
+      testId: sessionId || `test_${shortId}`,
+      shortId: String(shortId),
+      studentName,
+      studentEmail,
+      studentPhone,
+      grade,
+      answers: typeof answers === 'string' ? answers : JSON.stringify(answers || {}),
+      cheated: cheated ? "ДА" : "НЕТ",
+      isTester: Boolean(isTester),
+      isRetake: Boolean(isRetake)
+    };
+    fetch(gasUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(gasPayload),
+      signal: AbortSignal.timeout(10000)
+    }).catch(err => console.warn("[Exams/Submit] Background GAS Dual-Write notice:", err.message));
+  }
+
+  return {
+    success: true,
+    totalScore: scores.total,
+    scores: {
+      russian: scores.russian,
+      math: scores.math,
+      logic: scores.logic,
+      english: scores.english
+    },
+    cheated: Boolean(cheated),
+    summaryText
+  };
+}
+
 // 3. POST /api/exams/submit — High-speed TS scoring + Firestore + GAS Dual-Write
 app.post("/api/exams/submit", async (req, res) => {
   try {
-    const { sessionId, shortId, studentName, grade, answers, cheated, isTester, isRetake, tenantId } = req.body;
-    const studentEmail = req.body.studentEmail || req.body.email || '';
-    const studentPhone = req.body.studentPhone || req.body.phone || '';
-
-    if (!shortId || !studentName || !grade) {
-      return res.status(400).json({ success: false, error: "Missing required submission fields" });
-    }
-
-    const resolvedTenantId = tenantId || 'org_future_leaders';
-
-    // 1. Fetch answer keys from Firestore
-    let keys = {};
-    let testSnapshot: any = null;
-    if (useFirebase) {
-      try {
-        let keySnap = await admin.firestore().collection("test_answer_keys")
-          .where("tenantId", "==", resolvedTenantId)
-          .where("grade", "==", Number(grade))
-          .limit(1)
-          .get();
-        
-        if (!keySnap.empty) {
-          keys = keySnap.docs[0].data()?.keys || {};
-        } else {
-          // Fallback direct doc lookups
-          const candidateIds = [`test_grade_${grade}`, `test_grade_${grade}_${resolvedTenantId}`, `${grade}`];
-          for (const candId of candidateIds) {
-            const docSnap = await admin.firestore().collection("test_answer_keys").doc(candId).get();
-            if (docSnap.exists) {
-              keys = docSnap.data()?.keys || {};
-              break;
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("[Exams/Submit] Failed to fetch answer keys:", e);
-      }
-    }
-
-    // 2. Calculate Scores using TypeScript Engine (100% accuracy)
-    const result = calculateScoresTs(grade, answers, keys as any);
-    const { scores, diagnosticsRaw, summaryText } = result;
-
-    // Calculate Max Score Snapshot directly from keys
-    let maxScoreSnapshot = 0;
-    if (keys) {
-      const maxRu = Object.values((keys as any).russian || {}).reduce((acc: number, curr: any) => acc + (curr.pts || 1), 0);
-      const maxMa = Object.values((keys as any).math || {}).reduce((acc: number, curr: any) => acc + (curr.pts || 1), 0);
-      const maxLo = Object.values((keys as any).logic || {}).reduce((acc: number, curr: any) => acc + (curr.pts || 1), 0);
-      maxScoreSnapshot = maxRu + maxMa + maxLo;
-    }
-
-    // 3. Write to Firestore `submissions` collection
-    let submissionId = sessionId ? `sub_${sessionId}` : `sub_${shortId}_${Date.now()}`;
-    if (useFirebase) {
-      try {
-        const subDoc = {
-          id: submissionId,
-          tenantId: resolvedTenantId,
-          testId: sessionId || `test_${shortId}`,
-          sessionId: sessionId || `test_${shortId}`,
-          studentName,
-          studentEmail: studentEmail || `${shortId}@student.edu`,
-          studentPhone: studentPhone || '—',
-          studentShortId: shortId,
-          grade: Number(grade),
-          submittedAt: admin.firestore.Timestamp.now(),
-          cheated: Boolean(cheated),
-          scores,
-          maxScoreSnapshot,
-          answersJson: typeof answers === 'string' ? answers : JSON.stringify(answers || {}),
-          diagnosticSummary: summaryText,
-          diagnosticsRaw,
-          testSnapshot,
-          status: "ЗАВЕРШЕН"
-        };
-        const submissionRef = admin.firestore().collection("submissions").doc(submissionId);
-        const isDuplicate = await admin.firestore().runTransaction(async (t) => {
-          const doc = await t.get(submissionRef);
-          if (doc.exists) return true;
-          t.set(submissionRef, subDoc);
-          return false;
-        });
-
-        if (isDuplicate) {
-          console.log(`[Exams/Submit] Idempotent skip: ${submissionId} already exists.`);
-          return res.json({ success: true, warning: "Duplicate submission ignored", result: { scores, diagnosticsRaw, summaryText } });
-        }
-        
-        console.log(`[Exams/Submit] Firestore write SUCCESS: ${submissionId}`);
-
-        // 🎯 AUTOMATIC CRM SYNC: Save student to CRM Contacts & CRM Deals
-        const contactId = `cnt_${resolvedTenantId}_${shortId}`;
-        const contactDoc = {
-          id: contactId,
-          tenantId: resolvedTenantId,
-          fullName: studentName,
-          name: studentName,
-          email: studentEmail || `${shortId}@student.edu`,
-          phone: studentPhone || '—',
-          shortId: shortId,
-          type: 'student',
-          grade: Number(grade),
-          totalScore: scores.total || 0,
-          scores: scores,
-          status: 'test_completed',
-          totalDealsCount: 1,
-          totalRevenueGenerated: 0,
-          createdAt: admin.firestore.Timestamp.now(),
-          updatedAt: admin.firestore.Timestamp.now()
-        };
-        await admin.firestore().collection("crm_contacts").doc(contactId).set(contactDoc, { merge: true });
-        await admin.firestore().collection("tenants").doc(resolvedTenantId).collection("crm_contacts").doc(contactId).set(contactDoc, { merge: true });
-
-        const dealId = `deal_${resolvedTenantId}_${shortId}`;
-        const dealDoc = {
-          id: dealId,
-          tenantId: resolvedTenantId,
-          title: `Поступление: ${studentName} (${grade} класс)`,
-          contactName: studentName,
-          contactPhone: studentPhone || '—',
-          contactEmail: studentEmail || '—',
-          shortId: shortId,
-          grade: Number(grade),
-          stageId: 'stage_new',
-          value: 15000,
-          testScore: scores.total || 0,
-          cheated: Boolean(cheated),
-          createdAt: admin.firestore.Timestamp.now(),
-          updatedAt: admin.firestore.Timestamp.now()
-        };
-        await admin.firestore().collection("crm_deals").doc(dealId).set(dealDoc, { merge: true });
-        await admin.firestore().collection("tenants").doc(resolvedTenantId).collection("crm_deals").doc(dealId).set(dealDoc, { merge: true });
-        console.log(`[Exams/Submit] Auto CRM Sync SUCCESS: Created Contact ${contactId} & Deal ${dealId}`);
-
-        // Write Audit Log for exam submission
-        admin.firestore().collection("audit_logs").add({
-          timestamp: admin.firestore.Timestamp.now(),
-          createdAt: new Date().toISOString(),
-          action: "EXAM_SUBMITTED",
-          tenantId: resolvedTenantId,
-          sessionId: submissionId,
-          studentName: studentName || "Неизвестно",
-          studentEmail: studentEmail || "не указан",
-          studentPhone: studentPhone || "не указан",
-          studentShortId: shortId || "000000",
-          grade: Number(grade) || 0,
-          scores: scores,
-          cheated: Boolean(cheated),
-          ip: req.ip || req.socket?.remoteAddress || "unknown"
-        }).catch(e => console.error("Audit log write error:", e));
-      } catch (fErr) {
-        console.warn("[Exams/Submit] Firestore write failed:", fErr);
-      }
-    }
-
-    // 3. DUAL-WRITE: Proxy submission & Result Email Dispatch to GAS so Google Sheets and Email delivery are 100% executed!
-    const gasUrl = process.env.VITE_GAS_URL || process.env.GAS_URL;
-    const gasApiKey = process.env.GAS_API_KEY || process.env.VITE_GAS_API_KEY;
-
-    if (gasUrl && gasApiKey) {
-      try {
-        const gasPayload = {
-          action: "submitTest",
-          apiKey: gasApiKey,
-          testId: sessionId || `test_${shortId}`,
-          shortId,
-          studentName,
-          studentEmail,
-          studentPhone,
-          grade,
-          answers: typeof answers === 'string' ? answers : JSON.stringify(answers || {}),
-          cheated: cheated ? "ДА" : "НЕТ",
-          isTester: Boolean(isTester),
-          isRetake: Boolean(isRetake)
-        };
-        fetch(gasUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(gasPayload)
-        }).catch(err => console.warn("[Exams/Submit] Background GAS Dual-Write notice:", err.message));
-
-        // ✉️ DISPATCH RESULTS EMAIL REPORT IF EMAIL IS PROVIDED
-        if (studentEmail && studentEmail.includes("@")) {
-          const emailPayload = {
-            action: "sendResultEmail",
-            apiKey: gasApiKey,
-            shortId,
-            studentName,
-            studentEmail,
-            studentPhone,
-            grade,
-            totalScore: scores.total || 0,
-            scores,
-            diagnosticSummary: summaryText
-          };
-          fetch(gasUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(emailPayload)
-          }).catch(err => console.warn("[Exams/Submit] Background Email dispatch notice:", err.message));
-          console.log(`[Exams/Submit] Result Email Dispatch Triggered for ${studentEmail}`);
-        }
-      } catch (gErr) {
-        console.warn("[Exams/Submit] GAS Dual-Write trigger notice:", gErr);
-      }
-    }
-
-    return res.json({
-      success: true,
-      totalScore: scores.total,
-      scores: {
-        russian: scores.russian,
-        math: scores.math,
-        logic: scores.logic,
-        english: scores.english
-      },
-      cheated: Boolean(cheated),
-      summaryText
-    });
+    const subResult = await processExamSubmission(req.body);
+    return res.json(subResult);
   } catch (e: any) {
     console.error("[Exams/Submit] Endpoint error:", e);
     return res.status(500).json({ success: false, error: e.message });
   }
 });
+
+
 
 
 // Public Data Endpoint for landing page and global settings
@@ -1077,6 +1037,16 @@ app.post("/api/gas", async (req, res) => {
         await admin.auth().verifyIdToken(token);
       } catch(e) {
         return res.status(401).json({ error: "Unauthorized: Invalid Firebase ID Token" });
+      }
+    }
+
+    // Handle exam submission locally using Firestore keys & TypeScript scoring engine
+    if (payload.action === "submitTest" || payload.action === "submitEnglishTest") {
+      try {
+        const subResult = await processExamSubmission(payload);
+        return res.json(subResult);
+      } catch (subErr: any) {
+        console.error("[GAS Proxy] Local exam submission error:", subErr);
       }
     }
 
