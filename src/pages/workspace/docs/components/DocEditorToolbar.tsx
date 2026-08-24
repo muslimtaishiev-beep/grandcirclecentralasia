@@ -156,6 +156,15 @@ export default function DocEditorToolbar({
     setShowShareModal(false);
   };
 
+  const handleInsertStamp = (stampType: 'round' | 'corner' | 'signature' | 'logo') => {
+    let imgUrl = '/stamp.png';
+    if (stampType === 'corner') imgUrl = '/corner_stamp.png';
+    else if (stampType === 'logo') imgUrl = '/school_logo.png';
+    else if (stampType === 'signature') imgUrl = 'https://upload.wikimedia.org/wikipedia/commons/f/fa/John_Hancock_signature.svg'; // Director Facsimile Signature SVG
+
+    execFormat('insertImage', imgUrl);
+  };
+
   const handleInsertLink = () => {
     const url = window.prompt("Введите URL ссылки:", "https://");
     if (!url) return;
@@ -292,8 +301,13 @@ export default function DocEditorToolbar({
               <div className="relative">
                 <button onClick={() => setActiveMenu(activeMenu === 'insert' ? null : 'insert')} className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'insert' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}>Вставка</button>
                 {activeMenu === 'insert' && (
-                  <div className="absolute top-full left-0 mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-2xl py-1 z-50 text-xs text-slate-700">
-                    <button onClick={() => { setActiveMenu(null); handleInsertImage(); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><ImageIcon className="w-4 h-4 text-emerald-600" /> Изображение</button>
+                  <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-2xl py-1 z-50 text-xs text-slate-700">
+                    <button onClick={() => { setActiveMenu(null); handleInsertStamp('round'); }} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-blue-700 flex items-center gap-2 font-bold"><span>🔵 Круглая печать Академии</span></button>
+                    <button onClick={() => { setActiveMenu(null); handleInsertStamp('signature'); }} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-blue-700 flex items-center gap-2 font-bold"><span>✍️ Подпись Директора</span></button>
+                    <button onClick={() => { setActiveMenu(null); handleInsertStamp('corner'); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><span>🟦 Угольный штамп орг-ции</span></button>
+                    <button onClick={() => { setActiveMenu(null); handleInsertStamp('logo'); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><span>🏫 Логотип Академии</span></button>
+                    <hr className="my-1 border-slate-100" />
+                    <button onClick={() => { setActiveMenu(null); handleInsertImage(); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><ImageIcon className="w-4 h-4 text-emerald-600" /> Свое изображение (URL)</button>
                     <button onClick={() => { setActiveMenu(null); handleInsertLink(); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><Link className="w-4 h-4 text-blue-600" /> Ссылка</button>
                     <button onClick={() => { setActiveMenu(null); onAddBlock('divider'); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><span>➖ Разделитель</span></button>
                     <button onClick={() => { setActiveMenu(null); onAddBlock('todo_list'); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><CheckSquare className="w-4 h-4 text-indigo-600" /> Чек-лист задач</button>
@@ -491,6 +505,12 @@ export default function DocEditorToolbar({
 
         {/* REMOVE FORMATTING */}
         <button onMouseDown={e => e.preventDefault()} onClick={() => execFormat('removeFormat')} data-tooltip="Очистить форматирование выделенного фрагмента" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><RemoveFormatting className="w-4 h-4" /></button>
+
+        <div className="h-4 w-px bg-slate-300 mx-1"></div>
+
+        {/* QUICK OFFICIAL STAMPS */}
+        <button onMouseDown={e => e.preventDefault()} onClick={() => handleInsertStamp('round')} data-tooltip="Вставить синюю круглую печать Академии" data-tooltip-pos="bottom" className="px-2 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold rounded text-[11px] flex items-center gap-1 cursor-pointer transition"><span>🔵 Печать</span></button>
+        <button onMouseDown={e => e.preventDefault()} onClick={() => handleInsertStamp('signature')} data-tooltip="Вставить факсимильную подпись Директора" data-tooltip-pos="bottom" className="px-2 py-1 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 font-bold rounded text-[11px] flex items-center gap-1 cursor-pointer transition"><span>✍️ Подпись</span></button>
 
         <div className="ml-auto flex items-center gap-2">
           <button 
