@@ -109,7 +109,7 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
     }
 
     // 2. Trigger native Firebase password reset email
-    const apiKey = process.env.VITE_FIREBASE_API_KEY;
+    const apiKey = process.env.VITE_FIREBASE_API_KEY || "AIzaSyBefuNSd2j9CJJ92EWcg0am9s3zBSSHS4Y";
     if (apiKey) {
       await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`, {
         method: "POST",
