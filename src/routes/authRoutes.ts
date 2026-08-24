@@ -86,4 +86,48 @@ router.get("/me", requireFirebaseAuth, async (req: any, res: any) => {
   }
 });
 
+// POST /api/auth/send-employee-invite - Create user and send invite email
+router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const { email, fullName, tenantName, tenantId, permissions } = req.body;
+    if (!email) return res.status(400).json({ error: "Missing email" });
+
+    // 1. Create or get user in Firebase Auth
+    let userRecord;
+    try {
+      userRecord = await admin.auth().getUserByEmail(email);
+    } catch (e: any) {
+      if (e.code === 'auth/user-not-found') {
+        userRecord = await admin.auth().createUser({
+          email,
+          displayName: fullName,
+          password: Math.random().toString(36).slice(-10) + "A1!" // random secure password
+        });
+      } else {
+        throw e;
+      }
+    }
+
+    // 2. Trigger native Firebase password reset email
+    const apiKey = process.env.VITE_FIREBASE_API_KEY;
+    if (apiKey) {
+      await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestType: "PASSWORD_RESET",
+          email: email
+        })
+      });
+    } else {
+      console.warn("VITE_FIREBASE_API_KEY missing, skipped sending reset email.");
+    }
+
+    return res.json({ success: true, uid: userRecord.uid });
+  } catch (error: any) {
+    console.error("[Auth/Invite] Error:", error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 export default router;

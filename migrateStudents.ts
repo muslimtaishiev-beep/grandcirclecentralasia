@@ -1,20 +1,17 @@
 import * as dotenv from 'dotenv';
-import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, doc, writeBatch } from 'firebase/firestore';
+import admin from 'firebase-admin';
+import * as path from 'path';
 
 dotenv.config();
 
-const firebaseConfig = {
-  apiKey: process.env.VITE_FIREBASE_API_KEY,
-  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.VITE_FIREBASE_APP_ID
-};
+const keyPath = path.join(process.cwd(), "serviceAccountKey.json");
+import * as fs from "fs"; const serviceAccount = JSON.parse(fs.readFileSync(keyPath, "utf-8"));
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+const db = admin.firestore();
 
 const GAS_URL = process.env.VITE_GAS_URL || process.env.GAS_URL;
 const GAS_API_KEY = process.env.GAS_API_KEY || process.env.VITE_GAS_API_KEY;
@@ -49,18 +46,18 @@ async function migrate() {
   const students = data.students || data.data || [];
   console.log(`Found ${students.length} students. Starting migration to tenant: ${TARGET_TENANT}...`);
   
-  const batch = writeBatch(db);
+  const batch = db.batch();
   let count = 0;
   
   for (const s of students) {
-    const contactRef = doc(collection(db, 'tenants', TARGET_TENANT, 'crm_contacts'));
+    const contactRef = db.collection('tenants').doc(TARGET_TENANT).collection('crm_contacts').doc();
     
     const fullName = s.childName || s.studentName || s.shortId || "Unknown Student";
     const phone = s.parentPhone || s.phone || "";
     const email = s.email || "";
     
     // Remove undefined values
-    const dataObj = {
+    const dataObj: any = {
       fullName,
       phone,
       email,
@@ -80,8 +77,8 @@ async function migrate() {
     };
     
     Object.keys(dataObj).forEach(key => {
-      if (dataObj[key] === undefined) {
-        delete dataObj[key];
+      if (dataObj[key] === undefined || dataObj[key] === null) {
+        delete dataObj[key]; // Delete both null and undefined for clean admin sdk writes
       }
     });
 
@@ -91,7 +88,7 @@ async function migrate() {
   
   if (count > 0) {
     await batch.commit();
-    console.log(`Successfully migrated ${count} students to Firestore!`);
+    console.log(`Successfully migrated ${count} students to Firestore via Admin SDK!`);
   } else {
     console.log("No students to migrate.");
   }
