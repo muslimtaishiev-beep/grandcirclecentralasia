@@ -74,13 +74,13 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
         navigate("/superadmin");
       } else if (data.memberships && data.memberships.length > 0) {
         const firstOrgSlug = data.memberships[0].tenantId ;
-        navigate(`/workspace/${firstOrgSlug}/dashboard`);
+        navigate(`/workspace/${firstOrgSlug}`);
       } else {
-        navigate("/workspace/dashboard");
+        navigate("/workspace");
       }
     } catch (e) {
       // In demo mode without backend, redirect to default tenant dashboard
-      navigate("/workspace/dashboard");
+      navigate("/workspace");
     }
   };
 
