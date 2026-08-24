@@ -71,10 +71,18 @@ export function useDocumentEditor(tenantId: string, docId: string | undefined) {
     documentService.updateBlocks(tenantId, doc.id, newBlocks, user.uid);
   }, [doc, tenantId, user]);
 
+  const updateTitle = useCallback((newTitle: string) => {
+    if (!doc || !user || !tenantId) return;
+    setSaving(true);
+    setDoc({ ...doc, title: newTitle });
+    documentService.updateTitle(tenantId, doc.id, newTitle, user.uid);
+  }, [doc, tenantId, user]);
+
   return {
     doc,
     loading,
     saving,
+    updateTitle,
     updateBlock,
     toggleCheck,
     addBlockAfter,

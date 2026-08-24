@@ -248,6 +248,8 @@ export default function WorkspaceLayout() {
                 key={item.name}
                 to={item.path}
                 title={item.name}
+                data-tooltip={item.name}
+                data-tooltip-pos="right"
                 className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all group relative ${
                   isActive 
                     ? 'bg-[var(--accent)] text-white shadow-md' 

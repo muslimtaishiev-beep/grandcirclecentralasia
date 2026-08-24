@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { useOutletContext, useParams, useNavigate } from 'react-router-dom';
 import { useDocumentEditor } from '../../../hooks/collab/useDocumentEditor';
 import DocEditorToolbar from './components/DocEditorToolbar';
@@ -8,25 +8,37 @@ import { DocBlockType } from '../../../types/collab';
 export default function DocumentEditorPage() {
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
   const { id: docId } = useParams();
-  const { doc, loading, saving, updateBlock, toggleCheck, addBlockAfter, deleteBlock, changeBlockType } = useDocumentEditor(activeTenant?.id, docId);
+  const { doc, loading, saving, updateTitle, updateBlock, toggleCheck, addBlockAfter, deleteBlock, changeBlockType } = useDocumentEditor(activeTenant?.id, docId);
   const [exportOpen, setExportOpen] = useState(false);
+  const [selectedFont, setSelectedFont] = useState('Verdana');
+  const [fontSize, setFontSize] = useState(11);
   const navigate = useNavigate();
   const editorRef = useRef<HTMLDivElement>(null);
 
   if (loading) {
-    return <div className="p-8 text-[var(--text-muted)]">Загрузка документа...</div>;
+    return (
+      <div className="h-screen flex items-center justify-center bg-[#f8f9fa]">
+        <div className="flex items-center gap-3 text-slate-500 font-medium">
+          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          <span>Загрузка документа Google Docs...</span>
+        </div>
+      </div>
+    );
   }
 
   if (!doc) {
     return (
-      <div className="p-8 text-center space-y-4">
-        <div className="text-red-500 font-bold text-lg">Документ не найден или у вас нет прав доступа.</div>
-        <button 
-          onClick={() => navigate(`/workspace/${activeTenant?.id}/docs`)}
-          className="px-4 py-2 bg-[var(--accent)] text-white font-bold rounded-xl text-sm"
-        >
-          ← Вернуться к документам
-        </button>
+      <div className="h-screen flex items-center justify-center bg-[#f8f9fa] p-8">
+        <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-200 text-center max-w-md w-full space-y-4">
+          <div className="text-red-500 font-bold text-lg">Документ не найден</div>
+          <p className="text-slate-600 text-sm">Документ удален или у вас недостаточно прав для просмотра.</p>
+          <button 
+            onClick={() => navigate(`/workspace/${activeTenant?.id}/docs`)}
+            className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md transition cursor-pointer"
+          >
+            ← Вернуться к списку документов
+          </button>
+        </div>
       </div>
     );
   }
@@ -34,9 +46,9 @@ export default function DocumentEditorPage() {
   const handleExport = (format: 'pdf' | 'markdown') => {
     setExportOpen(false);
     if (format === 'pdf') {
-      window.print(); // Simple PDF generation via browser
+      window.print();
     } else {
-      let md = '';
+      let md = `# ${doc.title}\n\n`;
       doc.blocks.forEach(b => {
         if (b.type === 'heading_1') md += `# ${b.content}\n\n`;
         else if (b.type === 'heading_2') md += `## ${b.content}\n\n`;
@@ -61,7 +73,6 @@ export default function DocumentEditorPage() {
     const target = e.target as HTMLInputElement | HTMLTextAreaElement;
     if (e.key === 'Enter') {
       if (type !== 'paragraph' && type !== 'heading_1' && type !== 'heading_2' && type !== 'heading_3') {
-        // e.g. continue list
         e.preventDefault();
         addBlockAfter(blockId, type);
       } else {
@@ -93,8 +104,8 @@ export default function DocumentEditorPage() {
   const renderBlock = (b: any, index: number) => {
     if (b.type === 'divider') {
       return (
-        <div key={b.id} className="py-4 cursor-pointer hover:bg-[var(--bg-surface)] group" onClick={() => deleteBlock(b.id)}>
-          <hr className="border-[var(--border-color)] group-hover:border-red-500 transition" />
+        <div key={b.id} className="py-4 cursor-pointer hover:bg-slate-50 group" onClick={() => deleteBlock(b.id)}>
+          <hr className="border-slate-300 group-hover:border-red-500 transition" />
         </div>
       );
     }
@@ -104,69 +115,88 @@ export default function DocumentEditorPage() {
       value: b.content,
       onChange: (e: any) => updateBlock(b.id, e.target.value),
       onKeyDown: (e: any) => handleKeyDown(e, b.id, index, b.type),
-      className: "w-full bg-transparent focus:outline-none placeholder-[var(--text-muted)] resize-none overflow-hidden",
-      placeholder: b.type === 'heading_1' ? "Заголовок..." : "Начните печатать..."
+      className: "w-full bg-transparent focus:outline-none placeholder-slate-400 resize-none overflow-hidden text-slate-900",
+      placeholder: b.type === 'heading_1' ? "Устав Общества / Заголовок..." : "Введите текст документа..."
     };
 
+    let fontStyle = { fontFamily: selectedFont, fontSize: `${fontSize + (b.type === 'heading_1' ? 12 : b.type === 'heading_2' ? 6 : b.type === 'heading_3' ? 3 : 0)}px` };
+
     let style = "";
-    if (b.type === 'heading_1') style = "text-4xl font-black mb-4";
-    else if (b.type === 'heading_2') style = "text-2xl font-bold mt-6 mb-3";
-    else if (b.type === 'heading_3') style = "text-xl font-bold mt-4 mb-2";
-    else if (b.type === 'paragraph') style = "text-[16px] leading-relaxed mb-2";
-    else if (b.type === 'quote') style = "text-lg italic border-l-4 border-[var(--accent)] pl-4 py-1 my-4";
-    else if (b.type === 'code_block') style = "font-mono text-sm bg-slate-900 text-slate-50 p-4 rounded-xl my-4";
-    else if (b.type === 'bullet_list' || b.type === 'numbered_list' || b.type === 'todo_list') style = "text-[16px] leading-relaxed mb-1";
+    if (b.type === 'heading_1') style = "text-3xl font-bold mb-4 text-slate-900";
+    else if (b.type === 'heading_2') style = "text-2xl font-bold mt-6 mb-3 text-slate-900";
+    else if (b.type === 'heading_3') style = "text-xl font-bold mt-4 mb-2 text-slate-900";
+    else if (b.type === 'paragraph') style = "leading-relaxed mb-2 text-slate-800";
+    else if (b.type === 'quote') style = "text-base italic border-l-4 border-blue-600 pl-4 py-1 my-4 text-slate-700 bg-blue-50/40 rounded-r";
+    else if (b.type === 'code_block') style = "font-mono text-sm bg-slate-900 text-slate-100 p-4 rounded-xl my-4";
+    else if (b.type === 'bullet_list' || b.type === 'numbered_list' || b.type === 'todo_list') style = "leading-relaxed mb-1 text-slate-800";
 
     return (
-      <div key={b.id} className={`flex items-start gap-2 group ${b.type.includes('list') ? 'ml-4' : ''}`}>
-        {b.type === 'bullet_list' && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></span>}
-        {b.type === 'numbered_list' && <span className="text-slate-400 font-bold shrink-0 min-w-[20px]">{index}.</span>}
+      <div key={b.id} className={`flex items-start gap-2 group ${b.type.includes('list') ? 'ml-6' : ''}`}>
+        {b.type === 'bullet_list' && <span className="mt-2 w-2 h-2 rounded-full bg-slate-600 shrink-0"></span>}
+        {b.type === 'numbered_list' && <span className="text-slate-600 font-bold shrink-0 min-w-[20px]">{index}.</span>}
         {b.type === 'todo_list' && (
           <input 
             type="checkbox" 
             checked={b.checked} 
             onChange={() => toggleCheck(b.id)}
-            className="mt-1.5 w-4 h-4 rounded border-slate-300 text-[var(--accent)] focus:ring-[var(--accent)] cursor-pointer"
+            className="mt-1.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
           />
         )}
         
         {b.type === 'code_block' ? (
-          <textarea {...commonProps} className={`${commonProps.className} ${style} h-24`} />
+          <textarea {...commonProps} style={fontStyle} className={`${commonProps.className} ${style} h-24`} />
         ) : (
-          <input {...commonProps} className={`${commonProps.className} ${style} ${b.checked ? 'line-through opacity-50' : ''}`} />
+          <input {...commonProps} style={fontStyle} className={`${commonProps.className} ${style} ${b.checked ? 'line-through opacity-50' : ''}`} />
         )}
       </div>
     );
   };
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col bg-[var(--bg-app)]">
+    <div className="h-[calc(100vh-3.5rem)] flex flex-col bg-[#f8f9fa] overflow-hidden">
+      {/* Google Docs Header & Formatting Ribbon */}
       <DocEditorToolbar 
+        title={doc.title}
+        onUpdateTitle={updateTitle}
         onBack={() => navigate(`/workspace/${activeTenant?.id}/docs`)}
         onAddBlock={(type) => {
           if (doc.blocks.length > 0) {
             addBlockAfter(doc.blocks[doc.blocks.length - 1].id, type);
-          } else {
-            // Edge case: doc empty
           }
         }}
         onExport={() => setExportOpen(true)}
         saving={saving}
+        selectedFont={selectedFont}
+        setSelectedFont={setSelectedFont}
+        fontSize={fontSize}
+        setFontSize={setFontSize}
       />
 
-      <div className="flex-1 overflow-y-auto print:bg-white print:text-black">
-        <div ref={editorRef} className="max-w-3xl mx-auto py-12 px-8 min-h-full">
+      {/* Google Docs Ruler Bar */}
+      <div className="bg-[#edf2fa] border-b border-slate-200 h-6 flex items-center justify-center select-none shrink-0 overflow-hidden">
+        <div className="w-[816px] flex items-center justify-between text-[10px] font-mono text-slate-500 px-12">
+          <span>1</span><span>.</span><span>2</span><span>.</span><span>3</span><span>.</span><span>4</span><span>.</span><span>5</span><span>.</span><span>6</span><span>.</span><span>7</span>
+        </div>
+      </div>
+
+      {/* Document Workspace Canvas (A4 Paper Layout) */}
+      <div className="flex-1 overflow-y-auto py-8 px-4 flex justify-center bg-[#f8f9fa] print:bg-white print:p-0">
+        <div 
+          ref={editorRef} 
+          style={{ fontFamily: selectedFont }}
+          className="bg-white text-slate-900 shadow-xl border border-slate-200/90 rounded-sm w-full max-w-[816px] min-h-[1056px] px-16 py-14 space-y-2 relative transition-all"
+        >
           {doc.blocks.map((b, i) => renderBlock(b, i))}
           
           <div 
-            className="mt-8 py-8 text-center text-sm font-medium text-[var(--text-muted)] cursor-text opacity-50 hover:opacity-100 transition"
+            className="mt-12 py-6 text-center text-xs font-semibold text-slate-400 border-2 border-dashed border-transparent hover:border-slate-300 hover:bg-slate-50 rounded-xl cursor-pointer transition select-none"
             onClick={() => {
               if (doc.blocks.length > 0) {
                 addBlockAfter(doc.blocks[doc.blocks.length - 1].id, 'paragraph');
               }
             }}
           >
-            Кликните чтобы добавить блок
+            + Нажмите сюда для добавления нового блока текста
           </div>
         </div>
       </div>
