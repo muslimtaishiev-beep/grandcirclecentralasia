@@ -108,6 +108,7 @@ export function getMacroCategory(topicText: string, subjectKey: SubjectKey): str
 export function normalizeString(str: any): string {
   if (typeof str !== 'string') return "";
   let s = str.toLowerCase().replace(/\s+/g, "");
+  s = s.replace(/,/g, "."); // Convert decimal comma to dot
   s = s.replace(/ё/g, "е").replace(/…/g, ".");
   s = s.replace(/²/g, "^2").replace(/³/g, "^3").replace(/⁴/g, "^4").replace(/⁵/g, "^5").replace(/⁶/g, "^6");
   s = s.replace(/≤/g, "<=").replace(/\\le/g, "<=");
@@ -125,18 +126,46 @@ export function normalizeString(str: any): string {
   return s;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ANSWER KEYS DEFINITION REMOVED FOR SECURITY (Loaded dynamically from Firestore)
-// ─────────────────────────────────────────────────────────────────────────────
+export function isAnswerCorrect(userAnsRaw: any, targetAnsRaw: any): boolean {
+  if (userAnsRaw === undefined || userAnsRaw === null) return false;
+  const userStr = String(userAnsRaw).trim();
+  const targetStr = typeof targetAnsRaw === 'object' && targetAnsRaw?.ans !== undefined ? String(targetAnsRaw.ans).trim() : String(targetAnsRaw).trim();
+  if (!userStr || !targetStr) return false;
 
+  const normUser = normalizeString(userStr);
+  const normTarget = normalizeString(targetStr);
+
+  if (!normUser) return false;
+
+  // 1. Direct match (normalized)
+  if (normUser === normTarget) return true;
+
+  // 2. Multiple choice prefix match (e.g. user chose "2) Текст", target is "2" or "2)")
+  // Or user chose "А) 4/9", target is "А" or "A"
+  const prefixMatch = userStr.match(/^([1-9A-Za-zА-Яа-яЁё]+)[\)\.\s]/);
+  if (prefixMatch) {
+    const prefixNorm = normalizeString(prefixMatch[1]);
+    if (prefixNorm === normTarget) return true;
+  }
+
+  // 3. Substring match for list answers like "нн, н", inline inputs, drag-and-drop, dropdowns
+  if (normUser.includes(normTarget) || normTarget.includes(normUser)) {
+    // If target is just a single character prefix like "1", "2", "a", "b",
+    // only match via prefix to avoid false positives on words containing 'a'
+    if (/^[a-z0-9а-я]$/i.test(normTarget)) {
+      return prefixMatch ? normalizeString(prefixMatch[1]) === normTarget : normUser.startsWith(normTarget);
+    }
+    return true;
+  }
+
+  return false;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SCORE CALCULATOR FUNCTION
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function calculateScoresTs(grade: number | string, answersInput: any, keys: Record<SubjectKey, Record<string, AnswerKeyEntry>>): ScoringEngineOutput {
-  const gradeStr = String(grade);
-
   if (!keys || Object.keys(keys).length === 0) {
     return {
       scores: { russian: 0, math: 0, logic: 0, english: 0, total: 0 },
@@ -160,8 +189,10 @@ export function calculateScoresTs(grade: number | string, answersInput: any, key
   const diagnosticsRaw: DiagnosticsRaw = {};
 
   function initPossible(subject: SubjectKey, keyMap: Record<string, AnswerKeyEntry>) {
+    if (!keyMap) return;
     Object.keys(keyMap).forEach(qId => {
       const qData = keyMap[qId];
+      if (!qData) return;
       const topicText = qData.topic || "";
       const macro = getMacroCategory(topicText, subject);
       if (!diagnosticsRaw[macro]) {
@@ -173,6 +204,7 @@ export function calculateScoresTs(grade: number | string, answersInput: any, key
 
   function addEarned(subject: SubjectKey, qId: string, keyMap: Record<string, AnswerKeyEntry>) {
     const qData = keyMap[qId];
+    if (!qData) return;
     const topicText = qData.topic || "";
     const macro = getMacroCategory(topicText, subject);
     if (diagnosticsRaw[macro]) {
@@ -188,12 +220,9 @@ export function calculateScoresTs(grade: number | string, answersInput: any, key
   // 1. Russian
   if (keys.russian) {
     Object.keys(keys.russian).forEach(qId => {
-      const userAnsStr = answers[qId] ? String(answers[qId]).trim() : "";
-      const userAnsNorm = normalizeString(userAnsStr);
-      const targetNorm = normalizeString(keys.russian[qId].ans);
-
-      if (userAnsNorm && (userAnsNorm === targetNorm || userAnsNorm.includes(targetNorm))) {
-        ru += keys.russian[qId].pts;
+      const qEntry = keys.russian[qId];
+      if (qEntry && isAnswerCorrect(answers[qId], qEntry)) {
+        ru += (qEntry.pts || 1);
         addEarned("russian", qId, keys.russian);
       }
     });
@@ -202,12 +231,9 @@ export function calculateScoresTs(grade: number | string, answersInput: any, key
   // 2. Math
   if (keys.math) {
     Object.keys(keys.math).forEach(qId => {
-      const userAnsStr = answers[qId] ? String(answers[qId]).trim() : "";
-      const userAnsNorm = normalizeString(userAnsStr);
-      const targetNorm = normalizeString(keys.math[qId].ans);
-
-      if (userAnsNorm && (userAnsNorm === targetNorm || userAnsNorm.includes(targetNorm))) {
-        ma += keys.math[qId].pts;
+      const qEntry = keys.math[qId];
+      if (qEntry && isAnswerCorrect(answers[qId], qEntry)) {
+        ma += (qEntry.pts || 1);
         addEarned("math", qId, keys.math);
       }
     });
@@ -216,12 +242,9 @@ export function calculateScoresTs(grade: number | string, answersInput: any, key
   // 3. Logic
   if (keys.logic) {
     Object.keys(keys.logic).forEach(qId => {
-      const userAnsStr = answers[qId] ? String(answers[qId]).trim() : "";
-      const userAnsNorm = normalizeString(userAnsStr);
-      const targetNorm = normalizeString(keys.logic[qId].ans);
-
-      if (userAnsNorm && (userAnsNorm === targetNorm || userAnsNorm.includes(targetNorm))) {
-        lo += keys.logic[qId].pts;
+      const qEntry = keys.logic[qId];
+      if (qEntry && isAnswerCorrect(answers[qId], qEntry)) {
+        lo += (qEntry.pts || 1);
         addEarned("logic", qId, keys.logic);
       }
     });
@@ -230,12 +253,9 @@ export function calculateScoresTs(grade: number | string, answersInput: any, key
   // 4. English
   if (keys.english) {
     Object.keys(keys.english).forEach(qId => {
-      const userAnsStr = answers[qId] ? String(answers[qId]).trim() : "";
-      const userAnsNorm = normalizeString(userAnsStr);
-      const targetNorm = normalizeString(keys.english[qId].ans);
-
-      if (userAnsNorm && (userAnsNorm === targetNorm || userAnsNorm.includes(targetNorm))) {
-        en += keys.english[qId].pts;
+      const qEntry = keys.english[qId];
+      if (qEntry && isAnswerCorrect(answers[qId], qEntry)) {
+        en += (qEntry.pts || 1);
         addEarned("english", qId, keys.english);
       }
     });

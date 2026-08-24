@@ -514,12 +514,20 @@ export default function Testing() {
     const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
     const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
 
-    // Send only russian, math, logic answers
-    const coreAnswers = {};
-    if (grade && testsData[grade]) {
-        [...(testsData[grade].russian||[]), ...(testsData[grade].math||[]), ...(testsData[grade].logic||[])].forEach(q => {
-            if (answers[q.id]) coreAnswers[q.id] = answers[q.id];
+    // Send russian, math, logic answers from active questions or entire answers map
+    const activeTestQuestions = (firestoreTestData && firestoreTestData.questions)
+      ? firestoreTestData.questions
+      : (grade && testsData[grade] ? testsData[grade] : null);
+
+    const coreAnswers: Record<string, any> = {};
+    if (activeTestQuestions) {
+        [...(activeTestQuestions.russian||[]), ...(activeTestQuestions.math||[]), ...(activeTestQuestions.logic||[])].forEach((q: any) => {
+            if (answers[q.id] !== undefined && answers[q.id] !== null) {
+              coreAnswers[q.id] = answers[q.id];
+            }
         });
+    } else {
+        Object.assign(coreAnswers, answers);
     }
 
     const payload = {
@@ -593,11 +601,19 @@ export default function Testing() {
     const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
     const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
 
-    const engAnswers = {};
-    if (grade && testsData[grade] && testsData[grade].english) {
-        testsData[grade].english.forEach(q => {
-            if (answers[q.id]) engAnswers[q.id] = answers[q.id];
+    const engAnswers: Record<string, any> = {};
+    const activeEngQuestions = (firestoreTestData && firestoreTestData.questions && firestoreTestData.questions.english)
+      ? firestoreTestData.questions.english
+      : (grade && testsData[grade] && testsData[grade].english ? testsData[grade].english : null);
+
+    if (activeEngQuestions) {
+        activeEngQuestions.forEach((q: any) => {
+            if (answers[q.id] !== undefined && answers[q.id] !== null) {
+              engAnswers[q.id] = answers[q.id];
+            }
         });
+    } else {
+        Object.assign(engAnswers, answers);
     }
 
     const activeShortId = (shortId && shortId !== "undefined" && shortId !== "null") ? shortId : Math.floor(100000 + Math.random() * 900000).toString();
@@ -671,16 +687,22 @@ export default function Testing() {
     if (shortId !== activeShortId) setShortId(activeShortId);
 
     const currentAnswers: Record<string, string> = {};
-    if (grade && testsData[grade]) {
+    const activeTestQ = (firestoreTestData && firestoreTestData.questions)
+      ? firestoreTestData.questions
+      : (grade && testsData[grade] ? testsData[grade] : null);
+
+    if (activeTestQ) {
       if (currentPhase === 'core') {
-        [...(testsData[grade].russian||[]), ...(testsData[grade].math||[]), ...(testsData[grade].logic||[])].forEach(q => {
-            if (answers[q.id]) currentAnswers[q.id] = answers[q.id];
+        [...(activeTestQ.russian||[]), ...(activeTestQ.math||[]), ...(activeTestQ.logic||[])].forEach((q: any) => {
+            if (answers[q.id] !== undefined) currentAnswers[q.id] = answers[q.id];
         });
       } else if (currentPhase === 'english') {
-        (testsData[grade].english||[]).forEach(q => {
-            if (answers[q.id]) currentAnswers[q.id] = answers[q.id];
+        (activeTestQ.english||[]).forEach((q: any) => {
+            if (answers[q.id] !== undefined) currentAnswers[q.id] = answers[q.id];
         });
       }
+    } else {
+      Object.assign(currentAnswers, answers);
     }
 
     const savePhase = (currentPhase === 'suspended' ? (sessionStorage.getItem("suspendedPhase") || localStorage.getItem("persist_suspendedPhase") || 'core') : currentPhase);
@@ -962,11 +984,15 @@ export default function Testing() {
             <div className="mb-6">
               {(() => {
                 let maxRu = 0, maxMa = 0, maxLo = 0, maxEn = 0;
-                if (grade && testsData[grade]) {
-                  maxRu = testsData[grade].russian.reduce((sum, q) => sum + (q.points || 1), 0);
-                  maxMa = testsData[grade].math.reduce((sum, q) => sum + (q.points || 1), 0);
-                  if (testsData[grade].logic) maxLo = testsData[grade].logic.reduce((sum, q) => sum + (q.points || 1), 0);
-                  if (testsData[grade].english) maxEn = testsData[grade].english.reduce((sum, q) => sum + (q.points || 1), 0);
+                const activeResQuestions = (firestoreTestData && firestoreTestData.questions)
+                  ? firestoreTestData.questions
+                  : (grade && testsData[grade] ? testsData[grade] : null);
+
+                if (activeResQuestions) {
+                  maxRu = (activeResQuestions.russian || []).reduce((sum: number, q: any) => sum + (q.points || 1), 0);
+                  maxMa = (activeResQuestions.math || []).reduce((sum: number, q: any) => sum + (q.points || 1), 0);
+                  maxLo = (activeResQuestions.logic || []).reduce((sum: number, q: any) => sum + (q.points || 1), 0);
+                  maxEn = (activeResQuestions.english || []).reduce((sum: number, q: any) => sum + (q.points || 1), 0);
                 }
                 const totalMax = maxRu + maxMa + maxLo;
                 const percent = totalMax > 0 ? Math.round((resultData.totalScore / totalMax) * 100) : 0;
