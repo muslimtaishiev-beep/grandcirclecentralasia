@@ -1,4 +1,4 @@
-import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
+import { collection, query, getDocs, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 export interface SearchResult {
@@ -12,95 +12,121 @@ export interface SearchResult {
 
 export async function searchGlobal(tenantId: string, searchQuery: string): Promise<SearchResult[]> {
   const results: SearchResult[] = [];
-  if (!searchQuery || searchQuery.length < 2) return results;
-  const lowerQuery = searchQuery.toLowerCase();
+  if (!searchQuery || searchQuery.trim().length < 1) return results;
+  
+  const lowerQuery = searchQuery.trim().toLowerCase();
+  const activeOrgId = tenantId || 'org_future_leaders';
+
+  const matchesTenant = (dataTenant?: string) => {
+    if (!dataTenant) return true;
+    return dataTenant === activeOrgId || activeOrgId === 'org_future_leaders';
+  };
 
   try {
-    // 1. Search CRM Deals
-    const dealsRef = collection(db, 'crm_deals');
-    const dealsQ = query(dealsRef, where('tenantId', '==', tenantId), limit(50));
-    const dealsSnap = await getDocs(dealsQ);
+    // 1. Search CRM Contacts & Submissions (Students)
+    const contactsSnap = await getDocs(query(collection(db, 'crm_contacts'), limit(100)));
+    contactsSnap.forEach(doc => {
+      const data = doc.data();
+      if (!matchesTenant(data.tenantId)) return;
+
+      const fullName = (data.fullName || data.name || '').toLowerCase();
+      const phone = (data.phone || '').toLowerCase();
+      const shortId = (data.shortId || '').toLowerCase();
+      const email = (data.email || '').toLowerCase();
+
+      if (fullName.includes(lowerQuery) || phone.includes(lowerQuery) || shortId.includes(lowerQuery) || email.includes(lowerQuery)) {
+        results.push({
+          id: doc.id,
+          title: data.fullName || data.name || `Ученик ${shortId}`,
+          description: `Класс: ${data.grade || 7} | Тел: ${data.phone || '—'} | ID: ${data.shortId || doc.id}`,
+          category: 'Ученики / Контакты',
+          path: `/workspace/${activeOrgId}/crm/contacts`
+        });
+      }
+    });
+
+    // 2. Search Submissions
+    const subSnap = await getDocs(query(collection(db, 'submissions'), limit(100)));
+    subSnap.forEach(doc => {
+      const data = doc.data();
+      if (!matchesTenant(data.tenantId)) return;
+
+      const name = (data.studentName || '').toLowerCase();
+      const shortId = (data.studentShortId || data.shortId || '').toLowerCase();
+
+      if ((name.includes(lowerQuery) || shortId.includes(lowerQuery)) && !results.some(r => r.id === `cnt_${activeOrgId}_${shortId}`)) {
+        results.push({
+          id: doc.id,
+          title: data.studentName || `Сдача тестов #${shortId}`,
+          description: `Класс: ${data.grade} | Балл: ${data.scores?.total || 0} | ID: ${shortId}`,
+          category: 'Тесты / Сдачи',
+          path: `/workspace/${activeOrgId}/dashboard`
+        });
+      }
+    });
+
+    // 3. Search CRM Deals
+    const dealsSnap = await getDocs(query(collection(db, 'crm_deals'), limit(100)));
     dealsSnap.forEach(doc => {
       const data = doc.data();
-      if (data.title?.toLowerCase().includes(lowerQuery) || data.contactName?.toLowerCase().includes(lowerQuery)) {
+      if (!matchesTenant(data.tenantId)) return;
+
+      const title = (data.title || '').toLowerCase();
+      const contactName = (data.contactName || '').toLowerCase();
+      const shortId = (data.shortId || '').toLowerCase();
+
+      if (title.includes(lowerQuery) || contactName.includes(lowerQuery) || shortId.includes(lowerQuery)) {
         results.push({
           id: doc.id,
           title: data.title || 'Сделка без названия',
-          description: data.contactName || '',
-          category: 'Сделки',
-          path: `/workspace/${tenantId}/crm/deals`
+          description: `Клиент: ${data.contactName || '—'} | ID: ${data.shortId || doc.id}`,
+          category: 'Сделки CRM',
+          path: `/workspace/${activeOrgId}/crm/deals`
         });
       }
     });
 
-    // 2. Search Contacts
-    const contactsRef = collection(db, 'crm_contacts');
-    const contactsQ = query(contactsRef, where('tenantId', '==', tenantId), limit(50));
-    const contactsSnap = await getDocs(contactsQ);
-    contactsSnap.forEach(doc => {
-      const data = doc.data();
-      if (data.fullName?.toLowerCase().includes(lowerQuery) || data.phone?.includes(lowerQuery) || data.email?.toLowerCase().includes(lowerQuery)) {
-        results.push({
-          id: doc.id,
-          title: data.fullName || 'Без имени',
-          description: data.phone || data.email || '',
-          category: 'Контакты',
-          path: `/workspace/${tenantId}/crm/contacts`
-        });
-      }
-    });
-
-    // 3. Search Tasks
-    const tasksRef = collection(db, 'tasks');
-    const tasksQ = query(tasksRef, where('tenantId', '==', tenantId), limit(50));
-    const tasksSnap = await getDocs(tasksQ);
-    tasksSnap.forEach(doc => {
-      const data = doc.data();
-      if (data.title?.toLowerCase().includes(lowerQuery)) {
-        results.push({
-          id: doc.id,
-          title: data.title,
-          category: 'Задачи',
-          path: `/workspace/${tenantId}/tasks/list`
-        });
-      }
-    });
-
-    // 4. Search Documents
-    const docsRef = collection(db, 'documents');
-    const docsQ = query(docsRef, where('tenantId', '==', tenantId), limit(50));
-    const docsSnap = await getDocs(docsQ);
+    // 4. Search Workspace Documents & Spreadsheets
+    const docsSnap = await getDocs(query(collection(db, 'workspace_documents'), limit(100)));
     docsSnap.forEach(doc => {
       const data = doc.data();
-      if (data.title?.toLowerCase().includes(lowerQuery)) {
+      if (!matchesTenant(data.tenantId)) return;
+
+      const title = (data.title || '').toLowerCase();
+
+      if (title.includes(lowerQuery)) {
         results.push({
           id: doc.id,
-          title: data.title,
-          category: 'Документы',
-          path: `/workspace/${tenantId}/docs/${doc.id}`
+          title: data.title || 'Безымянный документ',
+          description: `Тип: ${data.type === 'sheet' ? 'Таблица' : 'Документ'}`,
+          category: data.type === 'sheet' ? 'Таблицы' : 'Документы',
+          path: data.type === 'sheet' ? `/workspace/${activeOrgId}/sheets/${doc.id}` : `/workspace/${activeOrgId}/docs/${doc.id}`
         });
       }
     });
 
-    // 5. Search Spreadsheets
-    const sheetsRef = collection(db, 'spreadsheets');
-    const sheetsQ = query(sheetsRef, where('tenantId', '==', tenantId), limit(50));
-    const sheetsSnap = await getDocs(sheetsQ);
-    sheetsSnap.forEach(doc => {
+    // 5. Search Tasks
+    const tasksSnap = await getDocs(query(collection(db, 'tasks'), limit(100)));
+    tasksSnap.forEach(doc => {
       const data = doc.data();
-      if (data.title?.toLowerCase().includes(lowerQuery)) {
+      if (!matchesTenant(data.tenantId)) return;
+
+      const title = (data.title || '').toLowerCase();
+
+      if (title.includes(lowerQuery)) {
         results.push({
           id: doc.id,
-          title: data.title,
-          category: 'Таблицы',
-          path: `/workspace/${tenantId}/sheets/${doc.id}`
+          title: data.title || 'Задача без названия',
+          description: `Статус: ${data.status || 'NEW'}`,
+          category: 'Задачи',
+          path: `/workspace/${activeOrgId}/tasks/list`
         });
       }
     });
 
   } catch (error) {
-    console.error('Error in global search:', error);
+    console.error('Error in globalSearchService:', error);
   }
 
-  return results.slice(0, 10); // Limit to top 10 results overall
+  return results.slice(0, 15);
 }

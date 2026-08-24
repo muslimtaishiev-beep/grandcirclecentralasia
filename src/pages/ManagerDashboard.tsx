@@ -763,7 +763,7 @@ export default function ManagerDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {Array.isArray(students) && students.filter(s => s && typeof s === 'object').map((s, idx) => {
+                {getFilteredStudents().map((s, idx) => {
                   const totalScore = Number(s.ru || 0) + Number(s.ma || 0) + Number(s.lo || 0);
                   let maxScore = 0;
                   const gradeData = s.grade ? dbTests.find(t => t.grade === parseInt(s.grade, 10))?.questions : null;

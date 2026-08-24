@@ -51,6 +51,17 @@ export default function WorkspaceLayout() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsSearchOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  useEffect(() => {
     if (!user) return;
     fetchTenants();
   }, [user]);
@@ -217,6 +228,13 @@ export default function WorkspaceLayout() {
 
         {/* Right: User Profile & Tools */}
         <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setIsSearchOpen(true)} 
+            className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full text-[var(--text-main)] transition cursor-pointer"
+            title="Поиск (Cmd+K)"
+          >
+            <Search className="w-4 h-4" />
+          </button>
           <DemoSeedButton />
           <button onClick={toggleTheme} className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full text-[var(--text-main)] transition">
             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
