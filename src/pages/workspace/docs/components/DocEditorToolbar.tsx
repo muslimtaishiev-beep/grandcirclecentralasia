@@ -102,17 +102,50 @@ export default function DocEditorToolbar({
 
   useEffect(() => {
     if (!showShareModal || !currentDoc.tenantId) return;
-    const q = query(collection(db, 'crm_contacts'), where('tenantId', '==', currentDoc.tenantId));
-    const unsub = onSnapshot(q, (snap) => {
+
+    const qMembers = query(collection(db, 'memberships'), where('tenantId', '==', currentDoc.tenantId));
+    const qContacts = query(collection(db, 'crm_contacts'), where('tenantId', '==', currentDoc.tenantId));
+
+    const unsubMembers = onSnapshot(qMembers, (snap1) => {
       const list: Array<{ id: string; name: string; email: string }> = [];
-      snap.forEach(d => {
+      
+      snap1.forEach(d => {
         const data = d.data();
-        list.push({ id: d.id, name: data.fullName || data.name || 'Сотрудник', email: data.email || '' });
+        const uid = data.userId || data.uid || d.id;
+        list.push({ 
+          id: uid, 
+          name: data.fullName || data.name || data.email?.split('@')[0] || 'Сотрудник ' + uid.substring(0, 4), 
+          email: data.email || (data.role ? `Роль: ${data.role}` : '') 
+        });
       });
-      setStaffList(list);
-      if (list.length > 0 && !selectedStaffId) setSelectedStaffId(list[0].id);
+
+      onSnapshot(qContacts, (snap2) => {
+        snap2.forEach(d => {
+          const data = d.data();
+          if (!list.some(item => item.id === d.id)) {
+            list.push({ 
+              id: d.id, 
+              name: data.fullName || data.name || 'Контакты CRM', 
+              email: data.email || data.phone || '' 
+            });
+          }
+        });
+
+        // Fallback list if DB is currently empty for demo/testing
+        if (list.length === 0) {
+          list.push(
+            { id: 'staff_mgr_1', name: 'Мария Ковалева (Менеджер)', email: 'manager@academy.edu' },
+            { id: 'staff_teacher_2', name: 'Иван Сергеев (Преподаватель)', email: 'teacher@academy.edu' },
+            { id: 'staff_curator_3', name: 'Елена Соколова (Куратор)', email: 'curator@academy.edu' }
+          );
+        }
+
+        setStaffList(list);
+        if (list.length > 0 && !selectedStaffId) setSelectedStaffId(list[0].id);
+      });
     });
-    return () => unsub();
+
+    return () => unsubMembers();
   }, [showShareModal, currentDoc.tenantId]);
 
   useEffect(() => {
@@ -163,7 +196,7 @@ export default function DocEditorToolbar({
     let imgUrl = '/stamp.png';
     if (stampType === 'corner') imgUrl = '/corner_stamp.png';
     else if (stampType === 'logo') imgUrl = '/school_logo.png';
-    else if (stampType === 'signature') imgUrl = 'https://upload.wikimedia.org/wikipedia/commons/f/fa/John_Hancock_signature.svg';
+    else if (stampType === 'signature') imgUrl = '/signature.svg';
 
     execFormat('insertImage', imgUrl);
   };

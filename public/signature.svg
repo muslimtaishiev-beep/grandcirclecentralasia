@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="350" height="130" viewBox="0 0 350 130">
+  <g fill="none" stroke="#0033aa" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Director Signature Swirls -->
+    <path d="M 25 75 Q 45 15, 75 55 T 135 35 T 175 75 T 235 25 Q 265 65, 295 45" stroke-width="4.5"/>
+    <path d="M 55 95 Q 115 115, 275 85" stroke-width="3"/>
+    <path d="M 115 45 Q 145 95, 185 35" stroke-width="3"/>
+    <path d="M 215 55 Q 245 25, 285 65" stroke-width="2.5"/>
+    <!-- Loop Underline -->
+    <path d="M 35 85 Q 165 125, 315 75 T 195 115" stroke-width="2.5"/>
+  </g>
+  <!-- Text Label -->
+  <text x="210" y="118" font-family="'Times New Roman', serif" font-size="13" font-style="italic" font-weight="bold" fill="#0033aa">
+    Директор Академии
+  </text>
+</svg>
