@@ -158,6 +158,19 @@ export function isAnswerCorrect(userAnsRaw: any, targetAnsRaw: any): boolean {
     return true;
   }
 
+  // 4. Pair-by-pair match for matrix/grid responses (e.g. "Row-Col,Row-Col")
+  if (targetStr.includes(',') && targetStr.includes('-') && userStr.includes(',') && userStr.includes('-')) {
+    const targetPairs = targetStr.split(',').map(s => normalizeString(s)).filter(Boolean);
+    const userPairs = userStr.split(',').map(s => normalizeString(s)).filter(Boolean);
+
+    if (targetPairs.length > 0 && targetPairs.length === userPairs.length) {
+      const allPairsMatch = targetPairs.every(tPair => 
+        userPairs.some(uPair => uPair.includes(tPair) || tPair.includes(uPair))
+      );
+      if (allPairsMatch) return true;
+    }
+  }
+
   return false;
 }
 

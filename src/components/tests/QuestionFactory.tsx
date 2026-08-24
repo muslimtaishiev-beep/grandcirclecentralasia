@@ -7,6 +7,47 @@ interface Props {
   onChange: (val: any) => void;
 }
 
+// Helper: parse matrix state into Record<rowKey, colVal>
+function parseMatrixState(value: any, rows: any[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  if (typeof value === 'string' && value.length > 0) {
+    const pairs = value.split(',');
+    pairs.forEach(pair => {
+      const parts = pair.split('-');
+      if (parts.length >= 2) {
+        const rKey = parts[0].trim();
+        const cVal = parts.slice(1).join('-').trim();
+        map[rKey] = cVal;
+      }
+    });
+  } else if (typeof value === 'object' && value !== null) {
+    Object.assign(map, value);
+  }
+  return map;
+}
+
+// Helper: parse dropdown state into string[]
+function parseDropdownState(value: any, dropdownItems: any[]): string[] {
+  if (typeof value === 'string' && value.length > 0) {
+    return value.split(',');
+  }
+  if (typeof value === 'object' && value !== null) {
+    return dropdownItems.map(item => value[item.label] || value[item.id] || '');
+  }
+  return [];
+}
+
+// Helper: parse ordering / drag-and-drop state into string[]
+function parseOrderingState(value: any, defaultItems: any[]): string[] {
+  if (typeof value === 'string' && value.length > 0) {
+    return value.split(',');
+  }
+  if (Array.isArray(value) && value.length > 0) {
+    return value.map(i => typeof i === 'string' ? i : (i.text || i.label));
+  }
+  return (defaultItems || []).map(i => typeof i === 'string' ? i : (i.text || i.label));
+}
+
 export default function QuestionFactory({ question, value, onChange }: Props) {
   if (!question) return null;
 
@@ -19,9 +60,9 @@ export default function QuestionFactory({ question, value, onChange }: Props) {
   // Type Classifications
   const isMultipleChoice = rawType === 'multiplechoice';
   const isTextInput = rawType === 'textinput' || rawType === 'numberinput' || rawType === 'freetext';
-  const isMatrix = rawType === 'matrixgrid' || rawType === 'logicmatrix';
+  const isMatrix = rawType === 'matrixgrid' || rawType === 'logicmatrix' || rawType === 'matrix';
   const isOrdering = rawType === 'ordering' || rawType === 'draganddrop';
-  const isDropdown = rawType === 'dropdownmultiple' || rawType === 'inlinedropdown';
+  const isDropdown = rawType === 'dropdownmultiple' || rawType === 'inlinedropdown' || rawType === 'dropdown';
 
   return (
     <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
@@ -100,7 +141,18 @@ export default function QuestionFactory({ question, value, onChange }: Props) {
       {isMatrix && (() => {
         const rows = question.matrixRows || question.rows || question.content?.rows || [];
         const cols = question.matrixCols || question.columns || question.content?.columns || [];
-        const answers = (typeof value === 'object' && value !== null) ? value : {};
+        const currentMap = parseMatrixState(value, rows);
+
+        const handleCellClick = (rowLabel: string, colLabel: string) => {
+          const newMap = { ...currentMap, [rowLabel]: colLabel };
+          const formattedString = rows.map((r: any) => {
+            const rLabel = typeof r === 'string' ? r : (r.label || r.name || r.id);
+            const selectedCol = newMap[rLabel] || '';
+            return selectedCol ? `${rLabel}-${selectedCol}` : '';
+          }).filter(Boolean).join(',');
+
+          onChange(formattedString);
+        };
 
         return (
           <div className="overflow-x-auto pt-2">
@@ -118,17 +170,17 @@ export default function QuestionFactory({ question, value, onChange }: Props) {
               <tbody className="divide-y divide-slate-100">
                 {rows.map((row: any, rIdx: number) => {
                   const rowLabel = typeof row === 'string' ? row : (row.label || row.name || `Элемент ${rIdx + 1}`);
-                  const rowKey = typeof row === 'string' ? row : (row.id || rowLabel);
                   return (
                     <tr key={rIdx} className="hover:bg-slate-50 transition-colors">
                       <td className="p-3.5 text-sm font-semibold text-slate-800">{rowLabel}</td>
                       {cols.map((col: string, cIdx: number) => {
-                        const isSelected = answers[rowKey] === col;
+                        const cellVal = currentMap[rowLabel] || '';
+                        const isSelected = cellVal === col || (cellVal && col.startsWith(cellVal)) || (col && cellVal.startsWith(col));
                         return (
                           <td key={cIdx} className="p-3 text-center align-middle">
                             <button
                               type="button"
-                              onClick={() => onChange({ ...answers, [rowKey]: col })}
+                              onClick={() => handleCellClick(rowLabel, col)}
                               className={`w-6 h-6 rounded-full border-2 mx-auto flex items-center justify-center transition-all cursor-pointer ${
                                 isSelected ? 'border-purple-600 bg-purple-600' : 'border-slate-300 hover:border-purple-400'
                               }`}
@@ -150,27 +202,38 @@ export default function QuestionFactory({ question, value, onChange }: Props) {
       {/* 4. DROPDOWN / INLINE DROPDOWN */}
       {isDropdown && (() => {
         const dropdownItems = question.dropdownItems || question.content?.dropdownItems || [];
-        const inlineOptions = question.inlineOptions || question.content?.inlineOptions || [];
+        const inlineOptions = question.inlineOptions || question.options || question.content?.inlineOptions || [];
 
         if (dropdownItems.length > 0) {
-          const answers = (typeof value === 'object' && value !== null) ? value : {};
+          const selectedList = parseDropdownState(value, dropdownItems);
+
+          const handleSelectChange = (idx: number, newVal: string) => {
+            const newList = [...selectedList];
+            while (newList.length < dropdownItems.length) newList.push('');
+            newList[idx] = newVal;
+            onChange(newList.join(','));
+          };
+
           return (
             <div className="space-y-4 pt-2">
-              {dropdownItems.map((item: any, idx: number) => (
-                <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">
-                  <span className="font-medium text-slate-800 text-sm">{item.label}</span>
-                  <select
-                    value={answers[item.label] || ''}
-                    onChange={(e) => onChange({ ...answers, [item.label]: e.target.value })}
-                    className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl font-medium text-slate-800 text-sm focus:outline-none focus:border-purple-600 transition"
-                  >
-                    <option value="">-- Выберите вариант --</option>
-                    {(item.options || []).map((opt: string, oIdx: number) => (
-                      <option key={oIdx} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-              ))}
+              {dropdownItems.map((item: any, idx: number) => {
+                const itemVal = selectedList[idx] || '';
+                return (
+                  <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                    <span className="font-medium text-slate-800 text-sm">{item.label}</span>
+                    <select
+                      value={itemVal}
+                      onChange={(e) => handleSelectChange(idx, e.target.value)}
+                      className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl font-medium text-slate-800 text-sm focus:outline-none focus:border-purple-600 transition cursor-pointer"
+                    >
+                      <option value="">-- Выберите вариант --</option>
+                      {(item.options || []).map((opt: string, oIdx: number) => (
+                        <option key={oIdx} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
             </div>
           );
         }
@@ -181,7 +244,7 @@ export default function QuestionFactory({ question, value, onChange }: Props) {
               <select
                 value={value || ''}
                 onChange={(e) => onChange(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl font-bold text-slate-800 text-base focus:outline-none focus:border-purple-600 focus:bg-white transition"
+                className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl font-bold text-slate-800 text-base focus:outline-none focus:border-purple-600 focus:bg-white transition cursor-pointer"
               >
                 <option value="">-- Выберите правильный вариант --</option>
                 {inlineOptions.map((opt: string, idx: number) => (
@@ -197,21 +260,20 @@ export default function QuestionFactory({ question, value, onChange }: Props) {
 
       {/* 5. DRAG AND DROP / ORDERING */}
       {isOrdering && (() => {
-        const items = question.dragItems || question.items || question.content?.items || [];
-        const currentList = Array.isArray(value) && value.length > 0 ? value : items;
+        const defaultItems = question.dragItems || question.items || question.content?.items || [];
+        const currentList = parseOrderingState(value, defaultItems);
 
         const moveItem = (fromIdx: number, toIdx: number) => {
           const updated = [...currentList];
           const [moved] = updated.splice(fromIdx, 1);
           updated.splice(toIdx, 0, moved);
-          onChange(updated);
+          onChange(updated.join(','));
         };
 
         return (
           <div className="space-y-3 pt-2">
             <p className="text-xs font-semibold text-slate-400">Упорядочите элементы, нажимая стрелки вверх/вниз:</p>
-            {currentList.map((item: any, idx: number) => {
-              const itemText = typeof item === 'string' ? item : (item.text || item.label);
+            {currentList.map((itemText: string, idx: number) => {
               return (
                 <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl text-slate-800 font-bold text-sm">
                   <span>{idx + 1}. {itemText}</span>
