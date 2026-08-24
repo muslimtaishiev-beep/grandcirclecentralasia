@@ -692,16 +692,19 @@ async function processExamSubmission(payload: any) {
       const candidateIds = [
         `test_grade_${grade}_${resolvedTenantId}`,
         `test_grade_${grade}`,
+        `key_grade_${grade}_${resolvedTenantId}`,
+        `key_grade_${grade}_GLOBAL`,
         `${grade}`
       ];
+      keys = { russian: {}, math: {}, logic: {}, english: {} };
       for (const candId of candidateIds) {
         const docSnap = await admin.firestore().collection("test_answer_keys").doc(candId).get();
         if (docSnap.exists) {
           const docKeys = docSnap.data()?.keys || {};
-          if (Object.keys(docKeys).length > 0) {
-            keys = docKeys;
-            break;
-          }
+          if (docKeys.russian) keys.russian = { ...docKeys.russian, ...keys.russian };
+          if (docKeys.math) keys.math = { ...docKeys.math, ...keys.math };
+          if (docKeys.logic) keys.logic = { ...docKeys.logic, ...keys.logic };
+          if (docKeys.english) keys.english = { ...docKeys.english, ...keys.english };
         }
       }
     } catch (e) {
@@ -834,6 +837,31 @@ async function processExamSubmission(payload: any) {
       body: JSON.stringify(gasPayload),
       signal: AbortSignal.timeout(10000)
     }).catch(err => console.warn("[Exams/Submit] Background GAS Dual-Write notice:", err.message));
+
+    // ✉️ DISPATCH RESULTS EMAIL REPORT IF EMAIL IS PROVIDED
+    if (studentEmail && studentEmail.includes("@")) {
+      const emailPayload = {
+        action: "sendResultEmail",
+        apiKey: gasApiKey,
+        shortId: String(shortId),
+        studentName,
+        studentEmail,
+        studentPhone,
+        grade,
+        totalScore: scores.total || 0,
+        scores,
+        diagnosticSummary: summaryText
+      };
+      fetch(gasUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(emailPayload),
+        signal: AbortSignal.timeout(15000)
+      }).then(async r => {
+        const txt = await r.text();
+        console.log(`[Exams/Submit] Result Email Dispatch SUCCESS for ${studentEmail}:`, txt);
+      }).catch(err => console.warn("[Exams/Submit] Background Email dispatch notice:", err.message));
+    }
   }
 
   return {
