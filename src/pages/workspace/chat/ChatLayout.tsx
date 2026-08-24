@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useOutletContext } from 'react-router-dom';
 import ChannelSidebar from './components/ChannelSidebar';
 import MessageFeed from './components/MessageFeed';
 import MessageComposer from './components/MessageComposer';
+import VideoCall from '../../../components/chat/VideoCall';
 import { useChatRoom } from '../../../hooks/useChatRoom';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Hash, Lock, Search, UserPlus, Users, Video } from 'lucide-react';
@@ -62,6 +64,19 @@ export default function ChatLayout() {
     );
   };
 
+  const [activeCallRoom, setActiveCallRoom] = useState<{ channelName: string } | null>(null);
+
+  const handleStartCall = async () => {
+    if (!activeChannel) return;
+    await startCall();
+    setActiveCallRoom({ channelName: activeChannel.name });
+  };
+
+  const handleJoinCall = () => {
+    if (!activeChannel) return;
+    setActiveCallRoom({ channelName: activeChannel.name });
+  };
+
   return (
     <div className="h-[calc(100vh-4rem)] flex overflow-hidden bg-[var(--bg-app)]">
       <ChannelSidebar 
@@ -106,9 +121,9 @@ export default function ChatLayout() {
                 </button>
 
                 <button 
-                  onClick={startCall}
+                  onClick={handleStartCall}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-500 transition shadow-sm cursor-pointer"
-                  title="Начать звонок"
+                  title="Начать групповой видеозвонок"
                 >
                   <Video className="w-4 h-4" />
                   <span className="hidden sm:inline">Звонок</span>
@@ -121,14 +136,14 @@ export default function ChatLayout() {
               messages={messages}
               currentUserId={user?.uid}
               activeCallSessionId={activeChannel.activeCallSessionId}
-              onJoinCall={() => alert('Комната группового звонка: ' + activeChannel.activeCallSessionId)}
+              onJoinCall={handleJoinCall}
               onToggleReaction={toggleReaction}
             />
 
             {/* Message Composer */}
             <MessageComposer 
               onSendMessage={sendMessage}
-              onStartCall={startCall}
+              onStartCall={handleStartCall}
             />
           </>
         ) : (
@@ -137,6 +152,16 @@ export default function ChatLayout() {
           </div>
         )}
       </div>
+
+      {/* Real-time Video Call Modal Container */}
+      {activeCallRoom && createPortal(
+        <VideoCall 
+          channelName={activeCallRoom.channelName}
+          userName={user?.displayName || user?.email?.split('@')[0] || 'Коллега'}
+          onClose={() => setActiveCallRoom(null)}
+        />,
+        document.body
+      )}
 
       {/* Modal: Add Members to Current Channel */}
       {isAddMembersOpen && (
