@@ -60,11 +60,10 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
       }
 
       if (!idTokenResult) {
-        navigate("/workspace/dashboard");
+        navigate("/workspace/org_future_leaders/dashboard");
         return;
       }
 
-      
       const res = await fetch("/api/auth/me", {
         headers: { Authorization: `Bearer ${idTokenResult.token}` }
       });
@@ -72,15 +71,16 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
 
       if (data.user?.globalRole === "superadmin") {
         navigate("/superadmin");
-      } else if (data.memberships && data.memberships.length > 0) {
-        const firstOrgSlug = data.memberships[0].tenantId ;
+      } else if (data.memberships && data.memberships.length > 0 && data.memberships[0].tenantId) {
+        const firstOrgSlug = data.memberships[0].tenantId;
         navigate(`/workspace/${firstOrgSlug}`);
+      } else if (data.user?.defaultTenantId) {
+        navigate(`/workspace/${data.user.defaultTenantId}`);
       } else {
-        navigate("/workspace");
+        navigate("/workspace/org_future_leaders/dashboard");
       }
     } catch (e) {
-      // In demo mode without backend, redirect to default tenant dashboard
-      navigate("/workspace");
+      navigate("/workspace/org_future_leaders/dashboard");
     }
   };
 

@@ -140,7 +140,8 @@ export default function TeamPermissions() {
       
       if (!editingMemberId) {
         memberDoc.createdAt = serverTimestamp();
-        memberDoc.status = 'pending_invite';
+        memberDoc.status = 'active';
+        memberDoc.tenantId = currentOrgId;
       }
 
       await setDoc(doc(db, 'memberships', docId), memberDoc, { merge: true });
