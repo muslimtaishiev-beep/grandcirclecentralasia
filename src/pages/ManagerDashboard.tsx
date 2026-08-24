@@ -573,20 +573,32 @@ export default function ManagerDashboard() {
             // Allow if tenant matches OR if tenant is fallback org_future_leaders
             if (rowTenant === targetTenantId || targetTenantId === 'org_future_leaders' || !s.tenantId) {
               const sId = (s.shortId || s.studentShortId).toString();
-              const existing = studentMap.get(sId) || {};
+              const existing = studentMap.get(sId);
 
-              studentMap.set(sId, {
-                ...existing,
-                ...s,
-                shortId: sId,
-                childName: s.childName || s.studentName || existing.childName || `Ученик ${sId}`,
-                grade: String(s.grade || existing.grade || 7),
-                ru: s.ru !== undefined ? Number(s.ru) : (existing.ru ?? 0),
-                ma: s.ma !== undefined ? Number(s.ma) : (existing.ma ?? 0),
-                lo: s.lo !== undefined ? Number(s.lo) : (existing.lo ?? 0),
-                en: s.en !== undefined ? Number(s.en) : (existing.en ?? 0),
-                tenantId: rowTenant
-              });
+              if (existing) {
+                // Firestore is AUTHORITATIVE. Keep Firestore scores, diagnostics, and status!
+                studentMap.set(sId, {
+                  ...s,
+                  ...existing,
+                  parentName: existing.parentName || s.parentName || '—',
+                  phone: existing.phone || s.phone || '—'
+                });
+              } else {
+                studentMap.set(sId, {
+                  shortId: sId,
+                  childName: s.childName || s.studentName || `Ученик ${sId}`,
+                  studentName: s.studentName || s.childName,
+                  grade: String(s.grade || 7),
+                  ru: Number(s.ru || 0),
+                  ma: Number(s.ma || 0),
+                  lo: Number(s.lo || 0),
+                  en: Number(s.en || 0),
+                  status: s.status || 'В РАБОТЕ',
+                  finalDecision: s.finalDecision || 'НЕ ОБРАБОТАН',
+                  managerName: s.managerName || 'Не назначен',
+                  tenantId: rowTenant
+                });
+              }
             }
           });
         }
