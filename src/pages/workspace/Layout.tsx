@@ -108,7 +108,6 @@ export default function WorkspaceLayout() {
     { name: "Site Builder", path: `/workspace/${activeTenant.id}/sites`, icon: Globe },
     { name: "Тарифы и Биллинг", path: `/workspace/${activeTenant.id}/billing`, icon: CreditCard },
     { name: "Automations", path: `/workspace/${activeTenant.id}/automations`, icon: Zap },
-    { name: "Settings", path: `/workspace/${activeTenant.id}/settings`, icon: Settings },
   ] : [];
 
   if (loading) {
@@ -179,7 +178,7 @@ export default function WorkspaceLayout() {
           
           {/* Profile Button / Link to Settings */}
           <button 
-            onClick={() => navigate(`/workspace/${orgId}/settings`)}
+            onClick={() => navigate(`/workspace/${orgId}/settings/permissions`)}
             className="flex items-center gap-2 pl-2 border-l border-[var(--border-color)] cursor-pointer hover:opacity-80 transition"
             title="Settings Profile"
           >
