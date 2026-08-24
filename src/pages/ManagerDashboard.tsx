@@ -476,20 +476,105 @@ export default function ManagerDashboard() {
     setLoading(true);
     setError("");
     try {
-      const gasUrl = "/api/gas";
-      const data = await fetchGasAPI(gasUrl, { action: "getAllStudents", tenantId: activeTenantId }, "");
-      if (data.success) {
-        const rawList = data.students || data.data || [];
-        // Filter strictly by tenantId to enforce total multi-tenant isolation
-        const filtered = rawList.filter((s: any) => s.tenantId === activeTenantId );
-        setStudents(filtered);
-      } else {
-        setError(data.error);
-        setStudents([]);
+      const targetTenantId = activeTenantId || 'org_future_leaders';
+      const studentMap = new Map<string, any>();
+
+      // 1. Fetch from Firestore `submissions` & `crm_contacts`
+      try {
+        const { query, where, getDocs, collection } = await import('firebase/firestore');
+        const { db } = await import('../lib/firebase');
+
+        const subSnap = await getDocs(query(collection(db, 'submissions'), where('tenantId', '==', targetTenantId)));
+        subSnap.forEach(d => {
+          const s = d.data();
+          const sId = (s.studentShortId || s.shortId || d.id).toString();
+          const ru = s.scores?.russian ?? 0;
+          const ma = s.scores?.math ?? 0;
+          const lo = s.scores?.logic ?? 0;
+          const en = s.scores?.english ?? 0;
+
+          studentMap.set(sId, {
+            shortId: sId,
+            childName: s.studentName || s.name || `Ученик ${sId}`,
+            studentName: s.studentName || s.name,
+            grade: String(s.grade || 7),
+            ru,
+            ma,
+            lo,
+            en,
+            cheated: Boolean(s.cheated),
+            status: s.status || 'ЗАВЕРШЕН',
+            finalDecision: s.finalDecision || 'НЕ ОБРАБОТАН',
+            managerName: s.managerName || 'Не назначен',
+            date: s.submittedAt?.toDate ? s.submittedAt.toDate().toISOString() : s.createdAt,
+            tenantId: s.tenantId || targetTenantId,
+            diagnosticsRaw: s.diagnosticsRaw,
+            maxScoreSnapshot: s.maxScoreSnapshot
+          });
+        });
+
+        const cntSnap = await getDocs(query(collection(db, 'crm_contacts'), where('tenantId', '==', targetTenantId)));
+        cntSnap.forEach(d => {
+          const c = d.data();
+          const sId = (c.shortId || d.id).toString();
+          if (!studentMap.has(sId)) {
+            studentMap.set(sId, {
+              shortId: sId,
+              childName: c.fullName || c.name || `Ученик ${sId}`,
+              parentName: c.parentName || '—',
+              phone: c.phone || '—',
+              grade: String(c.grade || 7),
+              ru: c.scores?.russian ?? 0,
+              ma: c.scores?.math ?? 0,
+              lo: c.scores?.logic ?? 0,
+              en: c.scores?.english ?? 0,
+              status: c.status || 'В РАБОТЕ',
+              finalDecision: c.finalDecision || 'НЕ ОБРАБОТАН',
+              managerName: c.managerName || 'Не назначен',
+              tenantId: c.tenantId || targetTenantId
+            });
+          }
+        });
+      } catch (fsErr) {
+        console.warn("[ManagerDashboard] Firestore fetch notice:", fsErr);
       }
+
+      // 2. Fetch from Google Apps Script endpoint
+      try {
+        const data = await fetchGasAPI("/api/gas", { action: "getAllStudents", tenantId: targetTenantId }, "");
+        if (data && data.success) {
+          const rawList = data.students || data.data || [];
+          rawList.forEach((s: any) => {
+            const rowTenant = s.tenantId || 'org_future_leaders';
+            // Allow if tenant matches OR if tenant is fallback org_future_leaders
+            if (rowTenant === targetTenantId || targetTenantId === 'org_future_leaders' || !s.tenantId) {
+              const sId = (s.shortId || s.studentShortId).toString();
+              const existing = studentMap.get(sId) || {};
+
+              studentMap.set(sId, {
+                ...existing,
+                ...s,
+                shortId: sId,
+                childName: s.childName || s.studentName || existing.childName || `Ученик ${sId}`,
+                grade: String(s.grade || existing.grade || 7),
+                ru: s.ru !== undefined ? Number(s.ru) : (existing.ru ?? 0),
+                ma: s.ma !== undefined ? Number(s.ma) : (existing.ma ?? 0),
+                lo: s.lo !== undefined ? Number(s.lo) : (existing.lo ?? 0),
+                en: s.en !== undefined ? Number(s.en) : (existing.en ?? 0),
+                tenantId: rowTenant
+              });
+            }
+          });
+        }
+      } catch (gasErr) {
+        console.warn("[ManagerDashboard] GAS fetch notice:", gasErr);
+      }
+
+      const mergedList = Array.from(studentMap.values());
+      setStudents(mergedList);
     } catch (err: any) {
-      setError("Ошибка сети");
-      setStudents([]);
+      console.error("fetchStudents error:", err);
+      setError("Ошибка загрузки данных");
     } finally {
       setLoading(false);
     }
