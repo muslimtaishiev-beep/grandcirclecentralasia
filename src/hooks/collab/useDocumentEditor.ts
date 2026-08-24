@@ -136,6 +136,11 @@ export function useDocumentEditor(tenantId: string, docId: string | undefined) {
     }
   }, [doc, tenantId, user]);
 
+  const deleteDoc = useCallback(async () => {
+    if (!doc || !tenantId) return;
+    await documentService.deleteDocument(tenantId, doc.id);
+  }, [doc, tenantId]);
+
   return {
     doc,
     loading,
@@ -151,6 +156,7 @@ export function useDocumentEditor(tenantId: string, docId: string | undefined) {
     deleteBlock,
     changeBlockType,
     undo,
-    redo
+    redo,
+    deleteDoc
   };
 }

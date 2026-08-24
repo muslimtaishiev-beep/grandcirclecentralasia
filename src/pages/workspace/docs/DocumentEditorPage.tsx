@@ -23,12 +23,15 @@ export default function DocumentEditorPage() {
     deleteBlock, 
     changeBlockType,
     undo,
-    redo 
+    redo,
+    deleteDoc 
   } = useDocumentEditor(activeTenant?.id, docId);
 
   const [exportOpen, setExportOpen] = useState(false);
   const [selectedFont, setSelectedFont] = useState('Verdana');
   const [fontSize, setFontSize] = useState(11);
+  const [showRuler, setShowRuler] = useState(true);
+  const [zoomLevel, setZoomLevel] = useState(100);
   const navigate = useNavigate();
   const editorRef = useRef<HTMLDivElement>(null);
 
@@ -62,7 +65,14 @@ export default function DocumentEditorPage() {
 
   const activeBlock = doc.blocks.find(b => b.id === activeBlockId) || (doc.blocks.length > 0 ? doc.blocks[0] : null);
 
-  const handleExport = (format: 'pdf' | 'markdown') => {
+  const handleDeleteDoc = async () => {
+    if (window.confirm(`Вы уверены, что хотите удалить документ "${doc.title}"?`)) {
+      await deleteDoc();
+      navigate(`/workspace/${activeTenant?.id}/docs`);
+    }
+  };
+
+  const handleExport = (format: 'pdf' | 'markdown' = 'pdf') => {
     setExportOpen(false);
     if (format === 'pdf') {
       window.print();
@@ -204,7 +214,8 @@ export default function DocumentEditorPage() {
             addBlockAfter(doc.blocks[doc.blocks.length - 1].id, type);
           }
         }}
-        onExport={() => setExportOpen(true)}
+        onExport={handleExport}
+        onDeleteDoc={handleDeleteDoc}
         saving={saving}
         selectedFont={selectedFont}
         setSelectedFont={setSelectedFont}
@@ -214,21 +225,32 @@ export default function DocumentEditorPage() {
         onRedo={redo}
         activeBlock={activeBlock}
         onUpdateStyle={updateActiveBlockStyle}
+        showRuler={showRuler}
+        setShowRuler={setShowRuler}
+        zoomLevel={zoomLevel}
+        setZoomLevel={setZoomLevel}
+        docBlocks={doc.blocks}
       />
 
       {/* Google Docs Ruler Bar */}
-      <div className="bg-[#edf2fa] border-b border-slate-200 h-6 flex items-center justify-center select-none shrink-0 overflow-hidden">
-        <div className="w-[816px] flex items-center justify-between text-[10px] font-mono text-slate-500 px-12">
-          <span>1</span><span>.</span><span>2</span><span>.</span><span>3</span><span>.</span><span>4</span><span>.</span><span>5</span><span>.</span><span>6</span><span>.</span><span>7</span>
+      {showRuler && (
+        <div className="bg-[#edf2fa] border-b border-slate-200 h-6 flex items-center justify-center select-none shrink-0 overflow-hidden">
+          <div className="w-[816px] flex items-center justify-between text-[10px] font-mono text-slate-500 px-12">
+            <span>1</span><span>.</span><span>2</span><span>.</span><span>3</span><span>.</span><span>4</span><span>.</span><span>5</span><span>.</span><span>6</span><span>.</span><span>7</span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Document Workspace Canvas (A4 Paper Layout) */}
       <div className="flex-1 overflow-y-auto py-8 px-4 flex justify-center bg-[#f8f9fa] print:bg-white print:p-0">
         <div 
           ref={editorRef} 
-          style={{ fontFamily: selectedFont }}
-          className="bg-white text-slate-900 shadow-xl border border-slate-200/90 rounded-sm w-full max-w-[816px] min-h-[1056px] px-16 py-14 space-y-2 relative transition-all"
+          style={{ 
+            fontFamily: selectedFont,
+            transform: `scale(${zoomLevel / 100})`,
+            transformOrigin: 'top center'
+          }}
+          className="bg-white text-slate-900 shadow-xl border border-slate-200/90 rounded-sm w-full max-w-[816px] min-h-[1056px] px-16 py-14 space-y-2 relative transition-transform duration-200"
         >
           {doc.blocks.map((b, i) => renderBlock(b, i))}
           
