@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore } from 'firebase/firestore';
+import { getFirestore } from 'firebase/firestore';
 
 // Replace these values with your actual Firebase project config
 const firebaseConfig = {
@@ -15,6 +15,6 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = initializeFirestore(app, {
-  experimentalAutoDetectLongPolling: true,
-});
+
+// Use standard Firestore instance (WebSockets stream) to avoid CORS WebChannel Listen/Write errors
+export const db = getFirestore(app);
