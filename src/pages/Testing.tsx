@@ -146,17 +146,31 @@ export default function Testing() {
   useEffect(() => {
     if (!grade && !testId) return;
     const currentOrg = orgSlug || "org_future_leaders";
-    const docId = testId || `test_grade_${grade}_${currentOrg}`;
-    const docRef = doc(db, 'tests', docId);
-    getDoc(docRef).then(snap => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data.questions) {
-          setFirestoreTestData(data);
-        }
+    
+    const tryFetchDoc = async () => {
+      const candidates = [
+        testId,
+        `test_grade_${grade}`,
+        `test_grade_${grade}_${currentOrg}`,
+        `test_${grade}`,
+        `${grade}`
+      ].filter(Boolean);
+
+      for (const cId of candidates) {
+        try {
+          const docSnap = await getDoc(doc(db, 'tests', cId!));
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data.questions && (data.questions.russian?.length || data.questions.math?.length)) {
+              setFirestoreTestData(data);
+              return;
+            }
+          }
+        } catch(e){}
       }
-    }).catch(() => {});
-  }, [grade, testId]);
+    };
+    tryFetchDoc();
+  }, [grade, testId, orgSlug]);
 
   // Prevent accidental F5/Closing
   useEffect(() => {

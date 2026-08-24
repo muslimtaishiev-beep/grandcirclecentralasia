@@ -692,13 +692,24 @@ app.post("/api/exams/submit", async (req, res) => {
     let testSnapshot: any = null;
     if (useFirebase) {
       try {
-        const keySnap = await admin.firestore().collection("test_answer_keys")
+        let keySnap = await admin.firestore().collection("test_answer_keys")
           .where("tenantId", "==", resolvedTenantId)
           .where("grade", "==", Number(grade))
           .limit(1)
           .get();
+        
         if (!keySnap.empty) {
           keys = keySnap.docs[0].data()?.keys || {};
+        } else {
+          // Fallback direct doc lookups
+          const candidateIds = [`test_grade_${grade}`, `test_grade_${grade}_${resolvedTenantId}`, `${grade}`];
+          for (const candId of candidateIds) {
+            const docSnap = await admin.firestore().collection("test_answer_keys").doc(candId).get();
+            if (docSnap.exists) {
+              keys = docSnap.data()?.keys || {};
+              break;
+            }
+          }
         }
       } catch (e) {
         console.warn("[Exams/Submit] Failed to fetch answer keys:", e);
