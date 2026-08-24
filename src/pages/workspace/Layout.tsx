@@ -89,11 +89,49 @@ export default function WorkspaceLayout() {
 
   const hasPerm = (perm: string) => {
     if (!activeTenant) return false;
-    if (activeTenant.role === 'owner' || activeTenant.role === 'org:owner' || activeTenant.role === 'superadmin') return true;
+    
+    // Normalize role string
+    const roleLower = String(activeTenant.role || '').toLowerCase();
+    const isFullAdmin = [
+      'owner', 'org:owner', 'superadmin', 'admin', 'org:admin', 
+      'administrator', 'руководитель', 'директор'
+    ].some(r => roleLower.includes(r));
+    
+    if (isFullAdmin) return true;
+
+    // 1. Array or Object permissions (TeamPermissions)
     const p = activeTenant.permissions;
-    if (!p) return false;
-    if (Array.isArray(p)) return p.includes(perm);
-    return !!p[perm];
+    if (p) {
+      if (Array.isArray(p) && p.includes(perm)) return true;
+      if (typeof p === 'object' && !Array.isArray(p) && p[perm]) return true;
+    }
+
+    // 2. Custom PBAC Matrix permissions (TeamPermissionMatrix)
+    const cp = activeTenant.customPermissions;
+    if (Array.isArray(cp) && cp.length > 0) {
+      const permToModule: Record<string, string[]> = {
+        'crm:read': ['mod_crm', 'mod_admissions'],
+        'crm:manage': ['mod_crm', 'mod_admissions'],
+        'tests:read': ['mod_proctoring'],
+        'tests:manage': ['mod_proctoring'],
+        'tests:review': ['mod_proctoring'],
+        'certificates:issue': ['mod_certificates', 'mod_admissions'],
+        'edu:schedule': ['mod_admissions', 'mod_payroll'],
+        'edu:payroll': ['mod_payroll'],
+        'team:manage': ['mod_settings'],
+        'settings:manage': ['mod_settings'],
+      };
+
+      const modules = permToModule[perm] || [];
+      for (const modId of modules) {
+        const modPerm = cp.find((m: any) => m.moduleId === modId);
+        if (modPerm && (modPerm.canView || modPerm.canEdit || modPerm.canExecute)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   };
 
   const navItems = activeTenant ? [
@@ -101,22 +139,22 @@ export default function WorkspaceLayout() {
     hasPerm('edu:schedule') && { name: "Расписание", path: `/workspace/${activeTenant.id}/edu/schedule`, icon: Calendar },
     hasPerm('edu:schedule') && { name: "Журнал", path: `/workspace/${activeTenant.id}/edu/attendance`, icon: UserCheck },
     hasPerm('edu:schedule') && { name: "Абонементы", path: `/workspace/${activeTenant.id}/edu/subscriptions`, icon: CreditCard },
-    hasPerm('edu:schedule') && { name: "Зарплаты", path: `/workspace/${activeTenant.id}/edu/payroll`, icon: DollarSign },
+    (hasPerm('edu:payroll') || hasPerm('edu:schedule')) && { name: "Зарплаты", path: `/workspace/${activeTenant.id}/edu/payroll`, icon: DollarSign },
     { name: "Chat", path: `/workspace/${activeTenant.id}/chat`, icon: MessageSquare },
     { name: "Tasks", path: `/workspace/${activeTenant.id}/tasks`, icon: CheckSquare },
     (hasPerm('crm:read') || hasPerm('crm:manage')) && { name: "CRM", path: `/workspace/${activeTenant.id}/crm/contacts`, icon: Briefcase },
     (hasPerm('tests:read') || hasPerm('tests:manage')) && { name: "Тесты", path: `/workspace/${activeTenant.id}/tests`, icon: FileQuestion },
     (hasPerm('tests:review') || hasPerm('tests:manage')) && { name: "Проверка & Прокторинг", path: `/workspace/${activeTenant.id}/tests/manage`, icon: ShieldCheck },
-    hasPerm('team:manage') && { name: "Заявки & QR", path: `/workspace/${activeTenant.id}/builder/forms`, icon: FileCheck2 },
-    hasPerm('team:manage') && { name: "Function Studio", path: `/workspace/${activeTenant.id}/functions/studio`, icon: Settings2 },
-    hasPerm('team:manage') && { name: "Оргструктура & Отделы", path: `/workspace/${activeTenant.id}/settings/departments`, icon: FolderTree },
-    hasPerm('team:manage') && { name: "Матрица Доступов PBAC", path: `/workspace/${activeTenant.id}/settings/permission-matrix`, icon: Sliders },
-    hasPerm('team:manage') && { name: "Права & Сотрудники", path: `/workspace/${activeTenant.id}/settings/permissions`, icon: Shield },
+    (hasPerm('team:manage') || hasPerm('certificates:issue') || hasPerm('crm:manage')) && { name: "Заявки & QR", path: `/workspace/${activeTenant.id}/builder/forms`, icon: FileCheck2 },
+    (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Function Studio", path: `/workspace/${activeTenant.id}/functions/studio`, icon: Settings2 },
+    (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Оргструктура & Отделы", path: `/workspace/${activeTenant.id}/settings/departments`, icon: FolderTree },
+    (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Матрица Доступов PBAC", path: `/workspace/${activeTenant.id}/settings/permission-matrix`, icon: Sliders },
+    (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Права & Сотрудники", path: `/workspace/${activeTenant.id}/settings/permissions`, icon: Shield },
     { name: "Docs", path: `/workspace/${activeTenant.id}/docs`, icon: FileText },
     { name: "Sheets", path: `/workspace/${activeTenant.id}/sheets`, icon: FileSpreadsheet },
-    hasPerm('team:manage') && { name: "Site Builder", path: `/workspace/${activeTenant.id}/sites`, icon: Globe },
-    (activeTenant.role === 'owner') && { name: "Тарифы и Биллинг", path: `/workspace/${activeTenant.id}/billing`, icon: CreditCard },
-    hasPerm('team:manage') && { name: "Automations", path: `/workspace/${activeTenant.id}/automations`, icon: Zap },
+    (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Site Builder", path: `/workspace/${activeTenant.id}/sites`, icon: Globe },
+    (activeTenant.role === 'owner' || activeTenant.role === 'org:owner' || activeTenant.role === 'superadmin') && { name: "Тарифы и Биллинг", path: `/workspace/${activeTenant.id}/billing`, icon: CreditCard },
+    (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Automations", path: `/workspace/${activeTenant.id}/automations`, icon: Zap },
   ].filter(Boolean) as Array<{ name: string, path: string, icon: any }> : [];
 
   if (loading) {

@@ -71,7 +71,8 @@ router.get("/my", requireFirebaseAuth, async (req: any, res: any) => {
       return {
         ...data,
         role: membership.role || 'user',
-        permissions: membership.permissions || {},
+        permissions: membership.permissions || [],
+        customPermissions: membership.customPermissions || [],
         membershipId: membership.id
       };
     });
