@@ -68,7 +68,6 @@ export default function ManagerDashboard() {
   useEffect(() => {
     const unsub = onAuthStateChanged(firebaseAuth, (user) => {
       if (user) {
-        setIsAuthenticated(true);
         setCertManagerName(user.displayName || user.email || "Сотрудник Академии");
       }
     });

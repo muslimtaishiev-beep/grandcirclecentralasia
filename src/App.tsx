@@ -265,6 +265,7 @@ export default function App() {
           <Route path="/workspace" element={<ProtectedRoute><WorkspaceLayout /></ProtectedRoute>}>
             <Route index element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/dashboard" element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId/settings" element={<GracefulErrorBoundary fallbackTitle="Ошибка Настроек"><WorkspaceSettings /></GracefulErrorBoundary>} />
             <Route path=":orgId/settings/permissions" element={<GracefulErrorBoundary fallbackTitle="Ошибка Управления Правами"><TeamPermissions /></GracefulErrorBoundary>} />
             <Route path=":orgId/settings/permission-matrix" element={<GracefulErrorBoundary fallbackTitle="Ошибка Матрицы Доступов PBAC"><TeamPermissionMatrix /></GracefulErrorBoundary>} />
