@@ -86,6 +86,16 @@ service cloud.firestore {
     match /memberships/{docId} { allow read, write: if hasTenantAccess(); }
     match /departments/{docId} { allow read, write: if hasTenantAccess(); }
     
+    // Forms & Custom Data
+    match /custom_forms/{docId} { allow read, write: if hasTenantAccess(); }
+    match /form_submissions/{docId} { allow read, write: if hasTenantAccess(); }
+    match /custom_business_functions/{docId} { allow read, write: if hasTenantAccess(); }
+    match /testimonials/{docId} { allow read, write: if hasTenantAccess(); }
+    match /app_screens/{docId} { allow read, write: if hasTenantAccess(); }
+    match /decisions/{docId} { allow read, write: if hasTenantAccess(); }
+    match /users/{docId} { allow read, write: if hasTenantAccess(); }
+    match /crm_pipelines/{docId} { allow read, write: if hasTenantAccess(); }
+    
     // -------------------------------------------------------------
     // 3. PUBLIC & EVALUATION COLLECTIONS
     // -------------------------------------------------------------
