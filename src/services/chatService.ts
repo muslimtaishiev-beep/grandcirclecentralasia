@@ -92,6 +92,18 @@ class ChatService {
     return roomId;
   }
 
+  async createChannel(tenantId: string, channelData: { name: string; type: 'public_channel' | 'private_channel' | 'direct_message'; memberStaffIds: string[] }) {
+    const ref = doc(collection(db, 'tenants', tenantId, 'chat_channels'));
+    const id = ref.id;
+    await setDoc(ref, {
+      ...channelData,
+      id,
+      tenantId,
+      createdAt: Date.now()
+    });
+    return id;
+  }
+
   async endChannelCall(tenantId: string, channelId: string) {
     const channelRef = doc(db, 'tenants', tenantId, 'chat_channels', channelId);
     await updateDoc(channelRef, { activeCallSessionId: null });

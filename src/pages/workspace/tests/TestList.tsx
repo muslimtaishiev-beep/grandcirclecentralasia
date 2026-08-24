@@ -147,7 +147,7 @@ export default function TestList() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <a
-                          href={`/test/${testDocId}`}
+                          href={`/${currentOrgId}/test/${testDocId}`}
                           target="_blank"
                           rel="noreferrer"
                           className="px-3 py-1.5 bg-purple-600/10 hover:bg-purple-600/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 rounded-lg font-bold text-[11px] flex items-center gap-1.5 transition"

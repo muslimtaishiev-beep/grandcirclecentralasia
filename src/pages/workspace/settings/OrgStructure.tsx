@@ -270,7 +270,7 @@ export default function OrgStructure() {
                       {headMember ? (
                         <div className="flex items-center gap-3 bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-xl">
                           <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center">
-                            {(headMember.name || headMember.email)[0].toUpperCase()}
+                            {(headMember.name || headMember.email || 'U')[0].toUpperCase()}
                           </div>
                           <div>
                             <div className="font-bold text-[var(--text-main)] text-xs">{headMember.name || 'Начальник отдела'}</div>

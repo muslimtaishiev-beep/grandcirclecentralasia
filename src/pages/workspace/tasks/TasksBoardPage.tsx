@@ -6,6 +6,7 @@ import { useTaskManager } from '../../../hooks/useTaskManager';
 import { WorkspaceTask, TaskStatus } from '../../../types/tasks';
 import TaskCard from './components/TaskCard';
 import TaskModal from './components/TaskModal';
+import CreateTaskModal from './components/CreateTaskModal';
 import TaskFiltersToolbar from './components/TaskFiltersToolbar';
 import { Plus, List, LayoutGrid } from 'lucide-react';
 
@@ -40,11 +41,13 @@ function KanbanColumn({ status, tasks, onTaskClick }: { status: {id: TaskStatus,
   );
 }
 
+
 export default function TasksBoardPage() {
   const { activeTenant } = useOutletContext<any>();
   const { tasks, filters, setFilters, moveTask } = useTaskManager(activeTenant?.id);
   const [activeDragTask, setActiveDragTask] = useState<WorkspaceTask | null>(null);
   const [selectedTask, setSelectedTask] = useState<WorkspaceTask | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   const handleDragStart = (event: DragStartEvent) => {
     if (event.active.data.current?.type === 'Task') {
@@ -77,7 +80,10 @@ export default function TasksBoardPage() {
           <TaskFiltersToolbar filters={filters} onFilterChange={setFilters} />
         </div>
         
-        <button className="flex items-center gap-2 bg-[var(--accent)] text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md hover:brightness-110 transition shrink-0">
+        <button 
+          onClick={() => setIsCreateOpen(true)}
+          className="flex items-center gap-2 bg-[var(--accent)] text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md hover:brightness-110 transition shrink-0 cursor-pointer"
+        >
           <Plus className="w-4 h-4" /> Новая задача
         </button>
       </div>
@@ -105,6 +111,7 @@ export default function TasksBoardPage() {
       </div>
 
       <TaskModal isOpen={!!selectedTask} onClose={() => setSelectedTask(null)} task={selectedTask || undefined} />
+      <CreateTaskModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} tenantId={activeTenant?.id} />
     </div>
   );
 }

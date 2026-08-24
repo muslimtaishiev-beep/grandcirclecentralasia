@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Search, Plus, Filter, MoreHorizontal, Mail, Phone } from 'lucide-react';
+import { Search, Plus, Filter, MoreHorizontal, Mail, Phone, X, Check } from 'lucide-react';
 import { db } from '../../../lib/firebase';
-import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, setDoc, doc } from 'firebase/firestore';
 import { CrmContact } from '../../../types/crm';
 import ContactProfileDrawer from './components/ContactProfileDrawer';
 
@@ -12,23 +12,91 @@ export default function ContactsDirectoryPage() {
   const [search, setSearch] = useState('');
   const [selectedContact, setSelectedContact] = useState<CrmContact | null>(null);
 
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [type, setType] = useState<'student' | 'lead' | 'partner' | 'employee'>('student');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   useEffect(() => {
     if (!activeTenant?.id) return;
-    const q = query(collection(db, 'tenants', activeTenant.id, 'crm_contacts'), orderBy('createdAt', 'desc'));
-    const unsub = onSnapshot(q, (snap) => {
-      setContacts(snap.docs.map(d => ({ ...d.data(), id: d.id } as CrmContact)));
+
+    // Listen to root crm_contacts with tenantId filter
+    const q1 = query(collection(db, 'crm_contacts'), where('tenantId', '==', activeTenant.id));
+    const unsub = onSnapshot(q1, (snap) => {
+      const list: CrmContact[] = [];
+      snap.forEach(d => {
+        const data = d.data();
+        list.push({
+          id: d.id,
+          tenantId: data.tenantId,
+          fullName: data.fullName || data.name || 'Без имени',
+          email: data.email || '—',
+          phone: data.phone || '—',
+          type: data.type || 'student',
+          companyName: data.companyName || '',
+          totalDealsCount: data.totalDealsCount || 0,
+          totalRevenueGenerated: data.totalRevenueGenerated || 0,
+          createdAt: data.createdAt
+        } as CrmContact);
+      });
+      setContacts(list);
+    }, (err) => {
+      console.warn("CRM contacts listener notice:", err);
     });
+
     return () => unsub();
   }, [activeTenant?.id]);
 
-  const filtered = contacts.filter(c => c.fullName.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search));
+  const handleCreateContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fullName.trim() || !activeTenant?.id) return;
+
+    setIsSubmitting(true);
+    try {
+      const newContactDoc = {
+        tenantId: activeTenant.id,
+        fullName: fullName.trim(),
+        name: fullName.trim(),
+        phone: phone.trim() || '—',
+        email: email.trim() || '—',
+        type,
+        status: 'active',
+        totalDealsCount: 0,
+        totalRevenueGenerated: 0,
+        createdAt: serverTimestamp()
+      };
+
+      await addDoc(collection(db, 'crm_contacts'), newContactDoc);
+      // Also save to nested subcollection for backward compatibility
+      const nestedRef = doc(collection(db, 'tenants', activeTenant.id, 'crm_contacts'));
+      await setDoc(nestedRef, newContactDoc);
+
+      setFullName('');
+      setPhone('');
+      setEmail('');
+      setIsModalOpen(false);
+    } catch (err: any) {
+      alert(`Ошибка добавления контакта: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const filtered = contacts.filter(c => 
+    (c.fullName || '').toLowerCase().includes(search.toLowerCase()) || 
+    (c.phone || '').includes(search) ||
+    (c.email || '').toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="h-full flex flex-col p-6 max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-[var(--text-main)] mb-1">Контакты (Directory)</h1>
-          <p className="text-sm font-medium text-[var(--text-muted)]">База клиентов, партнеров и сотрудников ({contacts.length})</p>
+          <h1 className="text-2xl font-bold text-[var(--text-main)] mb-1">Контакты & Абитуриенты (Directory)</h1>
+          <p className="text-sm font-medium text-[var(--text-muted)]">База учащихся, клиентов и партнеров ({contacts.length})</p>
         </div>
         
         <div className="flex items-center gap-3 w-full md:w-auto">
@@ -42,11 +110,11 @@ export default function ContactsDirectoryPage() {
               className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl pl-10 pr-4 py-2 text-sm text-[var(--text-main)] focus:outline-none focus:border-[var(--accent)]"
             />
           </div>
-          <button className="p-2 border border-[var(--border-color)] bg-[var(--bg-panel)] rounded-xl text-[var(--text-muted)] hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-            <Filter className="w-5 h-5" />
-          </button>
-          <button className="flex items-center gap-2 bg-[var(--accent)] text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md hover:brightness-110 transition shrink-0">
-            <Plus className="w-4 h-4" /> Добавить
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md transition shrink-0 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" /> Добавить Контакт
           </button>
         </div>
       </div>
@@ -67,7 +135,7 @@ export default function ContactsDirectoryPage() {
               {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-6 py-8 text-center text-sm font-medium text-[var(--text-muted)]">
-                    Контакты не найдены.
+                    Контакты не найдены. Нажмите "+ Добавить Контакт" для создания первой карточки.
                   </td>
                 </tr>
               ) : filtered.map(contact => (
@@ -78,7 +146,7 @@ export default function ContactsDirectoryPage() {
                         <img src={contact.avatarUrl} alt="" className="w-10 h-10 rounded-full" />
                       ) : (
                         <div className="w-10 h-10 rounded-full bg-[var(--accent)] text-white flex items-center justify-center font-bold">
-                          {contact.fullName.charAt(0)}
+                          {(contact.fullName || 'К')[0].toUpperCase()}
                         </div>
                       )}
                       <div>
@@ -101,7 +169,7 @@ export default function ContactsDirectoryPage() {
                   <td className="px-6 py-4">
                     <div className="flex flex-col">
                       <span className="text-sm font-bold text-[var(--text-main)]">{contact.totalDealsCount}</span>
-                      <span className="text-xs text-emerald-500 font-bold">{contact.totalRevenueGenerated.toLocaleString()} KGS</span>
+                      <span className="text-xs text-emerald-500 font-bold">{(contact.totalRevenueGenerated || 0).toLocaleString()} KGS</span>
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">
@@ -121,6 +189,82 @@ export default function ContactsDirectoryPage() {
         onClose={() => setSelectedContact(null)} 
         contact={selectedContact || undefined} 
       />
+
+      {/* Modal: Create Contact */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-3">
+              <h3 className="font-bold text-base text-[var(--text-main)] flex items-center gap-2">
+                <Plus className="w-5 h-5 text-emerald-500" />
+                <span>Новый Контакт CRM</span>
+              </h3>
+              <button onClick={() => setIsModalOpen(false)} className="p-1 hover:bg-black/10 rounded text-slate-400">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateContact} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">ФИО Ученика / Клиента *</label>
+                <input 
+                  type="text" 
+                  required
+                  placeholder="Иванов Иван Иванович"
+                  value={fullName}
+                  onChange={e => setFullName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Номер телефона</label>
+                <input 
+                  type="text" 
+                  placeholder="+996 555 123 456"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Электронная почта (Email)</label>
+                <input 
+                  type="email" 
+                  placeholder="student@gmail.com"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Тип контакта</label>
+                <select 
+                  value={type}
+                  onChange={e => setType(e.target.value as any)}
+                  className="w-full px-3.5 py-2.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="student">Ученик / Абитуриент</option>
+                  <option value="lead">Лид / Заявка</option>
+                  <option value="partner">Партнер / Родитель</option>
+                  <option value="employee">Сотрудник</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border-color)]">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 rounded-xl border text-xs font-bold">Отмена</button>
+                <button type="submit" disabled={isSubmitting} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
+                  <Check className="w-4 h-4" />
+                  <span>Сохранить</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

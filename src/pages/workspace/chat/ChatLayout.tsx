@@ -19,6 +19,7 @@ export default function ChatLayout() {
     messages,
     activeChannel,
     sendMessage,
+    createChannel,
     startCall,
     toggleReaction
   } = useChatRoom(activeTenant?.id, activeChannelId);
@@ -30,12 +31,18 @@ export default function ChatLayout() {
     }
   }, [channels, activeChannelId]);
 
+  const handleCreateChannel = async (name: string, type: 'public_channel' | 'private_channel' | 'direct_message') => {
+    const newId = await createChannel(name, type);
+    if (newId) setActiveChannelId(newId);
+  };
+
   return (
     <div className="h-[calc(100vh-4rem)] flex overflow-hidden bg-[var(--bg-app)]">
       <ChannelSidebar 
         channels={channels}
         activeChannelId={activeChannelId}
         onSelectChannel={setActiveChannelId}
+        onCreateChannel={handleCreateChannel}
       />
       
       <div className="flex-1 flex flex-col min-w-0">

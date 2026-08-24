@@ -56,11 +56,22 @@ export function useChatRoom(tenantId: string, channelId: string | undefined) {
 
   const activeChannel = channels.find(c => c.id === channelId);
 
+  const createChannel = async (name: string, type: 'public_channel' | 'private_channel' | 'direct_message' = 'public_channel') => {
+    if (!tenantId || !user?.uid) return;
+    const newId = await chatService.createChannel(tenantId, {
+      name,
+      type,
+      memberStaffIds: [user.uid]
+    });
+    return newId;
+  };
+
   return {
     channels,
     messages,
     activeChannel,
     sendMessage,
+    createChannel,
     startCall,
     endCall,
     toggleReaction

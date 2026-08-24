@@ -3,13 +3,13 @@ import { useOutletContext, Link } from 'react-router-dom';
 import { useTaskManager } from '../../../hooks/useTaskManager';
 import { WorkspaceTask } from '../../../types/tasks';
 import TaskFiltersToolbar from './components/TaskFiltersToolbar';
-import TaskModal from './components/TaskModal';
-import { Plus, LayoutGrid, List, CheckSquare } from 'lucide-react';
+import CreateTaskModal from './components/CreateTaskModal';
 
 export default function TasksListPage() {
   const { activeTenant } = useOutletContext<any>();
   const { tasks, filters, setFilters } = useTaskManager(activeTenant?.id);
   const [selectedTask, setSelectedTask] = useState<WorkspaceTask | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   return (
     <div className="h-full flex flex-col p-6 max-w-7xl mx-auto">
@@ -26,7 +26,10 @@ export default function TasksListPage() {
         
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-between md:justify-end">
           <TaskFiltersToolbar filters={filters} onFilterChange={setFilters} />
-          <button className="flex items-center gap-2 bg-[var(--accent)] text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md hover:brightness-110 transition shrink-0">
+          <button 
+            onClick={() => setIsCreateOpen(true)}
+            className="flex items-center gap-2 bg-[var(--accent)] text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md hover:brightness-110 transition shrink-0 cursor-pointer"
+          >
             <Plus className="w-4 h-4" /> Добавить
           </button>
         </div>
@@ -95,6 +98,7 @@ export default function TasksListPage() {
       </div>
 
       <TaskModal isOpen={!!selectedTask} onClose={() => setSelectedTask(null)} task={selectedTask || undefined} />
+      <CreateTaskModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} tenantId={activeTenant?.id} />
     </div>
   );
 }
