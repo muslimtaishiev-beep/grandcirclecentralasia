@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { chatService } from '../services/chatService';
+import { chatService, OrgStaffMember } from '../services/chatService';
 import { ChatChannel, ChatMessage, ChatAttachment } from '../types/chat';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -7,6 +7,7 @@ export function useChatRoom(tenantId: string, channelId: string | undefined) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [channels, setChannels] = useState<ChatChannel[]>([]);
+  const [staffList, setStaffList] = useState<OrgStaffMember[]>([]);
 
   useEffect(() => {
     if (!tenantId || !user?.uid) return;
@@ -15,6 +16,11 @@ export function useChatRoom(tenantId: string, channelId: string | undefined) {
     });
     return () => unsub();
   }, [tenantId, user?.uid]);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    chatService.fetchOrgStaff(tenantId).then(setStaffList);
+  }, [tenantId]);
 
   useEffect(() => {
     if (!tenantId || !channelId) {
@@ -32,7 +38,7 @@ export function useChatRoom(tenantId: string, channelId: string | undefined) {
     
     await chatService.sendMessage(tenantId, channelId, {
       senderStaffId: user.uid,
-      senderName: user.displayName || 'Staff ' + user.uid.substring(0,4),
+      senderName: user.displayName || user.email?.split('@')[0] || 'Коллега ' + user.uid.substring(0,4),
       senderAvatarUrl: user.photoURL || undefined,
       text,
       attachments
@@ -41,7 +47,7 @@ export function useChatRoom(tenantId: string, channelId: string | undefined) {
 
   const startCall = async () => {
     if (!tenantId || !channelId || !user) return;
-    await chatService.startChannelCall(tenantId, channelId, user.uid, user.displayName || 'Staff ' + user.uid.substring(0,4));
+    await chatService.startChannelCall(tenantId, channelId, user.uid, user.displayName || user.email?.split('@')[0] || 'Коллега ' + user.uid.substring(0,4));
   };
 
   const endCall = async () => {
@@ -56,22 +62,35 @@ export function useChatRoom(tenantId: string, channelId: string | undefined) {
 
   const activeChannel = channels.find(c => c.id === channelId);
 
-  const createChannel = async (name: string, type: 'public_channel' | 'private_channel' | 'direct_message' = 'public_channel') => {
+  const createChannel = async (
+    name: string, 
+    type: 'public_channel' | 'private_channel' | 'direct_message' = 'public_channel',
+    selectedMemberStaffIds: string[] = []
+  ) => {
     if (!tenantId || !user?.uid) return;
+    const memberStaffIds = Array.from(new Set([user.uid, ...selectedMemberStaffIds]));
+    
     const newId = await chatService.createChannel(tenantId, {
       name,
       type,
-      memberStaffIds: [user.uid]
+      memberStaffIds
     });
     return newId;
+  };
+
+  const addMembersToActiveChannel = async (newStaffIds: string[]) => {
+    if (!tenantId || !channelId) return;
+    await chatService.addMembersToChannel(tenantId, channelId, newStaffIds);
   };
 
   return {
     channels,
     messages,
+    staffList,
     activeChannel,
     sendMessage,
     createChannel,
+    addMembersToActiveChannel,
     startCall,
     endCall,
     toggleReaction

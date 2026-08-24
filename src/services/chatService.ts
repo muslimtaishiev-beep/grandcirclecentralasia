@@ -1,9 +1,17 @@
 import { db } from '../lib/firebase';
-import { collection, doc, query, where, orderBy, limit, getDocs, setDoc, updateDoc, onSnapshot, runTransaction } from 'firebase/firestore';
+import { collection, doc, query, where, getDocs, setDoc, updateDoc, onSnapshot, runTransaction } from 'firebase/firestore';
 import { ChatChannel, ChatMessage } from '../types/chat';
 
 function sanitizeData(obj: any): any {
   return JSON.parse(JSON.stringify(obj, (key, value) => (value === undefined ? null : value)));
+}
+
+export interface OrgStaffMember {
+  id: string;
+  name: string;
+  email: string;
+  role?: string;
+  avatarUrl?: string;
 }
 
 class ChatService {
@@ -11,13 +19,88 @@ class ChatService {
     const q = query(
       collection(db, 'tenants', tenantId, 'chat_channels')
     );
-    return onSnapshot(q, (snap) => {
-      const allChannels = snap.docs.map(d => ({ ...d.data(), id: d.id } as ChatChannel));
-      const filtered = allChannels.filter(c => c.type === 'public_channel' || (c.memberStaffIds || []).includes(staffId));
+    return onSnapshot(q, async (snap) => {
+      let allChannels = snap.docs.map(d => ({ ...d.data(), id: d.id } as ChatChannel));
+      
+      // Auto-seed default channels if empty
+      if (allChannels.length === 0) {
+        await this.seedDefaultChannels(tenantId, staffId);
+        return;
+      }
+
+      const filtered = allChannels.filter(c => 
+        c.type === 'public_channel' || 
+        (c.memberStaffIds || []).includes(staffId)
+      );
       onUpdate(filtered);
     }, (err) => {
       console.warn("Chat channels listener notice:", err);
     });
+  }
+
+  async seedDefaultChannels(tenantId: string, initialStaffId: string) {
+    const defaults = [
+      { name: 'общий-чат', type: 'public_channel' as const, memberStaffIds: [initialStaffId] },
+      { name: 'объявления', type: 'public_channel' as const, memberStaffIds: [initialStaffId] },
+      { name: 'вопросы-и-идеи', type: 'public_channel' as const, memberStaffIds: [initialStaffId] }
+    ];
+
+    for (const d of defaults) {
+      const ref = doc(collection(db, 'tenants', tenantId, 'chat_channels'));
+      await setDoc(ref, {
+        ...d,
+        id: ref.id,
+        tenantId,
+        createdAt: Date.now()
+      });
+    }
+  }
+
+  async fetchOrgStaff(tenantId: string): Promise<OrgStaffMember[]> {
+    const staffList: OrgStaffMember[] = [];
+    try {
+      const q = query(collection(db, 'memberships'), where('tenantId', '==', tenantId));
+      const snap = await getDocs(q);
+      
+      snap.forEach(d => {
+        const data = d.data();
+        staffList.push({
+          id: data.userId || d.id,
+          name: data.userName || data.userEmail?.split('@')[0] || 'Сотрудник ' + d.id.substring(0, 4),
+          email: data.userEmail || '—',
+          role: data.role || 'Коллега'
+        });
+      });
+
+      // Also search root crm_contacts for employees/staff
+      const crmSnap = await getDocs(query(collection(db, 'crm_contacts'), where('tenantId', '==', tenantId)));
+      crmSnap.forEach(d => {
+        const data = d.data();
+        if (data.type === 'employee' || data.type === 'staff') {
+          if (!staffList.some(s => s.id === d.id || s.email === data.email)) {
+            staffList.push({
+              id: d.id,
+              name: data.fullName || data.name || 'Сотрудник',
+              email: data.email || '—',
+              role: data.role || 'Коллега'
+            });
+          }
+        }
+      });
+    } catch (e) {
+      console.warn("fetchOrgStaff notice:", e);
+    }
+
+    // Fallback default colleagues if list is empty
+    if (staffList.length === 0) {
+      staffList.push(
+        { id: 'staff_kazieva', name: 'Казиева Алима Канатовна', email: 'butyakaz24@gmail.com', role: 'Руководитель' },
+        { id: 'staff_director', name: 'Директор Организации', email: 'director@academy.edu', role: 'Владелец' },
+        { id: 'staff_admin', name: 'Администратор WSP', email: 'admin@academy.edu', role: 'Администратор' }
+      );
+    }
+
+    return staffList;
   }
 
   subscribeToMessages(tenantId: string, channelId: string, onUpdate: (messages: ChatMessage[]) => void) {
@@ -60,6 +143,18 @@ class ChatService {
     return ref.id;
   }
 
+  async addMembersToChannel(tenantId: string, channelId: string, newStaffIds: string[]) {
+    const channelRef = doc(db, 'tenants', tenantId, 'chat_channels', channelId);
+    await runTransaction(db, async (transaction) => {
+      const docSnap = await transaction.get(channelRef);
+      if (!docSnap.exists()) return;
+      const data = docSnap.data() as ChatChannel;
+      const existingMembers = data.memberStaffIds || [];
+      const updatedMembers = Array.from(new Set([...existingMembers, ...newStaffIds]));
+      transaction.update(channelRef, { memberStaffIds: updatedMembers });
+    });
+  }
+
   async toggleMessageReaction(tenantId: string, channelId: string, messageId: string, emoji: string, staffId: string) {
     const ref = doc(db, 'tenants', tenantId, 'chat_messages', messageId);
     
@@ -88,11 +183,9 @@ class ChatService {
   async startChannelCall(tenantId: string, channelId: string, hostStaffId: string, hostName: string) {
     const roomId = `call_${Date.now()}`;
     
-    // Update channel state
     const channelRef = doc(db, 'tenants', tenantId, 'chat_channels', channelId);
     await updateDoc(channelRef, { activeCallSessionId: roomId });
 
-    // Send announcement message
     await this.sendMessage(tenantId, channelId, {
       senderStaffId: hostStaffId,
       senderName: hostName,
