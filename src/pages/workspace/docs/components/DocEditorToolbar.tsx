@@ -1,14 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   ArrowLeft, FileText, Star, FolderUp, CheckCircle2, History, MessageSquare, Lock, Share2,
   Undo2, Redo2, Printer, Paintbrush, ChevronDown, Bold, Italic, Underline, Baseline, Highlighter, 
   Link, Image as ImageIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify, List, ListOrdered, CheckSquare, 
   Indent, Outdent, RemoveFormatting, Plus, Minus, Download, Code, Quote, Trash2, Eye, FilePlus, Sparkles,
-  Scissors, Copy, Clipboard, BarChart2, Globe, HelpCircle, Keyboard, Info, Check, ShieldCheck
+  Scissors, Copy, Clipboard, BarChart2, Globe, HelpCircle, Keyboard, Info, Check, ShieldCheck, UserCheck, Users, Edit3
 } from 'lucide-react';
-import { DocBlock } from '../../../../types/collab';
+import { db } from '../../../../lib/firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { DocBlock, DocAccessLevel, UserDocRole, WorkspaceDocument } from '../../../../types/collab';
 
 interface Props {
+  doc: WorkspaceDocument;
   title: string;
   onUpdateTitle: (newTitle: string) => void;
   onBack: () => void;
@@ -29,9 +32,13 @@ interface Props {
   zoomLevel: number;
   setZoomLevel: (zoom: number) => void;
   docBlocks: DocBlock[];
+  isAuthor: boolean;
+  isFullAdmin: boolean;
+  onUpdateAccess: (accessLevel: DocAccessLevel, permissionsMap: Record<string, UserDocRole>) => void;
 }
 
 export default function DocEditorToolbar({ 
+  doc: currentDoc,
   title, 
   onUpdateTitle, 
   onBack, 
@@ -51,15 +58,25 @@ export default function DocEditorToolbar({
   setShowRuler,
   zoomLevel,
   setZoomLevel,
-  docBlocks
+  docBlocks,
+  isAuthor,
+  isFullAdmin,
+  onUpdateAccess
 }: Props) {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [docTitle, setDocTitle] = useState(title);
   const [isStarred, setIsStarred] = useState(false);
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
 
-  // Modals
+  // Access Control Modal State
   const [showShareModal, setShowShareModal] = useState(false);
+  const [accessLevel, setAccessLevel] = useState<DocAccessLevel>(currentDoc.accessLevel || 'private');
+  const [permissionsMap, setPermissionsMap] = useState<Record<string, UserDocRole>>(currentDoc.permissionsMap || {});
+  const [staffList, setStaffList] = useState<Array<{ id: string; name: string; email: string }>>([]);
+  const [selectedStaffId, setSelectedStaffId] = useState('');
+  const [selectedRole, setSelectedRole] = useState<UserDocRole>('editor');
+
+  // Modals
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
 
@@ -73,7 +90,27 @@ export default function DocEditorToolbar({
     setDocTitle(title);
   }, [title]);
 
-  // Close menus on click outside
+  useEffect(() => {
+    setAccessLevel(currentDoc.accessLevel || 'private');
+    setPermissionsMap(currentDoc.permissionsMap || {});
+  }, [currentDoc]);
+
+  // Load Staff List from Firestore for Specific Staff Sharing
+  useEffect(() => {
+    if (!showShareModal || !currentDoc.tenantId) return;
+    const q = query(collection(db, 'crm_contacts'), where('tenantId', '==', currentDoc.tenantId));
+    const unsub = onSnapshot(q, (snap) => {
+      const list: Array<{ id: string; name: string; email: string }> = [];
+      snap.forEach(d => {
+        const data = d.data();
+        list.push({ id: d.id, name: data.fullName || data.name || 'Сотрудник', email: data.email || '' });
+      });
+      setStaffList(list);
+      if (list.length > 0 && !selectedStaffId) setSelectedStaffId(list[0].id);
+    });
+    return () => unsub();
+  }, [showShareModal, currentDoc.tenantId]);
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -91,6 +128,23 @@ export default function DocEditorToolbar({
     }
   };
 
+  const handleAddUserPermission = () => {
+    if (!selectedStaffId) return;
+    const updated = { ...permissionsMap, [selectedStaffId]: selectedRole };
+    setPermissionsMap(updated);
+  };
+
+  const handleRemoveUserPermission = (staffId: string) => {
+    const updated = { ...permissionsMap };
+    delete updated[staffId];
+    setPermissionsMap(updated);
+  };
+
+  const handleSaveAccess = () => {
+    onUpdateAccess(accessLevel, permissionsMap);
+    setShowShareModal(false);
+  };
+
   const handleInsertLink = () => {
     const url = window.prompt("Введите URL ссылки:", "https://");
     if (!url || !activeBlock) return;
@@ -104,12 +158,13 @@ export default function DocEditorToolbar({
     onAddBlock('image');
   };
 
-  // Word & Character count calculations
   const totalWords = docBlocks.reduce((acc, b) => acc + (b.content ? b.content.trim().split(/\s+/).filter(Boolean).length : 0), 0);
   const totalChars = docBlocks.reduce((acc, b) => acc + (b.content ? b.content.length : 0), 0);
 
   const colors = ['#0f172a', '#2563eb', '#dc2626', '#16a34a', '#9333ea', '#d97706'];
   const bgColors = ['transparent', '#fef08a', '#bbf7d0', '#bfdbfe', '#fbcfe8'];
+
+  const canManageAccess = isAuthor || isFullAdmin;
 
   return (
     <div ref={menuRef} className="bg-[#f9fbfd] border-b border-slate-200 font-sans text-slate-700 sticky top-0 z-30 select-none shadow-sm">
@@ -134,9 +189,8 @@ export default function DocEditorToolbar({
           </div>
 
           <div className="flex flex-col">
-            {/* Inline Title Editor */}
             <div className="flex items-center gap-2">
-              {isEditingTitle ? (
+              {isEditingTitle && canManageAccess ? (
                 <input 
                   type="text" 
                   autoFocus
@@ -148,10 +202,10 @@ export default function DocEditorToolbar({
                 />
               ) : (
                 <h1 
-                  onClick={() => setIsEditingTitle(true)}
-                  data-tooltip="Нажмите, чтобы переименовать документ"
+                  onClick={() => canManageAccess && setIsEditingTitle(true)}
+                  data-tooltip={canManageAccess ? "Нажмите, чтобы переименовать документ" : "Название документа (только автор может изменить)"}
                   data-tooltip-pos="bottom"
-                  className="text-lg font-semibold text-slate-800 hover:bg-slate-100 px-2 py-0.5 rounded cursor-pointer transition border border-transparent hover:border-slate-300"
+                  className={`text-lg font-semibold text-slate-800 px-2 py-0.5 rounded transition border border-transparent ${canManageAccess ? 'hover:bg-slate-100 cursor-pointer hover:border-slate-300' : ''}`}
                 >
                   {docTitle || 'Устав Ноуп Лабс'}
                 </h1>
@@ -164,14 +218,6 @@ export default function DocEditorToolbar({
                 className={`p-1 rounded hover:bg-slate-100 transition ${isStarred ? 'text-amber-400' : 'text-slate-400'}`}
               >
                 <Star className="w-4 h-4 fill-current" />
-              </button>
-
-              <button 
-                data-tooltip="Переместить в папку"
-                data-tooltip-pos="bottom"
-                className="p-1 text-slate-500 hover:bg-slate-100 rounded transition"
-              >
-                <FolderUp className="w-4 h-4" />
               </button>
 
               <div 
@@ -192,168 +238,73 @@ export default function DocEditorToolbar({
               </div>
             </div>
 
-            {/* Interactive Top Menu Bar (NO Gemini, FULLY Functional Menus) */}
+            {/* Menu Bar */}
             <div className="flex items-center gap-1 text-xs font-medium text-slate-600 mt-0.5 relative">
-              {/* ФАЙЛ (File) */}
               <div className="relative">
-                <button 
-                  onClick={() => setActiveMenu(activeMenu === 'file' ? null : 'file')}
-                  data-tooltip="Открыть меню Файл"
-                  data-tooltip-pos="bottom"
-                  className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'file' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}
-                >
-                  Файл
-                </button>
+                <button onClick={() => setActiveMenu(activeMenu === 'file' ? null : 'file')} data-tooltip="Открыть меню Файл" data-tooltip-pos="bottom" className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'file' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}>Файл</button>
                 {activeMenu === 'file' && (
                   <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-slate-200 rounded-xl shadow-2xl py-1 z-50 text-xs text-slate-700">
                     <button onClick={() => { setActiveMenu(null); onBack(); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><FilePlus className="w-4 h-4 text-blue-600" /> Вернуться к документам</button>
-                    <button onClick={() => { setActiveMenu(null); setIsEditingTitle(true); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><FileText className="w-4 h-4 text-slate-500" /> Переименовать документ</button>
+                    {canManageAccess && <button onClick={() => { setActiveMenu(null); setIsEditingTitle(true); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><FileText className="w-4 h-4 text-slate-500" /> Переименовать документ</button>}
                     <hr className="my-1 border-slate-100" />
                     <button onClick={() => { setActiveMenu(null); onExport('pdf'); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center justify-between font-medium"><span>📄 Скачать как PDF</span><span className="text-[10px] text-slate-400 font-mono">Cmd+P</span></button>
                     <button onClick={() => { setActiveMenu(null); onExport('markdown'); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center justify-between font-medium"><span>📝 Скачать как Markdown (.md)</span></button>
-                    <hr className="my-1 border-slate-100" />
-                    <button onClick={() => { setActiveMenu(null); onDeleteDoc(); }} className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600 flex items-center gap-2 font-medium"><Trash2 className="w-4 h-4" /> Удалить документ</button>
+                    {canManageAccess && <>
+                      <hr className="my-1 border-slate-100" />
+                      <button onClick={() => { setActiveMenu(null); onDeleteDoc(); }} className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600 flex items-center gap-2 font-medium"><Trash2 className="w-4 h-4" /> Удалить документ</button>
+                    </>}
                   </div>
                 )}
               </div>
 
-              {/* ПРАВКА (Edit) */}
               <div className="relative">
-                <button 
-                  onClick={() => setActiveMenu(activeMenu === 'edit' ? null : 'edit')}
-                  data-tooltip="Открыть меню Правка"
-                  data-tooltip-pos="bottom"
-                  className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'edit' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}
-                >
-                  Правка
-                </button>
+                <button onClick={() => setActiveMenu(activeMenu === 'edit' ? null : 'edit')} data-tooltip="Открыть меню Правка" data-tooltip-pos="bottom" className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'edit' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}>Правка</button>
                 {activeMenu === 'edit' && (
                   <div className="absolute top-full left-0 mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-2xl py-1 z-50 text-xs text-slate-700">
                     <button onClick={() => { setActiveMenu(null); onUndo(); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center justify-between font-medium"><span className="flex items-center gap-2"><Undo2 className="w-4 h-4" /> Отменить</span><span className="text-[10px] text-slate-400 font-mono">Cmd+Z</span></button>
                     <button onClick={() => { setActiveMenu(null); onRedo(); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center justify-between font-medium"><span className="flex items-center gap-2"><Redo2 className="w-4 h-4" /> Повторить</span><span className="text-[10px] text-slate-400 font-mono">Cmd+Y</span></button>
-                    <hr className="my-1 border-slate-100" />
-                    <button onClick={() => { setActiveMenu(null); onUpdateStyle({ isBold: false, isItalic: false, isUnderline: false, textColor: '', bgColor: '', align: 'left' }); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><RemoveFormatting className="w-4 h-4" /> Очистить форматирование</button>
                   </div>
                 )}
               </div>
 
-              {/* ВИД (View) */}
               <div className="relative">
-                <button 
-                  onClick={() => setActiveMenu(activeMenu === 'view' ? null : 'view')}
-                  data-tooltip="Открыть меню Вид"
-                  data-tooltip-pos="bottom"
-                  className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'view' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}
-                >
-                  Вид
-                </button>
+                <button onClick={() => setActiveMenu(activeMenu === 'view' ? null : 'view')} data-tooltip="Открыть меню Вид" data-tooltip-pos="bottom" className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'view' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}>Вид</button>
                 {activeMenu === 'view' && (
                   <div className="absolute top-full left-0 mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-2xl py-1 z-50 text-xs text-slate-700">
                     <button onClick={() => { setActiveMenu(null); setShowRuler(!showRuler); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center justify-between font-medium"><span>Показать линейку</span><span>{showRuler ? '✓' : ''}</span></button>
                     <hr className="my-1 border-slate-100" />
                     <button onClick={() => { setActiveMenu(null); setZoomLevel(100); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center justify-between font-medium"><span>Масштаб: 100%</span><span>{zoomLevel === 100 ? '✓' : ''}</span></button>
                     <button onClick={() => { setActiveMenu(null); setZoomLevel(125); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center justify-between font-medium"><span>Масштаб: 125%</span><span>{zoomLevel === 125 ? '✓' : ''}</span></button>
-                    <button onClick={() => { setActiveMenu(null); setZoomLevel(150); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center justify-between font-medium"><span>Масштаб: 150%</span><span>{zoomLevel === 150 ? '✓' : ''}</span></button>
                   </div>
                 )}
               </div>
 
-              {/* ВСТАВКА (Insert) */}
               <div className="relative">
-                <button 
-                  onClick={() => setActiveMenu(activeMenu === 'insert' ? null : 'insert')}
-                  data-tooltip="Открыть меню Вставка"
-                  data-tooltip-pos="bottom"
-                  className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'insert' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}
-                >
-                  Вставка
-                </button>
+                <button onClick={() => setActiveMenu(activeMenu === 'insert' ? null : 'insert')} data-tooltip="Открыть меню Вставка" data-tooltip-pos="bottom" className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'insert' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}>Вставка</button>
                 {activeMenu === 'insert' && (
                   <div className="absolute top-full left-0 mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-2xl py-1 z-50 text-xs text-slate-700">
                     <button onClick={() => { setActiveMenu(null); handleInsertImage(); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><ImageIcon className="w-4 h-4 text-emerald-600" /> Изображение</button>
                     <button onClick={() => { setActiveMenu(null); handleInsertLink(); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><Link className="w-4 h-4 text-blue-600" /> Ссылка</button>
                     <button onClick={() => { setActiveMenu(null); onAddBlock('divider'); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><span>➖ Разделитель</span></button>
                     <button onClick={() => { setActiveMenu(null); onAddBlock('todo_list'); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><CheckSquare className="w-4 h-4 text-indigo-600" /> Чек-лист задач</button>
-                    <button onClick={() => { setActiveMenu(null); onAddBlock('code_block'); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><Code className="w-4 h-4 text-purple-600" /> Блок кода</button>
-                    <button onClick={() => { setActiveMenu(null); onAddBlock('quote'); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><Quote className="w-4 h-4 text-amber-600" /> Цитата</button>
                   </div>
                 )}
               </div>
 
-              {/* ФОРМАТ (Format) */}
               <div className="relative">
-                <button 
-                  onClick={() => setActiveMenu(activeMenu === 'format' ? null : 'format')}
-                  data-tooltip="Открыть меню Формат"
-                  data-tooltip-pos="bottom"
-                  className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'format' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}
-                >
-                  Формат
-                </button>
-                {activeMenu === 'format' && (
-                  <div className="absolute top-full left-0 mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-2xl py-1 z-50 text-xs text-slate-700">
-                    <button onClick={() => { setActiveMenu(null); onUpdateStyle({ isBold: !activeBlock?.isBold }); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center justify-between font-medium"><span>Полужирный</span><span className="font-bold">B</span></button>
-                    <button onClick={() => { setActiveMenu(null); onUpdateStyle({ isItalic: !activeBlock?.isItalic }); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center justify-between font-medium"><span>Курсив</span><span className="italic">I</span></button>
-                    <button onClick={() => { setActiveMenu(null); onUpdateStyle({ isUnderline: !activeBlock?.isUnderline }); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center justify-between font-medium"><span>Подчеркнутый</span><span className="underline">U</span></button>
-                    <hr className="my-1 border-slate-100" />
-                    <button onClick={() => { setActiveMenu(null); onUpdateStyle({ align: 'left' }); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><AlignLeft className="w-4 h-4" /> По левому краю</button>
-                    <button onClick={() => { setActiveMenu(null); onUpdateStyle({ align: 'center' }); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><AlignCenter className="w-4 h-4" /> По центру</button>
-                    <button onClick={() => { setActiveMenu(null); onUpdateStyle({ align: 'right' }); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><AlignRight className="w-4 h-4" /> По правому краю</button>
-                  </div>
-                )}
-              </div>
-
-              {/* ИНСТРУМЕНТЫ (Tools) */}
-              <div className="relative">
-                <button 
-                  onClick={() => setActiveMenu(activeMenu === 'tools' ? null : 'tools')}
-                  data-tooltip="Открыть меню Инструменты"
-                  data-tooltip-pos="bottom"
-                  className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'tools' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}
-                >
-                  Инструменты
-                </button>
+                <button onClick={() => setActiveMenu(activeMenu === 'tools' ? null : 'tools')} data-tooltip="Открыть меню Инструменты" data-tooltip-pos="bottom" className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'tools' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}>Инструменты</button>
                 {activeMenu === 'tools' && (
                   <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-slate-200 rounded-xl shadow-2xl py-1 z-50 text-xs text-slate-700">
                     <button onClick={() => { setActiveMenu(null); setShowStatsModal(true); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><BarChart2 className="w-4 h-4 text-blue-600" /> Статистика документа</button>
-                    <button onClick={() => { setActiveMenu(null); alert("Орфография: Все слова в документе корректны"); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><span>🔤 Проверка орфографии</span></button>
-                    <button onClick={() => { setActiveMenu(null); alert("Язык документа: Русский"); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><Globe className="w-4 h-4 text-emerald-600" /> Язык документа</button>
                   </div>
                 )}
               </div>
 
-              {/* РАСШИРЕНИЯ (Extensions) */}
               <div className="relative">
-                <button 
-                  onClick={() => setActiveMenu(activeMenu === 'extensions' ? null : 'extensions')}
-                  data-tooltip="Открыть меню Расширения"
-                  data-tooltip-pos="bottom"
-                  className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'extensions' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}
-                >
-                  Расширения
-                </button>
-                {activeMenu === 'extensions' && (
-                  <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-slate-200 rounded-xl shadow-2xl py-1 z-50 text-xs text-slate-700">
-                    <button onClick={() => { setActiveMenu(null); alert("Штамп организации активен"); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><ShieldCheck className="w-4 h-4 text-emerald-600" /> Электронный штамп орг-ции</button>
-                    <button onClick={() => { setActiveMenu(null); alert("Автосохранение включено в Firestore"); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><span>⚡ Автосохранение в облако</span></button>
-                  </div>
-                )}
-              </div>
-
-              {/* СПРАВКА (Help) */}
-              <div className="relative">
-                <button 
-                  onClick={() => setActiveMenu(activeMenu === 'help' ? null : 'help')}
-                  data-tooltip="Открыть меню Справка"
-                  data-tooltip-pos="bottom"
-                  className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'help' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}
-                >
-                  Справка
-                </button>
+                <button onClick={() => setActiveMenu(activeMenu === 'help' ? null : 'help')} data-tooltip="Открыть меню Справка" data-tooltip-pos="bottom" className={`px-2 py-0.5 rounded text-slate-700 cursor-pointer font-sans ${activeMenu === 'help' ? 'bg-slate-200 font-bold' : 'hover:bg-slate-100'}`}>Справка</button>
                 {activeMenu === 'help' && (
                   <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-slate-200 rounded-xl shadow-2xl py-1 z-50 text-xs text-slate-700">
                     <button onClick={() => { setActiveMenu(null); setShowShortcutsModal(true); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><Keyboard className="w-4 h-4 text-indigo-600" /> Горячие клавиши</button>
-                    <button onClick={() => { setActiveMenu(null); alert("Google Docs Engine v2.4 — Мощная редактируемая система документов платформы"); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center gap-2 font-medium"><Info className="w-4 h-4 text-blue-600" /> О программе</button>
                   </div>
                 )}
               </div>
@@ -372,23 +323,19 @@ export default function DocEditorToolbar({
             <History className="w-5 h-5" />
           </button>
 
-          <button 
-            onClick={() => alert("Комментарии к документу в реальном времени активны")}
-            data-tooltip="Открыть комментарии"
-            data-tooltip-pos="bottom"
-            className="p-2 text-slate-600 hover:bg-slate-100 rounded-full transition cursor-pointer"
-          >
-            <MessageSquare className="w-5 h-5" />
-          </button>
-
+          {/* Share Button (Access Settings Modal) */}
           <button 
             onClick={() => setShowShareModal(true)}
-            data-tooltip="Настройки совместного доступа"
+            data-tooltip="Настройки совместного доступа к документу"
             data-tooltip-pos="bottom"
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer"
+            className={`px-4 py-2 rounded-full font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer ${
+              accessLevel === 'private' ? 'bg-amber-600 hover:bg-amber-700 text-white' :
+              accessLevel === 'company_view' ? 'bg-blue-600 hover:bg-blue-700 text-white' :
+              'bg-emerald-600 hover:bg-emerald-700 text-white'
+            }`}
           >
             <Lock className="w-3.5 h-3.5" />
-            <span>Настройки доступа</span>
+            <span>{accessLevel === 'private' ? 'Приватный доступ' : accessLevel === 'company_view' ? 'Чтение компанией' : 'Редактирование'}</span>
           </button>
         </div>
       </div>
@@ -398,19 +345,9 @@ export default function DocEditorToolbar({
         <button onClick={onUndo} data-tooltip="Отменить (Cmd+Z)" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Undo2 className="w-4 h-4" /></button>
         <button onClick={onRedo} data-tooltip="Повторить (Cmd+Y)" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Redo2 className="w-4 h-4" /></button>
         <button onClick={() => onExport('pdf')} data-tooltip="Печать (Cmd+P)" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Printer className="w-4 h-4" /></button>
-        <button data-tooltip="Формат по образцу" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Paintbrush className="w-4 h-4" /></button>
         
         <div className="h-4 w-px bg-slate-300 mx-1"></div>
 
-        {/* Zoom */}
-        <button data-tooltip="Масштаб отображения" data-tooltip-pos="bottom" onClick={() => setZoomLevel(zoomLevel === 100 ? 125 : zoomLevel === 125 ? 150 : 100)} className="px-2 py-1 hover:bg-slate-200 rounded flex items-center gap-1 font-mono cursor-pointer font-bold">
-          <span>{zoomLevel}%</span>
-          <ChevronDown className="w-3 h-3 text-slate-500" />
-        </button>
-
-        <div className="h-4 w-px bg-slate-300 mx-1"></div>
-
-        {/* Paragraph Style Dropdown */}
         <select 
           value={activeBlock?.type || 'paragraph'}
           data-tooltip="Стиль абзаца"
@@ -428,7 +365,6 @@ export default function DocEditorToolbar({
 
         <div className="h-4 w-px bg-slate-300 mx-1"></div>
 
-        {/* Font Family Dropdown */}
         <select 
           value={selectedFont}
           onChange={e => setSelectedFont(e.target.value)}
@@ -445,16 +381,6 @@ export default function DocEditorToolbar({
 
         <div className="h-4 w-px bg-slate-300 mx-1"></div>
 
-        {/* Font Size controls */}
-        <div className="flex items-center border border-slate-300 rounded bg-white overflow-hidden">
-          <button data-tooltip="Уменьшить шрифт" data-tooltip-pos="bottom" onClick={() => setFontSize(Math.max(6, fontSize - 1))} className="px-1.5 py-0.5 hover:bg-slate-100 text-slate-600 font-bold"><Minus className="w-3 h-3" /></button>
-          <span className="px-2 py-0.5 text-xs font-mono font-bold text-slate-800">{fontSize}</span>
-          <button data-tooltip="Увеличить шрифт" data-tooltip-pos="bottom" onClick={() => setFontSize(fontSize + 1)} className="px-1.5 py-0.5 hover:bg-slate-100 text-slate-600 font-bold"><Plus className="w-3 h-3" /></button>
-        </div>
-
-        <div className="h-4 w-px bg-slate-300 mx-1"></div>
-
-        {/* Formatting Actions */}
         <button 
           onClick={() => onUpdateStyle({ isBold: !activeBlock?.isBold })} 
           data-tooltip="Полужирный (Bold)" 
@@ -482,94 +408,10 @@ export default function DocEditorToolbar({
           <Underline className="w-4 h-4" />
         </button>
 
-        {/* Text Color Picker */}
-        <div className="relative">
-          <button 
-            onClick={() => { setShowTextColorPicker(!showTextColorPicker); setShowBgColorPicker(false); }} 
-            data-tooltip="Цвет текста" 
-            data-tooltip-pos="bottom" 
-            className="p-1.5 hover:bg-slate-200 rounded font-bold cursor-pointer"
-            style={{ color: activeBlock?.textColor || '#2563eb' }}
-          >
-            <Baseline className="w-4 h-4" />
-          </button>
-          {showTextColorPicker && (
-            <div className="absolute top-full left-0 mt-1 p-2 bg-white border border-slate-200 rounded-xl shadow-xl flex gap-1 z-50">
-              {colors.map(c => (
-                <button 
-                  key={c} 
-                  onClick={() => { onUpdateStyle({ textColor: c }); setShowTextColorPicker(false); }}
-                  className="w-5 h-5 rounded-full border border-slate-300 hover:scale-110 transition cursor-pointer"
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Highlight Color Picker */}
-        <div className="relative">
-          <button 
-            onClick={() => { setShowBgColorPicker(!showBgColorPicker); setShowTextColorPicker(false); }} 
-            data-tooltip="Цвет выделения маркером" 
-            data-tooltip-pos="bottom" 
-            className="p-1.5 hover:bg-slate-200 rounded text-amber-500 cursor-pointer"
-          >
-            <Highlighter className="w-4 h-4" />
-          </button>
-          {showBgColorPicker && (
-            <div className="absolute top-full left-0 mt-1 p-2 bg-white border border-slate-200 rounded-xl shadow-xl flex gap-1 z-50">
-              {bgColors.map(c => (
-                <button 
-                  key={c} 
-                  onClick={() => { onUpdateStyle({ bgColor: c === 'transparent' ? '' : c }); setShowBgColorPicker(false); }}
-                  className="w-5 h-5 rounded-full border border-slate-300 hover:scale-110 transition cursor-pointer flex items-center justify-center font-bold text-[10px]"
-                  style={{ backgroundColor: c === 'transparent' ? '#ffffff' : c }}
-                >
-                  {c === 'transparent' ? '✕' : ''}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="h-4 w-px bg-slate-300 mx-1"></div>
-
-        {/* Link & Image */}
-        <button onClick={handleInsertLink} data-tooltip="Вставить ссылку" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Link className="w-4 h-4" /></button>
-        <button onClick={handleInsertImage} data-tooltip="Вставить изображение" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><ImageIcon className="w-4 h-4" /></button>
-
-        <div className="h-4 w-px bg-slate-300 mx-1"></div>
-
-        {/* Alignments */}
-        <button onClick={() => onUpdateStyle({ align: 'left' })} data-tooltip="По левому краю" data-tooltip-pos="bottom" className={`p-1.5 rounded cursor-pointer ${activeBlock?.align === 'left' ? 'bg-slate-300 font-bold' : 'hover:bg-slate-200'}`}><AlignLeft className="w-4 h-4" /></button>
-        <button onClick={() => onUpdateStyle({ align: 'center' })} data-tooltip="По центру" data-tooltip-pos="bottom" className={`p-1.5 rounded cursor-pointer ${activeBlock?.align === 'center' ? 'bg-slate-300 font-bold' : 'hover:bg-slate-200'}`}><AlignCenter className="w-4 h-4" /></button>
-        <button onClick={() => onUpdateStyle({ align: 'right' })} data-tooltip="По правому краю" data-tooltip-pos="bottom" className={`p-1.5 rounded cursor-pointer ${activeBlock?.align === 'right' ? 'bg-slate-300 font-bold' : 'hover:bg-slate-200'}`}><AlignRight className="w-4 h-4" /></button>
-        <button onClick={() => onUpdateStyle({ align: 'justify' })} data-tooltip="По ширине" data-tooltip-pos="bottom" className={`p-1.5 rounded cursor-pointer ${activeBlock?.align === 'justify' ? 'bg-slate-300 font-bold' : 'hover:bg-slate-200'}`}><AlignJustify className="w-4 h-4" /></button>
-
-        <div className="h-4 w-px bg-slate-300 mx-1"></div>
-
-        {/* Lists */}
-        <button data-tooltip="Чек-лист задач" data-tooltip-pos="bottom" onClick={() => onAddBlock('todo_list')} className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><CheckSquare className="w-4 h-4" /></button>
-        <button data-tooltip="Маркированный список" data-tooltip-pos="bottom" onClick={() => onAddBlock('bullet_list')} className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><List className="w-4 h-4" /></button>
-        <button data-tooltip="Нумерованный список" data-tooltip-pos="bottom" onClick={() => onAddBlock('numbered_list')} className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><ListOrdered className="w-4 h-4" /></button>
-
-        <div className="h-4 w-px bg-slate-300 mx-1"></div>
-
-        {/* Clear formatting */}
-        <button 
-          onClick={() => onUpdateStyle({ isBold: false, isItalic: false, isUnderline: false, textColor: '', bgColor: '', align: 'left' })} 
-          data-tooltip="Очистить форматирование" 
-          data-tooltip-pos="bottom" 
-          className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"
-        >
-          <RemoveFormatting className="w-4 h-4" />
-        </button>
-
         <div className="ml-auto flex items-center gap-2">
           <button 
             onClick={() => onExport('pdf')} 
-            data-tooltip="Экспортировать документ в PDF"
+            data-tooltip="Скачать PDF"
             data-tooltip-pos="bottom"
             className="flex items-center gap-1 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs transition cursor-pointer shadow-sm"
           >
@@ -578,27 +420,106 @@ export default function DocEditorToolbar({
         </div>
       </div>
 
-      {/* Share Modal */}
+      {/* GRANULAR ACCESS CONTROL MODAL (AUTHOR & ADMIN ONLY) */}
       {showShareModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
-            <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
-              <Share2 className="w-5 h-5 text-blue-600" />
-              <span>Совместный доступ к документу</span>
-            </h3>
-            <p className="text-xs text-slate-600">
-              Все сотрудники вашей организации имеют мгновенный доступ на чтение и редактирование.
-            </p>
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs font-semibold text-blue-800">
-              🔗 Документ синхронизируется в реальном времени
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl border border-slate-200 text-xs">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                <Lock className="w-5 h-5 text-blue-600" />
+                <span>Настройки доступа к файлу</span>
+              </h3>
+              <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-mono text-[10px] font-bold">
+                {canManageAccess ? 'Вы автор (Управляющий)' : 'Режим просмотра'}
+              </span>
             </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button 
-                onClick={() => setShowShareModal(false)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs cursor-pointer"
-              >
-                Готово
-              </button>
+
+            {canManageAccess ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1.5">Общий доступ для компании:</label>
+                  <select 
+                    value={accessLevel}
+                    onChange={e => setAccessLevel(e.target.value as DocAccessLevel)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="private">🔒 Приватно (Только вы и админы. Для остальных скрыт!)</option>
+                    <option value="company_view">👁️ Только чтение (Все сотрудники компании видят, но не могут менять)</option>
+                    <option value="company_edit">✏️ Редактирование (Все сотрудники компании могут менять файл)</option>
+                    <option value="specific_users">👥 Назначить конкретным сотрудникам (Индивидуальный доступ)</option>
+                  </select>
+                </div>
+
+                {accessLevel === 'specific_users' && (
+                  <div className="space-y-3 p-3 bg-purple-50/60 border border-purple-200 rounded-xl">
+                    <label className="block font-bold text-purple-900">Выдать доступ сотруднику:</label>
+                    <div className="flex gap-2">
+                      <select 
+                        value={selectedStaffId}
+                        onChange={e => setSelectedStaffId(e.target.value)}
+                        className="flex-1 bg-white border border-purple-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800"
+                      >
+                        {staffList.map(s => (
+                          <option key={s.id} value={s.id}>👤 {s.name} ({s.email})</option>
+                        ))}
+                      </select>
+                      <select 
+                        value={selectedRole}
+                        onChange={e => setSelectedRole(e.target.value as UserDocRole)}
+                        className="bg-white border border-purple-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800"
+                      >
+                        <option value="editor">Редактор</option>
+                        <option value="viewer">Читатель</option>
+                      </select>
+                      <button 
+                        onClick={handleAddUserPermission}
+                        className="px-3 py-2 bg-purple-600 text-white font-bold rounded-xl hover:bg-purple-700 transition"
+                      >
+                        Добавить
+                      </button>
+                    </div>
+
+                    {/* Assigned List */}
+                    <div className="space-y-1 pt-2">
+                      <span className="font-bold text-slate-600 block mb-1">Сотрудники с доступом:</span>
+                      {Object.keys(permissionsMap).length === 0 ? (
+                        <span className="text-slate-400 italic">Сотрудники не выбраны</span>
+                      ) : (
+                        Object.entries(permissionsMap).map(([uid, role]) => {
+                          const staff = staffList.find(s => s.id === uid);
+                          return (
+                            <div key={uid} className="flex justify-between items-center bg-white px-3 py-1.5 border border-purple-100 rounded-lg">
+                              <span className="font-bold text-slate-800">{staff ? staff.name : uid.substring(0, 8)}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 bg-purple-100 text-purple-700 font-bold rounded text-[10px] uppercase">{role}</span>
+                                <button onClick={() => handleRemoveUserPermission(uid)} className="text-red-500 hover:text-red-700 font-bold">✕</button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 space-y-2">
+                <div className="font-bold text-slate-900">Уровень доступа:</div>
+                <div className="text-xs">
+                  {currentDoc.accessLevel === 'private' ? '🔒 Приватный документ (Только автор)' :
+                   currentDoc.accessLevel === 'company_view' ? '👁️ Только чтение для сотрудников' : '✏️ Доступен для редактирования'}
+                </div>
+                <div className="text-[11px] text-slate-500 italic mt-2">
+                  * Изменять настройки доступа может только автор ({currentDoc.authorName || 'Создатель'}).
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button onClick={() => setShowShareModal(false)} className="px-4 py-2 border rounded-xl font-bold text-slate-600 hover:bg-slate-50">Отмена</button>
+              {canManageAccess && (
+                <button onClick={handleSaveAccess} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md cursor-pointer">Сохранить доступ</button>
+              )}
             </div>
           </div>
         </div>
@@ -607,59 +528,38 @@ export default function DocEditorToolbar({
       {/* Word Count Statistics Modal */}
       {showStatsModal && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl border border-slate-200">
-            <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl border border-slate-200 text-xs">
+            <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
               <BarChart2 className="w-5 h-5 text-blue-600" />
               <span>Статистика документа</span>
             </h3>
-            <div className="space-y-3 text-xs text-slate-700">
-              <div className="flex justify-between py-1.5 border-b border-slate-100">
-                <span className="font-medium">Всего слов:</span>
-                <span className="font-bold text-blue-600 font-mono text-sm">{totalWords}</span>
-              </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-100">
-                <span className="font-medium">Всего символов:</span>
-                <span className="font-bold text-blue-600 font-mono text-sm">{totalChars}</span>
-              </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-100">
-                <span className="font-medium">Всего блоков текста:</span>
-                <span className="font-bold text-blue-600 font-mono text-sm">{docBlocks.length}</span>
-              </div>
+            <div className="space-y-2 text-slate-700 font-medium">
+              <div className="flex justify-between py-1.5 border-b"><span>Всего слов:</span><span className="font-bold text-blue-600 font-mono">{totalWords}</span></div>
+              <div className="flex justify-between py-1.5 border-b"><span>Всего символов:</span><span className="font-bold text-blue-600 font-mono">{totalChars}</span></div>
+              <div className="flex justify-between py-1.5 border-b"><span>Блоков текста:</span><span className="font-bold text-blue-600 font-mono">{docBlocks.length}</span></div>
             </div>
             <div className="flex justify-end pt-2">
-              <button 
-                onClick={() => setShowStatsModal(false)}
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs cursor-pointer"
-              >
-                Закрыть
-              </button>
+              <button onClick={() => setShowStatsModal(false)} className="px-4 py-2 bg-slate-900 text-white font-bold rounded-xl">Закрыть</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Keyboard Shortcuts Modal */}
+      {/* Shortcuts Modal */}
       {showShortcutsModal && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
-            <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200 text-xs">
+            <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
               <Keyboard className="w-5 h-5 text-indigo-600" />
-              <span>Горячие клавиши Google Docs</span>
+              <span>Горячие клавиши</span>
             </h3>
-            <div className="space-y-2 text-xs text-slate-700 font-mono">
-              <div className="flex justify-between p-2 bg-slate-50 rounded-lg"><span>Отменить действие</span><span className="font-bold text-blue-600">Cmd + Z</span></div>
-              <div className="flex justify-between p-2 bg-slate-50 rounded-lg"><span>Повторить действие</span><span className="font-bold text-blue-600">Cmd + Y</span></div>
-              <div className="flex justify-between p-2 bg-slate-50 rounded-lg"><span>Печать / Экспорт PDF</span><span className="font-bold text-blue-600">Cmd + P</span></div>
-              <div className="flex justify-between p-2 bg-slate-50 rounded-lg"><span>Новый абзац</span><span className="font-bold text-blue-600">Enter</span></div>
-              <div className="flex justify-between p-2 bg-slate-50 rounded-lg"><span>Удалить блок</span><span className="font-bold text-blue-600">Backspace (пустой)</span></div>
+            <div className="space-y-1 font-mono text-slate-700">
+              <div className="flex justify-between p-2 bg-slate-50 rounded"><span>Отмена</span><span className="font-bold text-blue-600">Cmd + Z</span></div>
+              <div className="flex justify-between p-2 bg-slate-50 rounded"><span>Повтор</span><span className="font-bold text-blue-600">Cmd + Y</span></div>
+              <div className="flex justify-between p-2 bg-slate-50 rounded"><span>Печать PDF</span><span className="font-bold text-blue-600">Cmd + P</span></div>
             </div>
             <div className="flex justify-end pt-2">
-              <button 
-                onClick={() => setShowShortcutsModal(false)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs cursor-pointer"
-              >
-                Понятно
-              </button>
+              <button onClick={() => setShowShortcutsModal(false)} className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-xl">Понятно</button>
             </div>
           </div>
         </div>

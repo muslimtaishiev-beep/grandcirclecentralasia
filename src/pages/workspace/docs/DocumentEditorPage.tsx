@@ -3,11 +3,15 @@ import { useOutletContext, useParams, useNavigate } from 'react-router-dom';
 import { useDocumentEditor } from '../../../hooks/collab/useDocumentEditor';
 import DocEditorToolbar from './components/DocEditorToolbar';
 import DocExportModal from './components/DocExportModal';
-import { DocBlockType, DocBlock } from '../../../types/collab';
+import { DocBlockType, DocBlock, DocAccessLevel, UserDocRole } from '../../../types/collab';
+import { useAuth } from '../../../contexts/AuthContext';
+import { documentService } from '../../../services/collab/documentService';
+import { Lock, ShieldAlert } from 'lucide-react';
 
 export default function DocumentEditorPage() {
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
   const { id: docId } = useParams();
+  const { user } = useAuth();
   const { 
     doc, 
     loading, 
@@ -63,6 +67,48 @@ export default function DocumentEditorPage() {
     );
   }
 
+  // Access Control Checks
+  const isAuthor = Boolean(user && doc.authorStaffId === user.uid);
+  const isFullAdmin = activeTenant?.role === 'owner' || activeTenant?.role === 'org:owner' || activeTenant?.role === 'superadmin' || activeTenant?.role === 'admin';
+  
+  let userRole: 'editor' | 'viewer' | 'none' = 'none';
+  if (isAuthor || isFullAdmin) {
+    userRole = 'editor';
+  } else {
+    const level = doc.accessLevel || 'company_edit';
+    if (level === 'company_edit') userRole = 'editor';
+    else if (level === 'company_view') userRole = 'viewer';
+    else if (level === 'specific_users' && user?.uid && doc.permissionsMap?.[user.uid]) {
+      const assigned = doc.permissionsMap[user.uid];
+      userRole = assigned === 'editor' ? 'editor' : 'viewer';
+    } else {
+      userRole = 'none';
+    }
+  }
+
+  // Security screen if user does NOT have permission to view private doc
+  if (userRole === 'none') {
+    return (
+      <div className="h-screen flex items-center justify-center bg-[#f8f9fa] p-8">
+        <div className="bg-white p-8 rounded-3xl shadow-2xl border border-slate-200 text-center max-w-md w-full space-y-4">
+          <div className="w-14 h-14 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-2">
+            <Lock className="w-7 h-7" />
+          </div>
+          <h2 className="text-xl font-black text-slate-900">Доступ ограничен автором</h2>
+          <p className="text-slate-600 text-xs leading-relaxed">
+            Автор документа (<strong>{doc.authorName || 'Сотрудник'}</strong>) установил приватный уровень доступа. У вас нет прав на просмотр этого файла.
+          </p>
+          <button 
+            onClick={() => navigate(`/workspace/${activeTenant?.id}/docs`)}
+            className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs shadow-md transition cursor-pointer"
+          >
+            ← Вернуться к списку документов
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const activeBlock = doc.blocks.find(b => b.id === activeBlockId) || (doc.blocks.length > 0 ? doc.blocks[0] : null);
 
   const handleDeleteDoc = async () => {
@@ -70,6 +116,11 @@ export default function DocumentEditorPage() {
       await deleteDoc();
       navigate(`/workspace/${activeTenant?.id}/docs`);
     }
+  };
+
+  const handleUpdateAccess = async (newLevel: DocAccessLevel, newMap: Record<string, UserDocRole>) => {
+    if (!activeTenant?.id || !user?.uid) return;
+    await documentService.updateAccessControl(activeTenant.id, doc.id, newLevel, newMap, user.uid);
   };
 
   const handleExport = (format: 'pdf' | 'markdown' = 'pdf') => {
@@ -100,6 +151,7 @@ export default function DocumentEditorPage() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>, blockId: string, index: number, type: DocBlockType) => {
+    if (userRole === 'viewer') return;
     const target = e.target as HTMLInputElement | HTMLTextAreaElement;
     if (e.key === 'Enter') {
       if (type !== 'paragraph' && type !== 'heading_1' && type !== 'heading_2' && type !== 'heading_3') {
@@ -120,21 +172,13 @@ export default function DocumentEditorPage() {
         const prevInput = document.getElementById(`block-${doc.blocks[index - 1]?.id}`);
         prevInput?.focus();
       }, 0);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      const prevInput = document.getElementById(`block-${doc.blocks[index - 1]?.id}`);
-      prevInput?.focus();
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      const nextInput = document.getElementById(`block-${doc.blocks[index + 1]?.id}`);
-      nextInput?.focus();
     }
   };
 
   const renderBlock = (b: DocBlock, index: number) => {
     if (b.type === 'divider') {
       return (
-        <div key={b.id} className="py-4 cursor-pointer hover:bg-slate-50 group" onClick={() => deleteBlock(b.id)}>
+        <div key={b.id} className="py-4 cursor-pointer hover:bg-slate-50 group" onClick={() => userRole === 'editor' && deleteBlock(b.id)}>
           <hr className="border-slate-300 group-hover:border-red-500 transition" />
         </div>
       );
@@ -145,7 +189,7 @@ export default function DocumentEditorPage() {
       return (
         <div key={b.id} className="my-4 cursor-pointer group relative" onClick={() => setActiveBlockId(b.id)}>
           <img src={imgSrc} alt="" className="max-w-full rounded-lg shadow-md border border-slate-200" />
-          <button onClick={() => deleteBlock(b.id)} className="absolute top-2 right-2 px-2 py-1 bg-red-600 text-white rounded text-xs opacity-0 group-hover:opacity-100 transition">Удалить картинку</button>
+          {userRole === 'editor' && <button onClick={() => deleteBlock(b.id)} className="absolute top-2 right-2 px-2 py-1 bg-red-600 text-white rounded text-xs opacity-0 group-hover:opacity-100 transition">Удалить картинку</button>}
         </div>
       );
     }
@@ -153,10 +197,11 @@ export default function DocumentEditorPage() {
     const commonProps = {
       id: `block-${b.id}`,
       value: b.content,
+      readOnly: userRole === 'viewer',
       onFocus: () => setActiveBlockId(b.id),
-      onChange: (e: any) => updateBlock(b.id, e.target.value),
+      onChange: (e: any) => userRole === 'editor' && updateBlock(b.id, e.target.value),
       onKeyDown: (e: any) => handleKeyDown(e, b.id, index, b.type),
-      className: "w-full bg-transparent focus:outline-none placeholder-slate-400 resize-none overflow-hidden text-slate-900",
+      className: `w-full bg-transparent focus:outline-none placeholder-slate-400 resize-none overflow-hidden text-slate-900 ${userRole === 'viewer' ? 'cursor-default' : ''}`,
       placeholder: b.type === 'heading_1' ? "Устав Общества / Заголовок..." : "Введите текст документа..."
     };
 
@@ -188,7 +233,8 @@ export default function DocumentEditorPage() {
           <input 
             type="checkbox" 
             checked={b.checked} 
-            onChange={() => toggleCheck(b.id)}
+            disabled={userRole === 'viewer'}
+            onChange={() => userRole === 'editor' && toggleCheck(b.id)}
             className="mt-1.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
           />
         )}
@@ -204,13 +250,13 @@ export default function DocumentEditorPage() {
 
   return (
     <div className="h-[calc(100vh-3.5rem)] flex flex-col bg-[#f8f9fa] overflow-hidden">
-      {/* Google Docs Header & Formatting Ribbon */}
       <DocEditorToolbar 
+        doc={doc}
         title={doc.title}
         onUpdateTitle={updateTitle}
         onBack={() => navigate(`/workspace/${activeTenant?.id}/docs`)}
         onAddBlock={(type) => {
-          if (doc.blocks.length > 0) {
+          if (userRole === 'editor' && doc.blocks.length > 0) {
             addBlockAfter(doc.blocks[doc.blocks.length - 1].id, type);
           }
         }}
@@ -230,9 +276,11 @@ export default function DocumentEditorPage() {
         zoomLevel={zoomLevel}
         setZoomLevel={setZoomLevel}
         docBlocks={doc.blocks}
+        isAuthor={isAuthor}
+        isFullAdmin={isFullAdmin}
+        onUpdateAccess={handleUpdateAccess}
       />
 
-      {/* Google Docs Ruler Bar */}
       {showRuler && (
         <div className="bg-[#edf2fa] border-b border-slate-200 h-6 flex items-center justify-center select-none shrink-0 overflow-hidden">
           <div className="w-[816px] flex items-center justify-between text-[10px] font-mono text-slate-500 px-12">
@@ -241,7 +289,6 @@ export default function DocumentEditorPage() {
         </div>
       )}
 
-      {/* Document Workspace Canvas (A4 Paper Layout) */}
       <div className="flex-1 overflow-y-auto py-8 px-4 flex justify-center bg-[#f8f9fa] print:bg-white print:p-0">
         <div 
           ref={editorRef} 
@@ -254,16 +301,18 @@ export default function DocumentEditorPage() {
         >
           {doc.blocks.map((b, i) => renderBlock(b, i))}
           
-          <div 
-            className="mt-12 py-6 text-center text-xs font-semibold text-slate-400 border-2 border-dashed border-transparent hover:border-slate-300 hover:bg-slate-50 rounded-xl cursor-pointer transition select-none"
-            onClick={() => {
-              if (doc.blocks.length > 0) {
-                addBlockAfter(doc.blocks[doc.blocks.length - 1].id, 'paragraph');
-              }
-            }}
-          >
-            + Нажмите сюда для добавления нового блока текста
-          </div>
+          {userRole === 'editor' && (
+            <div 
+              className="mt-12 py-6 text-center text-xs font-semibold text-slate-400 border-2 border-dashed border-transparent hover:border-slate-300 hover:bg-slate-50 rounded-xl cursor-pointer transition select-none"
+              onClick={() => {
+                if (doc.blocks.length > 0) {
+                  addBlockAfter(doc.blocks[doc.blocks.length - 1].id, 'paragraph');
+                }
+              }}
+            >
+              + Нажмите сюда для добавления нового блока текста
+            </div>
+          )}
         </div>
       </div>
 

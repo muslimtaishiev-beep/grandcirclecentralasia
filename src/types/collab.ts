@@ -31,6 +31,9 @@ export interface DocBlock {
   fontFamily?: string;
 }
 
+export type DocAccessLevel = 'private' | 'company_view' | 'company_edit' | 'specific_users';
+export type UserDocRole = 'editor' | 'commenter' | 'viewer';
+
 export interface WorkspaceDocument {
   id: string;
   tenantId: string;
@@ -39,9 +42,12 @@ export interface WorkspaceDocument {
   coverUrl?: string;
   folderId?: string;
   authorStaffId: string;
+  authorName?: string;
   lastEditedByStaffId: string;
   blocks: DocBlock[];
   isLocked: boolean;
+  accessLevel?: DocAccessLevel;
+  permissionsMap?: Record<string, UserDocRole>;
   tags: string[];
   createdAt: number;
   updatedAt: number;
