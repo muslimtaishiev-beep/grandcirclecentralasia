@@ -88,11 +88,11 @@ const commonLogicQuestions = [
 const logicKeys = {
   "logic_1": { ans: "Белов-Чёрная,Серов-Белая,Чернов-Серая", pts: 1, topic: "Логические матрицы" },
   "logic_2": { ans: "Сахар,Крупа,Вермишель", pts: 1, topic: "Логическое рассуждение" },
-  "logic_3": { ans: "Митя,Сеня,Толя,Костя,Юра", pts: 1, topic: "Последовательности и порядок" },
+  "logic_3": { ans: "Митя,Толя,Сеня,Костя,Юра", pts: 1, topic: "Последовательности и порядок" }, // ИСПРАВЛЕНО НА Митя,Толя,Сеня,Костя,Юра
   "logic_4": { ans: "Олег-Скрипач,Коля-Пианист,Ваня-Певец", pts: 1, topic: "Логическое соответствие" },
   "logic_5": { ans: "Уменьшилась в 2 раза", pts: 1, topic: "Логические задачи на концентрацию" },
   "logic_6": { ans: "60", pts: 1, topic: "Совместная работа" },
-  "logic_7": { ans: "7", pts: 1, topic: "Числовая логика" },
+  "logic_7": { ans: "8", pts: 1, topic: "Числовая логика" }, // ИСПРАВЛЕНО НА 8
   "logic_8": { ans: "240", pts: 1, topic: "Задачи на движение и скачки" }
 };
 
@@ -104,31 +104,57 @@ const english_grade_8 = [
   { id: "en_8_q5", text: "There ___ any milk in the fridge.", instruction: "Choose the correct answer", points: 1, type: "multiple_choice", options: ["isn’t", "aren’t", "don’t", "doesn’t"] }
 ];
 
+const english_keys_grade_8 = {
+  "en_8_q1": { ans: "goes", pts: 1, topic: "Present Simple" },
+  "en_8_q2": { ans: "were watching", pts: 1, topic: "Past Continuous" },
+  "en_8_q3": { ans: "have / eaten", pts: 1, topic: "Present Perfect" },
+  "en_8_q4": { ans: "have lived", pts: 1, topic: "Present Perfect with Since" },
+  "en_8_q5": { ans: "isn’t", pts: 1, topic: "There is/are with Uncountables" }
+};
+
 const english_grade_9 = [
   { id: "en_9_q1", text: "If I ___ more time, I would learn another language.", instruction: "Choose the correct answer", points: 1, type: "multiple_choice", options: ["have", "had", "will have", "would have"] },
   { id: "en_9_q2", text: "She ___ working here for five years before she moved abroad.", instruction: "Choose the correct answer", points: 1, type: "multiple_choice", options: ["has been", "had been", "was", "is"] }
 ];
+
+const english_keys_grade_9 = {
+  "en_9_q1": { ans: "had", pts: 1, topic: "Conditionals Type 2" },
+  "en_9_q2": { ans: "had been", pts: 1, topic: "Past Perfect Continuous" }
+};
 
 const english_grade_10_11 = [
   { id: "en_10_11_q1", text: "If I ___ earlier, I wouldn’t have missed the train.", instruction: "Choose the correct answer", points: 1, type: "multiple_choice", options: ["left", "had left", "would leave", "have left"] },
   { id: "en_10_11_q2", text: "By the time we arrived, they ___ dinner.", instruction: "Choose the correct answer", points: 1, type: "multiple_choice", options: ["finished", "have finished", "had finished", "were finishing"] }
 ];
 
+const english_keys_grade_10_11 = {
+  "en_10_11_q1": { ans: "had left", pts: 1, topic: "Conditionals Type 3" },
+  "en_10_11_q2": { ans: "had finished", pts: 1, topic: "Past Perfect" }
+};
+
 async function updateLogicAndEnglish() {
-  console.log("🚀 Executing batch update for Logic & English questions...");
+  console.log("🚀 Executing batch update for Logic & English questions and keys...");
 
   const batch = db.batch();
-  const grades = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  const grades = [8, 9, 10, 11];
 
   for (const grade of grades) {
     let engList = english_grade_8;
-    if (grade === 9) engList = english_grade_9;
-    if (grade >= 10) engList = english_grade_10_11;
+    let engKeys = english_keys_grade_8;
+
+    if (grade === 9) {
+      engList = english_grade_9;
+      engKeys = english_keys_grade_9;
+    } else if (grade >= 10) {
+      engList = english_grade_10_11;
+      engKeys = english_keys_grade_10_11;
+    }
 
     const docId1 = `test_grade_${grade}`;
     const docId2 = `test_grade_${grade}_${TENANT_ID}`;
     const docId3 = `${grade}`;
 
+    // Обновление вопросов
     batch.set(db.collection("tests").doc(docId1), {
       "questions.logic": commonLogicQuestions,
       "questions.english": engList,
@@ -145,22 +171,26 @@ async function updateLogicAndEnglish() {
       "questions.english": engList
     }, { merge: true });
 
+    // Обновление ключей
     batch.set(db.collection("test_answer_keys").doc(docId1), {
       "keys.logic": logicKeys,
+      "keys.english": engKeys,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
 
     batch.set(db.collection("test_answer_keys").doc(docId2), {
-      "keys.logic": logicKeys
+      "keys.logic": logicKeys,
+      "keys.english": engKeys
     }, { merge: true });
 
     batch.set(db.collection("test_answer_keys").doc(docId3), {
-      "keys.logic": logicKeys
+      "keys.logic": logicKeys,
+      "keys.english": engKeys
     }, { merge: true });
   }
 
   await batch.commit();
-  console.log("⚡ Batch update of Logic & English questions completed successfully!");
+  console.log("⚡ Batch update of Logic & English questions AND keys completed successfully!");
   process.exit(0);
 }
 
