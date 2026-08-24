@@ -672,16 +672,25 @@ export default function ManagerDashboard() {
   };
 
   
+  const GRADE_CANONICAL_MAX: Record<number, { russian: number; math: number; logic: number; english: number; coreTotal: number }> = {
+    7:  { russian: 22, math: 32, logic: 8, english: 45, coreTotal: 62 },
+    8:  { russian: 26, math: 44, logic: 8, english: 40, coreTotal: 78 },
+    9:  { russian: 32, math: 20, logic: 8, english: 45, coreTotal: 60 },
+    10: { russian: 20, math: 42, logic: 8, english: 45, coreTotal: 70 },
+    11: { russian: 17, math: 16, logic: 8, english: 45, coreTotal: 41 },
+  };
+
   const getMaxScore = (gradeStr: string | undefined, subject: "russian" | "math" | "logic" | "english") => {
     if (!gradeStr) return "?";
     const grade = parseInt(gradeStr, 10);
+    if (GRADE_CANONICAL_MAX[grade] && GRADE_CANONICAL_MAX[grade][subject] !== undefined) {
+      return GRADE_CANONICAL_MAX[grade][subject];
+    }
     const gradeData = dbTests.find(t => t.grade === grade)?.questions;
     if (!gradeData) return "?";
-    if (subject === "logic") return gradeData.logic?.reduce((acc: any, curr: any) => acc + (curr.points || 1), 0) || "?";
-    if (subject === "math") return gradeData.math?.reduce((acc: any, curr: any) => acc + (curr.points || 1), 0) || "?";
-    if (subject === "russian") return gradeData.russian?.reduce((acc: any, curr: any) => acc + (curr.points || 1), 0) || "?";
-    if (subject === "english") return gradeData.english?.reduce((acc: any, curr: any) => acc + (curr.points || 1), 0) || "?";
-    return "?";
+    const subList = gradeData[subject];
+    if (!Array.isArray(subList)) return "?";
+    return subList.reduce((acc: number, curr: any) => acc + (curr.points || (subject === "russian" || subject === "math" ? 2 : 1)), 0);
   };
 
   const submitFinalDecision = async () => {
@@ -800,17 +809,18 @@ export default function ManagerDashboard() {
               <tbody>
                 {getFilteredStudents().map((s, idx) => {
                   const totalScore = Number(s.ru || 0) + Number(s.ma || 0) + Number(s.lo || 0);
-                  let maxScore = 0;
-                  const gradeData = s.grade ? dbTests.find(t => t.grade === parseInt(s.grade, 10))?.questions : null;
-                  if (s.maxScoreSnapshot) {
-                    maxScore = s.maxScoreSnapshot;
-                  } else if (gradeData) {
-                    const maxRu = gradeData.russian?.reduce((sum: any, q: any) => sum + (q.points || 1), 0) || 0;
-                    const maxMa = gradeData.math?.reduce((sum: any, q: any) => sum + (q.points || 1), 0) || 0;
-                    const maxLo = gradeData.logic ? gradeData.logic.reduce((sum: any, q: any) => sum + (q.points || 1), 0) : 0;
-                    maxScore = maxRu + maxMa + maxLo;
+                  let maxScore = s.maxScoreSnapshot;
+                  const gNum = s.grade ? parseInt(s.grade, 10) : 7;
+                  if (!maxScore) {
+                    maxScore = GRADE_CANONICAL_MAX[gNum]?.coreTotal;
+                    if (!maxScore) {
+                      const maxRu = typeof getMaxScore(s.grade, "russian") === "number" ? getMaxScore(s.grade, "russian") as number : 20;
+                      const maxMa = typeof getMaxScore(s.grade, "math") === "number" ? getMaxScore(s.grade, "math") as number : 40;
+                      const maxLo = typeof getMaxScore(s.grade, "logic") === "number" ? getMaxScore(s.grade, "logic") as number : 8;
+                      maxScore = maxRu + maxMa + maxLo;
+                    }
                   }
-                  if (maxScore === 0) maxScore = 22; // Fallback
+                  if (maxScore === 0) maxScore = 70; // Fallback
                   const percentage = Math.min(100, Math.max(0, isNaN(Math.round((totalScore / maxScore) * 100)) ? 0 : Math.round((totalScore / maxScore) * 100)));
                   
                   return (
