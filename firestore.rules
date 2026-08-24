@@ -74,6 +74,7 @@ service cloud.firestore {
     match /schedule_events/{docId} { allow read, write: if hasTenantAccess(); }
     match /attendance_logs/{docId} { allow read, write: if hasTenantAccess(); }
     match /subscriptions/{docId} { allow read, write: if hasTenantAccess(); }
+    match /edu_subscriptions/{docId} { allow read, write: if hasTenantAccess(); }
     match /teacher_payrolls/{docId} { allow read, write: if hasTenantAccess(); }
     
     // Chat & Automations

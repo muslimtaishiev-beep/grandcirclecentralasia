@@ -10,14 +10,24 @@ export default function DocumentEditorPage() {
   const { id: docId } = useParams();
   const { doc, loading, saving, updateBlock, toggleCheck, addBlockAfter, deleteBlock, changeBlockType } = useDocumentEditor(activeTenant?.id, docId);
   const [exportOpen, setExportOpen] = useState(false);
-  const editorRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   if (loading) {
     return <div className="p-8 text-[var(--text-muted)]">Загрузка документа...</div>;
   }
 
   if (!doc) {
-    return <div className="p-8 text-red-500 font-bold">Документ не найден.</div>;
+    return (
+      <div className="p-8 text-center space-y-4">
+        <div className="text-red-500 font-bold text-lg">Документ не найден или у вас нет прав доступа.</div>
+        <button 
+          onClick={() => navigate(`/workspace/${activeTenant?.id}/docs`)}
+          className="px-4 py-2 bg-[var(--accent)] text-white font-bold rounded-xl text-sm"
+        >
+          ← Вернуться к документам
+        </button>
+      </div>
+    );
   }
 
   const handleExport = (format: 'pdf' | 'markdown') => {
@@ -131,6 +141,7 @@ export default function DocumentEditorPage() {
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col bg-[var(--bg-app)]">
       <DocEditorToolbar 
+        onBack={() => navigate(`/workspace/${activeTenant?.id}/docs`)}
         onAddBlock={(type) => {
           if (doc.blocks.length > 0) {
             addBlockAfter(doc.blocks[doc.blocks.length - 1].id, type);

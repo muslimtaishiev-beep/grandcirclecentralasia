@@ -1,5 +1,5 @@
 import React from 'react';
-import { useOutletContext, useParams } from 'react-router-dom';
+import { useOutletContext, useParams, useNavigate } from 'react-router-dom';
 import { useSpreadsheetGrid } from '../../../hooks/collab/useSpreadsheetGrid';
 import { sheetService } from '../../../services/collab/sheetService';
 import FormulaBar from './components/FormulaBar';
@@ -9,6 +9,7 @@ import SpreadsheetGrid from './components/SpreadsheetGrid';
 export default function SheetSpreadsheetPage() {
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
   const { id: sheetId } = useParams();
+  const navigate = useNavigate();
   
   const { 
     sheet, 
@@ -51,6 +52,7 @@ export default function SheetSpreadsheetPage() {
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col bg-[var(--bg-app)]">
       <CellFormatToolbar 
+        onBack={() => navigate(`/workspace/${activeTenant?.id}/sheets`)}
         onFormat={(updates) => activeCell && updateCellStyle(activeCell, updates)}
         onExport={handleExport}
       />

@@ -2,6 +2,10 @@ import { db } from '../lib/firebase';
 import { collection, doc, query, where, orderBy, limit, getDocs, setDoc, updateDoc, onSnapshot, runTransaction } from 'firebase/firestore';
 import { ChatChannel, ChatMessage } from '../types/chat';
 
+function sanitizeData(obj: any): any {
+  return JSON.parse(JSON.stringify(obj, (key, value) => (value === undefined ? null : value)));
+}
+
 class ChatService {
   subscribeToChannels(tenantId: string, staffId: string, onUpdate: (channels: ChatChannel[]) => void) {
     const q = query(
@@ -34,13 +38,15 @@ class ChatService {
     const ref = doc(collection(db, 'tenants', tenantId, 'chat_messages'));
     const now = Date.now();
     
-    await setDoc(ref, {
+    const payload = sanitizeData({
       ...message,
       tenantId,
       channelId,
       readByStaffIds: [message.senderStaffId],
       createdAt: now
     });
+
+    await setDoc(ref, payload);
 
     const channelRef = doc(db, 'tenants', tenantId, 'chat_channels', channelId);
     await updateDoc(channelRef, {
