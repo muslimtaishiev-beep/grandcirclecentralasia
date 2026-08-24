@@ -3,12 +3,29 @@ import { useOutletContext, useParams, useNavigate } from 'react-router-dom';
 import { useDocumentEditor } from '../../../hooks/collab/useDocumentEditor';
 import DocEditorToolbar from './components/DocEditorToolbar';
 import DocExportModal from './components/DocExportModal';
-import { DocBlockType } from '../../../types/collab';
+import { DocBlockType, DocBlock } from '../../../types/collab';
 
 export default function DocumentEditorPage() {
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
   const { id: docId } = useParams();
-  const { doc, loading, saving, updateTitle, updateBlock, toggleCheck, addBlockAfter, deleteBlock, changeBlockType } = useDocumentEditor(activeTenant?.id, docId);
+  const { 
+    doc, 
+    loading, 
+    saving, 
+    activeBlockId, 
+    setActiveBlockId, 
+    updateTitle, 
+    updateBlock, 
+    updateBlockStyle,
+    updateActiveBlockStyle,
+    toggleCheck, 
+    addBlockAfter, 
+    deleteBlock, 
+    changeBlockType,
+    undo,
+    redo 
+  } = useDocumentEditor(activeTenant?.id, docId);
+
   const [exportOpen, setExportOpen] = useState(false);
   const [selectedFont, setSelectedFont] = useState('Verdana');
   const [fontSize, setFontSize] = useState(11);
@@ -43,6 +60,8 @@ export default function DocumentEditorPage() {
     );
   }
 
+  const activeBlock = doc.blocks.find(b => b.id === activeBlockId) || (doc.blocks.length > 0 ? doc.blocks[0] : null);
+
   const handleExport = (format: 'pdf' | 'markdown') => {
     setExportOpen(false);
     if (format === 'pdf') {
@@ -58,6 +77,7 @@ export default function DocumentEditorPage() {
         else if (b.type === 'todo_list') md += `- [${b.checked ? 'x' : ' '}] ${b.content}\n`;
         else if (b.type === 'quote') md += `> ${b.content}\n\n`;
         else if (b.type === 'code_block') md += `\`\`\`\n${b.content}\n\`\`\`\n\n`;
+        else if (b.type === 'image') md += `![Изображение](${b.imageUrl || b.content})\n\n`;
         else if (b.type === 'divider') md += `---\n\n`;
         else md += `${b.content}\n\n`;
       });
@@ -101,7 +121,7 @@ export default function DocumentEditorPage() {
     }
   };
 
-  const renderBlock = (b: any, index: number) => {
+  const renderBlock = (b: DocBlock, index: number) => {
     if (b.type === 'divider') {
       return (
         <div key={b.id} className="py-4 cursor-pointer hover:bg-slate-50 group" onClick={() => deleteBlock(b.id)}>
@@ -110,25 +130,45 @@ export default function DocumentEditorPage() {
       );
     }
 
+    if (b.type === 'image') {
+      const imgSrc = b.imageUrl || b.content || 'https://images.unsplash.com/photo-1542435503-956c469947f6?w=800';
+      return (
+        <div key={b.id} className="my-4 cursor-pointer group relative" onClick={() => setActiveBlockId(b.id)}>
+          <img src={imgSrc} alt="" className="max-w-full rounded-lg shadow-md border border-slate-200" />
+          <button onClick={() => deleteBlock(b.id)} className="absolute top-2 right-2 px-2 py-1 bg-red-600 text-white rounded text-xs opacity-0 group-hover:opacity-100 transition">Удалить картинку</button>
+        </div>
+      );
+    }
+
     const commonProps = {
       id: `block-${b.id}`,
       value: b.content,
+      onFocus: () => setActiveBlockId(b.id),
       onChange: (e: any) => updateBlock(b.id, e.target.value),
       onKeyDown: (e: any) => handleKeyDown(e, b.id, index, b.type),
       className: "w-full bg-transparent focus:outline-none placeholder-slate-400 resize-none overflow-hidden text-slate-900",
       placeholder: b.type === 'heading_1' ? "Устав Общества / Заголовок..." : "Введите текст документа..."
     };
 
-    let fontStyle = { fontFamily: selectedFont, fontSize: `${fontSize + (b.type === 'heading_1' ? 12 : b.type === 'heading_2' ? 6 : b.type === 'heading_3' ? 3 : 0)}px` };
+    const fontStyle: React.CSSProperties = {
+      fontFamily: b.fontFamily || selectedFont,
+      fontSize: `${(b.fontSizePx || fontSize) + (b.type === 'heading_1' ? 12 : b.type === 'heading_2' ? 6 : b.type === 'heading_3' ? 3 : 0)}px`,
+      fontWeight: b.isBold ? 'bold' : 'normal',
+      fontStyle: b.isItalic ? 'italic' : 'normal',
+      textDecoration: b.isUnderline ? 'underline' : 'none',
+      textAlign: b.align || 'left',
+      color: b.textColor || '#0f172a',
+      backgroundColor: b.bgColor || 'transparent'
+    };
 
     let style = "";
-    if (b.type === 'heading_1') style = "text-3xl font-bold mb-4 text-slate-900";
-    else if (b.type === 'heading_2') style = "text-2xl font-bold mt-6 mb-3 text-slate-900";
-    else if (b.type === 'heading_3') style = "text-xl font-bold mt-4 mb-2 text-slate-900";
-    else if (b.type === 'paragraph') style = "leading-relaxed mb-2 text-slate-800";
-    else if (b.type === 'quote') style = "text-base italic border-l-4 border-blue-600 pl-4 py-1 my-4 text-slate-700 bg-blue-50/40 rounded-r";
+    if (b.type === 'heading_1') style = "text-3xl font-bold mb-4";
+    else if (b.type === 'heading_2') style = "text-2xl font-bold mt-6 mb-3";
+    else if (b.type === 'heading_3') style = "text-xl font-bold mt-4 mb-2";
+    else if (b.type === 'paragraph') style = "leading-relaxed mb-2";
+    else if (b.type === 'quote') style = "text-base italic border-l-4 border-blue-600 pl-4 py-1 my-4 bg-blue-50/40 rounded-r";
     else if (b.type === 'code_block') style = "font-mono text-sm bg-slate-900 text-slate-100 p-4 rounded-xl my-4";
-    else if (b.type === 'bullet_list' || b.type === 'numbered_list' || b.type === 'todo_list') style = "leading-relaxed mb-1 text-slate-800";
+    else if (b.type === 'bullet_list' || b.type === 'numbered_list' || b.type === 'todo_list') style = "leading-relaxed mb-1";
 
     return (
       <div key={b.id} className={`flex items-start gap-2 group ${b.type.includes('list') ? 'ml-6' : ''}`}>
@@ -170,6 +210,10 @@ export default function DocumentEditorPage() {
         setSelectedFont={setSelectedFont}
         fontSize={fontSize}
         setFontSize={setFontSize}
+        onUndo={undo}
+        onRedo={redo}
+        activeBlock={activeBlock}
+        onUpdateStyle={updateActiveBlockStyle}
       />
 
       {/* Google Docs Ruler Bar */}

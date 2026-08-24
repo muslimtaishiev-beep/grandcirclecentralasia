@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   ArrowLeft, FileText, Star, FolderUp, CheckCircle2, History, MessageSquare, Lock, Share2,
   Undo2, Redo2, Printer, Paintbrush, ChevronDown, Bold, Italic, Underline, Baseline, Highlighter, 
-  Link, Image, AlignLeft, AlignCenter, AlignRight, AlignJustify, List, ListOrdered, CheckSquare, 
+  Link, Image as ImageIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify, List, ListOrdered, CheckSquare, 
   Indent, Outdent, RemoveFormatting, Plus, Minus, Download, Code, Quote, Sparkles
 } from 'lucide-react';
 import { DocBlock } from '../../../../types/collab';
@@ -18,6 +18,10 @@ interface Props {
   setSelectedFont: (font: string) => void;
   fontSize: number;
   setFontSize: (size: number) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  activeBlock: DocBlock | null;
+  onUpdateStyle: (updates: Partial<DocBlock>) => void;
 }
 
 export default function DocEditorToolbar({ 
@@ -30,14 +34,21 @@ export default function DocEditorToolbar({
   selectedFont,
   setSelectedFont,
   fontSize,
-  setFontSize
+  setFontSize,
+  onUndo,
+  onRedo,
+  activeBlock,
+  onUpdateStyle
 }: Props) {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [docTitle, setDocTitle] = useState(title);
   const [isStarred, setIsStarred] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
 
-  // Sync title prop changes
+  // Color Pickers
+  const [showTextColorPicker, setShowTextColorPicker] = useState(false);
+  const [showBgColorPicker, setShowBgColorPicker] = useState(false);
+
   React.useEffect(() => {
     setDocTitle(title);
   }, [title]);
@@ -49,18 +60,28 @@ export default function DocEditorToolbar({
     }
   };
 
-  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleTitleSubmit();
-    }
+  const handleInsertLink = () => {
+    const url = window.prompt("Введите URL ссылки:", "https://");
+    if (!url || !activeBlock) return;
+    const linkText = window.prompt("Введите текст ссылки:", "Открыть ссылку") || url;
+    onUpdateStyle({ content: activeBlock.content + ` [${linkText}](${url})` });
   };
+
+  const handleInsertImage = () => {
+    const url = window.prompt("Введите URL изображения (или опустите для демо):", "https://images.unsplash.com/photo-1542435503-956c469947f6?w=800");
+    if (!url) return;
+    onAddBlock('image');
+    // Note: image block will render imageUrl
+  };
+
+  const colors = ['#0f172a', '#2563eb', '#dc2626', '#16a34a', '#9333ea', '#d97706'];
+  const bgColors = ['transparent', '#fef08a', '#bbf7d0', '#bfdbfe', '#fbcfe8'];
 
   return (
     <div className="bg-[#f9fbfd] border-b border-slate-200 font-sans text-slate-700 sticky top-0 z-30 select-none shadow-sm">
       {/* Top Header Bar (Google Docs Title & Menu) */}
       <div className="px-4 py-2 flex items-center justify-between gap-4 border-b border-slate-200/60 bg-white">
         <div className="flex items-center gap-3">
-          {/* Back Button */}
           <button 
             onClick={onBack}
             data-tooltip="Вернуться к списку документов"
@@ -70,7 +91,6 @@ export default function DocEditorToolbar({
             <ArrowLeft className="w-5 h-5" />
           </button>
 
-          {/* Docs Blue Icon */}
           <div 
             data-tooltip="Документ Google Docs" 
             data-tooltip-pos="bottom"
@@ -80,7 +100,6 @@ export default function DocEditorToolbar({
           </div>
 
           <div className="flex flex-col">
-            {/* Inline Title Editor */}
             <div className="flex items-center gap-2">
               {isEditingTitle ? (
                 <input 
@@ -89,7 +108,7 @@ export default function DocEditorToolbar({
                   value={docTitle}
                   onChange={e => setDocTitle(e.target.value)}
                   onBlur={handleTitleSubmit}
-                  onKeyDown={handleTitleKeyDown}
+                  onKeyDown={e => e.key === 'Enter' && handleTitleSubmit()}
                   className="text-lg font-semibold text-slate-900 bg-white border border-blue-500 rounded px-2 py-0.5 outline-none shadow-sm font-sans"
                 />
               ) : (
@@ -103,7 +122,6 @@ export default function DocEditorToolbar({
                 </h1>
               )}
 
-              {/* Star / Favorites Button */}
               <button 
                 onClick={() => setIsStarred(!isStarred)}
                 data-tooltip={isStarred ? "Удалить из помеченных" : "Пометить звездочкой"}
@@ -113,7 +131,6 @@ export default function DocEditorToolbar({
                 <Star className="w-4 h-4 fill-current" />
               </button>
 
-              {/* Folder Move Button */}
               <button 
                 data-tooltip="Переместить в папку"
                 data-tooltip-pos="bottom"
@@ -122,7 +139,6 @@ export default function DocEditorToolbar({
                 <FolderUp className="w-4 h-4" />
               </button>
 
-              {/* Cloud Save Status */}
               <div 
                 data-tooltip="Документ автоматически сохранен в облаке" 
                 data-tooltip-pos="bottom"
@@ -141,7 +157,7 @@ export default function DocEditorToolbar({
               </div>
             </div>
 
-            {/* Menu Bar (File, Edit, View, etc.) */}
+            {/* Menu Bar */}
             <div className="flex items-center gap-1 text-xs font-medium text-slate-600 mt-0.5">
               {['Файл', 'Правка', 'Вид', 'Вставка', 'Формат', 'Инструменты', 'Gemini', 'Расширения', 'Справка'].map(menu => (
                 <button 
@@ -159,8 +175,8 @@ export default function DocEditorToolbar({
 
         {/* Right Header Buttons */}
         <div className="flex items-center gap-2">
-          {/* History */}
           <button 
+            onClick={onUndo}
             data-tooltip="История версий"
             data-tooltip-pos="bottom"
             className="p-2 text-slate-600 hover:bg-slate-100 rounded-full transition cursor-pointer"
@@ -168,8 +184,8 @@ export default function DocEditorToolbar({
             <History className="w-5 h-5" />
           </button>
 
-          {/* Comments */}
           <button 
+            onClick={() => alert("Комментарии к документу в реальном времени включены")}
             data-tooltip="Открыть комментарии"
             data-tooltip-pos="bottom"
             className="p-2 text-slate-600 hover:bg-slate-100 rounded-full transition cursor-pointer"
@@ -177,7 +193,6 @@ export default function DocEditorToolbar({
             <MessageSquare className="w-5 h-5" />
           </button>
 
-          {/* Share Button (Google Docs Blue Pill) */}
           <button 
             onClick={() => setShowShareModal(true)}
             data-tooltip="Настройки совместного доступа"
@@ -190,12 +205,11 @@ export default function DocEditorToolbar({
         </div>
       </div>
 
-      {/* Formatting Toolbar (Google Docs Word Processor Ribbon) */}
-      <div className="px-3 py-1.5 flex items-center gap-1 overflow-x-auto text-slate-700 text-xs bg-[#edf2fa] border-t border-slate-200">
-        {/* Undo / Redo */}
-        <button data-tooltip="Отменить (Cmd+Z)" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Undo2 className="w-4 h-4" /></button>
-        <button data-tooltip="Повторить (Cmd+Y)" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Redo2 className="w-4 h-4" /></button>
-        <button data-tooltip="Печать (Cmd+P)" data-tooltip-pos="bottom" onClick={onExport} className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Printer className="w-4 h-4" /></button>
+      {/* Formatting Ribbon */}
+      <div className="px-3 py-1.5 flex items-center gap-1 overflow-x-auto text-slate-700 text-xs bg-[#edf2fa] border-t border-slate-200 relative">
+        <button onClick={onUndo} data-tooltip="Отменить (Cmd+Z)" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Undo2 className="w-4 h-4" /></button>
+        <button onClick={onRedo} data-tooltip="Повторить (Cmd+Y)" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Redo2 className="w-4 h-4" /></button>
+        <button onClick={onExport} data-tooltip="Печать (Cmd+P)" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Printer className="w-4 h-4" /></button>
         <button data-tooltip="Формат по образцу" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Paintbrush className="w-4 h-4" /></button>
         
         <div className="h-4 w-px bg-slate-300 mx-1"></div>
@@ -210,7 +224,8 @@ export default function DocEditorToolbar({
 
         {/* Paragraph Style Dropdown */}
         <select 
-          data-tooltip="Стиль форматирования"
+          value={activeBlock?.type || 'paragraph'}
+          data-tooltip="Стиль абзаца"
           data-tooltip-pos="bottom"
           onChange={e => onAddBlock(e.target.value as DocBlock['type'])}
           className="bg-transparent hover:bg-slate-200 border-none rounded px-2 py-1 text-slate-800 font-semibold cursor-pointer outline-none font-sans"
@@ -251,26 +266,98 @@ export default function DocEditorToolbar({
 
         <div className="h-4 w-px bg-slate-300 mx-1"></div>
 
-        {/* Formatting Actions (Bold, Italic, Underline, Color) */}
-        <button data-tooltip="Полужирный (Bold)" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded font-black text-slate-800 cursor-pointer"><Bold className="w-4 h-4" /></button>
-        <button data-tooltip="Курсив (Italic)" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded italic text-slate-800 cursor-pointer"><Italic className="w-4 h-4" /></button>
-        <button data-tooltip="Подчеркнутый (Underline)" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded underline text-slate-800 cursor-pointer"><Underline className="w-4 h-4" /></button>
-        <button data-tooltip="Цвет текста" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-blue-600 font-bold cursor-pointer"><Baseline className="w-4 h-4" /></button>
-        <button data-tooltip="Цвет выделения" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-amber-500 cursor-pointer"><Highlighter className="w-4 h-4" /></button>
+        {/* Formatting Actions */}
+        <button 
+          onClick={() => onUpdateStyle({ isBold: !activeBlock?.isBold })} 
+          data-tooltip="Полужирный (Bold)" 
+          data-tooltip-pos="bottom" 
+          className={`p-1.5 rounded font-black cursor-pointer transition ${activeBlock?.isBold ? 'bg-blue-200 text-blue-800' : 'hover:bg-slate-200 text-slate-800'}`}
+        >
+          <Bold className="w-4 h-4" />
+        </button>
+
+        <button 
+          onClick={() => onUpdateStyle({ isItalic: !activeBlock?.isItalic })} 
+          data-tooltip="Курсив (Italic)" 
+          data-tooltip-pos="bottom" 
+          className={`p-1.5 rounded italic cursor-pointer transition ${activeBlock?.isItalic ? 'bg-blue-200 text-blue-800' : 'hover:bg-slate-200 text-slate-800'}`}
+        >
+          <Italic className="w-4 h-4" />
+        </button>
+
+        <button 
+          onClick={() => onUpdateStyle({ isUnderline: !activeBlock?.isUnderline })} 
+          data-tooltip="Подчеркнутый (Underline)" 
+          data-tooltip-pos="bottom" 
+          className={`p-1.5 rounded underline cursor-pointer transition ${activeBlock?.isUnderline ? 'bg-blue-200 text-blue-800' : 'hover:bg-slate-200 text-slate-800'}`}
+        >
+          <Underline className="w-4 h-4" />
+        </button>
+
+        {/* Text Color Picker */}
+        <div className="relative">
+          <button 
+            onClick={() => { setShowTextColorPicker(!showTextColorPicker); setShowBgColorPicker(false); }} 
+            data-tooltip="Цвет текста" 
+            data-tooltip-pos="bottom" 
+            className="p-1.5 hover:bg-slate-200 rounded font-bold cursor-pointer"
+            style={{ color: activeBlock?.textColor || '#2563eb' }}
+          >
+            <Baseline className="w-4 h-4" />
+          </button>
+          {showTextColorPicker && (
+            <div className="absolute top-full left-0 mt-1 p-2 bg-white border border-slate-200 rounded-xl shadow-xl flex gap-1 z-50">
+              {colors.map(c => (
+                <button 
+                  key={c} 
+                  onClick={() => { onUpdateStyle({ textColor: c }); setShowTextColorPicker(false); }}
+                  className="w-5 h-5 rounded-full border border-slate-300 hover:scale-110 transition cursor-pointer"
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Highlight Color Picker */}
+        <div className="relative">
+          <button 
+            onClick={() => { setShowBgColorPicker(!showBgColorPicker); setShowTextColorPicker(false); }} 
+            data-tooltip="Цвет выделения маркером" 
+            data-tooltip-pos="bottom" 
+            className="p-1.5 hover:bg-slate-200 rounded text-amber-500 cursor-pointer"
+          >
+            <Highlighter className="w-4 h-4" />
+          </button>
+          {showBgColorPicker && (
+            <div className="absolute top-full left-0 mt-1 p-2 bg-white border border-slate-200 rounded-xl shadow-xl flex gap-1 z-50">
+              {bgColors.map(c => (
+                <button 
+                  key={c} 
+                  onClick={() => { onUpdateStyle({ bgColor: c === 'transparent' ? '' : c }); setShowBgColorPicker(false); }}
+                  className="w-5 h-5 rounded-full border border-slate-300 hover:scale-110 transition cursor-pointer flex items-center justify-center font-bold text-[10px]"
+                  style={{ backgroundColor: c === 'transparent' ? '#ffffff' : c }}
+                >
+                  {c === 'transparent' ? '✕' : ''}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="h-4 w-px bg-slate-300 mx-1"></div>
 
-        {/* Insert Link & Image */}
-        <button data-tooltip="Вставить ссылку" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Link className="w-4 h-4" /></button>
-        <button data-tooltip="Вставить изображение" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Image className="w-4 h-4" /></button>
+        {/* Link & Image */}
+        <button onClick={handleInsertLink} data-tooltip="Вставить ссылку" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Link className="w-4 h-4" /></button>
+        <button onClick={handleInsertImage} data-tooltip="Вставить изображение" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><ImageIcon className="w-4 h-4" /></button>
 
         <div className="h-4 w-px bg-slate-300 mx-1"></div>
 
         {/* Alignments */}
-        <button data-tooltip="По левому краю" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><AlignLeft className="w-4 h-4" /></button>
-        <button data-tooltip="По центру" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><AlignCenter className="w-4 h-4" /></button>
-        <button data-tooltip="По правому краю" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><AlignRight className="w-4 h-4" /></button>
-        <button data-tooltip="По ширине" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><AlignJustify className="w-4 h-4" /></button>
+        <button onClick={() => onUpdateStyle({ align: 'left' })} data-tooltip="По левому краю" data-tooltip-pos="bottom" className={`p-1.5 rounded cursor-pointer ${activeBlock?.align === 'left' ? 'bg-slate-300 font-bold' : 'hover:bg-slate-200'}`}><AlignLeft className="w-4 h-4" /></button>
+        <button onClick={() => onUpdateStyle({ align: 'center' })} data-tooltip="По центру" data-tooltip-pos="bottom" className={`p-1.5 rounded cursor-pointer ${activeBlock?.align === 'center' ? 'bg-slate-300 font-bold' : 'hover:bg-slate-200'}`}><AlignCenter className="w-4 h-4" /></button>
+        <button onClick={() => onUpdateStyle({ align: 'right' })} data-tooltip="По правому краю" data-tooltip-pos="bottom" className={`p-1.5 rounded cursor-pointer ${activeBlock?.align === 'right' ? 'bg-slate-300 font-bold' : 'hover:bg-slate-200'}`}><AlignRight className="w-4 h-4" /></button>
+        <button onClick={() => onUpdateStyle({ align: 'justify' })} data-tooltip="По ширине" data-tooltip-pos="bottom" className={`p-1.5 rounded cursor-pointer ${activeBlock?.align === 'justify' ? 'bg-slate-300 font-bold' : 'hover:bg-slate-200'}`}><AlignJustify className="w-4 h-4" /></button>
 
         <div className="h-4 w-px bg-slate-300 mx-1"></div>
 
@@ -281,17 +368,22 @@ export default function DocEditorToolbar({
 
         <div className="h-4 w-px bg-slate-300 mx-1"></div>
 
-        {/* Indents & Formatting */}
-        <button data-tooltip="Уменьшить отступ" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Outdent className="w-4 h-4" /></button>
-        <button data-tooltip="Увеличить отступ" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Indent className="w-4 h-4" /></button>
-        <button data-tooltip="Очистить форматирование" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><RemoveFormatting className="w-4 h-4" /></button>
+        {/* Clear formatting */}
+        <button 
+          onClick={() => onUpdateStyle({ isBold: false, isItalic: false, isUnderline: false, textColor: '', bgColor: '', align: 'left' })} 
+          data-tooltip="Очистить форматирование" 
+          data-tooltip-pos="bottom" 
+          className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"
+        >
+          <RemoveFormatting className="w-4 h-4" />
+        </button>
 
         <div className="ml-auto flex items-center gap-2">
           <button 
             onClick={onExport} 
-            data-tooltip="Экспортировать документ"
+            data-tooltip="Экспортировать документ в PDF или Markdown"
             data-tooltip-pos="bottom"
-            className="flex items-center gap-1 px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded font-bold text-xs transition cursor-pointer"
+            className="flex items-center gap-1 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs transition cursor-pointer shadow-sm"
           >
             <Download className="w-3.5 h-3.5" /> Скачать
           </button>
@@ -310,7 +402,7 @@ export default function DocEditorToolbar({
               Все сотрудники вашей организации в системе имеют доступ на чтение и редактирование.
             </p>
             <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs font-semibold text-blue-800">
-              🔗 Ссылка доступна для команды организации
+              🔗 Документ синхронизируется в реальном времени с вашей командой
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button 

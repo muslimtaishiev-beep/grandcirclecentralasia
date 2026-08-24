@@ -10,7 +10,8 @@ export type DocBlockType =
   | 'quote' 
   | 'code_block' 
   | 'divider' 
-  | 'callout';
+  | 'callout'
+  | 'image';
 
 export interface DocBlock {
   id: string;
@@ -19,6 +20,15 @@ export interface DocBlock {
   checked?: boolean; // для todo_list
   language?: string; // для code_block
   calloutType?: 'info' | 'warning' | 'success' | 'alert';
+  imageUrl?: string;
+  isBold?: boolean;
+  isItalic?: boolean;
+  isUnderline?: boolean;
+  align?: 'left' | 'center' | 'right' | 'justify';
+  textColor?: string;
+  bgColor?: string;
+  fontSizePx?: number;
+  fontFamily?: string;
 }
 
 export interface WorkspaceDocument {
