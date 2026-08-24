@@ -366,48 +366,50 @@ export default function App() {
         </Suspense>
       </main>
  
-      {/* Footer Branding Area */}
-      <footer className="border-t border-[#E9D5FF]/80 py-12">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          
-          <div className="flex flex-col sm:flex-row items-center justify-between border-b border-slate-100 pb-8 gap-4">
-            <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
-              <span className="block text-xl font-bold text-slate-900 tracking-tight">
-                LEAD+ <span className="text-[#9F7AEA]">Forum</span>
-              </span>
-              <span className="block text-sm text-slate-500 mt-1">
-                Кыргызстан, Бишкек, Технопарк
-              </span>
+      {/* Footer Branding Area (Hidden on Workspace App) */}
+      {!currentPath.startsWith('/workspace') && (
+        <footer className="border-t border-[#E9D5FF]/80 py-12">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            
+            <div className="flex flex-col sm:flex-row items-center justify-between border-b border-slate-100 pb-8 gap-4">
+              <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
+                <span className="block text-xl font-bold text-slate-900 tracking-tight">
+                  LEAD+ <span className="text-[#9F7AEA]">Forum</span>
+                </span>
+                <span className="block text-sm text-slate-500 mt-1">
+                  Кыргызстан, Бишкек, Технопарк
+                </span>
+              </div>
+   
+              <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-600 font-medium">
+                <a href={`tel:${data.settings.contactPhone}`} className="hover:text-[#9F7AEA] flex items-center space-x-2 transition">
+                  <Phone className="h-4 w-4 text-slate-400" />
+                  <span>{data.settings.contactPhone}</span>
+                </a>
+                <span className="hidden sm:inline text-slate-300">|</span>
+                <a href="https://www.instagram.com/youthleadnetwork?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw==" target="_blank" rel="noopener noreferrer" className="hover:text-[#9F7AEA] font-bold">
+                  Instagram
+                </a>
+              </div>
             </div>
- 
-            <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-600 font-medium">
-              <a href={`tel:${data.settings.contactPhone}`} className="hover:text-[#9F7AEA] flex items-center space-x-2 transition">
-                <Phone className="h-4 w-4 text-slate-400" />
-                <span>{data.settings.contactPhone}</span>
-              </a>
-              <span className="hidden sm:inline text-slate-300">|</span>
-              <a href="https://www.instagram.com/youthleadnetwork?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw==" target="_blank" rel="noopener noreferrer" className="hover:text-[#9F7AEA] font-bold">
-                Instagram
-              </a>
+   
+            <div className="flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 mt-8 gap-4">
+              <p>
+                © {new Date().getFullYear()} {lang === "ru" ? "Главное Образовательное Событие Года." : lang === "kg" ? "Жылдын башкы билим берүү окуясы." : "The Main Educational Event of the Year."} All Rights Reserved.
+              </p>
+              <div className="flex gap-4">
+                <Link to="/privacy" className="hover:text-[#9F7AEA] hover:underline transition">
+                  {lang === "ru" ? "Политика конфиденциальности" : lang === "kg" ? "Купуялык саясаты" : "Privacy Policy"}
+                </Link>
+                <Link to="/terms" className="hover:text-[#9F7AEA] hover:underline transition">
+                  {lang === "ru" ? "Пользовательское соглашение" : lang === "kg" ? "Колдонуучу келишими" : "Terms of Use"}
+                </Link>
+              </div>
             </div>
+   
           </div>
- 
-          <div className="flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 mt-8 gap-4">
-            <p>
-              © {new Date().getFullYear()} {lang === "ru" ? "Главное Образовательное Событие Года." : lang === "kg" ? "Жылдын башкы билим берүү окуясы." : "The Main Educational Event of the Year."} All Rights Reserved.
-            </p>
-            <div className="flex gap-4">
-              <Link to="/privacy" className="hover:text-[#9F7AEA] hover:underline transition">
-                {lang === "ru" ? "Политика конфиденциальности" : lang === "kg" ? "Купуялык саясаты" : "Privacy Policy"}
-              </Link>
-              <Link to="/terms" className="hover:text-[#9F7AEA] hover:underline transition">
-                {lang === "ru" ? "Пользовательское соглашение" : lang === "kg" ? "Колдонуучу келишими" : "Terms of Use"}
-              </Link>
-            </div>
-          </div>
- 
-        </div>
-      </footer>
+        </footer>
+      )}
     </div>
     </TenantProvider>
   );
