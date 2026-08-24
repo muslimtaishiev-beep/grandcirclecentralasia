@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 export interface ExamSessionConfig {
   testId?: string;
   studentName: string;
+  studentEmail?: string;
+  studentPhone?: string;
   grade: number;
   shortId?: string;
   isTester?: boolean;
@@ -89,6 +91,8 @@ export function useExamSession(config: ExamSessionConfig) {
           sessionId: state.sessionId,
           shortId: state.shortId || config.shortId,
           studentName: config.studentName,
+          studentEmail: config.studentEmail,
+          studentPhone: config.studentPhone,
           grade: config.grade,
           answers: state.answers,
           cheated,

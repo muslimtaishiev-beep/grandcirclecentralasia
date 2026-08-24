@@ -514,6 +514,8 @@ export default function Testing() {
       testId: payloadTestId,
       shortId: shortId,
       studentName,
+      studentPhone,
+      studentEmail,
       grade,
       answers: coreAnswers,
       cheated: isDisqualified,
@@ -589,7 +591,11 @@ export default function Testing() {
 
     const payload = {
       action: "submitEnglishTest",
+      tenantId: orgSlug || "org_future_leaders",
       shortId: activeShortId,
+      studentName,
+      studentPhone,
+      studentEmail,
       grade,
       answers: engAnswers,
       cheated: isDisqualified,

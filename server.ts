@@ -678,6 +678,9 @@ app.post("/api/exams/telemetry", async (req, res) => {
 app.post("/api/exams/submit", async (req, res) => {
   try {
     const { sessionId, shortId, studentName, grade, answers, cheated, isTester, isRetake, tenantId } = req.body;
+    const studentEmail = req.body.studentEmail || req.body.email || '';
+    const studentPhone = req.body.studentPhone || req.body.phone || '';
+
     if (!shortId || !studentName || !grade) {
       return res.status(400).json({ success: false, error: "Missing required submission fields" });
     }
@@ -725,6 +728,8 @@ app.post("/api/exams/submit", async (req, res) => {
           testId: sessionId || `test_${shortId}`,
           sessionId: sessionId || `test_${shortId}`,
           studentName,
+          studentEmail: studentEmail || `${shortId}@student.edu`,
+          studentPhone: studentPhone || '—',
           studentShortId: shortId,
           grade: Number(grade),
           submittedAt: admin.firestore.Timestamp.now(),
@@ -759,8 +764,8 @@ app.post("/api/exams/submit", async (req, res) => {
           tenantId: resolvedTenantId,
           fullName: studentName,
           name: studentName,
-          email: req.body.studentEmail || `${shortId}@student.edu`,
-          phone: req.body.studentPhone || '—',
+          email: studentEmail || `${shortId}@student.edu`,
+          phone: studentPhone || '—',
           shortId: shortId,
           type: 'student',
           grade: Number(grade),
@@ -781,8 +786,8 @@ app.post("/api/exams/submit", async (req, res) => {
           tenantId: resolvedTenantId,
           title: `Поступление: ${studentName} (${grade} класс)`,
           contactName: studentName,
-          contactPhone: req.body.studentPhone || '—',
-          contactEmail: req.body.studentEmail || '—',
+          contactPhone: studentPhone || '—',
+          contactEmail: studentEmail || '—',
           shortId: shortId,
           grade: Number(grade),
           stageId: 'stage_new',
@@ -804,6 +809,8 @@ app.post("/api/exams/submit", async (req, res) => {
           tenantId: resolvedTenantId,
           sessionId: submissionId,
           studentName: studentName || "Неизвестно",
+          studentEmail: studentEmail || "не указан",
+          studentPhone: studentPhone || "не указан",
           studentShortId: shortId || "000000",
           grade: Number(grade) || 0,
           scores: scores,
@@ -815,7 +822,7 @@ app.post("/api/exams/submit", async (req, res) => {
       }
     }
 
-    // 3. DUAL-WRITE: Proxy submission to GAS so Google Sheets backup is 100% updated!
+    // 3. DUAL-WRITE: Proxy submission & Result Email Dispatch to GAS so Google Sheets and Email delivery are 100% executed!
     const gasUrl = process.env.VITE_GAS_URL || process.env.GAS_URL;
     const gasApiKey = process.env.GAS_API_KEY || process.env.VITE_GAS_API_KEY;
 
@@ -827,6 +834,8 @@ app.post("/api/exams/submit", async (req, res) => {
           testId: sessionId || `test_${shortId}`,
           shortId,
           studentName,
+          studentEmail,
+          studentPhone,
           grade,
           answers: typeof answers === 'string' ? answers : JSON.stringify(answers || {}),
           cheated: cheated ? "ДА" : "НЕТ",
@@ -838,6 +847,28 @@ app.post("/api/exams/submit", async (req, res) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(gasPayload)
         }).catch(err => console.warn("[Exams/Submit] Background GAS Dual-Write notice:", err.message));
+
+        // ✉️ DISPATCH RESULTS EMAIL REPORT IF EMAIL IS PROVIDED
+        if (studentEmail && studentEmail.includes("@")) {
+          const emailPayload = {
+            action: "sendResultEmail",
+            apiKey: gasApiKey,
+            shortId,
+            studentName,
+            studentEmail,
+            studentPhone,
+            grade,
+            totalScore: scores.total || 0,
+            scores,
+            diagnosticSummary: summaryText
+          };
+          fetch(gasUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(emailPayload)
+          }).catch(err => console.warn("[Exams/Submit] Background Email dispatch notice:", err.message));
+          console.log(`[Exams/Submit] Result Email Dispatch Triggered for ${studentEmail}`);
+        }
       } catch (gErr) {
         console.warn("[Exams/Submit] GAS Dual-Write trigger notice:", gErr);
       }
