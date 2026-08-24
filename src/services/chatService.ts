@@ -143,7 +143,14 @@ class ChatService {
     return ref.id;
   }
 
-  async addMembersToChannel(tenantId: string, channelId: string, newStaffIds: string[]) {
+  async addMembersToChannel(
+    tenantId: string, 
+    channelId: string, 
+    newStaffIds: string[], 
+    senderStaffId?: string, 
+    senderName?: string, 
+    addedStaffNames?: string
+  ) {
     const channelRef = doc(db, 'tenants', tenantId, 'chat_channels', channelId);
     await runTransaction(db, async (transaction) => {
       const docSnap = await transaction.get(channelRef);
@@ -153,6 +160,16 @@ class ChatService {
       const updatedMembers = Array.from(new Set([...existingMembers, ...newStaffIds]));
       transaction.update(channelRef, { memberStaffIds: updatedMembers });
     });
+
+    if (senderStaffId && senderName) {
+      const details = addedStaffNames ? `: ${addedStaffNames}` : '';
+      await this.sendMessage(tenantId, channelId, {
+        senderStaffId,
+        senderName,
+        text: `👤 ${senderName} добавил(а) участников в чат${details}`,
+        isSystemMessage: true
+      });
+    }
   }
 
   async toggleMessageReaction(tenantId: string, channelId: string, messageId: string, emoji: string, staffId: string) {
@@ -189,7 +206,7 @@ class ChatService {
     await this.sendMessage(tenantId, channelId, {
       senderStaffId: hostStaffId,
       senderName: hostName,
-      text: 'В этом канале запущен групповой видеозвонок.',
+      text: `📞 ${hostName} начал(а) групповой видеозвонок`,
       isCallAnnouncement: true,
       webrtcRoomId: roomId
     });
@@ -197,15 +214,36 @@ class ChatService {
     return roomId;
   }
 
-  async createChannel(tenantId: string, channelData: { name: string; type: 'public_channel' | 'private_channel' | 'direct_message'; memberStaffIds: string[] }) {
+  async createChannel(
+    tenantId: string, 
+    channelData: { 
+      name: string; 
+      type: 'public_channel' | 'private_channel' | 'direct_message'; 
+      memberStaffIds: string[];
+      creatorStaffId?: string;
+      creatorName?: string;
+    }
+  ) {
     const ref = doc(collection(db, 'tenants', tenantId, 'chat_channels'));
     const id = ref.id;
     await setDoc(ref, {
-      ...channelData,
       id,
       tenantId,
+      name: channelData.name,
+      type: channelData.type,
+      memberStaffIds: channelData.memberStaffIds,
       createdAt: Date.now()
     });
+
+    if (channelData.creatorStaffId && channelData.creatorName) {
+      await this.sendMessage(tenantId, id, {
+        senderStaffId: channelData.creatorStaffId,
+        senderName: channelData.creatorName,
+        text: `🎉 ${channelData.creatorName} создал(а) чат "${channelData.name}"`,
+        isSystemMessage: true
+      });
+    }
+
     return id;
   }
 

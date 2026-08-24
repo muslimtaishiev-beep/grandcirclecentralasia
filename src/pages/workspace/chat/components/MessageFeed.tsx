@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { ChatMessage } from '../../../../types/chat';
-import { FileIcon } from 'lucide-react';
+import { FileIcon, PhoneCall, Sparkles, UserPlus } from 'lucide-react';
 import InChatCallBanner from './InChatCallBanner';
 
 interface Props {
@@ -27,35 +27,79 @@ export default function MessageFeed({ messages, currentUserId, activeCallSession
         />
       )}
 
-      <div className="p-6 space-y-6 flex-1">
+      <div className="p-6 space-y-5 flex-1">
         {messages.map((msg, index) => {
           const isMe = msg.senderStaffId === currentUserId;
+          const senderName = msg.senderName?.trim() || 'Сотрудник';
+          const avatarChar = senderName.charAt(0).toUpperCase() || '👤';
+
+          // 1. Render System Messages (channel creation, member invitations, notifications)
+          if (msg.isSystemMessage) {
+            return (
+              <div key={msg.id} className="flex justify-center my-3">
+                <div className="px-4 py-1.5 rounded-full bg-slate-100 dark:bg-white/10 text-xs font-bold text-[var(--text-muted)] border border-[var(--border-color)] shadow-xs flex items-center gap-2">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                  <span>{msg.text}</span>
+                  <span className="text-[10px] opacity-60 font-normal">
+                    {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              </div>
+            );
+          }
+
+          // 2. Render Call Announcements
+          if (msg.isCallAnnouncement) {
+            return (
+              <div key={msg.id} className="flex justify-center my-4">
+                <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 max-w-sm w-full shadow-sm flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold shrink-0 shadow-sm">
+                      <PhoneCall className="w-5 h-5 animate-pulse" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black">{msg.text}</div>
+                      <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">Инициатор: {senderName}</div>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={onJoinCall}
+                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer shrink-0"
+                  >
+                    Войти
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          // 3. Render Normal User Chat Messages
           const showHeader = index === 0 || messages[index - 1].senderStaffId !== msg.senderStaffId || (msg.createdAt - messages[index - 1].createdAt > 5 * 60 * 1000);
 
           return (
             <div key={msg.id} className={`flex gap-3 group ${isMe ? 'flex-row-reverse' : ''}`}>
               {showHeader ? (
-                <div className="w-10 h-10 rounded-full bg-[var(--accent)] text-white flex items-center justify-center font-bold shrink-0">
-                  {msg.senderName.charAt(0).toUpperCase()}
+                <div className="w-9 h-9 rounded-full bg-[var(--accent)] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+                  {avatarChar}
                 </div>
               ) : (
-                <div className="w-10 shrink-0"></div>
+                <div className="w-9 shrink-0"></div>
               )}
               
               <div className={`flex flex-col max-w-[70%] ${isMe ? 'items-end' : 'items-start'}`}>
                 {showHeader && (
-                  <div className="flex items-baseline gap-2 mb-1">
-                    <span className="font-bold text-sm text-[var(--text-main)]">{msg.senderName}</span>
-                    <span className="text-xs text-[var(--text-muted)] font-medium">
+                  <div className="flex items-baseline gap-2 mb-1 px-1">
+                    <span className="font-bold text-xs text-[var(--text-main)]">{senderName}</span>
+                    <span className="text-[10px] text-[var(--text-muted)] font-medium">
                       {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
                 )}
 
-                <div className={`px-4 py-2.5 rounded-2xl relative text-[15px] leading-relaxed ${
-                  msg.isCallAnnouncement 
-                    ? 'bg-indigo-50 border border-indigo-200 text-indigo-800' 
-                    : isMe ? 'bg-[var(--accent)] text-white rounded-tr-sm' : 'bg-[var(--bg-panel)] border border-[var(--border-color)] text-[var(--text-main)] rounded-tl-sm'
+                <div className={`px-4 py-2.5 rounded-2xl relative text-sm leading-relaxed shadow-xs ${
+                  isMe 
+                    ? 'bg-emerald-600 text-white rounded-tr-xs font-medium' 
+                    : 'bg-[var(--bg-panel)] border border-[var(--border-color)] text-[var(--text-main)] rounded-tl-xs font-medium'
                 }`}>
                   {msg.text}
                   
@@ -64,35 +108,36 @@ export default function MessageFeed({ messages, currentUserId, activeCallSession
                       {msg.attachments.map(att => (
                         <div key={att.id} className="flex items-center gap-2 p-2 bg-black/10 rounded-lg">
                           <FileIcon className="w-4 h-4 opacity-70" />
-                          <span className="text-sm font-medium truncate max-w-[200px]">{att.name}</span>
+                          <span className="text-xs font-medium truncate max-w-[200px]">{att.name}</span>
                         </div>
                       ))}
                     </div>
                   )}
 
                   {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                    <div className={`flex flex-wrap gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`flex flex-wrap gap-1 mt-1.5 ${isMe ? 'justify-end' : 'justify-start'}`}>
                       {Object.entries(msg.reactions).map(([emoji, staffIds]) => (
                         <button
                           key={emoji}
                           onClick={() => onToggleReaction(msg.id, emoji)}
-                          className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 transition ${
-                            staffIds.includes(currentUserId || '') ? 'bg-white/20' : 'bg-black/5 hover:bg-black/10'
+                          className={`px-2 py-0.5 rounded-full text-xs flex items-center gap-1 transition ${
+                            staffIds.includes(currentUserId || '') ? 'bg-white/25 text-white font-bold' : 'bg-black/5 dark:bg-white/10 hover:bg-black/10'
                           }`}
                         >
                           <span>{emoji}</span>
-                          <span className="font-bold opacity-80">{staffIds.length}</span>
+                          <span className="font-bold opacity-90 text-[11px]">{staffIds.length}</span>
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
                 
-                {/* Invisible hover area for reaction button (simplified) */}
+                {/* Reaction Quick Picker */}
                 <div className={`opacity-0 group-hover:opacity-100 transition flex gap-1 mt-1 ${isMe ? 'flex-row-reverse' : ''}`}>
-                  <button onClick={() => onToggleReaction(msg.id, '👍')} className="text-sm hover:scale-125 transition">👍</button>
-                  <button onClick={() => onToggleReaction(msg.id, '🔥')} className="text-sm hover:scale-125 transition">🔥</button>
-                  <button onClick={() => onToggleReaction(msg.id, '👀')} className="text-sm hover:scale-125 transition">👀</button>
+                  <button onClick={() => onToggleReaction(msg.id, '👍')} className="text-xs hover:scale-125 transition cursor-pointer">👍</button>
+                  <button onClick={() => onToggleReaction(msg.id, '🔥')} className="text-xs hover:scale-125 transition cursor-pointer">🔥</button>
+                  <button onClick={() => onToggleReaction(msg.id, '👀')} className="text-xs hover:scale-125 transition cursor-pointer">👀</button>
+                  <button onClick={() => onToggleReaction(msg.id, '❤️')} className="text-xs hover:scale-125 transition cursor-pointer">❤️</button>
                 </div>
               </div>
             </div>

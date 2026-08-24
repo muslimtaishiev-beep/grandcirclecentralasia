@@ -9,6 +9,15 @@ export function useChatRoom(tenantId: string, channelId: string | undefined) {
   const [channels, setChannels] = useState<ChatChannel[]>([]);
   const [staffList, setStaffList] = useState<OrgStaffMember[]>([]);
 
+  const getSenderName = () => {
+    if (user?.displayName && user.displayName.trim()) return user.displayName;
+    if (user?.email) {
+      const username = user.email.split('@')[0];
+      if (username) return username;
+    }
+    return 'Сотрудник ' + (user?.uid ? user.uid.substring(0, 4) : '');
+  };
+
   useEffect(() => {
     if (!tenantId || !user?.uid) return;
     const unsub = chatService.subscribeToChannels(tenantId, user.uid, (data) => {
@@ -38,7 +47,7 @@ export function useChatRoom(tenantId: string, channelId: string | undefined) {
     
     await chatService.sendMessage(tenantId, channelId, {
       senderStaffId: user.uid,
-      senderName: user.displayName || user.email?.split('@')[0] || 'Коллега ' + user.uid.substring(0,4),
+      senderName: getSenderName(),
       senderAvatarUrl: user.photoURL || undefined,
       text,
       attachments
@@ -47,7 +56,7 @@ export function useChatRoom(tenantId: string, channelId: string | undefined) {
 
   const startCall = async () => {
     if (!tenantId || !channelId || !user) return;
-    await chatService.startChannelCall(tenantId, channelId, user.uid, user.displayName || user.email?.split('@')[0] || 'Коллега ' + user.uid.substring(0,4));
+    await chatService.startChannelCall(tenantId, channelId, user.uid, getSenderName());
   };
 
   const endCall = async () => {
@@ -73,14 +82,28 @@ export function useChatRoom(tenantId: string, channelId: string | undefined) {
     const newId = await chatService.createChannel(tenantId, {
       name,
       type,
-      memberStaffIds
+      memberStaffIds,
+      creatorStaffId: user.uid,
+      creatorName: getSenderName()
     });
     return newId;
   };
 
   const addMembersToActiveChannel = async (newStaffIds: string[]) => {
-    if (!tenantId || !channelId) return;
-    await chatService.addMembersToChannel(tenantId, channelId, newStaffIds);
+    if (!tenantId || !channelId || !user) return;
+    const addedStaffNames = staffList
+      .filter(s => newStaffIds.includes(s.id))
+      .map(s => s.name)
+      .join(', ');
+
+    await chatService.addMembersToChannel(
+      tenantId, 
+      channelId, 
+      newStaffIds, 
+      user.uid, 
+      getSenderName(), 
+      addedStaffNames
+    );
   };
 
   return {

@@ -25,6 +25,7 @@ export interface ChatMessage {
   reactions?: Record<string, string[]>;
   replyToMessageId?: string;
   isCallAnnouncement?: boolean;
+  isSystemMessage?: boolean;
   webrtcRoomId?: string;
   readByStaffIds: string[];
   createdAt: number;
