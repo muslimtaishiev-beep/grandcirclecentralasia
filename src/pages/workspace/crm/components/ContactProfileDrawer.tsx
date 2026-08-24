@@ -1,27 +1,39 @@
 import React from 'react';
-import { X, Mail, Phone, Building, History, CheckSquare, Activity } from 'lucide-react';
+import { X, Mail, Phone, Building, History, CheckSquare, Activity, Trash2 } from 'lucide-react';
 import { CrmContact, CrmDeal, CrmActivityLog } from '../../../../types/crm';
 import { WorkspaceTask } from '../../../../types/tasks';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  onDeleteContact?: (contact: CrmContact) => void;
   contact?: CrmContact;
   deals?: CrmDeal[];
   tasks?: WorkspaceTask[];
   logs?: CrmActivityLog[];
 }
 
-export default function ContactProfileDrawer({ isOpen, onClose, contact, deals = [], tasks = [], logs = [] }: Props) {
+export default function ContactProfileDrawer({ isOpen, onClose, onDeleteContact, contact, deals = [], tasks = [], logs = [] }: Props) {
   if (!isOpen || !contact) return null;
 
   return (
     <div className="fixed inset-y-0 right-0 w-full md:w-96 bg-[var(--bg-panel)] shadow-2xl border-l border-[var(--border-color)] z-50 flex flex-col animate-in slide-in-from-right duration-300">
       <div className="flex justify-between items-center p-6 border-b border-[var(--border-color)]">
         <h2 className="text-xl font-bold">Профиль 360°</h2>
-        <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition">
-          <X className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          {onDeleteContact && (
+            <button 
+              onClick={() => onDeleteContact(contact)} 
+              className="p-2 hover:bg-red-500/10 text-slate-400 hover:text-red-500 rounded-full transition"
+              title="Удалить контакт из БД"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          )}
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">

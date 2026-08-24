@@ -24,6 +24,7 @@ export interface ChatMessage {
   attachments?: ChatAttachment[];
   reactions?: Record<string, string[]>;
   replyToMessageId?: string;
+  replyToMessageSnapshot?: { senderName: string; text: string };
   isCallAnnouncement?: boolean;
   isSystemMessage?: boolean;
   webrtcRoomId?: string;

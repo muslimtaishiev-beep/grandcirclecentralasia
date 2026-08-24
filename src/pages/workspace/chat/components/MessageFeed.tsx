@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { ChatMessage } from '../../../../types/chat';
-import { FileIcon, PhoneCall, Sparkles, UserPlus } from 'lucide-react';
+import { FileIcon, PhoneCall, Sparkles, Reply, Trash2 } from 'lucide-react';
 import InChatCallBanner from './InChatCallBanner';
 
 interface Props {
@@ -9,9 +9,19 @@ interface Props {
   activeCallSessionId?: string;
   onJoinCall: () => void;
   onToggleReaction: (messageId: string, emoji: string) => void;
+  onReplyMessage?: (msg: ChatMessage) => void;
+  onDeleteMessage?: (messageId: string) => void;
 }
 
-export default function MessageFeed({ messages, currentUserId, activeCallSessionId, onJoinCall, onToggleReaction }: Props) {
+export default function MessageFeed({ 
+  messages, 
+  currentUserId, 
+  activeCallSessionId, 
+  onJoinCall, 
+  onToggleReaction,
+  onReplyMessage,
+  onDeleteMessage 
+}: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -33,7 +43,7 @@ export default function MessageFeed({ messages, currentUserId, activeCallSession
           const senderName = msg.senderName?.trim() || 'Сотрудник';
           const avatarChar = senderName.charAt(0).toUpperCase() || '👤';
 
-          // 1. Render System Messages (channel creation, member invitations, notifications)
+          // 1. System Messages
           if (msg.isSystemMessage) {
             return (
               <div key={msg.id} className="flex justify-center my-3">
@@ -48,7 +58,7 @@ export default function MessageFeed({ messages, currentUserId, activeCallSession
             );
           }
 
-          // 2. Render Call Announcements
+          // 2. Call Announcements
           if (msg.isCallAnnouncement) {
             return (
               <div key={msg.id} className="flex justify-center my-4">
@@ -73,11 +83,11 @@ export default function MessageFeed({ messages, currentUserId, activeCallSession
             );
           }
 
-          // 3. Render Normal User Chat Messages
+          // 3. Normal Messages
           const showHeader = index === 0 || messages[index - 1].senderStaffId !== msg.senderStaffId || (msg.createdAt - messages[index - 1].createdAt > 5 * 60 * 1000);
 
           return (
-            <div key={msg.id} className={`flex gap-3 group ${isMe ? 'flex-row-reverse' : ''}`}>
+            <div key={msg.id} className={`flex gap-3 group relative ${isMe ? 'flex-row-reverse' : ''}`}>
               {showHeader ? (
                 <div className="w-9 h-9 rounded-full bg-[var(--accent)] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
                   {avatarChar}
@@ -93,6 +103,14 @@ export default function MessageFeed({ messages, currentUserId, activeCallSession
                     <span className="text-[10px] text-[var(--text-muted)] font-medium">
                       {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
+                  </div>
+                )}
+
+                {/* Quoted Message Preview if replying */}
+                {msg.replyToMessageSnapshot && (
+                  <div className={`mb-1 px-3 py-1.5 rounded-lg border-l-4 border-emerald-500 bg-black/5 dark:bg-white/10 text-xs text-[var(--text-muted)] max-w-full ${isMe ? 'text-right' : 'text-left'}`}>
+                    <div className="font-bold text-[11px] text-emerald-500">{msg.replyToMessageSnapshot.senderName}</div>
+                    <div className="truncate italic">{msg.replyToMessageSnapshot.text}</div>
                   </div>
                 )}
 
@@ -132,12 +150,42 @@ export default function MessageFeed({ messages, currentUserId, activeCallSession
                   )}
                 </div>
                 
-                {/* Reaction Quick Picker */}
-                <div className={`opacity-0 group-hover:opacity-100 transition flex gap-1 mt-1 ${isMe ? 'flex-row-reverse' : ''}`}>
-                  <button onClick={() => onToggleReaction(msg.id, '👍')} className="text-xs hover:scale-125 transition cursor-pointer">👍</button>
-                  <button onClick={() => onToggleReaction(msg.id, '🔥')} className="text-xs hover:scale-125 transition cursor-pointer">🔥</button>
-                  <button onClick={() => onToggleReaction(msg.id, '👀')} className="text-xs hover:scale-125 transition cursor-pointer">👀</button>
-                  <button onClick={() => onToggleReaction(msg.id, '❤️')} className="text-xs hover:scale-125 transition cursor-pointer">❤️</button>
+                {/* Action Bar on Hover: Reactions, Reply, Delete */}
+                <div className={`opacity-0 group-hover:opacity-100 transition flex items-center gap-2 mt-1 ${isMe ? 'flex-row-reverse' : ''}`}>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => onToggleReaction(msg.id, '👍')} className="text-xs hover:scale-125 transition cursor-pointer">👍</button>
+                    <button onClick={() => onToggleReaction(msg.id, '🔥')} className="text-xs hover:scale-125 transition cursor-pointer">🔥</button>
+                    <button onClick={() => onToggleReaction(msg.id, '👀')} className="text-xs hover:scale-125 transition cursor-pointer">👀</button>
+                    <button onClick={() => onToggleReaction(msg.id, '❤️')} className="text-xs hover:scale-125 transition cursor-pointer">❤️</button>
+                  </div>
+
+                  <span className="text-[10px] text-slate-300">•</span>
+
+                  {onReplyMessage && (
+                    <button 
+                      onClick={() => onReplyMessage(msg)}
+                      className="text-xs font-bold text-emerald-500 hover:underline flex items-center gap-1 cursor-pointer"
+                      title="Ответить на сообщение"
+                    >
+                      <Reply className="w-3.5 h-3.5" />
+                      <span>Ответить</span>
+                    </button>
+                  )}
+
+                  {onDeleteMessage && (
+                    <button 
+                      onClick={() => {
+                        if (window.confirm("Удалить это сообщение?")) {
+                          onDeleteMessage(msg.id);
+                        }
+                      }}
+                      className="text-xs font-bold text-red-400 hover:text-red-600 flex items-center gap-1 cursor-pointer ml-1"
+                      title="Удалить сообщение"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Удалить</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

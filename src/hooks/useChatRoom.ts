@@ -42,7 +42,11 @@ export function useChatRoom(tenantId: string, channelId: string | undefined) {
     return () => unsub();
   }, [tenantId, channelId]);
 
-  const sendMessage = async (text: string, attachments: ChatAttachment[] = []) => {
+  const sendMessage = async (
+    text: string, 
+    attachments: ChatAttachment[] = [],
+    replyToMessageSnapshot?: { senderName: string; text: string }
+  ) => {
     if (!tenantId || !channelId || !user) return;
     
     await chatService.sendMessage(tenantId, channelId, {
@@ -50,8 +54,14 @@ export function useChatRoom(tenantId: string, channelId: string | undefined) {
       senderName: getSenderName(),
       senderAvatarUrl: user.photoURL || undefined,
       text,
-      attachments
+      attachments,
+      replyToMessageSnapshot
     });
+  };
+
+  const deleteMessage = async (messageId: string) => {
+    if (!tenantId || !channelId) return;
+    await chatService.deleteMessage(tenantId, channelId, messageId);
   };
 
   const startCall = async () => {
@@ -112,6 +122,7 @@ export function useChatRoom(tenantId: string, channelId: string | undefined) {
     staffList,
     activeChannel,
     sendMessage,
+    deleteMessage,
     createChannel,
     addMembersToActiveChannel,
     startCall,

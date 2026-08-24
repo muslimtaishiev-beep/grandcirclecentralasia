@@ -18,12 +18,15 @@ export default function ChatLayout() {
   const [isAddMembersOpen, setIsAddMembersOpen] = useState(false);
   const [selectedAddStaffIds, setSelectedAddStaffIds] = useState<string[]>([]);
 
+  const [replyingTo, setReplyingTo] = useState<{ senderName: string; text: string } | null>(null);
+
   const {
     channels,
     messages,
     staffList,
     activeChannel,
     sendMessage,
+    deleteMessage,
     createChannel,
     addMembersToActiveChannel,
     startCall,
@@ -138,11 +141,15 @@ export default function ChatLayout() {
               activeCallSessionId={activeChannel.activeCallSessionId}
               onJoinCall={handleJoinCall}
               onToggleReaction={toggleReaction}
+              onReplyMessage={(msg) => setReplyingTo({ senderName: msg.senderName || 'Сотрудник', text: msg.text })}
+              onDeleteMessage={deleteMessage}
             />
 
             {/* Message Composer */}
             <MessageComposer 
-              onSendMessage={sendMessage}
+              replyingTo={replyingTo}
+              onCancelReply={() => setReplyingTo(null)}
+              onSendMessage={(text, attachments, replySnapshot) => sendMessage(text, attachments, replySnapshot)}
               onStartCall={handleStartCall}
             />
           </>

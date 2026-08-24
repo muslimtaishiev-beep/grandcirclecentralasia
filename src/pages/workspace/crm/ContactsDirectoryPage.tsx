@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Search, Plus, Filter, MoreHorizontal, Mail, Phone, X, Check } from 'lucide-react';
+import { Search, Plus, Filter, MoreHorizontal, Mail, Phone, X, Check, Trash2 } from 'lucide-react';
 import { db } from '../../../lib/firebase';
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp, setDoc, doc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, setDoc, doc, deleteDoc, getDocs } from 'firebase/firestore';
 import { CrmContact } from '../../../types/crm';
 import ContactProfileDrawer from './components/ContactProfileDrawer';
+import toast from 'react-hot-toast';
 
 export default function ContactsDirectoryPage() {
   const { activeTenant } = useOutletContext<any>();
@@ -82,6 +83,32 @@ export default function ContactsDirectoryPage() {
       alert(`Ошибка добавления контакта: ${err.message}`);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteContact = async (contact: CrmContact, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!window.confirm(`Вы уверены, что хотите безвозвратно удалить контакт "${contact.fullName}" из базы данных?`)) return;
+
+    try {
+      // 1. Delete root crm_contacts doc
+      await deleteDoc(doc(db, 'crm_contacts', contact.id));
+
+      // 2. Delete nested tenant crm_contacts doc
+      if (activeTenant?.id) {
+        try { await deleteDoc(doc(db, 'tenants', activeTenant.id, 'crm_contacts', contact.id)); } catch (err) {}
+      }
+
+      // 3. Delete memberships doc if employee
+      if (contact.type === 'employee' || contact.type === 'partner') {
+        const memSnap = await getDocs(query(collection(db, 'memberships'), where('userEmail', '==', contact.email)));
+        memSnap.forEach(async (d) => { await deleteDoc(d.ref); });
+      }
+
+      toast.success(`Контакт "${contact.fullName}" полностью удален`);
+      if (selectedContact?.id === contact.id) setSelectedContact(null);
+    } catch (err: any) {
+      alert(`Ошибка удаления контакта: ${err.message}`);
     }
   };
 
@@ -173,8 +200,12 @@ export default function ContactsDirectoryPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button className="p-2 text-[var(--text-muted)] hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition" onClick={(e) => { e.stopPropagation(); }}>
-                      <MoreHorizontal className="w-4 h-4" />
+                    <button 
+                      className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition cursor-pointer" 
+                      onClick={(e) => handleDeleteContact(contact, e)}
+                      title="Удалить контакт из базы данных"
+                    >
+                      <Trash2 className="w-4.5 h-4.5" />
                     </button>
                   </td>
                 </tr>
@@ -187,6 +218,7 @@ export default function ContactsDirectoryPage() {
       <ContactProfileDrawer 
         isOpen={!!selectedContact} 
         onClose={() => setSelectedContact(null)} 
+        onDeleteContact={handleDeleteContact}
         contact={selectedContact || undefined} 
       />
 

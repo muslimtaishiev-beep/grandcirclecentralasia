@@ -7,7 +7,7 @@ import toast, { Toaster } from "react-hot-toast";
 import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getHourlyPIN, getCEFRLevel, fetchGasAPI, toGenitiveCase } from "../lib/utils";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, deleteDoc, doc, query, where } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import html2pdf from "html2pdf.js";
 import Papa from "papaparse";
@@ -196,6 +196,29 @@ export default function ManagerDashboard() {
     link.href = URL.createObjectURL(blob);
     link.download = `students_export_${new Date().toISOString().split("T")[0]}.csv`;
     link.click();
+  };
+
+  const handleDeleteStudent = async (student: any) => {
+    const name = student.childName || student.studentName || student.shortId || "Ученик";
+    if (!window.confirm(`Вы уверены, что хотите БЕЗВОЗВРАТНО удалить ученика "${name}" из системы?`)) return;
+    try {
+      if (student.id) {
+        await deleteDoc(doc(db, 'submissions', student.id));
+        if (activeTenantId) {
+          try { await deleteDoc(doc(db, 'tenants', activeTenantId, 'submissions', student.id)); } catch(e){}
+        }
+      }
+
+      if (name) {
+        const crmSnap = await getDocs(query(collection(db, 'crm_contacts'), where('fullName', '==', name)));
+        crmSnap.forEach(async (d) => { await deleteDoc(d.ref); });
+      }
+
+      toast.success(`Ученик "${name}" полностью вычищен из базы данных`);
+      fetchStudents();
+    } catch(err: any) {
+      alert(`Ошибка удаления ученика: ${err.message}`);
+    }
   };
 
   const [dbTests, setDbTests] = useState<any[]>([]);
@@ -980,6 +1003,14 @@ export default function ManagerDashboard() {
                           {unblockingId === s.shortId ? (<><span className="animate-spin">↻</span> Загрузка...</>) : (<>🔓 Разрешить продолжение</>)}
                         </button>
                       )}
+
+                      <button
+                        onClick={() => handleDeleteStudent(s)}
+                        className="text-xs px-2 py-1 rounded shadow-sm font-bold flex items-center justify-center gap-1 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 transition cursor-pointer"
+                        title="Безвозвратно удалить ученика из БД"
+                      >
+                        🗑️ Удалить
+                      </button>
                     </td>
                   </tr>
                   );

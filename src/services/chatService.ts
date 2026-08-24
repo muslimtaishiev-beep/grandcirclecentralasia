@@ -1,5 +1,5 @@
 import { db } from '../lib/firebase';
-import { collection, doc, query, where, getDocs, setDoc, updateDoc, onSnapshot, runTransaction } from 'firebase/firestore';
+import { collection, doc, query, where, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, runTransaction } from 'firebase/firestore';
 import { ChatChannel, ChatMessage } from '../types/chat';
 
 function sanitizeData(obj: any): any {
@@ -141,6 +141,11 @@ class ChatService {
     });
 
     return ref.id;
+  }
+
+  async deleteMessage(tenantId: string, channelId: string, messageId: string) {
+    const ref = doc(db, 'tenants', tenantId, 'chat_messages', messageId);
+    await deleteDoc(ref);
   }
 
   async addMembersToChannel(

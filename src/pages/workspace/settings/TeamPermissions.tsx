@@ -16,7 +16,7 @@ import {
   Users,
   Check
 } from 'lucide-react';
-import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, getDocs, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../../../lib/firebase';
 
 interface PermissionOption {
@@ -197,10 +197,37 @@ export default function TeamPermissions() {
     }
   };
 
-  const handleDeleteMember = async (memberId: string, memberName: string) => {
-    if (!window.confirm(`Вы уверены, что хотите отозвать доступ и удалить сотрудника "${memberName}"?`)) return;
+  const handleDeleteMember = async (memberId: string, memberName: string, memberEmail?: string) => {
+    if (!window.confirm(`Вы уверены, что хотите отозвать доступ и БЕЗВОЗВРАТНО удалить сотрудника "${memberName}" из базы данных?`)) return;
     try {
+      // 1. Delete from memberships
       await deleteDoc(doc(db, 'memberships', memberId));
+
+      // 2. Delete from root crm_contacts
+      if (memberEmail && memberEmail !== '—') {
+        const crmSnap = await getDocs(query(collection(db, 'crm_contacts'), where('email', '==', memberEmail)));
+        crmSnap.forEach(async (d) => { await deleteDoc(d.ref); });
+      }
+      const directCrmSnap = await getDocs(query(collection(db, 'crm_contacts'), where('fullName', '==', memberName)));
+      directCrmSnap.forEach(async (d) => { await deleteDoc(d.ref); });
+
+      // 3. Delete from nested tenant crm_contacts
+      if (activeTenant?.id) {
+        const nestedCrmSnap = await getDocs(query(collection(db, 'tenants', activeTenant.id, 'crm_contacts')));
+        nestedCrmSnap.forEach(async (d) => {
+          const data = d.data();
+          if (data.email === memberEmail || data.fullName === memberName || d.id === memberId) {
+            await deleteDoc(d.ref);
+          }
+        });
+      }
+
+      // 4. Delete from users collection
+      try {
+        await deleteDoc(doc(db, 'users', memberId));
+      } catch (e) {}
+
+      setStatusMessage({ type: 'success', text: `Сотрудник "${memberName}" полностью удален из всех баз данных!` });
     } catch(err: any) {
       alert(`Ошибка удаления: ${err.message}`);
     }
@@ -326,9 +353,9 @@ export default function TeamPermissions() {
                         <Edit3 className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleDeleteMember(member.id, member.name || member.email)}
+                        onClick={() => handleDeleteMember(member.id, member.name || member.email, member.email)}
                         className="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-400 hover:text-red-400 transition"
-                        title="Отозвать доступ"
+                        title="Отозвать доступ и удалить пользователя"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
