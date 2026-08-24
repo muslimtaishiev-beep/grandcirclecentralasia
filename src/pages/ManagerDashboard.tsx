@@ -673,7 +673,7 @@ export default function ManagerDashboard() {
 
   
   const GRADE_CANONICAL_MAX: Record<number, { russian: number; math: number; logic: number; english: number; coreTotal: number }> = {
-    7:  { russian: 22, math: 32, logic: 8, english: 45, coreTotal: 62 },
+    7:  { russian: 22, math: 32, logic: 8, english: 0, coreTotal: 62 },
     8:  { russian: 26, math: 44, logic: 8, english: 40, coreTotal: 78 },
     9:  { russian: 32, math: 20, logic: 8, english: 45, coreTotal: 60 },
     10: { russian: 20, math: 42, logic: 8, english: 45, coreTotal: 70 },
