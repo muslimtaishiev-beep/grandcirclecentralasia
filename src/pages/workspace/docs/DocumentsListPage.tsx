@@ -21,7 +21,7 @@ export default function DocumentsListPage() {
   const handleCreate = async () => {
     if (!activeTenant?.id || !user) return;
     const newId = await documentService.createDocument(activeTenant.id, user.uid);
-    navigate(`/${activeTenant.id}/docs/${newId}`);
+    navigate(`/workspace/${activeTenant.id}/docs/${newId}`);
   };
 
   const filteredDocs = docs.filter(d => d.title.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -49,7 +49,7 @@ export default function DocumentsListPage() {
           </div>
           <button 
             onClick={handleCreate}
-            className="px-4 py-2 bg-[var(--accent)] text-white font-bold rounded-xl shadow-md hover:brightness-110 transition flex items-center gap-2 shrink-0"
+            className="px-4 py-2 bg-[var(--accent)] text-white font-bold rounded-xl shadow-md hover:brightness-110 transition flex items-center gap-2 shrink-0 cursor-pointer"
           >
             <Plus className="w-4 h-4" /> Создать
           </button>
@@ -61,7 +61,7 @@ export default function DocumentsListPage() {
           {filteredDocs.map(doc => (
             <div 
               key={doc.id}
-              onClick={() => navigate(`/${activeTenant?.id}/docs/${doc.id}`)}
+              onClick={() => navigate(`/workspace/${activeTenant?.id}/docs/${doc.id}`)}
               className="bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-2xl p-5 hover:border-[var(--accent)] hover:shadow-md transition cursor-pointer group flex flex-col h-48"
             >
               <div className="flex items-start justify-between mb-2">

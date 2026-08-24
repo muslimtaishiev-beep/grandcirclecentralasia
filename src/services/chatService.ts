@@ -5,22 +5,28 @@ import { ChatChannel, ChatMessage } from '../types/chat';
 class ChatService {
   subscribeToChannels(tenantId: string, staffId: string, onUpdate: (channels: ChatChannel[]) => void) {
     const q = query(
-      collection(db, 'tenants', tenantId, 'chat_channels'),
-      where('memberStaffIds', 'array-contains', staffId)
+      collection(db, 'tenants', tenantId, 'chat_channels')
     );
     return onSnapshot(q, (snap) => {
-      onUpdate(snap.docs.map(d => ({ ...d.data(), id: d.id } as ChatChannel)));
+      const allChannels = snap.docs.map(d => ({ ...d.data(), id: d.id } as ChatChannel));
+      const filtered = allChannels.filter(c => c.type === 'public_channel' || (c.memberStaffIds || []).includes(staffId));
+      onUpdate(filtered);
+    }, (err) => {
+      console.warn("Chat channels listener notice:", err);
     });
   }
 
   subscribeToMessages(tenantId: string, channelId: string, onUpdate: (messages: ChatMessage[]) => void) {
     const q = query(
       collection(db, 'tenants', tenantId, 'chat_messages'),
-      where('channelId', '==', channelId),
-      orderBy('createdAt', 'asc') // Firestore index required
+      where('channelId', '==', channelId)
     );
     return onSnapshot(q, (snap) => {
-      onUpdate(snap.docs.map(d => ({ ...d.data(), id: d.id } as ChatMessage)));
+      const msgs = snap.docs.map(d => ({ ...d.data(), id: d.id } as ChatMessage));
+      msgs.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      onUpdate(msgs);
+    }, (err) => {
+      console.warn("Chat messages listener notice:", err);
     });
   }
 

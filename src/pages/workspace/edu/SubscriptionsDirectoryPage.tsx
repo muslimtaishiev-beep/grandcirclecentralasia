@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, Plus, Filter, Snowflake } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
 import { db } from '../../../lib/firebase';
-import { collection, query, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { StudentSubscription } from '../../../types/edu';
 import SubscriptionIssueModal from './components/SubscriptionIssueModal';
 
@@ -14,9 +14,15 @@ export default function SubscriptionsDirectoryPage() {
 
   useEffect(() => {
     if (!activeTenant?.id) return;
-    const q = query(collection(db, 'tenants', activeTenant.id, 'edu_subscriptions'));
+    const q = query(collection(db, 'edu_subscriptions'), where('tenantId', '==', activeTenant.id));
     const unsub = onSnapshot(q, (snap) => {
-      setSubscriptions(snap.docs.map(d => ({ ...d.data(), id: d.id } as StudentSubscription)));
+      const list: StudentSubscription[] = [];
+      snap.forEach(d => {
+        list.push({ id: d.id, ...d.data() } as StudentSubscription);
+      });
+      setSubscriptions(list);
+    }, (err) => {
+      console.warn("Edu subscriptions notice:", err);
     });
     return () => unsub();
   }, [activeTenant?.id]);
