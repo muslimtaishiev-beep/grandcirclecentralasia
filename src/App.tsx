@@ -84,6 +84,8 @@ import { PublicData } from "./types";
 import { staticDb } from "./data/staticDb";
 
 
+import { GlobalTooltip } from "./components/ui/GlobalTooltip";
+
 export default function App() {
   const [lang, setLang] = useState<"ru" | "en" | "kg">("ru");
 
@@ -183,6 +185,7 @@ export default function App() {
     <div className="min-h-dvh bg-[#EDE9FE] text-slate-800 antialiased font-sans flex flex-col justify-between" id="main_app_wrapper">
       <SkipToContent targetId="main-content" />
       <CookieBanner />
+      <GlobalTooltip />
       
       {/* Header is global */}
       {!isAdminPath && !currentPath.startsWith("/super-admin") && !currentPath.startsWith("/workspace") && !currentPath.match(/^\/[^\/]+\/(admission|test)/) && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && !currentPath.startsWith("/sandbox") && (
