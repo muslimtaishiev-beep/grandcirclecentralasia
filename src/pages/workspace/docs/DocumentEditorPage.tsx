@@ -11,6 +11,7 @@ export default function DocumentEditorPage() {
   const { doc, loading, saving, updateBlock, toggleCheck, addBlockAfter, deleteBlock, changeBlockType } = useDocumentEditor(activeTenant?.id, docId);
   const [exportOpen, setExportOpen] = useState(false);
   const navigate = useNavigate();
+  const editorRef = useRef<HTMLDivElement>(null);
 
   if (loading) {
     return <div className="p-8 text-[var(--text-muted)]">Загрузка документа...</div>;
