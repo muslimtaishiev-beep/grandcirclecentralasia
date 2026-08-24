@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useOutletContext, useParams } from 'react-router-dom';
+import { useOutletContext, useParams, useNavigate } from 'react-router-dom';
 import { useDocumentEditor } from '../../../hooks/collab/useDocumentEditor';
 import DocEditorToolbar from './components/DocEditorToolbar';
 import DocExportModal from './components/DocExportModal';
