@@ -89,7 +89,7 @@ export default function WorkspaceLayout() {
 
   const hasPerm = (perm: string) => {
     if (!activeTenant) return false;
-    if (activeTenant.role === 'org:owner' || activeTenant.role === 'superadmin') return true;
+    if (activeTenant.role === 'owner' || activeTenant.role === 'superadmin') return true;
     const p = activeTenant.permissions;
     if (!p) return false;
     if (Array.isArray(p)) return p.includes(perm);
@@ -115,7 +115,7 @@ export default function WorkspaceLayout() {
     { name: "Docs", path: `/workspace/${activeTenant.id}/docs`, icon: FileText },
     { name: "Sheets", path: `/workspace/${activeTenant.id}/sheets`, icon: FileSpreadsheet },
     hasPerm('team:manage') && { name: "Site Builder", path: `/workspace/${activeTenant.id}/sites`, icon: Globe },
-    (activeTenant.role === 'org:owner') && { name: "Тарифы и Биллинг", path: `/workspace/${activeTenant.id}/billing`, icon: CreditCard },
+    (activeTenant.role === 'owner') && { name: "Тарифы и Биллинг", path: `/workspace/${activeTenant.id}/billing`, icon: CreditCard },
     hasPerm('team:manage') && { name: "Automations", path: `/workspace/${activeTenant.id}/automations`, icon: Zap },
   ].filter(Boolean) as Array<{ name: string, path: string, icon: any }> : [];
 

@@ -8,12 +8,8 @@ import { ru } from 'date-fns/locale';
 import { AttendanceStatus } from '../../../types/edu';
 
 import { useEffect } from 'react';
-
-// TODO: Replace with real fetching logic from crm_contacts
-const mockStudents = [
-  { id: 's1', name: 'Студент 1' },
-  { id: 's2', name: 'Студент 2' }
-];
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../../../lib/firebase';
 
 export default function AttendanceJournalPage() {
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
@@ -23,13 +19,31 @@ export default function AttendanceJournalPage() {
   const [groups, setGroups] = useState<{id: string, name: string}[]>([]);
 
   useEffect(() => {
-    // TODO: Fetch from actual CRM API
-    setStudents(mockStudents);
-    setGroups([
-      { id: 'g1', name: 'Группа 1' },
-      { id: 'g2', name: 'Группа 2' }
-    ]);
-  }, []);
+    const fetchData = async () => {
+      if (!activeTenant?.id) return;
+
+      try {
+        // Fetch groups
+        const groupsSnap = await getDocs(query(collection(db, 'edu_groups'), where('tenantId', '==', activeTenant.id)));
+        const fetchedGroups = groupsSnap.docs.map(doc => ({ id: doc.id, name: doc.data().name || 'Без названия' }));
+        if (fetchedGroups.length > 0) {
+          setGroups(fetchedGroups);
+          if (groupId === 'g1') setGroupId(fetchedGroups[0].id);
+        }
+
+        // Fetch students
+        const studentsSnap = await getDocs(query(collection(db, 'crm_contacts'), where('tenantId', '==', activeTenant.id)));
+        const fetchedStudents = studentsSnap.docs.map(doc => ({ id: doc.id, name: doc.data().name || doc.data().fullName || 'Неизвестный' }));
+        if (fetchedStudents.length > 0) {
+          setStudents(fetchedStudents);
+        }
+      } catch (error) {
+        console.error("Error fetching attendance data:", error);
+      }
+    };
+    
+    fetchData();
+  }, [activeTenant?.id]);
 
   const { records, markAttendance } = useAttendanceJournal(activeTenant?.id, groupId, month);
 

@@ -9,8 +9,11 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useTenant } from "../context/TenantContext";
 import QuestionFactory from "../components/tests/QuestionFactory";
+import { useParams } from "react-router-dom";
 
 export default function Testing() {
+  const { orgSlug, testId: urlTestId } = useParams<{ orgSlug: string, testId?: string }>();
+
   const safeGetSession = (key: string, defaultVal: any) => {
     try { 
       const val = sessionStorage.getItem(key) || localStorage.getItem("persist_" + key);
@@ -142,7 +145,8 @@ export default function Testing() {
   // Load questions & answer keys directly from Firestore collection "tests"
   useEffect(() => {
     if (!grade && !testId) return;
-    const docId = testId || `test_grade_${grade}_org_future_leaders`;
+    const currentOrg = orgSlug || "org_future_leaders";
+    const docId = testId || `test_grade_${grade}_${currentOrg}`;
     const docRef = doc(db, 'tests', docId);
     getDoc(docRef).then(snap => {
       if (snap.exists()) {
@@ -461,6 +465,7 @@ export default function Testing() {
       // Notify backend that student has started the test
       fetchGasAPI("/api/gas", {
          action: "registerStudent",
+         tenantId: orgSlug || "org_future_leaders",
          testId: newTestId,
          shortId: shortId,
          studentName,
@@ -505,6 +510,7 @@ export default function Testing() {
 
     const payload = {
       action: "submitTest",
+      tenantId: orgSlug || "org_future_leaders",
       testId: payloadTestId,
       shortId: shortId,
       studentName,
@@ -1119,7 +1125,7 @@ export default function Testing() {
             />
             <div className="text-sm text-slate-600 leading-relaxed">
               <label htmlFor="consent" className="cursor-pointer block mb-2 select-none">
-                Я, являясь родителем (законным представителем) несовершеннолетнего кандидата на обучение, даю <a href="/privacy" target="_blank" className="text-blue-600 hover:underline">согласие</a> ОсОО «Академия будущих лидеров» (ИНН 03004202510435) и ОсОО «ЛС Центр» на сбор, обработку и трансграничную передачу персональных данных (ФИО, телефон, класс, результаты тестирования и психологического анкетирования, данные античит-системы) в соответствии с Цифровым кодексом Кыргызской Республики для целей проведения вступительных испытаний, а также принимаю условия <a href="/terms" target="_blank" className="text-blue-600 hover:underline">Пользовательского соглашения</a>.
+                Я, являясь родителем (законным представителем) несовершеннолетнего кандидата на обучение, даю <a href="/privacy" target="_blank" className="text-blue-600 hover:underline">согласие</a> выбранному Учебному заведению и ОсОО «ЛС Центр» на сбор, обработку и трансграничную передачу персональных данных (ФИО, телефон, класс, результаты тестирования и психологического анкетирования, данные античит-системы) в соответствии с Цифровым кодексом Кыргызской Республики для целей проведения вступительных испытаний, а также принимаю условия <a href="/terms" target="_blank" className="text-blue-600 hover:underline">Пользовательского соглашения</a>.
               </label>
               <p className="text-xs text-slate-400 mt-2 border-t pt-2">
                 Нажимая кнопку "Начать тест" и отмечая настоящее согласие, вы подтверждаете, что являетесь законным родителем или опекуном несовершеннолетнего кандидата и обладаете всеми законными правами на предоставление его персональных данных.

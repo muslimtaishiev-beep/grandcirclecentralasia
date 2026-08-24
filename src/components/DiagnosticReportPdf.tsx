@@ -238,7 +238,7 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
       {/* Header */}
       <div className="flex justify-between items-start border-b-2 pb-6 mb-8" style={{ borderColor: C.gray200 }}>
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight mb-2" style={{ color: C.gray900 }}>Академия Будущих Лидеров</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight mb-2" style={{ color: C.gray900 }}>Образовательное Учреждение</h1>
           <h2 className="text-xl font-semibold" style={{ color: C.blue600 }}>Диагностическая Аналитика</h2>
         </div>
         <div className="text-right">
@@ -329,7 +329,7 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
       </div>
 
       <div className="mt-12 pt-6 border-t text-center text-xs" style={{ borderColor: C.gray200, color: C.gray400 }}>
-        Академия Будущих Лидеров • Сгенерировано автоматически
+        Образовательное Учреждение • Сгенерировано автоматически
       </div>
     </div>
   );

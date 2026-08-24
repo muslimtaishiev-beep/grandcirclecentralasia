@@ -65,7 +65,16 @@ router.get("/my", requireFirebaseAuth, async (req: any, res: any) => {
       .where("id", "in", tenantIds.slice(0, 10))
       .get();
 
-    const tenants = tenantsSnapshot.docs.map(doc => doc.data());
+    const tenants = tenantsSnapshot.docs.map(doc => {
+      const data = doc.data();
+      const membership = membershipsSnapshot.docs.find(m => m.data().tenantId === data.id)?.data() || {};
+      return {
+        ...data,
+        role: membership.role || 'user',
+        permissions: membership.permissions || {},
+        membershipId: membership.id
+      };
+    });
 
     return res.json({ success: true, tenants });
   } catch (error: any) {

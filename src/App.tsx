@@ -185,7 +185,7 @@ export default function App() {
       <CookieBanner />
       
       {/* Header is global */}
-      {!isAdminPath && !currentPath.startsWith("/super-admin") && !currentPath.startsWith("/workspace") && !currentPath.startsWith("/admission") && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && !currentPath.startsWith("/sandbox") && (
+      {!isAdminPath && !currentPath.startsWith("/super-admin") && !currentPath.startsWith("/workspace") && !currentPath.match(/^\/[^\/]+\/(admission|test)/) && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && !currentPath.startsWith("/sandbox") && (
         <Header 
           lang={lang} 
           setLang={setLang} 
@@ -194,7 +194,7 @@ export default function App() {
       )}
 
       {/* Floating Language Switcher for Admission Portal Pages */}
-      {(!isAdminPath && (currentPath.startsWith("/admission") || currentPath.startsWith("/login") || currentPath.startsWith("/register") || currentPath.startsWith("/dashboard") || currentPath.startsWith("/decision"))) && (
+      {(!isAdminPath && (currentPath.match(/^\/[^\/]+\/(admission|test)/) || currentPath.startsWith("/login") || currentPath.startsWith("/register") || currentPath.startsWith("/dashboard") || currentPath.startsWith("/decision"))) && (
         <div className="absolute top-4 right-4 md:top-8 md:right-8 z-50">
           <button 
             onClick={() => setLang(lang === "ru" ? "en" : lang === "en" ? "kg" : "ru")}
@@ -227,7 +227,9 @@ export default function App() {
           } />
 
           {/* Admission Portal Routes */}
-          <Route path="/admission" element={<Landing lang={lang} />} />
+          <Route path="/:orgSlug/admission" element={<Landing lang={lang} />} />
+          <Route path="/:orgSlug/test" element={<Testing />} />
+          <Route path="/:orgSlug/test/:testId" element={<Testing />} />
           <Route path="/login" element={<Login lang={lang} />} />
           <Route path="/register" element={<Signup lang={lang} />} />
           <Route path="/dashboard" element={
@@ -241,7 +243,7 @@ export default function App() {
             </ProtectedRoute>
           } />
           
-          <Route path="/test/:testId" element={<ProtectedRoute><Testing /></ProtectedRoute>} />
+
           <Route path="/manager/form" element={<ProtectedRoute><ManagerForm /></ProtectedRoute>} />
           <Route path="/manager-dashboard" element={<ProtectedRoute><ManagerDashboard /></ProtectedRoute>} />
           <Route path="/receipt/:shortId" element={<Receipt />} />

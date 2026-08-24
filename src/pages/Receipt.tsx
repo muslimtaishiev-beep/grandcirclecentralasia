@@ -62,7 +62,7 @@ export default function Receipt() {
         
         {/* Header - Official State Look */}
         <div className="text-center border-b-2 border-black pb-4 mb-6">
-          <h1 className="text-xl font-bold uppercase tracking-wide">ОсОО «Академия Будущих Лидеров»</h1>
+          <h1 className="text-xl font-bold uppercase tracking-wide">Учебное Заведение (Организация-партнер)</h1>
           <p className="text-sm mt-1">Кыргызская Республика, г. Бишкек, ул. Турусбекова 109/3</p>
           <div className="mt-4 border-t border-black pt-2 w-3/4 mx-auto">
             <h2 className="text-2xl font-bold uppercase tracking-widest mt-2">Направление № {student.shortId}</h2>

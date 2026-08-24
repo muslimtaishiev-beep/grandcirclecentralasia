@@ -119,7 +119,7 @@ export default function TestList() {
               {displayTests.map(test => {
                 const gradeNum = test.grade || 10;
                 const testDocId = test.id || `test_grade_${gradeNum}_${currentOrgId}`;
-                const studentLink = `${window.location.origin}/test/${testDocId}`;
+                const studentLink = `${window.location.origin}/${currentOrgId}/test/${testDocId}`;
                 return (
                   <tr key={test.id || gradeNum} className="hover:bg-black/5 dark:hover:bg-white/5 transition group">
                     <td className="px-6 py-4">

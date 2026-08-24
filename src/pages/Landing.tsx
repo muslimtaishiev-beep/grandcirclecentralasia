@@ -71,25 +71,34 @@ const Landing: React.FC<LandingProps> = ({ lang = "ru" }) => {
         </svg>
       </div>
 
-      <div className="relative z-10 flex flex-col items-center justify-center min-h-dvh p-6 text-center">
+      <div className="relative z-10 flex flex-col items-center justify-center min-h-dvh px-4 py-20 text-center">
+        
         <motion.div
-          initial={{ y: 40, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
-          className="max-w-3xl"
+          className="max-w-4xl w-full"
         >
-          <h1 className="text-4xl md:text-6xl font-display uppercase tracking-tighter mb-6 leading-tight">
-            Future Leaders School<br/>
-            <span className="text-[#9F7AEA]">
-              Olympiad 2026
+          {/* Badge */}
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-xs sm:text-sm font-medium mb-8 backdrop-blur-sm">
+            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+            {lang === "ru" ? "Регистрация открыта" : lang === "kg" ? "Каттоо ачык" : "Registration Open"}
+          </div>
+
+          <h1 className="text-4xl sm:text-6xl md:text-8xl font-black uppercase tracking-tighter mb-6 leading-none">
+            FUTURE LEADERS
+            <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-300 to-slate-500">
+              ACADEMY
             </span>
           </h1>
-          <p className="text-lg md:text-xl text-slate-300 mb-10 max-w-2xl mx-auto font-medium leading-relaxed">
+
+          <p className="text-lg sm:text-2xl text-slate-300 mb-12 max-w-2xl mx-auto font-light">
             {lang === "ru" 
-              ? "Официальный портал грандиозной олимпиады. Победители получают эксклюзивный шанс на бесплатное обучение в Школе Будущих Лидеров — ведущем проекте страны по подготовке к поступлению в топовые мировые вузы." 
-              : lang === "kg" 
-              ? "Грандиоздук олимпиаданын расмий порталы. Жеңүүчүлөр өлкөнүн алдыңкы долбоору болгон Келечектеги Лидерлер Мектебинде акысыз билим алууга эксклюзивдүү мүмкүнчүлүк алышат — алдыңкы дүйнөлүк университеттерге даярдоо." 
-              : "The official portal of the grand Olympiad. Winners gain an exclusive, fully-funded opportunity to join the Future Leaders School — the nation's premier program preparing students for top-tier global universities."}
+              ? "Первый этап отбора — диагностический тест. Покажи свои знания и стань частью будущего."
+              : lang === "kg"
+              ? "Тандоонун биринчи этапы - диагностикалык тест. Билимиңди көрсөт жана келечектин бир бөлүгү бол."
+              : "First stage of selection — diagnostic test. Show your knowledge and become part of the future."}
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button 
@@ -99,7 +108,7 @@ const Landing: React.FC<LandingProps> = ({ lang = "ru" }) => {
               {lang === "ru" ? "Узнать результаты" : lang === "kg" ? "Жыйынтыкты көрүү" : "Check Results"}
             </button>
             <button 
-              onClick={() => navigate('/login')}
+              onClick={() => navigate(`/${orgSlug}/test`)}
               className="w-full sm:w-auto px-8 py-4 bg-transparent text-white font-bold uppercase tracking-wider border-2 border-white hover:bg-white hover:text-black transition-colors"
             >
               {lang === "ru" ? "Вход для участников" : lang === "kg" ? "Катышуучулар үчүн кирүү" : "Participant Login"}

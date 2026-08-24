@@ -57,7 +57,7 @@ export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data
         <div className="w-full text-center mb-3">
           <img
             src="/school_logo.png"
-            alt="Академия Будущих Лидеров"
+            alt="Образовательное Учреждение"
             className="h-28 object-contain mx-auto"
             onError={(e) => {
               // Fallback to /logo.png
@@ -101,7 +101,7 @@ export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data
             <div className="w-[330px] border-[2.5px] border-[#0C3674] p-2.5 text-[11px] font-serif leading-tight bg-[#f0f4ff]/20 text-[#0C3674] rounded-xs relative select-none">
               <div className="text-[11.5px] font-bold tracking-tight text-center border-b border-[#0C3674]/50 pb-1 mb-1.5 font-serif uppercase">
                 Общество с ограниченной ответственностью<br />
-                «Академия будущих лидеров»
+                «Образовательное Учреждение»
               </div>
               <div className="text-[10px] text-center font-mono text-[#0C3674] tracking-wider mb-2 font-bold">
                 ИНН 03004202510435
@@ -154,7 +154,7 @@ export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data
           </div>
 
           <p className="text-justify font-normal text-[19px]">
-            «Академия Будущих Лидеров» (Лицензия LM.-2025-0006 от 03.03.2026).
+            «Образовательное Учреждение»
           </p>
 
           <p className="text-justify text-[19px] pt-2">
