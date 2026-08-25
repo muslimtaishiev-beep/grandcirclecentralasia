@@ -757,6 +757,37 @@ async function processExamSubmission(payload: any) {
     return { success: false, error: "Missing required submission fields" };
   }
 
+  // SECURITY: Verify that a test for this grade exists for this tenant
+  // This prevents students from submitting results for tenants they shouldn't access
+  if (useFirebase) {
+    try {
+      const testCandidates = [
+        `test_grade_${grade}_${resolvedTenantId}`,
+        `test_grade_${grade}`,
+        `test_${grade}`,
+        `${grade}`
+      ];
+      let testFound = false;
+      for (const docId of testCandidates) {
+        const snap = await admin.firestore().collection("tests").doc(docId).get();
+        const data = snap.data();
+        if (data && data.tenantId && data.tenantId !== resolvedTenantId) {
+          continue; // tenantId mismatch, try next
+        }
+        if (data && data.questions) {
+          testFound = true;
+          break;
+        }
+      }
+      if (!testFound) {
+        return { success: false, error: `No test found for grade ${grade} in tenant ${resolvedTenantId}` };
+      }
+    } catch (e) {
+      console.warn("[Exams/Submit] Failed to verify test ownership:", e);
+      // Continue anyway — might be a transient error
+    }
+  }
+
   // 1. Fetch answer keys from Firestore
   let keys: any = {};
   if (useFirebase) {
