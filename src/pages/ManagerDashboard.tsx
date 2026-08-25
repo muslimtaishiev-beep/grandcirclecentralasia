@@ -461,10 +461,14 @@ export default function ManagerDashboard() {
   };
 
   useEffect(() => {
+    if (!activeTenantId) {
+      navigate("/workspace", { replace: true });
+      return;
+    }
     if (user && activeTenantId) {
       fetchStudents();
     }
-  }, [user, activeTenantId]);
+  }, [user, activeTenantId, navigate]);
 
   const fetchStudents = async () => {
     setLoading(true);

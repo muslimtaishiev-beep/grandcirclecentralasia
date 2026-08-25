@@ -247,7 +247,7 @@ export default function App() {
           } />
           
 
-          <Route path="/manager/form" element={<ProtectedRoute><ManagerForm /></ProtectedRoute>} />
+          <Route path="/manager/form" element={<Navigate to="/workspace" replace />} />
           <Route path="/manager-dashboard" element={<Navigate to="/workspace" replace />} />
           <Route path="/receipt/:shortId" element={<Receipt />} />
           <Route path="/psychologist/:shortId" element={<ProtectedRoute><PsychologistForm /></ProtectedRoute>} />
