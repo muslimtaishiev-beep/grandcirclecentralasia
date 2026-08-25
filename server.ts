@@ -677,13 +677,10 @@ app.get("/api/exams/questions", async (req, res) => {
     for (const docId of candidates) {
       try {
         const snap = await admin.firestore().collection("tests").doc(docId).get();
-        if (snap.exists()) {
-          const data = snap.data() || {};
-          // Support both formats: { questions: {...} } and { questions: subcollection }
-          if (data.questions) {
-            testData = data;
-            break;
-          }
+        const data = snap.data();
+        if (data && data.questions) {
+          testData = data;
+          break;
         }
       } catch (e) {
         // Continue to next candidate
