@@ -1,5 +1,4 @@
 import { auth as firebaseAuth } from "../lib/firebase";
-import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import React, { useState, useEffect } from "react";
 import { useSearchParams, useNavigate, useParams } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
@@ -7,18 +6,18 @@ import { db } from "../lib/firebase";
 import { fetchGasAPI } from "../lib/utils";
 import html2pdf from "html2pdf.js";
 import { DiagnosticReportPdf } from "../components/DiagnosticReportPdf";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function ManagerForm() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
   const { orgId: routeOrgId, shortId: routeShortId } = useParams();
 
   const urlShortId = routeShortId || searchParams.get("shortId") || searchParams.get("testId") || "";
   const tenantId = routeOrgId || searchParams.get("tenantId");
+  const cabinetPath = tenantId ? `/workspace/${tenantId}/tests/manage` : "/workspace";
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [shortId, setShortId] = useState(urlShortId);
   const [student, setStudent] = useState<any>(null);
   const [gradeData, setGradeData] = useState<any>(null);
@@ -28,14 +27,10 @@ export default function ManagerForm() {
   });
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(firebaseAuth, (user) => {
-      if (user) {
-        setIsAuthenticated(true);
-        setManagerName(user.displayName || user.email || "Менеджер Академии");
-      }
-    });
-    return () => unsub();
-  }, []);
+    if (user) {
+      setManagerName(user.displayName || user.email || "Менеджер Академии");
+    }
+  }, [user]);
 
   const [analyzing, setAnalyzing] = useState(false);
 
@@ -93,25 +88,6 @@ export default function ManagerForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const unsub = onAuthStateChanged(firebaseAuth, (user) => {
-      if (user) {
-        setIsAuthenticated(true);
-      }
-    });
-    return unsub;
-  }, []);
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await signInWithEmailAndPassword(firebaseAuth, email, password);
-      setIsAuthenticated(true);
-    } catch (err: any) {
-      setError("Ошибка входа: Неверные данные");
-    }
-  };
-
   const fetchStudent = async () => {
     setLoading(true);
     setError("");
@@ -158,7 +134,7 @@ export default function ManagerForm() {
         if (isPsych) {
           navigate(`/receipt/${shortId}`);
         } else {
-          navigate("/manager-dashboard");
+          navigate(cabinetPath);
         }
       } else {
         setError(data.error);
@@ -169,34 +145,10 @@ export default function ManagerForm() {
     setLoading(false);
   };
 
-  if (!isAuthenticated) {
+  if (authLoading) {
     return (
-      <div className="min-h-dvh bg-slate-50 flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-sm">
-          <h2 className="text-2xl font-bold mb-6 text-center text-slate-800">Вход для менеджеров</h2>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <input 
-              type="email" 
-              placeholder="Email" 
-              value={email} 
-              onChange={e=>setEmail(e.target.value)}
-              className="w-full border p-3 rounded-xl bg-slate-50"
-              required
-            />
-            <input 
-              type="password" 
-              placeholder="Пароль" 
-              value={password} 
-              onChange={e=>setPassword(e.target.value)}
-              className="w-full border p-3 rounded-xl bg-slate-50"
-              required
-            />
-            {error && <div className="text-red-500 text-sm">{error}</div>}
-            <button type="submit" className="w-full bg-blue-600 text-white font-medium py-3 rounded-xl hover:bg-blue-700 transition">
-              Войти
-            </button>
-          </form>
-        </div>
+      <div className="min-h-dvh bg-slate-50 flex items-center justify-center p-4 text-slate-500">
+        Загрузка...
       </div>
     );
   }
@@ -211,7 +163,7 @@ export default function ManagerForm() {
       <div className="max-w-xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden">
         <div className="bg-blue-600 px-8 py-6 text-white text-center flex justify-between items-center">
           <h1 className="text-2xl font-bold">Анкета Менеджера</h1>
-          <button onClick={() => navigate("/manager-dashboard")} className="text-sm bg-white/20 px-3 py-1 rounded-lg">Кабинет</button>
+          <button onClick={() => navigate(cabinetPath)} className="text-sm bg-white/20 px-3 py-1 rounded-lg">Кабинет</button>
         </div>
 
         <div className="p-8">

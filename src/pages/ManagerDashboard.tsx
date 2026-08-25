@@ -1,6 +1,7 @@
 import { auth as firebaseAuth } from "../lib/firebase";
-import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged } from "firebase/auth";
 import React, { useEffect, useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
 import { createPortal } from "react-dom";
 import toast, { Toaster } from "react-hot-toast";
 // @ts-ignore
@@ -19,10 +20,10 @@ import { DocumentIssuerModal } from "../components/DocumentIssuerModal";
 export default function ManagerDashboard() {
   const { tenant } = useTenant();
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
+  const { orgId: routeOrgId } = useParams();
+  const activeTenantId = routeOrgId || tenant?.id;
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [students, setStudents] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [gradeFilter, setGradeFilter] = useState("ALL");
@@ -459,41 +460,11 @@ export default function ManagerDashboard() {
     }, 500);
   };
 
-  const handleAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    try {
-      const { signInWithEmailAndPassword } = await import("firebase/auth");
-      const { auth } = await import("../lib/firebase");
-      await signInWithEmailAndPassword(auth, email, password);
-      const SESSION_DURATION = 12 * 60 * 60 * 1000;
-      localStorage.setItem("managerSessionExpiry", (Date.now() + SESSION_DURATION).toString());
-      setIsAuthenticated(true);
-    } catch (err: any) {
-      setError("Неверная почта или пароль / Invalid credentials");
-    }
-  };
-
-
-
   useEffect(() => {
-    const expiry = localStorage.getItem("managerSessionExpiry");
-    if (expiry && Date.now() < parseInt(expiry, 10)) {
-      setIsAuthenticated(true);
-    } else {
-      localStorage.removeItem("managerSessionExpiry");
-    }
-  }, []);
-
-  // Multi-tenant Org Context
-  const { orgId: routeOrgId } = useParams();
-  const activeTenantId = routeOrgId;
-
-  useEffect(() => {
-    if (isAuthenticated) {
+    if (user && activeTenantId) {
       fetchStudents();
     }
-  }, [isAuthenticated, activeTenantId]);
+  }, [user, activeTenantId]);
 
   const fetchStudents = async () => {
     setLoading(true);
@@ -723,32 +694,10 @@ export default function ManagerDashboard() {
     }
   };
 
-  if (!isAuthenticated) {
+  if (authLoading) {
     return (
-      <div className="min-h-dvh bg-slate-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center">
-          <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">📊</div>
-          <h2 className="text-2xl font-bold mb-4">Кабинет Менеджера</h2>
-          {error && <div className="text-red-500 mb-4 text-sm">{error}</div>}
-          <form onSubmit={handleAuth}>
-            
-            <input 
-              type="email" 
-              placeholder="Email" 
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              className="w-full border p-3 rounded-xl mb-4 bg-slate-50 text-center"
-            />
-            <input 
-              type="password" 
-              placeholder="Пароль" 
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full border p-3 rounded-xl mb-4 bg-slate-50 text-center"
-            />
-            <button type="submit" className="w-full bg-blue-600 text-white p-3 rounded-xl font-medium">Войти</button>
-          </form>
-        </div>
+      <div className="min-h-dvh bg-slate-50 flex items-center justify-center p-4 text-slate-500">
+        Загрузка кабинета...
       </div>
     );
   }
@@ -786,7 +735,7 @@ export default function ManagerDashboard() {
             </select>
             <button onClick={handleExportCSV} className="bg-emerald-600 text-white px-4 py-2 rounded-xl shadow font-medium hover:bg-emerald-700">↓ CSV</button>
             <button onClick={fetchStudents} className="bg-white text-slate-600 px-4 py-2 rounded-xl shadow border font-medium hover:bg-slate-50">Обновить</button>
-            <button onClick={() => navigate("/manager/form")} className="bg-blue-600 text-white px-4 py-2 rounded-xl shadow font-medium hover:bg-blue-700">+ Новая анкета</button>
+            <button onClick={() => navigate(`/workspace/${activeTenantId}/tests/check`)} className="bg-blue-600 text-white px-4 py-2 rounded-xl shadow font-medium hover:bg-blue-700">+ Новая анкета</button>
           </div>
         </div>
 
@@ -912,7 +861,7 @@ export default function ManagerDashboard() {
                         <button onClick={() => allowRetake(s.shortId)} className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded hover:bg-amber-200 shadow-sm w-full font-medium">Разрешить пересдачу / продолжение</button>
                       </div>
                       {s.managerName === "Не назначен" && (
-                        <button onClick={() => navigate(`/manager/form?testId=${s.shortId}`)} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">Заполнить анкету</button>
+                        <button onClick={() => navigate(`/workspace/${activeTenantId}/tests/check/${s.shortId}`)} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">Заполнить анкету</button>
                       )}
                       {(s.hasDiagnostics || (s.diagnosticsRaw && Object.keys(s.diagnosticsRaw).length > 0)) && (
                         <div className="mt-2 space-y-1">

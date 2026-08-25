@@ -248,7 +248,7 @@ export default function App() {
           
 
           <Route path="/manager/form" element={<ProtectedRoute><ManagerForm /></ProtectedRoute>} />
-          <Route path="/manager-dashboard" element={<ProtectedRoute><ManagerDashboard /></ProtectedRoute>} />
+          <Route path="/manager-dashboard" element={<Navigate to="/workspace" replace />} />
           <Route path="/receipt/:shortId" element={<Receipt />} />
           <Route path="/psychologist/:shortId" element={<ProtectedRoute><PsychologistForm /></ProtectedRoute>} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
@@ -291,6 +291,7 @@ export default function App() {
             <Route path=":orgId/tests" element={<GracefulErrorBoundary fallbackTitle="Ошибка Тестов"><TestList /></GracefulErrorBoundary>} />
             <Route path=":orgId/tests/new" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Тестов"><TestEditor /></GracefulErrorBoundary>} />
             <Route path=":orgId/tests/manage" element={<GracefulErrorBoundary fallbackTitle="Ошибка Проверки Менеджера"><ManagerDashboard /></GracefulErrorBoundary>} />
+            <Route path=":orgId/tests/check" element={<GracefulErrorBoundary fallbackTitle="Ошибка Формы Оценки"><ManagerForm /></GracefulErrorBoundary>} />
             <Route path=":orgId/tests/check/:shortId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Формы Оценки"><ManagerForm /></GracefulErrorBoundary>} />
             <Route path=":orgId/tests/psychology/:shortId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Формы Психолога"><PsychologistForm /></GracefulErrorBoundary>} />
             <Route path=":orgId/tests/:id" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Тестов"><TestEditor /></GracefulErrorBoundary>} />
