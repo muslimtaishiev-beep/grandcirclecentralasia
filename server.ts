@@ -665,7 +665,8 @@ app.get("/api/exams/questions", async (req, res) => {
       return res.status(503).json({ success: false, error: "Firestore not configured" });
     }
 
-    // Candidate doc IDs (same order as Testing.tsx)
+    // Candidate doc IDs (tenant-specific first, then fallback)
+    // IMPORTANT: Always verify tenantId matches to prevent cross-tenant leaks
     const candidates = [
       `test_grade_${g}_${resolvedTenantId}`,
       `test_grade_${g}`,
@@ -679,6 +680,10 @@ app.get("/api/exams/questions", async (req, res) => {
         const snap = await admin.firestore().collection("tests").doc(docId).get();
         const data = snap.data();
         if (data && data.questions) {
+          // CRITICAL: Verify tenantId matches to prevent cross-tenant data leaks
+          if (data.tenantId && data.tenantId !== resolvedTenantId) {
+            continue; // Skip and try next candidate
+          }
           testData = data;
           break;
         }
@@ -688,7 +693,7 @@ app.get("/api/exams/questions", async (req, res) => {
     }
 
     if (!testData || !testData.questions) {
-      return res.status(404).json({ success: false, error: `Test for grade ${grade} not found` });
+      return res.status(404).json({ success: false, error: `Test for grade ${grade} not found for tenant ${resolvedTenantId}` });
     }
 
     // Sanitize: remove all answer/correctAnswer fields
