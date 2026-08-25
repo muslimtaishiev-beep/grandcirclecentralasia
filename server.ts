@@ -650,6 +650,76 @@ app.post("/api/exams/start", async (req, res) => {
   }
 });
 
+// 1b. GET /api/exams/questions — Load questions for a grade (no auth needed)
+app.get("/api/exams/questions", async (req, res) => {
+  try {
+    const { grade, tenantId } = req.query;
+    if (!grade) {
+      return res.status(400).json({ success: false, error: "Missing grade parameter" });
+    }
+
+    const resolvedTenantId = (tenantId as string) || 'org_future_leaders';
+    const g = Number(grade);
+
+    if (!useFirebase) {
+      return res.status(503).json({ success: false, error: "Firestore not configured" });
+    }
+
+    // Candidate doc IDs (same order as Testing.tsx)
+    const candidates = [
+      `test_grade_${g}_${resolvedTenantId}`,
+      `test_grade_${g}`,
+      `test_${g}`,
+      `${g}`
+    ];
+
+    let testData: any = null;
+    for (const docId of candidates) {
+      try {
+        const snap = await admin.firestore().collection("tests").doc(docId).get();
+        if (snap.exists()) {
+          const data = snap.data() || {};
+          // Support both formats: { questions: {...} } and { questions: subcollection }
+          if (data.questions) {
+            testData = data;
+            break;
+          }
+        }
+      } catch (e) {
+        // Continue to next candidate
+      }
+    }
+
+    if (!testData || !testData.questions) {
+      return res.status(404).json({ success: false, error: `Test for grade ${grade} not found` });
+    }
+
+    // Sanitize: remove all answer/correctAnswer fields
+    const questions = testData.questions;
+    const sanitized: any = {};
+
+    for (const section in questions) {
+      const sectionQuestions = questions[section];
+      if (!Array.isArray(sectionQuestions)) continue;
+      sanitized[section] = sectionQuestions.map((q: any) => {
+        const safe = { ...q };
+        // Strip all variants of correct answers
+        delete safe.correctAnswer;
+        delete safe.answer;
+        delete safe.correct;
+        delete safe.solution;
+        delete safe.explanation;
+        return safe;
+      });
+    }
+
+    return res.json({ success: true, questions: sanitized });
+  } catch (e: any) {
+    console.error("[Exams/Questions]", e);
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // 2. POST /api/exams/telemetry — Lightweight 10s proctoring pings
 app.post("/api/exams/telemetry", async (req, res) => {
   try {
@@ -1878,13 +1948,17 @@ async function startServer() {
   });
 }
 
-// Global Fail-Safe Error Handler for Serverless Functions
+// Global Error Handler — Return Real Error Status
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error("[SERVER_ERROR] Global error caught:", err);
+  console.error("[SERVER_ERROR]", err.message, { path: req.path, method: req.method });
   if (res.headersSent) {
     return next(err);
   }
-  return res.status(200).json({ success: true, warning: err.message || "Operation processed" });
+  const status = err.status || err.statusCode || 500;
+  return res.status(status).json({
+    success: false,
+    error: err.message || "Internal server error"
+  });
 });
 
 // Only start the server locally. Vercel will import the app and use it as a serverless function.

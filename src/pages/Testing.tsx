@@ -50,6 +50,8 @@ export default function Testing() {
   const [resumeShortId, setResumeShortId] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRetake, setIsRetake] = useState(false);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [questionsError, setQuestionsError] = useState<string | null>(null);
 
   const [grade, setGrade] = useState<number | null>(() => {
     try {
@@ -142,34 +144,36 @@ export default function Testing() {
     } catch(e) {}
   }, [studentName, studentPhone, studentEmail, grade, started, finished, disqualified, consentGiven, answers, testId, shortId, qrToken, pendingSubmission, resultData, phase]);
 
-  // Load questions & answer keys directly from Firestore collection "tests"
+  // Load questions from /api/exams/questions (server-side read, no client Firestore)
   useEffect(() => {
     if (!grade && !testId) return;
-    const currentOrg = orgSlug || "org_future_leaders";
-    
-    const tryFetchDoc = async () => {
-      const candidates = [
-        testId,
-        `test_grade_${grade}`,
-        `test_grade_${grade}_${currentOrg}`,
-        `test_${grade}`,
-        `${grade}`
-      ].filter(Boolean);
 
-      for (const cId of candidates) {
-        try {
-          const docSnap = await getDoc(doc(db, 'tests', cId!));
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            if (data.questions && (data.questions.russian?.length || data.questions.math?.length)) {
-              setFirestoreTestData(data);
-              return;
-            }
-          }
-        } catch(e){}
+    const fetchQuestions = async () => {
+      setQuestionsLoading(true);
+      setQuestionsError(null);
+
+      try {
+        const params = new URLSearchParams();
+        params.set("grade", String(grade || 0));
+        if (orgSlug) params.set("tenantId", orgSlug);
+
+        const res = await fetch(`/api/exams/questions?${params}`);
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          setQuestionsError(data.error || "Failed to load test questions");
+          return;
+        }
+
+        setFirestoreTestData({ questions: data.questions });
+      } catch (e: any) {
+        setQuestionsError(e.message || "Network error while loading questions");
+      } finally {
+        setQuestionsLoading(false);
       }
     };
-    tryFetchDoc();
+
+    fetchQuestions();
   }, [grade, testId, orgSlug]);
 
   // Prevent accidental F5/Closing
@@ -1236,24 +1240,54 @@ export default function Testing() {
     );
   }
 
-  const test = (firestoreTestData && firestoreTestData.questions) 
-    ? firestoreTestData.questions 
-    : (testsData[grade!]?.questions || testsData[grade!]);
+  const test = (firestoreTestData && firestoreTestData.questions)
+    ? firestoreTestData.questions
+    : (grade && testsData[grade]?.questions ? testsData[grade].questions : null) || (grade ? testsData[grade] : null);
 
   const hasQuestions = test && (
-    (test.russian && test.russian.length > 0) || 
-    (test.math && test.math.length > 0) || 
+    (test.russian && test.russian.length > 0) ||
+    (test.math && test.math.length > 0) ||
     (test.english && test.english.length > 0) ||
     (test.logic && test.logic.length > 0)
   );
+
+  if (questionsLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center space-y-4 border border-slate-200">
+          <div className="animate-spin h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
+          <h3 className="text-xl font-bold text-slate-800">Загрузка теста...</h3>
+          <p className="text-sm text-slate-500">Загружаются задания для {grade} класса</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (questionsError) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center space-y-4 border border-red-200">
+          <div className="text-4xl">⚠️</div>
+          <h3 className="text-xl font-bold text-red-600">Не удалось загрузить тест</h3>
+          <p className="text-sm text-slate-600">{questionsError}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Попробовать снова
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!hasQuestions) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center space-y-4 border border-slate-200">
-          <div className="animate-spin h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
-          <h3 className="text-xl font-bold text-slate-800">Загрузка теста из базы данных...</h3>
-          <p className="text-sm text-slate-500">Загружаются официальные задания из БД для {grade} класса.</p>
+          <div className="text-4xl">📭</div>
+          <h3 className="text-xl font-bold text-slate-800">Тест недоступен</h3>
+          <p className="text-sm text-slate-500">К сожалению, для {grade} класса тест пока не загружен. Пожалуйста, обратитесь к администратору.</p>
         </div>
       </div>
     );
