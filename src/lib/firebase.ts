@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore } from 'firebase/firestore';
 
 // Replace these values with your actual Firebase project config
 const firebaseConfig = {
@@ -16,5 +16,12 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Use standard Firestore instance (WebSockets stream) to avoid CORS WebChannel Listen/Write errors
-export const db = getFirestore(app);
+// Safari (and browsers behind certain corporate proxies/firewalls) can reject the
+// default fetch-based WebChannel stream Firestore uses for onSnapshot listeners with
+// a browser-level "access control checks" error — not a CORS misconfiguration on our
+// side, but the streaming transport itself being blocked. autoDetectLongPolling falls
+// back to classic long-polling (plain XHR, not the streaming fetch) transparently when
+// that happens, without forcing the slower transport for every client.
+export const db = initializeFirestore(app, {
+  experimentalAutoDetectLongPolling: true,
+});
