@@ -75,26 +75,19 @@ app.use(cors({
 app.use(express.json({ limit: '5mb' }));
 app.use(express.text({ limit: '5mb', type: 'text/plain' }));
 
-// [Added by Round 4] GET /api/auth/me stub to prevent 404
-app.get("/api/auth/me", (req, res) => {
-  res.json({ success: true, user: req.user || null });
-});
+// NOTE: GET /api/auth/me is handled by src/routes/authRoutes.ts, mounted at
+// app.use("/api/auth", authRoutes) below — that's the real implementation
+// (verifies the token, syncs tenantIds/tenantAdminIds custom claims from
+// `memberships`). A stub used to be registered here ahead of that mount, so
+// Express matched it FIRST and the real handler never ran — meaning custom
+// claims were never actually synced for any user in production. Do not
+// redefine this route here.
 
-// [Added by Round 4] GET /api/tenant/config stub for SubdomainHostResolver
-app.get("/api/tenant/config", async (req, res) => {
-  try {
-    const subdomain = req.query.subdomain;
-    if (!subdomain) return res.status(400).json({ error: "Missing subdomain" });
-    const snap = await admin.firestore().collection("tenants").where("slug", "==", subdomain).limit(1).get();
-    if (snap.empty) {
-      return res.status(404).json({ error: "Tenant not found" });
-    }
-    const data = snap.docs[0].data();
-    res.json({ id: snap.docs[0].id, slug: data.slug, name: data.name, logoUrl: data.logoUrl, brandColor: data.brandColor });
-  } catch(e) {
-    res.status(500).json({ error: e.message });
-  }
-});
+// NOTE: GET /api/tenant/config is handled further below (the one that queries
+// by `subdomain`, matching TenantProvisioningService's actual field name). A
+// duplicate stub used to be registered here, querying a nonexistent `slug`
+// field — it always returned 404 and, being registered first, shadowed the
+// correct handler. Do not redefine this route here.
 
 
 const PORT = Number(process.env.PORT) || 3005;
