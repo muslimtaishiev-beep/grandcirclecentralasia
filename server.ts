@@ -30,6 +30,8 @@ app.use(helmet({
   xFrameOptions: { action: "deny" }
 }));
 
+
+
 const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 500,
@@ -783,20 +785,51 @@ async function processExamSubmission(payload: any) {
   const result = calculateScoresTs(grade, parsedAnswers, keys as any);
   const { scores, diagnosticsRaw, summaryText } = result;
 
-  // Calculate Max Score Snapshot
-  let maxScoreSnapshot = 0;
-  if (keys) {
-    const maxRu = Object.values((keys as any).russian || {}).reduce((acc: number, curr: any) => acc + (curr.pts || 1), 0);
-    const maxMa = Object.values((keys as any).math || {}).reduce((acc: number, curr: any) => acc + (curr.pts || 1), 0);
-    const maxLo = Object.values((keys as any).logic || {}).reduce((acc: number, curr: any) => acc + (curr.pts || 1), 0);
-    const maxEn = Object.values((keys as any).english || {}).reduce((acc: number, curr: any) => acc + (curr.pts || 1), 0);
-    maxScoreSnapshot = maxRu + maxMa + maxLo + maxEn;
-  }
+  // maxScoreSnapshot is the denominator for the core test score only (russian + math
+  // + logic) — English is reported separately as a CEFR level, never folded into the
+  // overall score or its max, matching calculateScoresTs's own `total = ru + ma + lo`
+  // (src/lib/scoringEngine.ts). Previously this summed ALL FOUR subjects' key banks
+  // unconditionally, so a grade 9 core-only result showed e.g. "16/182"
+  // (46 russian + 30 math + 16 logic + 90 english) instead of "16/92".
+  const sumPts = (subject: string) =>
+    Object.values((keys as any)[subject] || {}).reduce((acc: number, curr: any) => acc + (curr.pts || 1), 0);
+  const maxScoreSnapshot = (sumPts('russian') as number) + (sumPts('math') as number) + (sumPts('logic') as number);
+
+  // Defaults for when Firestore is unavailable/useFirebase is false — reflects only
+  // THIS submission. Reassigned below once we've merged with any prior submission
+  // (core + english) sharing the same doc, so every use after this point (CRM sync,
+  // result email, API response) sees the accumulated core scores, not just this call's.
+  let mergedScores = { ...scores };
+  let mergedMaxScoreSnapshot = maxScoreSnapshot;
 
   // 4. Write to Firestore `submissions`
   const submissionId = sessionId ? `sub_${sessionId}` : `sub_${shortId}_${Date.now()}`;
   if (useFirebase) {
     try {
+      // Core (submitTest) and English (submitEnglishTest) submissions share the same
+      // doc via merge. calculateScoresTs zeroes out subjects with no matching answers
+      // in THIS submission (e.g. english=0 on a core-only submission) — a plain merge
+      // would overwrite the other submission's already-saved score with that 0. Read
+      // what's there first and keep each subject's previously-saved score whenever
+      // this submission didn't answer it (parsedAnswers has none of that subject's
+      // question ids) rather than clobbering it with 0.
+      const existingSnap = await admin.firestore().collection("submissions").doc(submissionId).get();
+      const existing = existingSnap.data();
+      const answeredInThisSubmission = (subject: string) =>
+        Object.keys((keys as any)[subject] || {}).some(qId => parsedAnswers && parsedAnswers[qId] !== undefined);
+
+      mergedScores = {
+        russian: answeredInThisSubmission('russian') ? scores.russian : (existing?.scores?.russian || 0),
+        math: answeredInThisSubmission('math') ? scores.math : (existing?.scores?.math || 0),
+        logic: answeredInThisSubmission('logic') ? scores.logic : (existing?.scores?.logic || 0),
+        english: answeredInThisSubmission('english') ? scores.english : (existing?.scores?.english || 0),
+        total: 0
+      };
+      // English is reported as a CEFR level, never part of the overall score.
+      mergedScores.total = mergedScores.russian + mergedScores.math + mergedScores.logic;
+      // maxScoreSnapshot is constant for a given grade's answer keys (russian+math+logic
+      // only), so it never needs merging with the prior submission's value.
+
       const subDoc = {
         id: submissionId,
         tenantId: resolvedTenantId,
@@ -809,8 +842,8 @@ async function processExamSubmission(payload: any) {
         grade: Number(grade),
         submittedAt: admin.firestore.Timestamp.now(),
         cheated: Boolean(cheated),
-        scores,
-        maxScoreSnapshot,
+        scores: mergedScores,
+        maxScoreSnapshot: mergedMaxScoreSnapshot,
         answersJson: typeof answers === 'string' ? answers : JSON.stringify(answers || {}),
         diagnosticSummary: summaryText,
         diagnosticsRaw,
@@ -831,8 +864,8 @@ async function processExamSubmission(payload: any) {
         shortId: String(shortId),
         type: 'student',
         grade: Number(grade),
-        totalScore: scores.total || 0,
-        scores: scores,
+        totalScore: mergedScores.total || 0,
+        scores: mergedScores,
         status: 'test_completed',
         updatedAt: admin.firestore.Timestamp.now()
       };
@@ -850,7 +883,7 @@ async function processExamSubmission(payload: any) {
         grade: Number(grade),
         stageId: 'stage_new',
         value: 15000,
-        testScore: scores.total || 0,
+        testScore: mergedScores.total || 0,
         cheated: Boolean(cheated),
         updatedAt: admin.firestore.Timestamp.now()
       };
@@ -916,8 +949,8 @@ async function processExamSubmission(payload: any) {
           studentName: studentName || 'Ученик',
           tenantName,
           grade: Number(grade),
-          scores,
-          maxScoreSnapshot,
+          scores: mergedScores,
+          maxScoreSnapshot: mergedMaxScoreSnapshot,
           shortId: String(shortId),
         });
         if (!result.sent) {
@@ -931,12 +964,12 @@ async function processExamSubmission(payload: any) {
 
   return {
     success: true,
-    totalScore: scores.total,
+    totalScore: mergedScores.total,
     scores: {
-      russian: scores.russian,
-      math: scores.math,
-      logic: scores.logic,
-      english: scores.english
+      russian: mergedScores.russian,
+      math: mergedScores.math,
+      logic: mergedScores.logic,
+      english: mergedScores.english
     },
     cheated: Boolean(cheated),
     summaryText
