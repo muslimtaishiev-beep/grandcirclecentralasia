@@ -35,13 +35,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
-
-      // Sync tenantIds custom claims from `memberships` so Firestore rules
-      // (hasTenantAccess) can enforce real tenant isolation. /api/auth/me sets
-      // the claims server-side; if they changed, force a token refresh so the
-      // NEW claims take effect on this session without requiring re-login.
+      // Sync tenantIds/tenantAdminIds custom claims from `memberships` so
+      // firestore.rules (hasTenantAccess/isTenantAdmin) can enforce real tenant
+      // isolation. /api/auth/me sets the claims server-side; if they changed, force
+      // a token refresh so the NEW claims are active BEFORE we let the rest of the
+      // app start querying Firestore — otherwise workspace pages (Dashboard,
+      // ManagerDashboard, etc.) fire their onSnapshot/getDocs calls immediately on
+      // mount using the still-stale cached token and get permission-denied on a
+      // freshly granted membership, even though the claims exist moments later.
       if (currentUser) {
         try {
           const token = await currentUser.getIdToken();
@@ -54,6 +55,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.warn('[AuthContext] Failed to sync tenant claims:', e);
         }
       }
+
+      setUser(currentUser);
+      setLoading(false);
     });
 
     return () => unsubscribe();
