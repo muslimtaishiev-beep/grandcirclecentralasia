@@ -49,6 +49,7 @@
     "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.16.0",
     "react-to-print": "^3.3.0",
+    "resend": "^6.22.1",
     "tailwind-merge": "^3.6.0",
     "three": "^0.184.0",
     "y-prosemirror": "^1.2.12",

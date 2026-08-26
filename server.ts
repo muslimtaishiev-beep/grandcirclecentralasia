@@ -131,6 +131,7 @@ let activeSessions = new Set<string>();
 import authRoutes from "./src/routes/authRoutes.js";
 import tenantRoutes from "./src/routes/tenantRoutes.js";
 import superAdminRoutes from "./src/routes/superAdminRoutes.js";
+import { sendTestResultEmail } from "./emailService.js";
 
 app.use("/api/auth", authRoutes);
 app.use("/api/tenants", tenantRoutes);
@@ -431,54 +432,11 @@ app.post("/api/proctoring/upload-evidence", authLimiter, async (req, res) => {
 // SAAS EXAM API ENDPOINTS (High-Speed Vercel Routes)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Employee Invitation & Password Creation Endpoint
-app.post("/api/auth/send-employee-invite", async (req: express.Request, res: express.Response) => {
-  const { email, fullName, tenantName, tenantId, permissions } = req.body || {};
-  if (!email) {
-    return res.status(400).json({ error: "Email is required" });
-  }
-
-  try {
-    let link = "";
-    try {
-      link = await admin.auth().generatePasswordResetLink(email);
-    } catch(authErr) {
-      try {
-        await admin.auth().createUser({
-          email,
-          displayName: fullName,
-        });
-        link = await admin.auth().generatePasswordResetLink(email);
-      } catch(createErr) {
-        link = `https://${tenantId || 'futureleaders'}.studyfreeforum.com/login?setupPassword=true&email=${encodeURIComponent(email)}`;
-      }
-    }
-
-    const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
-        <h2 style="color: #059669;">Приглашение в корпоративную платформу</h2>
-        <p>Здравствуйте, <strong>${fullName || 'Коллега'}</strong>!</p>
-        <p>Администрация организации <strong>${tenantName || 'Академия'}</strong> приглашает вас присоединиться к рабочей платформе.</p>
-        <p style="margin: 20px 0;">
-          <a href="${link}" style="background-color: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Установить Пароль и Войти</a>
-        </p>
-        <p style="color: #64748b; font-size: 12px;">Если кнопка не нажимается, скопируйте эту ссылку в браузер: <br/><code>${link}</code></p>
-      </div>
-    `;
-
-    console.log(`[INVITE MAIL] Generated invitation for ${email} (${tenantName}): ${link}`);
-
-    return res.json({
-      success: true,
-      message: `Приглашение отправлено на ${email}`,
-      inviteLink: link,
-      previewHtml: htmlContent
-    });
-  } catch (err: any) {
-    console.error("Invite error:", err);
-    return res.status(500).json({ error: err.message || "Failed to send invite" });
-  }
-});
+// NOTE: POST /api/auth/send-employee-invite is handled by src/routes/authRoutes.ts,
+// mounted at app.use("/api/auth", authRoutes) above — Express matches that router
+// first, so a handler registered here would never actually run. The real
+// implementation (with proper tenant-admin authorization and the branded Resend
+// email) lives there; do not redefine this route in server.ts.
 
 // Database Optimization & Data Migration Endpoint
 app.post("/api/admin/db/optimize", requireSuperadmin, async (req: express.Request, res: express.Response) => {
@@ -916,7 +874,8 @@ async function processExamSubmission(payload: any) {
     }
   }
 
-  // 5. Asynchronous Dual-Write to GAS in background
+  // 5. Asynchronous Dual-Write to GAS in background (Sheets sync only — email is
+  // sent directly below via Resend, independent of GAS availability)
   const gasUrl = process.env.VITE_GAS_URL || process.env.GAS_URL;
   const gasApiKey = process.env.GAS_API_KEY || process.env.VITE_GAS_API_KEY;
   if (gasUrl && gasApiKey) {
@@ -940,31 +899,34 @@ async function processExamSubmission(payload: any) {
       body: JSON.stringify(gasPayload),
       signal: AbortSignal.timeout(10000)
     }).catch(err => console.warn("[Exams/Submit] Background GAS Dual-Write notice:", err.message));
+  }
 
-    // ✉️ DISPATCH RESULTS EMAIL REPORT IF EMAIL IS PROVIDED
-    if (studentEmail && studentEmail.includes("@")) {
-      const emailPayload = {
-        action: "sendResultEmail",
-        apiKey: gasApiKey,
-        shortId: String(shortId),
-        studentName,
-        studentEmail,
-        studentPhone,
-        grade,
-        totalScore: scores.total || 0,
-        scores,
-        diagnosticSummary: summaryText
-      };
-      fetch(gasUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(emailPayload),
-        signal: AbortSignal.timeout(15000)
-      }).then(async r => {
-        const txt = await r.text();
-        console.log(`[Exams/Submit] Result Email Dispatch SUCCESS for ${studentEmail}:`, txt);
-      }).catch(err => console.warn("[Exams/Submit] Background Email dispatch notice:", err.message));
-    }
+  // ✉️ Branded result email, sent directly via Resend — no longer depends on GAS.
+  if (studentEmail && studentEmail.includes("@")) {
+    (async () => {
+      try {
+        let tenantName = resolvedTenantId;
+        try {
+          const tenantSnap = await admin.firestore().collection("tenants").doc(resolvedTenantId).get();
+          tenantName = tenantSnap.data()?.name || resolvedTenantId;
+        } catch (e) { /* fall back to raw tenantId */ }
+
+        const result = await sendTestResultEmail({
+          to: studentEmail,
+          studentName: studentName || 'Ученик',
+          tenantName,
+          grade: Number(grade),
+          scores,
+          maxScoreSnapshot,
+          shortId: String(shortId),
+        });
+        if (!result.sent) {
+          console.warn(`[Exams/Submit] Result email not sent for ${studentEmail}:`, result.reason);
+        }
+      } catch (err: any) {
+        console.warn("[Exams/Submit] Result email dispatch notice:", err.message);
+      }
+    })();
   }
 
   return {

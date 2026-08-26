@@ -1,5 +1,6 @@
 import { Router } from "express";
 import admin from "firebase-admin";
+import { sendStaffInviteEmail } from "../../emailService.js";
 
 const router = Router();
 
@@ -79,6 +80,23 @@ router.get("/me", requireFirebaseAuth, async (req: any, res: any) => {
       }
       return data;
     });
+
+    // Link orphaned memberships: TenantProvisioningService.provisionNewTenant creates
+    // the owner's membership by email BEFORE that person necessarily has a Firebase
+    // Auth account, so it's written with no userId. Without this, that membership is
+    // permanently invisible to the userId-keyed query above even after the owner signs
+    // up/logs in with the matching email — they'd never see their own organization.
+    if (req.user.email) {
+      const orphanedByEmail = await db.collection("memberships")
+        .where("email", "==", req.user.email)
+        .get();
+      const linkable = orphanedByEmail.docs.filter(d => !d.data().userId);
+      if (linkable.length > 0) {
+        await Promise.all(linkable.map(d => d.ref.update({ userId: uid, status: d.data().status || 'active' })));
+        const relinked = linkable.map(d => ({ ...d.data(), userId: uid, status: d.data().status || 'active' }));
+        memberships = [...memberships, ...relinked];
+      }
+    }
 
     // If user has no membership yet but has a defaultTenantId, auto-create membership
     if (memberships.length === 0 && userData?.defaultTenantId) {
@@ -236,22 +254,28 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
     const targetIsSuperadminDoc = await db.collection("superadmins").doc(uid).get();
     await admin.auth().setCustomUserClaims(uid, { tenantIds, tenantAdminIds, isSuperadmin: targetIsSuperadminDoc.exists });
 
-    // 4. Trigger native Firebase password reset / activation email
-    const apiKey = process.env.VITE_FIREBASE_API_KEY || "AIzaSyBefuNSd2j9CJJ92EWcg0am9s3zBSSHS4Y";
-    if (apiKey) {
-      await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requestType: "PASSWORD_RESET",
-          email: email
-        })
+    // 4. Send a branded Russian invite email (via Resend) carrying a real Firebase
+    // password-reset link — replaces the old sendOobCode call, which only fires
+    // Firebase's default (unbranded, English-first) template with no control over
+    // content or language.
+    let emailResult: { sent: boolean; reason?: string } = { sent: false, reason: "not attempted" };
+    try {
+      const resetLink = await admin.auth().generatePasswordResetLink(email);
+      emailResult = await sendStaffInviteEmail({
+        to: email,
+        fullName: fullName || email.split("@")[0],
+        tenantName: tenantName || "Академия Будущих Лидеров",
+        role: role || "Работник",
+        resetLink,
       });
-    } else {
-      console.warn("VITE_FIREBASE_API_KEY missing, skipped sending reset email.");
+      if (!emailResult.sent) {
+        console.warn("[Auth/Invite] Branded invite email not sent:", emailResult.reason);
+      }
+    } catch (mailErr: any) {
+      console.warn("[Auth/Invite] Failed to generate/send invite email:", mailErr.message);
     }
 
-    return res.json({ success: true, uid: userRecord.uid, tenantId: targetTenantId });
+    return res.json({ success: true, uid: userRecord.uid, tenantId: targetTenantId, emailSent: emailResult.sent });
   } catch (error: any) {
     console.error("[Auth/Invite] Error:", error);
     return res.status(500).json({ success: false, error: error.message });
