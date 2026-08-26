@@ -718,7 +718,12 @@ async function processExamSubmission(payload: any) {
   }
 
   // SECURITY: Verify that a test for this grade exists for this tenant
-  // This prevents students from submitting results for tenants they shouldn't access
+  // This prevents students from submitting results for tenants they shouldn't access.
+  // Also captures the actual question list, which is the authoritative source for
+  // maxScoreSnapshot below — test_answer_keys accumulates stale duplicate entries
+  // from past re-seeds (e.g. both "ru_9_q1" and "russian_1" keying the same question),
+  // so summing its key bank inflates the denominator well past the real question count.
+  let realQuestions: { russian: any[]; math: any[]; logic: any[] } | null = null;
   if (useFirebase) {
     try {
       const testCandidates = [
@@ -736,6 +741,11 @@ async function processExamSubmission(payload: any) {
         }
         if (data && data.questions) {
           testFound = true;
+          realQuestions = {
+            russian: Array.isArray(data.questions.russian) ? data.questions.russian : [],
+            math: Array.isArray(data.questions.math) ? data.questions.math : [],
+            logic: Array.isArray(data.questions.logic) ? data.questions.logic : [],
+          };
           break;
         }
       }
@@ -788,12 +798,16 @@ async function processExamSubmission(payload: any) {
   // maxScoreSnapshot is the denominator for the core test score only (russian + math
   // + logic) — English is reported separately as a CEFR level, never folded into the
   // overall score or its max, matching calculateScoresTs's own `total = ru + ma + lo`
-  // (src/lib/scoringEngine.ts). Previously this summed ALL FOUR subjects' key banks
-  // unconditionally, so a grade 9 core-only result showed e.g. "16/182"
-  // (46 russian + 30 math + 16 logic + 90 english) instead of "16/92".
-  const sumPts = (subject: string) =>
-    Object.values((keys as any)[subject] || {}).reduce((acc: number, curr: any) => acc + (curr.pts || 1), 0);
-  const maxScoreSnapshot = (sumPts('russian') as number) + (sumPts('math') as number) + (sumPts('logic') as number);
+  // (src/lib/scoringEngine.ts). Computed from the actual question list (realQuestions,
+  // captured above from the `tests` doc), NOT from test_answer_keys — that collection
+  // has accumulated stale duplicate keys from past re-seeds (e.g. both "ru_9_q1" and
+  // "russian_1" for the same question), so summing its key bank previously inflated
+  // the denominator well past the real question count — grade 9's actual 14+10+8=32
+  // questions showed as 46+30+16=92 (before English was even added on top of that).
+  const sumQuestionPoints = (arr: any[]) => arr.reduce((acc, q) => acc + (q.points || 1), 0);
+  const maxScoreSnapshot = realQuestions
+    ? sumQuestionPoints(realQuestions.russian) + sumQuestionPoints(realQuestions.math) + sumQuestionPoints(realQuestions.logic)
+    : 0;
 
   // Defaults for when Firestore is unavailable/useFirebase is false — reflects only
   // THIS submission. Reassigned below once we've merged with any prior submission
