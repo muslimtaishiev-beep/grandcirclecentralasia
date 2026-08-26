@@ -16,22 +16,33 @@ service cloud.firestore {
     }
 
     // Check if the user belongs to the requested tenantId (from URL)
+    // tenantIds custom claim is synced server-side from active `memberships`
+    // in POST /api/auth/me and /api/auth/send-employee-invite (see authRoutes.ts).
     function isTenantUser(tenantId) {
-      // MVP Fallback: no custom claims available
-      return isAuthenticated();
+      return isAuthenticated() &&
+        ('tenantIds' in request.auth.token) &&
+        (tenantId in request.auth.token.tenantIds);
     }
-    
-    // Check if the user is an admin of the tenant
+
+    // Check if the user is an admin of the tenant. tenantAdminIds custom claim is
+    // synced server-side from active `memberships` with an admin/owner role in
+    // POST /api/auth/me (see authRoutes.ts) — NOT derived from any client-writable field.
     function isTenantAdmin(tenantId) {
-      return isTenantUser(tenantId) && (request.auth.token.role in ['owner', 'administrator']);
+      return isSuperadmin() ||
+        (isAuthenticated() &&
+          ('tenantAdminIds' in request.auth.token) &&
+          (tenantId in request.auth.token.tenantAdminIds));
     }
 
     // Check if the accessed document's tenantId matches the user's tenantId (for flat collections)
     function hasTenantAccess() {
-      // NOTE: Because Firebase Custom Claims are not set on auth.token in this MVP,
-      // we fallback to basic authentication. In a production environment with proper
-      // backend functions, this should check request.auth.token.tenantId or memberships.
-      return isAuthenticated();
+      return isSuperadmin() || isTenantUser(resource.data.tenantId);
+    }
+
+    // Same as hasTenantAccess() but for create operations, where `resource` does not
+    // exist yet — must read the tenantId from the incoming document instead.
+    function hasTenantAccessOnCreate() {
+      return isSuperadmin() || isTenantUser(request.resource.data.tenantId);
     }
 
     // -------------------------------------------------------------
@@ -57,46 +68,78 @@ service cloud.firestore {
     // -------------------------------------------------------------
     
     // CRM
-    match /crm_contacts/{docId} { allow read, write: if hasTenantAccess(); }
-    match /crm_deals/{docId} { allow read, write: if hasTenantAccess(); }
-    
-    // Tasks & Collab (Docs, Sheets)
-    match /tasks/{docId} { allow read, write: if hasTenantAccess(); }
-    match /documents/{docId} { allow read, write: if hasTenantAccess(); }
-    match /workspace_documents/{docId} { allow read, write: if hasTenantAccess(); }
-    match /spreadsheets/{docId} { allow read, write: if hasTenantAccess(); }
-    match /document_templates/{docId} { 
-      allow read: if isAuthenticated() && (resource.data.tenantId == 'GLOBAL' || hasTenantAccess());
-      allow write: if hasTenantAccess(); 
-    }
-    
-    // Edu Core
-    match /edu_groups/{docId} { allow read, write: if hasTenantAccess(); }
-    match /schedule_events/{docId} { allow read, write: if hasTenantAccess(); }
-    match /attendance_logs/{docId} { allow read, write: if hasTenantAccess(); }
-    match /subscriptions/{docId} { allow read, write: if hasTenantAccess(); }
-    match /edu_subscriptions/{docId} { allow read, write: if hasTenantAccess(); }
-    match /teacher_payrolls/{docId} { allow read, write: if hasTenantAccess(); }
-    
-    // Chat & Automations
-    match /chat_channels/{docId} { allow read, write: if hasTenantAccess(); }
-    match /chat_messages/{docId} { allow read, write: if hasTenantAccess(); }
-    match /automations/{docId} { allow read, write: if hasTenantAccess(); }
-    match /notifications/{docId} { allow read, write: if hasTenantAccess(); }
+    match /crm_contacts/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /crm_deals/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
 
-    // Billing & Memberships
-    match /memberships/{docId} { allow read, write: if hasTenantAccess(); }
-    match /departments/{docId} { allow read, write: if hasTenantAccess(); }
-    
+    // Tasks & Collab (Docs, Sheets)
+    match /tasks/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /documents/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /workspace_documents/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /spreadsheets/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /document_templates/{docId} {
+      allow read: if isAuthenticated() && (resource.data.tenantId == 'GLOBAL' || hasTenantAccess());
+      allow update, delete: if hasTenantAccess();
+      allow create: if hasTenantAccessOnCreate();
+    }
+
+    // Edu Core
+    match /edu_groups/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /schedule_events/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /attendance_logs/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /subscriptions/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /edu_subscriptions/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    // Payroll is sensitive financial data — a teacher must not be able to edit their
+    // own (or anyone's) rate/payout, so writes are admin-only; reads stay tenant-wide.
+    match /teacher_payrolls/{docId} {
+      allow read: if hasTenantAccess();
+      allow update, delete: if isTenantAdmin(resource.data.tenantId);
+      allow create: if isTenantAdmin(request.resource.data.tenantId);
+    }
+
+    // Chat & Automations
+    match /chat_channels/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /chat_messages/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /automations/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /notifications/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+
+    // Billing & Memberships. Memberships are keyed by tenantId same as other flat
+    // collections, but a user must always be able to read their OWN membership rows
+    // (across tenants) to bootstrap tenantIds claims before they've been granted access.
+    //
+    // SECURITY: role/permissions/customPermissions grant real authority (tenantAdminIds
+    // claim, PBAC matrix), so only a tenant admin may create/update/delete membership
+    // docs — a plain member must NOT be able to rewrite their own or anyone else's role.
+    // Staff invitation/role changes go through the server (POST /api/tenants/:id/invite,
+    // requireTenantAdmin) which uses the Admin SDK and bypasses these rules entirely;
+    // this rule only stops a member from writing memberships directly via the client SDK.
+    match /memberships/{docId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || hasTenantAccess());
+      allow update, delete: if isTenantAdmin(resource.data.tenantId);
+      allow create: if isTenantAdmin(request.resource.data.tenantId);
+    }
+    // Org structure changes (who reports to whom) are admin-only; reads stay tenant-wide.
+    match /departments/{docId} {
+      allow read: if hasTenantAccess();
+      allow update, delete: if isTenantAdmin(resource.data.tenantId);
+      allow create: if isTenantAdmin(request.resource.data.tenantId);
+    }
+
     // Forms & Custom Data
-    match /custom_forms/{docId} { allow read, write: if hasTenantAccess(); }
-    match /form_submissions/{docId} { allow read, write: if hasTenantAccess(); }
-    match /custom_business_functions/{docId} { allow read, write: if hasTenantAccess(); }
-    match /testimonials/{docId} { allow read, write: if hasTenantAccess(); }
-    match /app_screens/{docId} { allow read, write: if hasTenantAccess(); }
-    match /decisions/{docId} { allow read, write: if hasTenantAccess(); }
-    match /users/{docId} { allow read, write: if hasTenantAccess(); }
-    match /crm_pipelines/{docId} { allow read, write: if hasTenantAccess(); }
+    match /custom_forms/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /form_submissions/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /custom_business_functions/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /testimonials/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /app_screens/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /decisions/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    // `users` documents are keyed by uid and have no tenantId field (only defaultTenantId).
+    // Read stays open to any authenticated user (chat participant lookups, legacy Admin.tsx
+    // roster) since these are profile-only docs with no sensitive tenant data; writes are
+    // owner-scoped so one user cannot tamper with another's profile.
+    match /users/{uid} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == uid;
+    }
+    match /crm_pipelines/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
     
     // -------------------------------------------------------------
     // 3. PUBLIC & EVALUATION COLLECTIONS

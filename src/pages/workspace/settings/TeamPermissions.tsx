@@ -16,7 +16,7 @@ import {
   Users,
   Check
 } from 'lucide-react';
-import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, getDocs, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, deleteDoc, getDocs } from 'firebase/firestore';
 import { db, auth } from '../../../lib/firebase';
 
 interface PermissionOption {
@@ -128,60 +128,36 @@ export default function TeamPermissions() {
     setStatusMessage(null);
 
     try {
-      const docId = editingMemberId || `mem_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const memberDoc: any = {
-        tenantId: currentOrgId,
-        name: fullName.trim(),
-        email: email.trim().toLowerCase(),
-        role,
-        permissions: selectedPermissions,
-        updatedAt: serverTimestamp(),
-      };
-      
-      if (!editingMemberId) {
-        memberDoc.createdAt = serverTimestamp();
-        memberDoc.status = 'active';
-        memberDoc.tenantId = currentOrgId;
+      // Membership create/role changes go through the server (send-employee-invite),
+      // which verifies the CALLER is a tenant admin before writing — a plain client
+      // setDoc() here would either be rejected by firestore.rules (good) or, if it
+      // succeeded, would let any member grant themselves/others arbitrary roles.
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/auth/send-employee-invite', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          fullName: fullName.trim(),
+          tenantName: activeTenant?.name || 'Академия Будущих Лидеров',
+          tenantId: currentOrgId,
+          role,
+          permissions: selectedPermissions
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Не удалось сохранить сотрудника');
       }
 
-      await setDoc(doc(db, 'memberships', docId), memberDoc, { merge: true });
-
-      // Send email invite with password creation link if creating new member
-      if (!editingMemberId) {
-        try {
-          const token = await auth.currentUser?.getIdToken();
-          const res = await fetch('/api/auth/send-employee-invite', {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-              email: email.trim().toLowerCase(),
-              fullName: fullName.trim(),
-              tenantName: activeTenant?.name || 'Академия Будущих Лидеров',
-              tenantId: currentOrgId,
-              permissions: selectedPermissions
-            })
-          });
-          
-          if (!res.ok) {
-            console.error("Invite API returned an error:", await res.text());
-          } else {
-            const data = await res.json();
-            if (data.success && data.uid) {
-              await setDoc(doc(db, 'memberships', docId), { userId: data.uid }, { merge: true });
-            }
-          }
-        } catch(inviteErr) {
-          console.warn("Invite email delivery notice:", inviteErr);
-        }
-      }
-
-      setStatusMessage({ 
-        type: 'success', 
-        text: editingMemberId 
-          ? 'Права сотрудника успешно обновлены!' 
+      setStatusMessage({
+        type: 'success',
+        text: editingMemberId
+          ? 'Права сотрудника успешно обновлены!'
           : `Сотрудник добавлен! Письмо с кнопкой установки пароля отправлено на ${email}.`
       });
 

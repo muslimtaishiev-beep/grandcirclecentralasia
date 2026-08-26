@@ -96,10 +96,41 @@ router.get("/me", requireFirebaseAuth, async (req: any, res: any) => {
       memberships.push(defaultMem);
     }
 
+    // Sync Firebase Auth custom claims with active tenant memberships so that
+    // firestore.rules can enforce real tenant isolation (resource.data.tenantId
+    // in request.auth.token.tenantIds) instead of just "is authenticated", AND
+    // per-tenant admin authority (tenantAdminIds) instead of any member being
+    // able to rewrite roles/permissions in their own tenant.
+    const activeMemberships = memberships.filter((m: any) => m.status === 'active');
+    const activeTenantIds = Array.from(new Set(activeMemberships.map((m: any) => m.tenantId).filter(Boolean)));
+    const ADMIN_ROLES = new Set(['org:owner', 'org:admin', 'owner', 'admin', 'Администратор']);
+    const tenantAdminIds = Array.from(new Set(
+      activeMemberships
+        .filter((m: any) => ADMIN_ROLES.has(m.role) || String(m.role || '').includes('Руководитель'))
+        .map((m: any) => m.tenantId)
+        .filter(Boolean)
+    ));
+    const isSuperadminDoc = await db.collection("superadmins").doc(uid).get();
+    const existingClaims = (req.user as any) || {};
+    const claimsChanged =
+      isSuperadminDoc.exists !== Boolean(existingClaims.isSuperadmin) ||
+      JSON.stringify([...activeTenantIds].sort()) !== JSON.stringify([...(existingClaims.tenantIds || [])].sort()) ||
+      JSON.stringify([...tenantAdminIds].sort()) !== JSON.stringify([...(existingClaims.tenantAdminIds || [])].sort());
+
+    if (claimsChanged) {
+      await admin.auth().setCustomUserClaims(uid, {
+        tenantIds: activeTenantIds,
+        tenantAdminIds,
+        isSuperadmin: isSuperadminDoc.exists,
+      });
+    }
+
     return res.json({
       success: true,
       user: userData,
       memberships,
+      tenantIds: activeTenantIds,
+      claimsRefreshed: claimsChanged,
     });
   } catch (error: any) {
     console.error("[Auth/Me] Error:", error);
@@ -110,11 +141,32 @@ router.get("/me", requireFirebaseAuth, async (req: any, res: any) => {
 // POST /api/auth/send-employee-invite - Create user and send invite email
 router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: any) => {
   try {
-    const { email, fullName, tenantName, tenantId, permissions } = req.body;
+    const { email, fullName, tenantName, tenantId, permissions, role } = req.body;
     if (!email) return res.status(400).json({ error: "Missing email" });
 
     const db = admin.firestore();
     const targetTenantId = tenantId || "org_future_leaders";
+
+    // SECURITY: only a tenant admin/owner (or platform superadmin) may invite staff
+    // into a tenant. Without this check, any authenticated member of ANY tenant
+    // could grant arbitrary permissions (including canManageOrganization) to a
+    // brand new membership in a tenant they merely belong to.
+    const isSuperadminDoc = await db.collection("superadmins").doc(req.user.uid).get();
+    if (!isSuperadminDoc.exists) {
+      const callerMemberships = await db.collection("memberships")
+        .where("userId", "==", req.user.uid)
+        .where("tenantId", "==", targetTenantId)
+        .where("status", "==", "active")
+        .get();
+      const ADMIN_ROLES = new Set(['org:owner', 'org:admin', 'owner', 'admin', 'Администратор']);
+      const isTenantAdmin = callerMemberships.docs.some(d => {
+        const role = d.data().role;
+        return ADMIN_ROLES.has(role) || String(role || '').includes('Руководитель');
+      });
+      if (!isTenantAdmin) {
+        return res.status(403).json({ success: false, error: "Access denied. Requires tenant admin/owner role." });
+      }
+    }
 
     // 1. Create or get user in Firebase Auth
     let userRecord;
@@ -155,7 +207,7 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
       tenantId: targetTenantId,
       displayName: fullName || email.split("@")[0],
       email: email.trim().toLowerCase(),
-      role: "Работник",
+      role: role || "Работник",
       permissions: permissions || {
         canReviewSubmissions: true,
         canManageSchedule: true,
@@ -166,6 +218,23 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
       invitedBy: req.user?.uid || "admin",
       joinedAt: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
+
+    // Refresh custom claims (tenantIds + tenantAdminIds) so tenant-scoped Firestore
+    // rules apply on next token refresh — mirrors the sync logic in GET /api/auth/me.
+    const allMemberships = await db.collection("memberships")
+      .where("userId", "==", uid)
+      .where("status", "==", "active")
+      .get();
+    const tenantIds = Array.from(new Set(allMemberships.docs.map(d => d.data().tenantId).filter(Boolean)));
+    const ADMIN_ROLES = new Set(['org:owner', 'org:admin', 'owner', 'admin', 'Администратор']);
+    const tenantAdminIds = Array.from(new Set(
+      allMemberships.docs
+        .filter(d => { const r = d.data().role; return ADMIN_ROLES.has(r) || String(r || '').includes('Руководитель'); })
+        .map(d => d.data().tenantId)
+        .filter(Boolean)
+    ));
+    const targetIsSuperadminDoc = await db.collection("superadmins").doc(uid).get();
+    await admin.auth().setCustomUserClaims(uid, { tenantIds, tenantAdminIds, isSuperadmin: targetIsSuperadminDoc.exists });
 
     // 4. Trigger native Firebase password reset / activation email
     const apiKey = process.env.VITE_FIREBASE_API_KEY || "AIzaSyBefuNSd2j9CJJ92EWcg0am9s3zBSSHS4Y";

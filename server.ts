@@ -715,7 +715,7 @@ app.get("/api/exams/questions", async (req, res) => {
       });
     }
 
-    return res.json({ success: true, questions: sanitized });
+    return res.json({ success: true, questions: sanitized, timeLimitMinutes: testData.timeLimitMinutes || 90 });
   } catch (e: any) {
     console.error("[Exams/Questions]", e);
     return res.status(500).json({ success: false, error: e.message });

@@ -4,8 +4,6 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { createPortal } from "react-dom";
 import toast, { Toaster } from "react-hot-toast";
-// @ts-ignore
-import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getHourlyPIN, getCEFRLevel, fetchGasAPI, toGenitiveCase } from "../lib/utils";
 import { collection, getDocs, deleteDoc, doc, query, where } from "firebase/firestore";
@@ -209,8 +207,15 @@ export default function ManagerDashboard() {
         }
       }
 
-      if (name) {
-        const crmSnap = await getDocs(query(collection(db, 'crm_contacts'), where('fullName', '==', name)));
+      if (name && activeTenantId) {
+        // Scope the name-match delete to the active tenant — a bare fullName match
+        // could otherwise collide with a same-named contact belonging to a different
+        // manager's tenant (rules would reject it, but this keeps the intent explicit).
+        const crmSnap = await getDocs(query(
+          collection(db, 'crm_contacts'),
+          where('fullName', '==', name),
+          where('tenantId', '==', activeTenantId)
+        ));
         crmSnap.forEach(async (d) => { await deleteDoc(d.ref); });
       }
 
@@ -225,8 +230,9 @@ export default function ManagerDashboard() {
 
   useEffect(() => {
     const fetchDbTests = async () => {
+      if (!activeTenantId) return;
       try {
-        const testsSnap = await getDocs(collection(db, 'tests'));
+        const testsSnap = await getDocs(query(collection(db, 'tests'), where('tenantId', '==', activeTenantId)));
         const fetched: any[] = [];
         testsSnap.forEach(d => {
           fetched.push({ id: d.id, ...d.data() });
@@ -237,7 +243,7 @@ export default function ManagerDashboard() {
       }
     };
     fetchDbTests();
-  }, []);
+  }, [activeTenantId]);
 
   const handleGenerateFromGoogleDocs = async (formatType: "ONLINE" | "PRINT") => {
     if (!certStudentNameGenitive.trim()) {
@@ -476,6 +482,8 @@ export default function ManagerDashboard() {
     try {
       const targetTenantId = activeTenantId || 'org_future_leaders';
       const studentMap = new Map<string, any>();
+      let firestoreFailed = false;
+      let gasFailed = false;
 
       // 1. Fetch from Firestore `submissions` & `crm_contacts`
       try {
@@ -535,6 +543,7 @@ export default function ManagerDashboard() {
         });
       } catch (fsErr) {
         console.warn("[ManagerDashboard] Firestore fetch notice:", fsErr);
+        firestoreFailed = true;
       }
 
       // 2. Fetch from Google Apps Script endpoint
@@ -544,8 +553,9 @@ export default function ManagerDashboard() {
           const rawList = data.students || data.data || [];
           rawList.forEach((s: any) => {
             const rowTenant = s.tenantId || 'org_future_leaders';
-            // Allow if tenant matches OR if tenant is fallback org_future_leaders
-            if (rowTenant === targetTenantId || targetTenantId === 'org_future_leaders' || !s.tenantId) {
+            // Strict tenant match only — a missing tenantId or the default org must NOT
+            // grant a blanket bypass, otherwise any manager can see every legacy/unscoped row.
+            if (rowTenant === targetTenantId) {
               const sId = (s.shortId || s.studentShortId).toString();
               const existing = studentMap.get(sId);
 
@@ -578,10 +588,19 @@ export default function ManagerDashboard() {
         }
       } catch (gasErr) {
         console.warn("[ManagerDashboard] GAS fetch notice:", gasErr);
+        gasFailed = true;
       }
 
       const mergedList = Array.from(studentMap.values());
       setStudents(mergedList);
+
+      if (firestoreFailed && gasFailed) {
+        setError("Не удалось загрузить данные ни из базы, ни из резервного источника. Проверьте подключение и попробуйте снова.");
+      } else if (firestoreFailed) {
+        setError("Часть данных (Firestore) не загрузилась — список может быть неполным.");
+      } else if (gasFailed) {
+        setError("Часть данных (резервный источник) не загрузилась — список может быть неполным.");
+      }
     } catch (err: any) {
       console.error("fetchStudents error:", err);
       setError("Ошибка загрузки данных");
@@ -747,6 +766,11 @@ export default function ManagerDashboard() {
           <div className="text-center py-20 text-slate-500">Загрузка данных...</div>
         ) : (
           <div className="bg-white rounded-2xl shadow overflow-x-auto">
+            {error && students.length > 0 && (
+              <div className="p-3 bg-amber-50 border-b border-amber-200 text-amber-800 text-sm font-medium">
+                ⚠ {error}
+              </div>
+            )}
             <table className="w-full text-left border-collapse bg-white shadow-xl">
               <thead>
                 <tr className="bg-gray-100 border-b">
@@ -989,9 +1013,15 @@ export default function ManagerDashboard() {
                   </tr>
                   );
                 })}
-                {students.length === 0 && (
+                {students.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={6} className="text-center p-8 text-slate-500">Нет данных</td>
+                    <td colSpan={6} className="text-center p-8 text-slate-500">
+                      {error ? (
+                        <span className="text-red-600 font-semibold">{error}</span>
+                      ) : (
+                        "Нет данных"
+                      )}
+                    </td>
                   </tr>
                 )}
               </tbody>

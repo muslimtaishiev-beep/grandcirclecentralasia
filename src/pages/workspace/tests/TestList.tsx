@@ -157,7 +157,10 @@ export default function TestList() {
               {displayTests.map(test => {
                 const gradeNum = test.grade || 10;
                 const testDocId = test.id || `test_grade_${gradeNum}_${currentOrgId}`;
-                const studentLink = `${window.location.origin}/${currentOrgId}/test/${testDocId}`;
+                // Testing.tsx resolves which test to load from the `grade` query param,
+                // not from the :testId route param — the link must carry it explicitly
+                // or the student lands on the login screen with no class pre-selected.
+                const studentLink = `${window.location.origin}/${currentOrgId}/test/${testDocId}?grade=${gradeNum}`;
                 return (
                   <tr key={test.id || gradeNum} className="hover:bg-black/5 dark:hover:bg-white/5 transition group">
                     <td className="px-6 py-4">
@@ -185,7 +188,7 @@ export default function TestList() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <a
-                          href={`/${currentOrgId}/test/${testDocId}`}
+                          href={`/${currentOrgId}/test/${testDocId}?grade=${gradeNum}`}
                           target="_blank"
                           rel="noreferrer"
                           className="px-3 py-1.5 bg-purple-600/10 hover:bg-purple-600/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 rounded-lg font-bold text-[11px] flex items-center gap-1.5 transition"

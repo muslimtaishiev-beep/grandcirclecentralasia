@@ -52,12 +52,23 @@ export default function Testing() {
   const [isRetake, setIsRetake] = useState(false);
   const [questionsLoading, setQuestionsLoading] = useState(false);
   const [questionsError, setQuestionsError] = useState<string | null>(null);
+  const [timeLimitMinutes, setTimeLimitMinutes] = useState<number | null>(null);
+  const [phaseStartedAt, setPhaseStartedAt] = useState<number | null>(() => {
+    const saved = safeGetSession("phaseStartedAt", "");
+    return saved ? Number(saved) : null;
+  });
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
 
   const [grade, setGrade] = useState<number | null>(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const urlGrade = params.get("grade");
       if (urlGrade && !isNaN(Number(urlGrade))) return Number(urlGrade);
+      // Fall back to parsing the grade out of a shared test link's :testId
+      // (e.g. "test_grade_7_org_future_leaders") when ?grade= wasn't included —
+      // older links copied from the admin panel may only carry the doc id.
+      const pathMatch = window.location.pathname.match(/test_grade_(\d+)/);
+      if (pathMatch) return Number(pathMatch[1]);
     } catch(e) {}
     const saved = safeGetSession("grade", null);
     return saved ? Number(saved) : null;
@@ -141,8 +152,34 @@ export default function Testing() {
       setBoth("pendingSubmission", String(pendingSubmission));
       if (resultData) setBoth("resultData", JSON.stringify(resultData));
       setBoth("phase", phase);
+      if (phaseStartedAt) setBoth("phaseStartedAt", String(phaseStartedAt));
     } catch(e) {}
-  }, [studentName, studentPhone, studentEmail, grade, started, finished, disqualified, consentGiven, answers, testId, shortId, qrToken, pendingSubmission, resultData, phase]);
+  }, [studentName, studentPhone, studentEmail, grade, started, finished, disqualified, consentGiven, answers, testId, shortId, qrToken, pendingSubmission, resultData, phase, phaseStartedAt]);
+
+  // Start (or resume, on reload) the soft countdown whenever entering a timed phase.
+  useEffect(() => {
+    if (phase === "core" || phase === "english") {
+      if (!phaseStartedAt) setPhaseStartedAt(Date.now());
+    } else {
+      setPhaseStartedAt(null);
+    }
+  }, [phase]);
+
+  // Tick the countdown display every second. This is a SOFT timer — informational
+  // only, it never auto-submits — reaching 0 just shows "Время вышло" and keeps counting down.
+  useEffect(() => {
+    if (!phaseStartedAt || !timeLimitMinutes || (phase !== "core" && phase !== "english")) {
+      setRemainingSeconds(null);
+      return;
+    }
+    const tick = () => {
+      const elapsedSec = Math.floor((Date.now() - phaseStartedAt) / 1000);
+      setRemainingSeconds(timeLimitMinutes * 60 - elapsedSec);
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [phaseStartedAt, timeLimitMinutes, phase]);
 
   // Load questions from /api/exams/questions (server-side read, no client Firestore)
   useEffect(() => {
@@ -166,6 +203,7 @@ export default function Testing() {
         }
 
         setFirestoreTestData({ questions: data.questions });
+        if (data.timeLimitMinutes) setTimeLimitMinutes(Number(data.timeLimitMinutes));
       } catch (e: any) {
         setQuestionsError(e.message || "Network error while loading questions");
       } finally {
@@ -791,13 +829,30 @@ export default function Testing() {
   };
 
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [hasOfflineSubmissions, setHasOfflineSubmissions] = useState(false);
+  const [isRetryingSubmission, setIsRetryingSubmission] = useState(false);
+
+  const countOfflineSubmissions = () => {
+    try {
+      return Object.keys(localStorage).filter(key => key.startsWith("offline_test_")).length;
+    } catch(e) { return 0; }
+  };
+
+  // Detect any answers that previously failed to send (network error) so we can
+  // surface a visible retry banner instead of leaving them stuck silently in localStorage.
+  useEffect(() => {
+    setHasOfflineSubmissions(countOfflineSubmissions() > 0);
+  }, [phase]);
 
   const retrySubmission = async () => {
+    setIsRetryingSubmission(true);
     // Find all offline tests in localStorage
     const offlineKeys = Object.keys(localStorage).filter(key => key.startsWith("offline_test_"));
-    
+
     if (offlineKeys.length === 0) {
       setPendingSubmission(false);
+      setHasOfflineSubmissions(false);
+      setIsRetryingSubmission(false);
       return;
     }
 
@@ -815,39 +870,37 @@ export default function Testing() {
           }
         } catch(e: any) {
           setSubmitError(e.message);
+          setHasOfflineSubmissions(countOfflineSubmissions() > 0);
+          setIsRetryingSubmission(false);
           alert(`Ошибка сети: ${e.message}`);
           return; // Stop on first error
         }
       }
     }
-    
+
     // If all succeeded
     setPendingSubmission(false);
     setSubmitError(null);
+    setHasOfflineSubmissions(false);
+    setIsRetryingSubmission(false);
     alert("Данные успешно отправлены!");
   };
 
 
-  // Fullscreen Violation UI
-  if (isFullscreenViolation) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center z-50">
-        <h1 className="text-3xl font-bold mb-4">Нарушение режима</h1>
-        <p className="text-lg text-slate-300 mb-8 max-w-md">Вы покинули полноэкранный режим. Тестирование должно проходить только в полноэкранном режиме, чтобы избежать списывания.</p>
-        <button 
-          onClick={() => {
-            const doc = document.documentElement as any;
-            if (doc.requestFullscreen) doc.requestFullscreen().catch(()=>{});
-            else if (doc.webkitRequestFullscreen) doc.webkitRequestFullscreen().catch(()=>{});
-            setIsFullscreenViolation(false);
-          }}
-          className="px-6 py-3 bg-blue-600 rounded-xl font-semibold hover:bg-blue-500 transition-colors"
-        >
-          Вернуться к тесту
-        </button>
-      </div>
-    );
-  }
+  const OfflineRetryBanner = hasOfflineSubmissions ? (
+    <div className="fixed bottom-0 left-0 right-0 z-[60] bg-red-600 text-white px-4 py-3 flex flex-col sm:flex-row items-center justify-center gap-3 shadow-2xl">
+      <span className="text-sm font-medium text-center">
+        ⚠ Не удалось отправить ваши ответы на сервер (проблема с сетью). Данные сохранены на этом устройстве.
+      </span>
+      <button
+        onClick={retrySubmission}
+        disabled={isRetryingSubmission}
+        className="px-4 py-1.5 bg-white text-red-600 rounded-lg font-bold text-sm hover:bg-red-50 disabled:opacity-50 transition whitespace-nowrap"
+      >
+        {isRetryingSubmission ? "Отправка..." : "Повторить отправку"}
+      </button>
+    </div>
+  ) : null;
 
   // Fullscreen Violation UI
   if (isFullscreenViolation) {
@@ -855,7 +908,7 @@ export default function Testing() {
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center z-50">
         <h1 className="text-3xl font-bold mb-4">Нарушение режима</h1>
         <p className="text-lg text-slate-300 mb-8 max-w-md">Вы покинули полноэкранный режим. Тестирование должно проходить только в полноэкранном режиме, чтобы избежать списывания.</p>
-        <button 
+        <button
           onClick={() => {
             const doc = document.documentElement as any;
             if (doc.requestFullscreen) doc.requestFullscreen().catch(()=>{});
@@ -962,6 +1015,7 @@ export default function Testing() {
             </button>
           </div>
         </div>
+        {OfflineRetryBanner}
       </div>
     );
   }
@@ -1075,6 +1129,7 @@ export default function Testing() {
             Вернуться к входу
           </button>
         </div>
+        {OfflineRetryBanner}
       </div>
     );
   }
@@ -1305,9 +1360,16 @@ export default function Testing() {
         </div>
       )}
 
-      <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center z-10">
+      <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center z-10 gap-4">
         <div className="font-bold text-lg">Тестирование: {grade} класс</div>
-        <button 
+        {remainingSeconds !== null && (
+          <div className={`font-mono font-bold text-lg ${remainingSeconds <= 0 ? "text-red-600" : remainingSeconds < 300 ? "text-amber-600" : "text-slate-600"}`}>
+            {remainingSeconds <= 0
+              ? "Время вышло"
+              : `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, "0")}`}
+          </div>
+        )}
+        <button
           onClick={() => phase === "english" ? submitEnglishTest(false) : submitCoreTest(false)}
           disabled={isSubmitting}
           className="px-6 py-2 bg-blue-600 text-white rounded-full font-medium hover:bg-blue-700 disabled:opacity-50 transition flex items-center gap-2"
@@ -1357,6 +1419,7 @@ export default function Testing() {
           Завершить тест
         </button>
       </div>
+      {OfflineRetryBanner}
     </div>
   );
 }
