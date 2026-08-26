@@ -665,12 +665,16 @@ export default function ManagerDashboard() {
   };
 
   
+  // Matches server.ts's maxScoreSnapshot computation (russian+math+logic question
+  // count from the `tests` collection, English excluded) — kept in sync as a fallback
+  // for submission docs saved before that fix (older docs have a missing/0
+  // maxScoreSnapshot and fall through to this table below).
   const GRADE_CANONICAL_MAX: Record<number, { russian: number; math: number; logic: number; english: number; coreTotal: number }> = {
-    7:  { russian: 22, math: 32, logic: 8, english: 0, coreTotal: 62 },
-    8:  { russian: 26, math: 44, logic: 8, english: 40, coreTotal: 78 },
-    9:  { russian: 32, math: 20, logic: 8, english: 45, coreTotal: 60 },
-    10: { russian: 20, math: 42, logic: 8, english: 45, coreTotal: 70 },
-    11: { russian: 17, math: 16, logic: 8, english: 45, coreTotal: 41 },
+    7:  { russian: 9, math: 20, logic: 0, english: 0, coreTotal: 29 },
+    8:  { russian: 13, math: 22, logic: 8, english: 40, coreTotal: 43 },
+    9:  { russian: 14, math: 10, logic: 8, english: 90, coreTotal: 32 },
+    10: { russian: 10, math: 21, logic: 8, english: 90, coreTotal: 39 },
+    11: { russian: 10, math: 8, logic: 8, english: 90, coreTotal: 26 },
   };
 
   const getMaxScore = (gradeStr: string | undefined, subject: "russian" | "math" | "logic" | "english") => {

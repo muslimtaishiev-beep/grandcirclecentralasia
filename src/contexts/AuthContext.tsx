@@ -46,13 +46,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (currentUser) {
         try {
           const token = await currentUser.getIdToken();
-          const res = await fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } });
+          // Bounded wait: if /api/auth/me hangs (cold start, slow Firestore scan),
+          // we must still unblock the app below with whatever claims the cached
+          // token already has, rather than leaving the whole workspace stuck on
+          // "Loading Workspace..." forever — that would be worse than the stale-
+          // claims race this sync is fixing.
+          const res = await fetch('/api/auth/me', {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(8000),
+          });
           const data = await res.json();
           if (data?.claimsRefreshed) {
             await currentUser.getIdToken(true);
           }
         } catch (e) {
-          console.warn('[AuthContext] Failed to sync tenant claims:', e);
+          console.warn('[AuthContext] Failed to sync tenant claims (continuing with cached token):', e);
         }
       }
 

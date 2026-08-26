@@ -817,7 +817,15 @@ async function processExamSubmission(payload: any) {
   let mergedMaxScoreSnapshot = maxScoreSnapshot;
 
   // 4. Write to Firestore `submissions`
-  const submissionId = sessionId ? `sub_${sessionId}` : `sub_${shortId}_${Date.now()}`;
+  // Keyed by shortId (the student's Test ID), NOT sessionId — the client never
+  // actually sends sessionId for either submitTest or submitEnglishTest (only
+  // testId, under a different field name), so keying on sessionId here silently
+  // produced a NEW doc per Date.now() for every submission, meaning the merge
+  // logic below (preserve core scores when the English submission comes in) never
+  // found the earlier doc and always saw `existing` as undefined — the exact bug
+  // it was meant to fix. shortId is always present (checked above) and is the one
+  // identifier that's actually stable across a student's core + English calls.
+  const submissionId = `sub_${shortId}`;
   if (useFirebase) {
     try {
       // Core (submitTest) and English (submitEnglishTest) submissions share the same
