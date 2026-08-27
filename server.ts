@@ -824,20 +824,29 @@ async function processExamSubmission(payload: any) {
       // Core (submitTest) and English (submitEnglishTest) submissions share the same
       // doc via merge. calculateScoresTs zeroes out subjects with no matching answers
       // in THIS submission (e.g. english=0 on a core-only submission) — a plain merge
-      // would overwrite the other submission's already-saved score with that 0. Read
-      // what's there first and keep each subject's previously-saved score whenever
-      // this submission didn't answer it (parsedAnswers has none of that subject's
-      // question ids) rather than clobbering it with 0.
+      // would overwrite the other submission's already-saved score with that 0.
+      //
+      // Also protects against a DIFFERENT real-world failure: a student double-submits
+      // (network hiccup, retry after a stalled request) and the second call's answers
+      // object — reconstructed client-side from whatever `answers` state happened to
+      // survive the retry — is missing or wrong for a subject the FIRST call already
+      // scored correctly. A student's submission was observed losing a genuine 4/29
+      // math score to 0 this way: two submitTest calls 76s apart, second one silently
+      // recomputing math down to 0. Take the MAX of the existing and newly-computed
+      // score per subject rather than trusting whichever call happened to run last —
+      // a resubmission should never be able to lower an already-recorded score.
       const existingSnap = await admin.firestore().collection("submissions").doc(submissionId).get();
       const existing = existingSnap.data();
       const answeredInThisSubmission = (subject: string) =>
         Object.keys((keys as any)[subject] || {}).some(qId => parsedAnswers && parsedAnswers[qId] !== undefined);
+      const bestOf = (subject: string, newScore: number) =>
+        answeredInThisSubmission(subject) ? Math.max(newScore, existing?.scores?.[subject] || 0) : (existing?.scores?.[subject] || 0);
 
       mergedScores = {
-        russian: answeredInThisSubmission('russian') ? scores.russian : (existing?.scores?.russian || 0),
-        math: answeredInThisSubmission('math') ? scores.math : (existing?.scores?.math || 0),
-        logic: answeredInThisSubmission('logic') ? scores.logic : (existing?.scores?.logic || 0),
-        english: answeredInThisSubmission('english') ? scores.english : (existing?.scores?.english || 0),
+        russian: bestOf('russian', scores.russian),
+        math: bestOf('math', scores.math),
+        logic: bestOf('logic', scores.logic),
+        english: bestOf('english', scores.english),
         total: 0
       };
       // English is reported as a CEFR level, never part of the overall score.
