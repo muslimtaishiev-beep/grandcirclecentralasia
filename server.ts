@@ -728,6 +728,85 @@ app.post("/api/exams/telemetry", async (req, res) => {
   }
 });
 
+// 2b. POST /api/exams/proctoring-report — the session dossier the manager reads.
+// Students are anonymous, so this cannot be a client-side Firestore write; the
+// server attaches it to the submission the manager already opens.
+app.post("/api/exams/proctoring-report", async (req, res) => {
+  try {
+    const { shortId, tenantId, violations, honestyIndex, unavailable, startedAt, endedAt, snapshots } = req.body || {};
+    if (!shortId) return res.status(400).json({ success: false, error: "Missing shortId" });
+    if (!useFirebase) return res.status(503).json({ success: false, error: "Firestore not configured" });
+
+    const resolvedTenantId = tenantId || "org_future_leaders";
+    const subRef = admin.firestore().collection("submissions").doc(`sub_${shortId}`);
+
+    // Only attach to a submission that belongs to the claimed tenant — the same
+    // rule the rest of the exam endpoints follow.
+    const existing = await subRef.get();
+    const data = existing.data();
+    if (data && data.tenantId && data.tenantId !== resolvedTenantId) {
+      console.warn(`[Proctoring] cross-tenant report blocked for ${shortId}`);
+      return res.status(403).json({ success: false, error: "Tenant mismatch" });
+    }
+
+    const list = Array.isArray(violations) ? violations : [];
+    const bySeverity = list.reduce((acc: Record<string, number>, v: any) => {
+      const k = String(v.severity || "LOW");
+      acc[k] = (acc[k] || 0) + 1;
+      return acc;
+    }, {});
+
+    const report = {
+      generatedAt: admin.firestore.Timestamp.now(),
+      startedAt: startedAt || null,
+      endedAt: endedAt || null,
+      unavailable: Boolean(unavailable),
+      honestyIndex: typeof honestyIndex === "number" ? honestyIndex : null,
+      totalViolations: list.length,
+      bySeverity,
+      violations: list.slice(0, 200).map((v: any) => ({
+        type: String(v.type || "UNKNOWN"),
+        severity: String(v.severity || "LOW"),
+        description: String(v.description || ""),
+        // Offset from exam start, so the manager can scrub straight to it.
+        atMs: Number(v.timestamp) || 0,
+      })),
+      snapshotCount: Array.isArray(snapshots) ? snapshots.length : 0,
+    };
+
+    await subRef.set({ proctoring: report }, { merge: true });
+
+    // Snapshots live in their own doc: a submission read happens on every
+    // dashboard render and base64 frames would bloat it badly.
+    if (Array.isArray(snapshots) && snapshots.length > 0) {
+      await admin.firestore().collection("proctoring_evidence").doc(`ev_${shortId}`).set({
+        shortId: String(shortId),
+        tenantId: resolvedTenantId,
+        updatedAt: admin.firestore.Timestamp.now(),
+        snapshots: snapshots.slice(0, 20),
+      }, { merge: true });
+    }
+
+    if (list.length > 0 || report.unavailable) {
+      admin.firestore().collection("audit_logs").add({
+        timestamp: admin.firestore.Timestamp.now(),
+        createdAt: new Date().toISOString(),
+        action: "PROCTORING_REPORT",
+        tenantId: resolvedTenantId,
+        studentShortId: String(shortId),
+        studentName: data?.studentName || "",
+        grade: data?.grade || 0,
+        cheated: list.some((v: any) => v.severity === "HIGH"),
+      }).catch(() => {});
+    }
+
+    return res.json({ success: true, totalViolations: report.totalViolations });
+  } catch (e: any) {
+    console.error("[Proctoring/Report]", e);
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // Helper: process exam submission locally using Firestore keys and TypeScript scoring engine
 async function processExamSubmission(payload: any) {
   const { sessionId, shortId, studentName, grade, answers, cheated, isTester, isRetake, tenantId, action } = payload;

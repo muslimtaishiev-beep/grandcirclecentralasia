@@ -9,6 +9,8 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useTenant } from "../context/TenantContext";
 import QuestionFactory from "../components/tests/QuestionFactory";
+import { useProctoringEngine, ProctoringDetectorFlags } from "../lib/useProctoringEngine";
+import ProctoringWarningOverlay from "../components/ProctoringWarningOverlay";
 import { useParams } from "react-router-dom";
 
 export default function Testing() {
@@ -95,6 +97,14 @@ export default function Testing() {
   });
   const [testId, setTestId] = useState(() => safeGetSession("testId", ""));
   const [firestoreTestData, setFirestoreTestData] = useState<any>(null);
+  // Proctoring: config arrives with the questions (the student is anonymous
+  // and cannot read the tenant doc), camera is requested only if enabled.
+  const [proctoringConfig, setProctoringConfig] = useState<{ enabled: boolean; detectors: ProctoringDetectorFlags } | null>(null);
+  const [cameraGranted, setCameraGranted] = useState(false);
+  const [proctoringUnavailable, setProctoringUnavailable] = useState(false);
+  const proctorVideoRef = useRef<HTMLVideoElement | null>(null);
+  const proctorCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const proctorStreamRef = useRef<MediaStream | null>(null);
   const [shortId, setShortId] = useState(() => {
     const saved = safeGetSession("shortId", "");
     if (saved && saved !== "undefined" && saved !== "null") return saved;
@@ -121,6 +131,136 @@ export default function Testing() {
   const blurTimeout = useRef<NodeJS.Timeout | null>(null);
   const phaseRef = useRef(phase);
   useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  // ── PROCTORING ──────────────────────────────────────────────────────────
+  // Runs invisibly while the student answers: no preview, no controls. The
+  // camera is requested only once the exam actually starts and only if the
+  // tenant enabled proctoring, so a school with it switched off never sees a
+  // permission prompt.
+  const proctoringWanted = Boolean(proctoringConfig?.enabled) && started && !finished && (phase === "core" || phase === "english");
+
+  useEffect(() => {
+    if (!proctoringWanted) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+          audio: Boolean(proctoringConfig?.detectors?.audioAnalysis !== false),
+        });
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+        proctorStreamRef.current = stream;
+        if (proctorVideoRef.current) {
+          proctorVideoRef.current.srcObject = stream;
+          try { await proctorVideoRef.current.play(); } catch (e) {}
+        }
+        setCameraGranted(true);
+      } catch (e) {
+        // Denied, missing or busy camera must never cost a student their exam —
+        // they carry on, and the submission is flagged so the manager knows the
+        // session was unsupervised rather than clean.
+        console.warn("[Proctoring] camera unavailable:", e);
+        if (!cancelled) setProctoringUnavailable(true);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [proctoringWanted]);
+
+  // Release the camera as soon as proctoring is no longer wanted (submit, finish).
+  useEffect(() => {
+    if (proctoringWanted) return;
+    if (proctorStreamRef.current) {
+      proctorStreamRef.current.getTracks().forEach(t => t.stop());
+      proctorStreamRef.current = null;
+      setCameraGranted(false);
+    }
+  }, [proctoringWanted]);
+
+  const proctoringActive = proctoringWanted && cameraGranted;
+
+  // Evidence: a frame grabbed at the moment of each MEDIUM/HIGH violation.
+  // The engine never paints to the canvas (only the sandbox's visual overlay
+  // does), so the frame is copied here before capture — otherwise every
+  // snapshot would come out blank.
+  const proctorSnapshotsRef = useRef<{ type: string; atMs: number; dataUrl: string }[]>([]);
+  const capturedEventIdsRef = useRef<Set<string>>(new Set());
+  const proctorStartedAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (proctoringActive && proctorStartedAtRef.current === null) {
+      proctorStartedAtRef.current = Date.now();
+    }
+  }, [proctoringActive]);
+
+  useEffect(() => {
+    if (!proctoringActive) return;
+    const video = proctorVideoRef.current;
+    const canvas = proctorCanvasRef.current;
+    if (!video || !canvas) return;
+
+    for (const ev of proctor.events) {
+      if (capturedEventIdsRef.current.has(ev.id)) continue;
+      capturedEventIdsRef.current.add(ev.id);
+      if (ev.severity === "LOW") continue;
+      if (proctorSnapshotsRef.current.length >= 20) continue;
+      try {
+        const ctx = canvas.getContext("2d");
+        if (!ctx || !video.videoWidth) continue;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        proctorSnapshotsRef.current.push({
+          type: ev.type,
+          atMs: ev.timestamp,
+          dataUrl: canvas.toDataURL("image/jpeg", 0.7),
+        });
+      } catch (e) { /* a frame we cannot grab is not worth failing the exam over */ }
+    }
+  }, [proctor.events, proctoringActive]);
+
+  // Sends the session dossier (violations with timecodes + snapshots) to the
+  // manager. Called on submit; failures are swallowed because a proctoring
+  // report must never block a student from handing in their work.
+  const sendProctoringReport = async () => {
+    if (!proctoringConfig?.enabled) return;
+    if (!proctoringActive && !proctoringUnavailable) return;
+    try {
+      await fetch("/api/exams/proctoring-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          shortId,
+          tenantId: orgSlug || "org_future_leaders",
+          unavailable: proctoringUnavailable,
+          honestyIndex: proctor.honestyIndex,
+          startedAt: proctorStartedAtRef.current,
+          endedAt: Date.now(),
+          violations: proctor.events.map(e => ({
+            type: e.type, severity: e.severity, description: e.description, timestamp: e.timestamp,
+          })),
+          snapshots: proctorSnapshotsRef.current,
+        }),
+        signal: AbortSignal.timeout(20000),
+      });
+    } catch (e) {
+      console.warn("[Proctoring] report upload failed:", e);
+    }
+  };
+  const proctor = useProctoringEngine(
+    proctorVideoRef,
+    proctorCanvasRef,
+    proctoringActive,
+    undefined,
+    {
+      detectors: proctoringConfig?.detectors,
+      // Tab switching is already policed by this page's own blur budget with a
+      // suspend flow; letting the engine warn about it too meant two different
+      // punishments for one action.
+      suppressEvents: ["TAB_SWITCH"],
+    }
+  );
 
   // Sync state to sessionStorage and localStorage for OS tab kill protection
   useEffect(() => {
@@ -204,6 +344,7 @@ export default function Testing() {
 
         setFirestoreTestData({ questions: data.questions });
         if (data.timeLimitMinutes) setTimeLimitMinutes(Number(data.timeLimitMinutes));
+        if (data.proctoring) setProctoringConfig(data.proctoring);
       } catch (e: any) {
         setQuestionsError(e.message || "Network error while loading questions");
       } finally {
@@ -594,6 +735,8 @@ export default function Testing() {
       if (data.success) {
         // Clear anti-cheat timer on successful submit to prevent race condition
         if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
+        // Fire-and-forget: the dossier must never delay or block the handoff.
+        void sendProctoringReport();
         setResultData({
           totalScore: data.totalScore,
           scores: data.scores,
@@ -679,6 +822,7 @@ export default function Testing() {
       const data = await fetchGasAPI("/api/gas", payload);
       if (data.success) {
         if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
+        void sendProctoringReport();
         const engScore = (data.scores && typeof data.scores.english === 'number') 
           ? data.scores.english 
           : (typeof data.scores?.scores?.english === 'number' ? data.scores.scores.english : 0);
@@ -1350,6 +1494,23 @@ export default function Testing() {
 
   return (
     <div className="min-h-screen bg-white text-slate-900 pb-20 select-none relative">
+      {/* Proctoring runs invisibly: the student sees no preview of themselves,
+          only the warning overlay when something is actually flagged. Kept
+          inside this render (not beside the fullscreen-violation early return,
+          which unmounts the whole tree). */}
+      {proctoringWanted && (
+        <>
+          <video
+            ref={proctorVideoRef}
+            className="fixed -top-[9999px] -left-[9999px] w-[640px] h-[480px] pointer-events-none opacity-0"
+            playsInline
+            muted
+          />
+          <canvas ref={proctorCanvasRef} className="hidden" width={640} height={480} />
+        </>
+      )}
+      <ProctoringWarningOverlay events={proctor.events} isActive={proctoringActive} />
+
       {isSubmitting && (
         <div className="fixed inset-0 bg-white/70 backdrop-blur-sm z-50 flex items-center justify-center">
            <div className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center border border-blue-100">
