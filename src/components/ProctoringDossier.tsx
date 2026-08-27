@@ -122,6 +122,7 @@ export default function ProctoringDossier({ shortId, studentName, grade, report,
   const [snapshots, setSnapshots] = useState<EvidenceSnapshot[]>([]);
   const [loadingEvidence, setLoadingEvidence] = useState(false);
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
+  const [buildingZip, setBuildingZip] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -149,12 +150,11 @@ export default function ProctoringDossier({ shortId, studentName, grade, report,
   // the roster behind it, or one clipped screenful. Rendering the protocol into
   // its own window sidesteps the dashboard's layout entirely and gives the
   // manager a clean document to print or save as PDF.
-  const openPrintable = () => {
-    const w = window.open("", "_blank", "width=900,height=1000");
-    if (!w) {
-      alert("Браузер заблокировал окно печати. Разрешите всплывающие окна для этого сайта.");
-      return;
-    }
+  // One builder for both outputs, so the printed page and the file inside the
+  // archive can never drift apart. `embedImages` is false for the archive:
+  // the snapshots ship as separate .jpg files there rather than as megabytes
+  // of base64 inlined into the HTML.
+  const buildDocumentHtml = (embedImages: boolean) => {
     const esc = (v: any) => String(v ?? "")
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -167,7 +167,7 @@ export default function ProctoringDossier({ shortId, studentName, grade, report,
           (typeof report.honestyIndex === "number"
             ? `. Индекс добросовестности: ${report.honestyIndex} из 100.` : ".");
 
-    w.document.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8">
+    return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
       <title>Протокол ${esc(shortId)} — ${esc(studentName)}</title>
       <style>
         @page { margin: 16mm; }
@@ -213,10 +213,94 @@ export default function ProctoringDossier({ shortId, studentName, grade, report,
         const src = sn.dataUrl || sn.image;
         if (!src) return "";
         const at = sn.atMs ?? sn.timestamp;
-        return `<figure><img src="${src}" alt="Снимок ${i + 1}"><figcaption>${esc(TYPE_LABEL[sn.type || ""] || sn.type || "Снимок")}${typeof at === "number" ? " · " + esc(formatOffset(at, report.startedAt)) : ""}</figcaption></figure>`;
+        const href = embedImages ? src : `снимки/${String(i + 1).padStart(2, "0")}-${sn.type || "снимок"}.jpg`;
+        return `<figure><img src="${href}" alt="Снимок ${i + 1}"><figcaption>${esc(TYPE_LABEL[sn.type || ""] || sn.type || "Снимок")}${typeof at === "number" ? " · " + esc(formatOffset(at, report.startedAt)) : ""}</figcaption></figure>`;
       }).join("")}</div>` : ""}
       <footer>Документ сформирован автоматически системой прокторинга и не требует подписи.</footer>
-      </body></html>`);
+      </body></html>`;
+  };
+
+  // The archive is what the manager files away: the protocol as a document,
+  // every snapshot as a real image they can open, and a plain-text summary for
+  // anyone who just wants the facts without opening a browser.
+  const downloadArchive = async () => {
+    setBuildingZip(true);
+    try {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+
+      zip.file("протокол.html", buildDocumentHtml(false));
+
+      const shots = zip.folder("снимки");
+      let saved = 0;
+      snapshots.forEach((sn, i) => {
+        const src = sn.dataUrl || sn.image;
+        if (!src) return;
+        const base64 = src.split(",")[1];
+        if (!base64) return;
+        shots?.file(`${String(i + 1).padStart(2, "0")}-${sn.type || "снимок"}.jpg`, base64, { base64: true });
+        saved++;
+      });
+
+      // A snapshot count that silently disagrees with the protocol would make
+      // the archive look tampered with, so state it plainly.
+      const missing = (report.snapshotCount || 0) - saved;
+      const lines = [
+        "ПРОТОКОЛ НАБЛЮДЕНИЯ ЗА ЭКЗАМЕНОМ",
+        "",
+        `Экзаменуемый:      ${studentName}`,
+        `Идентификатор:     ${shortId}`,
+        `Класс:             ${grade || "—"}`,
+        `Начало:            ${formatClock(report.startedAt)}`,
+        `Окончание:         ${formatClock(report.endedAt)}`,
+        `Продолжительность: ${formatDuration(report.startedAt, report.endedAt)}`,
+        "",
+        report.unavailable
+          ? "ЗАКЛЮЧЕНИЕ: видеонаблюдение не велось — камера не была предоставлена."
+          : violations.length === 0
+            ? "ЗАКЛЮЧЕНИЕ: нарушений не зафиксировано."
+            : `ЗАКЛЮЧЕНИЕ: зафиксировано нарушений — ${violations.length}` +
+              (high ? `, из них грубых — ${high}` : "") +
+              (typeof report.honestyIndex === "number"
+                ? `. Индекс добросовестности: ${report.honestyIndex} из 100.` : "."),
+        "",
+        ...(violations.length ? ["ЖУРНАЛ НАРУШЕНИЙ", ""] : []),
+        ...violations.map(v =>
+          `${formatOffset(v.atMs, report.startedAt)}  ${(TYPE_LABEL[v.type] || v.type).padEnd(34)}` +
+          `${SEVERITY_LABEL[v.severity] || v.severity}\n          ${v.description || ""}`),
+        "",
+        `Снимков в архиве: ${saved}` + (missing > 0 ? ` (${missing} не сохранилось)` : ""),
+        "",
+        "Документ сформирован автоматически и не требует подписи.",
+      ];
+      zip.file("протокол.txt", lines.join("\n"));
+
+      const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Прокторинг_${shortId}_${(studentName || "ученик").replace(/[^\p{L}\d]+/gu, "_")}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoke on the next tick: revoking immediately cancels the download in
+      // some browsers before it has started reading the blob.
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (e: any) {
+      console.error("[Dossier] archive failed:", e);
+      alert("Не удалось собрать архив: " + (e?.message || "неизвестная ошибка"));
+    } finally {
+      setBuildingZip(false);
+    }
+  };
+
+  const openPrintable = () => {
+    const w = window.open("", "_blank", "width=900,height=1000");
+    if (!w) {
+      alert("Браузер заблокировал окно печати. Разрешите всплывающие окна для этого сайта.");
+      return;
+    }
+    w.document.write(buildDocumentHtml(true));
     w.document.close();
     // Wait for the base64 snapshots to decode, or the print dialog opens over
     // a page of blank frames.
@@ -406,6 +490,17 @@ export default function ProctoringDossier({ shortId, studentName, grade, report,
             Документ сформирован автоматически и не требует подписи.
           </p>
           <div className="flex gap-2">
+            <button
+              onClick={downloadArchive}
+              disabled={buildingZip}
+              className={`px-4 py-2 text-sm rounded font-medium ${
+                buildingZip
+                  ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                  : "bg-blue-600 text-white hover:bg-blue-700"
+              }`}
+            >
+              {buildingZip ? "Собираю архив…" : "📦 Скачать архив (ZIP)"}
+            </button>
             <button
               onClick={openPrintable}
               className="px-4 py-2 text-sm rounded border border-slate-300 text-slate-700 hover:bg-slate-50"
