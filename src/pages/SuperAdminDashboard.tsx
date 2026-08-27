@@ -37,10 +37,11 @@ import {
   Ban
 } from "lucide-react";
 import { CreateTenantModal } from './superadmin/components/CreateTenantModal';
-import { collection, onSnapshot, updateDoc, doc, query, orderBy, limit } from "firebase/firestore";
+import { collection, onSnapshot, updateDoc, doc, query, orderBy, limit, where, getCountFromServer } from "firebase/firestore";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { db, auth } from "../lib/firebase";
 import { TenantRequestsTab } from "../components/superadmin/TenantRequestsTab";
+import toast, { Toaster } from "react-hot-toast";
 
 interface OrganizationProject {
   id: string;
@@ -52,8 +53,8 @@ interface OrganizationProject {
   domain: string;
   activeSessions: number;
   totalSubmissions: number;
-  storageUsedMb: number;
-  apiKey: string;
+  storageUsedMb: number | null;
+  apiKey: string | null;
   proctoringFlags: {
     gazeAway: boolean;
     faceCount: boolean;
@@ -170,6 +171,8 @@ export default function SuperAdminDashboard() {
   const [liveSessions, setLiveSessions] = useState<any[]>([]);
   const [logs, setLogs] = useState<VercelSystemLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [logsError, setLogsError] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<"projects" | "deployments" | "logs" | "storage" | "flags" | "settings" | "requests">("projects");
   const [searchQuery, setSearchQuery] = useState("");
@@ -201,22 +204,40 @@ export default function SuperAdminDashboard() {
     setLoading(true);
 
     // 1. Subscribe to /tenants
-    const unsubTenants = onSnapshot(collection(db, "tenants"), (snapshot) => {
+    const unsubTenants = onSnapshot(collection(db, "tenants"), async (snapshot) => {
       const docs: OrganizationProject[] = [];
-      snapshot.forEach((d) => {
+      // Real per-tenant submission counts — these used to be invented
+      // (`data.totalSubmissions || 0` with a 420/350MB "demo" fallback), so a
+      // tenant with 70 real submissions could be presented as having 420, and a
+      // failed read rendered a fully fictional organisation. Everything shown
+      // here is now either a real count or an explicit "—".
+      const counts = await Promise.all(
+        snapshot.docs.map(async (d) => {
+          try {
+            const agg = await getCountFromServer(query(collection(db, "submissions"), where("tenantId", "==", d.id)));
+            return agg.data().count;
+          } catch {
+            return null;
+          }
+        })
+      );
+      snapshot.docs.forEach((d, i) => {
         const data = d.data();
         docs.push({
           id: d.id,
           name: data.name || "Организация",
           slug: data.slug || d.id,
           framework: "SaaS Enterprise Engine",
-          status: "READY font-mono",
+          // Read the real status instead of hardcoding "READY" for every tenant —
+          // a suspended organisation was rendered as active. Case-normalised
+          // because seed data mixes "suspended" and "SUSPENDED".
+          status: String(data.status || "").toUpperCase() === "SUSPENDED" ? "SUSPENDED" : "READY font-mono",
           updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toLocaleTimeString() : "Недавно",
           domain: data.domain || `${data.slug || d.id}.studyfreeforum.com`,
           activeSessions: data.activeSessions || 0,
-          totalSubmissions: data.totalSubmissions || 0,
-          storageUsedMb: data.storageUsedMb || 120,
-          apiKey: data.apiKey || `key_${d.id}_live`,
+          totalSubmissions: counts[i] ?? 0,
+          storageUsedMb: typeof data.storageUsedMb === "number" ? data.storageUsedMb : null,
+          apiKey: data.apiKey || null,
           proctoringFlags: data.proctoringFlags || {
             gazeAway: true,
             faceCount: true,
@@ -227,54 +248,16 @@ export default function SuperAdminDashboard() {
         });
       });
 
-      // Default fallback if no tenants in Firestore yet
-      if (docs.length === 0) {
-        docs.push({
-          id: "org_future_leaders",
-          name: "ОсОО «Академия Будущих Лидеров»",
-          slug: "future-leaders",
-          framework: "SaaS Enterprise Engine",
-          status: "READY font-mono",
-          updatedAt: "Только что",
-          domain: "future-leaders.studyfreeforum.com",
-          activeSessions: 5,
-          totalSubmissions: 420,
-          storageUsedMb: 350,
-          apiKey: "fl_live_key_9f8d7c",
-          proctoringFlags: {
-            gazeAway: true,
-            faceCount: true,
-            handTracking: true,
-            audioAnalysis: true,
-            phoneDetection: true
-          }
-        });
-      }
-
       setProjects(docs);
+      setLoadError(docs.length === 0 ? "В Firestore нет ни одной организации." : null);
       setLoading(false);
-    }, () => {
-      // Fallback if tenant collection is restricted or empty
-      setProjects([{
-        id: "org_future_leaders",
-        name: "ОсОО «Академия Будущих Лидеров»",
-        slug: "future-leaders",
-        framework: "SaaS Enterprise Engine",
-        status: "READY font-mono",
-        updatedAt: "Только что",
-        domain: "future-leaders.studyfreeforum.com",
-        activeSessions: 5,
-        totalSubmissions: 420,
-        storageUsedMb: 350,
-        apiKey: "fl_live_key_9f8d7c",
-        proctoringFlags: {
-          gazeAway: true,
-          faceCount: true,
-          handTracking: true,
-          audioAnalysis: true,
-          phoneDetection: true
-        }
-      }]);
+    }, (err) => {
+      // Surface the failure instead of rendering a fabricated organisation —
+      // the old fallback quietly showed "420 submissions" for a tenant that had
+      // never been read, which reads as real data to whoever is looking.
+      console.error("[SuperAdmin] tenants subscription failed:", err);
+      setProjects([]);
+      setLoadError(`Не удалось загрузить организации: ${err?.message || "ошибка доступа к Firestore"}`);
       setLoading(false);
     });
 
@@ -308,18 +291,34 @@ export default function SuperAdminDashboard() {
       const list: VercelSystemLog[] = [];
       snapshot.forEach(d => {
         const l = d.data();
+        // Map the fields audit_logs actually carries (written by
+        // processExamSubmission): tenantId, studentName, studentShortId, grade,
+        // scores, cheated. The previous mapping read userEmail/details/target —
+        // none of which exist on these documents — so every row rendered as a
+        // contentless "User: EXAM_SUBMITTED".
+        const detail = l.studentName
+          ? `${l.studentName} (ID ${l.studentShortId ?? "—"}, ${l.grade ?? "?"} кл.)` +
+            (l.scores ? ` — ${l.scores.total ?? 0} балл.` : "") +
+            (l.cheated ? " ⚠ списывание" : "")
+          : (l.details || l.action || "Событие");
         list.push({
           id: d.id,
-          timestamp: l.timestamp?.toDate ? l.timestamp.toDate().toLocaleTimeString() : new Date().toLocaleTimeString(),
-          orgSlug: l.target || 'system',
-          level: l.action?.includes('REJECT') || l.action?.includes('ERROR') ? 'WARN' : 'SUCCESS',
-          route: l.action || 'AUDIT_EVENT',
-          message: `${l.userEmail || 'User'}: ${l.details || l.action}`,
-          durationMs: 35
+          timestamp: l.timestamp?.toDate ? l.timestamp.toDate().toLocaleString("ru-RU") : (l.createdAt ? new Date(l.createdAt).toLocaleString("ru-RU") : "—"),
+          orgSlug: l.tenantId || l.target || "system",
+          level: l.cheated ? "WARN" : (/REJECT|ERROR|FAIL/i.test(l.action || "") ? "WARN" : "SUCCESS"),
+          route: l.action || "AUDIT_EVENT",
+          message: detail,
+          durationMs: 0,
         });
       });
       setLogs(list);
-    }, () => {});
+      setLogsError(null);
+    }, (err) => {
+      // Was swallowed by an empty handler: the audit tab simply stayed blank,
+      // indistinguishable from "no events yet".
+      console.error("[SuperAdmin] audit_logs subscription failed:", err);
+      setLogsError(err?.message || "Не удалось прочитать /audit_logs");
+    });
 
     return () => {
       unsubTenants();
@@ -382,16 +381,24 @@ export default function SuperAdminDashboard() {
   const toggleOrgStatus = async (projectId: string) => {
     const proj = projects.find(p => p.id === projectId);
     if (!proj) return;
-    const newStatus = proj.status === "SUSPENDED" ? "READY font-mono" : "SUSPENDED";
+    const suspending = proj.status !== "SUSPENDED";
+    // Persist a real status value. This used to write the literal string
+    // "READY font-mono" — a CSS class leaking into the database as data — and it
+    // only updated local state inside catch(), so a successful toggle left the UI
+    // unchanged while a failed one showed the switch as applied.
+    const persistedStatus = suspending ? "SUSPENDED" : "active";
+    const uiStatus = suspending ? "SUSPENDED" : "READY font-mono";
 
     try {
-      const docRef = doc(db, "tenants", projectId);
-      await updateDoc(docRef, { status: newStatus });
-    } catch (err) {
-      setProjects(projects.map(p => p.id === projectId ? { ...p, status: newStatus as any } : p));
-    }
-    if (selectedOrgModal && selectedOrgModal.id === projectId) {
-      setSelectedOrgModal({ ...selectedOrgModal, status: newStatus as any });
+      await updateDoc(doc(db, "tenants", projectId), { status: persistedStatus });
+      setProjects(projects.map(p => p.id === projectId ? { ...p, status: uiStatus as any } : p));
+      if (selectedOrgModal && selectedOrgModal.id === projectId) {
+        setSelectedOrgModal({ ...selectedOrgModal, status: uiStatus as any });
+      }
+      toast.success(suspending ? "Организация заблокирована" : "Организация разблокирована");
+    } catch (err: any) {
+      console.error("[SuperAdmin] toggleOrgStatus failed:", err);
+      toast.error(`Не удалось изменить статус: ${err?.message || "ошибка записи"}`);
     }
   };
 
@@ -532,6 +539,7 @@ export default function SuperAdminDashboard() {
 
   return (
     <div className="min-h-dvh bg-[#000000] text-[#ededed] font-sans antialiased selection:bg-[#fff] selection:text-[#000]">
+      <Toaster position="top-right" />
       
       {/* ── HEADER ── */}
       <header className="border-b border-[#333333] bg-[#000000] sticky top-0 z-40">
@@ -648,6 +656,15 @@ export default function SuperAdminDashboard() {
         {/* ── TAB 1: PROJECTS (ORGANIZATIONS) ── */}
         {activeTab === "projects" && (
           <div className="space-y-6">
+            {loadError && (
+              <div className="bg-[#2a1215] border border-[#5c2226] rounded-md px-4 py-3 flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-[#f87171] shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-xs font-bold text-[#f87171]">Данные организаций не загружены</div>
+                  <div className="text-[11px] text-[#d4a5a5] mt-0.5">{loadError}</div>
+                </div>
+              </div>
+            )}
             <div className="flex items-center justify-between gap-4">
               <div className="relative flex-1 max-w-md">
                 <Search className="w-4 h-4 text-[#666666] absolute left-3 top-1/2 -translate-y-1/2" />
@@ -720,7 +737,7 @@ export default function SuperAdminDashboard() {
                       </div>
                       <div>
                         <div className="text-[10px] text-[#666666] uppercase font-mono">Хранилище</div>
-                        <div className="font-bold text-[#ededed] font-mono mt-0.5">{project.storageUsedMb} MB</div>
+                        <div className="font-bold text-[#ededed] font-mono mt-0.5">{project.storageUsedMb === null ? "—" : `${project.storageUsedMb} MB`}</div>
                       </div>
                     </div>
 
@@ -821,7 +838,20 @@ export default function SuperAdminDashboard() {
               </div>
             </div>
 
+            {logsError && (
+              <div className="bg-[#2a1215] border border-[#5c2226] rounded-md px-4 py-3 flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-[#f87171] shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-xs font-bold text-[#f87171]">Логи не загружены</div>
+                  <div className="text-[11px] text-[#d4a5a5] mt-0.5">{logsError}</div>
+                </div>
+              </div>
+            )}
+
             <div className="font-mono text-xs space-y-1.5 bg-[#000000] border border-[#222222] p-4 rounded-md max-h-[450px] overflow-y-auto">
+              {logs.length === 0 && !logsError && (
+                <div className="text-[#666666] py-2">Событий пока нет.</div>
+              )}
               {logs.map((log) => (
                 <div key={log.id} className="flex items-start gap-3 py-1 border-b border-[#111111] last:border-none">
                   <span className="text-[#555555] text-[11px] whitespace-nowrap">[{log.timestamp}]</span>
@@ -831,6 +861,7 @@ export default function SuperAdminDashboard() {
                     {log.level}
                   </span>
                   <span className="text-[#888888]">{log.route}</span>
+                  <span className="text-[#5b7fa6] text-[11px] whitespace-nowrap">{log.orgSlug}</span>
                   <span className="text-[#ededed] flex-1">{log.message}</span>
                 </div>
               ))}
@@ -902,10 +933,11 @@ export default function SuperAdminDashboard() {
 
                   <div className="flex items-center gap-3">
                     <span className="bg-[#000000] border border-[#333333] px-3 py-1.5 rounded text-[#50e3c2]">
-                      {p.apiKey}
+                      {p.apiKey || "не выдан"}
                     </span>
                     <button
-                      onClick={() => copyKey(p.apiKey, p.id)}
+                      disabled={!p.apiKey}
+                      onClick={() => p.apiKey && copyKey(p.apiKey, p.id)}
                       className="bg-[#222222] hover:bg-[#333333] text-[#ededed] px-3 py-1.5 rounded transition flex items-center gap-1.5 text-xs cursor-pointer"
                     >
                       {copiedKeyId === p.id ? <Check className="w-3.5 h-3.5 text-[#50e3c2]" /> : <Copy className="w-3.5 h-3.5" />}
@@ -1080,9 +1112,9 @@ export default function SuperAdminDashboard() {
                       <div>
                         <div className="text-[#666666] text-[10px] uppercase">Secret API Key</div>
                         <div className="flex items-center justify-between bg-[#000000] p-2.5 rounded border border-[#222222] mt-1">
-                          <span className="text-[#50e3c2] text-xs">{selectedOrgModal.apiKey}</span>
+                          <span className="text-[#50e3c2] text-xs">{selectedOrgModal.apiKey || "не выдан"}</span>
                           <button
-                            onClick={() => copyKey(selectedOrgModal.apiKey, selectedOrgModal.id)}
+                            onClick={() => selectedOrgModal.apiKey && copyKey(selectedOrgModal.apiKey, selectedOrgModal.id)}
                             className="px-2.5 py-1 bg-[#222222] hover:bg-[#333333] text-white rounded text-[10px] transition flex items-center gap-1 cursor-pointer"
                           >
                             {copiedKeyId === selectedOrgModal.id ? <Check className="w-3.5 h-3.5 text-[#50e3c2]" /> : <Copy className="w-3.5 h-3.5" />}

@@ -154,11 +154,16 @@ export default function TeamPermissions() {
         throw new Error(data.error || 'Не удалось сохранить сотрудника');
       }
 
+      // Report what actually happened: the server returns emailSent, and without
+      // RESEND_API_KEY configured no invite email goes out at all. Claiming it was
+      // sent leaves the admin waiting for a message the employee never receives.
       setStatusMessage({
         type: 'success',
         text: editingMemberId
           ? 'Права сотрудника успешно обновлены!'
-          : `Сотрудник добавлен! Письмо с кнопкой установки пароля отправлено на ${email}.`
+          : data.emailSent
+            ? `Сотрудник добавлен! Письмо с ссылкой для установки пароля отправлено на ${email}.`
+            : `Сотрудник добавлен. Письмо отправить не удалось — передайте ${email} ссылку для входа вручную.`
       });
 
       setTimeout(() => {
@@ -236,7 +241,7 @@ export default function TeamPermissions() {
       <div className="bg-emerald-950/30 border border-emerald-800/60 p-4 rounded-2xl flex items-start gap-3">
         <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
         <div className="text-xs text-emerald-200/80 leading-relaxed">
-          <strong>Безопасность и Изоляция:</strong> Выбранные чекбоксы разрешений мгновенно управляют видимостью разделов в меню навигации работника. При добавлении нового сотрудника система автоматически генерирует фирменное письмо с персональной ссылкой для установки пароля.
+          <strong>Безопасность и Изоляция:</strong> Выбранные чекбоксы разрешений мгновенно управляют видимостью разделов в меню навигации работника. При добавлении сотрудника система пытается отправить письмо со ссылкой для установки пароля — результат отправки показывается прямо в форме.
         </div>
       </div>
 

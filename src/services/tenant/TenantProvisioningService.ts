@@ -31,13 +31,30 @@ export class TenantProvisioningService {
       // Create Tenant Document
       await setDoc(doc(db, 'tenants', tenantId), newTenant);
       
-      // Create Membership for Owner
+      // Create Membership for Owner.
+      // `status: 'active'` is required — the custom-claims sync in
+      // /api/auth/me only counts memberships with an active status, so a
+      // membership without it yields empty tenantIds/tenantAdminIds and the
+      // owner lands in a workspace with no permissions.
       const memberId = `${tenantId}_${ownerEmail.replace(/[@.]/g, '_')}`;
       await setDoc(doc(db, 'memberships', memberId), {
         tenantId,
         email: ownerEmail,
         role: 'org:owner',
+        status: 'active',
         createdAt: Date.now(),
+      });
+
+      // Billing subscription — TierLimitEnforcer reads the tier from
+      // tenants/{id}/billing/subscription. Without this document every newly
+      // provisioned tenant silently fell back to 'starter' limits regardless of
+      // the tier picked at creation, so a paid business/enterprise org was
+      // enforced as starter.
+      await setDoc(doc(db, `tenants/${tenantId}/billing`, 'subscription'), {
+        tierId,
+        status: 'active',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
       });
 
       // (Optional) Setup default CRM pipelines here if MODULE_CRM_PIPELINES is enabled

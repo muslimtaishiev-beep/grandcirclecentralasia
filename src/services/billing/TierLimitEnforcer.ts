@@ -53,6 +53,14 @@ class TierLimitEnforcer {
     if (snap.exists() && snap.data().tierId) {
       return snap.data().tierId as SubscriptionTierId;
     }
+    // Tenants provisioned before the billing document existed only carry their
+    // tier on the tenant record itself. Reading it here keeps them on the plan
+    // that was actually chosen instead of silently demoting them to starter.
+    const tenantSnap = await getDoc(doc(db, 'tenants', tenantId));
+    const tierId = tenantSnap.exists() ? tenantSnap.data().tierId : undefined;
+    if (tierId && tierId in PLAN_TIER_DEFINITIONS) {
+      return tierId as SubscriptionTierId;
+    }
     return 'starter'; // Default fallback
   }
 
