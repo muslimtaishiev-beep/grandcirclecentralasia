@@ -509,6 +509,7 @@ export default function ManagerDashboard() {
             lo,
             en,
             cheated: Boolean(s.cheated),
+            proctoring: s.proctoring || null,
             status: s.status || 'ЗАВЕРШЕН',
             finalDecision: s.finalDecision || 'НЕ ОБРАБОТАН',
             managerName: s.managerName || 'Не назначен',
@@ -811,6 +812,25 @@ export default function ManagerDashboard() {
                         {s.childName || "Без имени"}
                         {s.cheated && <span className="bg-red-600 text-white text-[10px] uppercase px-2 py-0.5 rounded font-bold animate-pulse">Читерил</span>}
                         {s.status === "ПРИОСТАНОВЛЕН" && <span className="bg-amber-500 text-white text-[10px] uppercase px-2 py-0.5 rounded font-bold animate-pulse">ПРИОСТАНОВЛЕН</span>}
+                        {/* Proctoring outcome. "Без камеры" is deliberately neutral —
+                            a student whose webcam failed is not a suspect. */}
+                        {s.proctoring?.unavailable && (
+                          <span className="bg-slate-400 text-white text-[10px] uppercase px-2 py-0.5 rounded font-bold" title="Камера не была доступна — сессия без видеонаблюдения">
+                            Без камеры
+                          </span>
+                        )}
+                        {!s.proctoring?.unavailable && s.proctoring?.totalViolations > 0 && (
+                          <span
+                            className={`text-white text-[10px] uppercase px-2 py-0.5 rounded font-bold ${
+                              (s.proctoring.bySeverity?.HIGH || 0) > 0 ? "bg-red-500" : "bg-amber-500"
+                            }`}
+                            title={`Прокторинг: ${s.proctoring.totalViolations} нарушений` +
+                              (s.proctoring.honestyIndex !== null && s.proctoring.honestyIndex !== undefined
+                                ? `, индекс честности ${s.proctoring.honestyIndex}` : "")}
+                          >
+                            Нарушений: {s.proctoring.totalViolations}
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-gray-400 mt-1">{s.date ? new Date(s.date).toLocaleString() : ""}</div>
                     </td>

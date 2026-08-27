@@ -179,6 +179,19 @@ export default function Testing() {
   }, [proctoringWanted]);
 
   const proctoringActive = proctoringWanted && cameraGranted;
+  const proctor = useProctoringEngine(
+    proctorVideoRef,
+    proctorCanvasRef,
+    proctoringActive,
+    undefined,
+    {
+      detectors: proctoringConfig?.detectors,
+      // Tab switching is already policed by this page's own blur budget with a
+      // suspend flow; letting the engine warn about it too meant two different
+      // punishments for one action.
+      suppressEvents: ["TAB_SWITCH"],
+    }
+  );
 
   // Evidence: a frame grabbed at the moment of each MEDIUM/HIGH violation.
   // The engine never paints to the canvas (only the sandbox's visual overlay
@@ -248,19 +261,6 @@ export default function Testing() {
       console.warn("[Proctoring] report upload failed:", e);
     }
   };
-  const proctor = useProctoringEngine(
-    proctorVideoRef,
-    proctorCanvasRef,
-    proctoringActive,
-    undefined,
-    {
-      detectors: proctoringConfig?.detectors,
-      // Tab switching is already policed by this page's own blur budget with a
-      // suspend flow; letting the engine warn about it too meant two different
-      // punishments for one action.
-      suppressEvents: ["TAB_SWITCH"],
-    }
-  );
 
   // Sync state to sessionStorage and localStorage for OS tab kill protection
   useEffect(() => {
