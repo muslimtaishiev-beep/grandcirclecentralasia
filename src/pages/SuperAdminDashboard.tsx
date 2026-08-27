@@ -55,6 +55,7 @@ interface OrganizationProject {
   totalSubmissions: number;
   storageUsedMb: number | null;
   apiKey: string | null;
+  proctoringEnabled: boolean;
   proctoringFlags: {
     gazeAway: boolean;
     faceCount: boolean;
@@ -238,6 +239,9 @@ export default function SuperAdminDashboard() {
           totalSubmissions: counts[i] ?? 0,
           storageUsedMb: typeof data.storageUsedMb === "number" ? data.storageUsedMb : null,
           apiKey: data.apiKey || null,
+          // Default ON: tenants provisioned before this switch existed still
+          // expect proctoring to run if they enabled the module.
+          proctoringEnabled: data.proctoringEnabled !== false,
           proctoringFlags: data.proctoringFlags || {
             gazeAway: true,
             faceCount: true,
@@ -366,15 +370,36 @@ export default function SuperAdminDashboard() {
       [flagKey]: !proj.proctoringFlags[flagKey]
     };
 
+    // State was previously updated only inside catch(), so a successful toggle
+    // left the switch visually unchanged while a failed one looked applied.
     try {
-      const docRef = doc(db, "tenants", projectId);
-      await updateDoc(docRef, { proctoringFlags: updatedFlags });
-    } catch (err) {
-      // Local state fallback if doc doesn't exist yet
+      await updateDoc(doc(db, "tenants", projectId), { proctoringFlags: updatedFlags });
       setProjects(projects.map(p => p.id === projectId ? { ...p, proctoringFlags: updatedFlags } : p));
+      if (selectedOrgModal && selectedOrgModal.id === projectId) {
+        setSelectedOrgModal({ ...selectedOrgModal, proctoringFlags: updatedFlags });
+      }
+    } catch (err: any) {
+      console.error("[SuperAdmin] toggleFlag failed:", err);
+      toast.error(`Не удалось сохранить настройку: ${err?.message || "ошибка записи"}`);
     }
-    if (selectedOrgModal && selectedOrgModal.id === projectId) {
-      setSelectedOrgModal({ ...selectedOrgModal, proctoringFlags: updatedFlags });
+  };
+
+  // Master switch: with this off the student's browser never even asks for
+  // camera permission, regardless of the individual detector flags.
+  const toggleProctoringEnabled = async (projectId: string) => {
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return;
+    const next = !proj.proctoringEnabled;
+    try {
+      await updateDoc(doc(db, "tenants", projectId), { proctoringEnabled: next });
+      setProjects(projects.map(p => p.id === projectId ? { ...p, proctoringEnabled: next } : p));
+      if (selectedOrgModal && selectedOrgModal.id === projectId) {
+        setSelectedOrgModal({ ...selectedOrgModal, proctoringEnabled: next });
+      }
+      toast.success(next ? "Прокторинг включён для организации" : "Прокторинг отключён");
+    } catch (err: any) {
+      console.error("[SuperAdmin] toggleProctoringEnabled failed:", err);
+      toast.error(`Не удалось сохранить: ${err?.message || "ошибка записи"}`);
     }
   };
 
@@ -885,7 +910,28 @@ export default function SuperAdminDashboard() {
                     <span className="text-xs font-mono text-[#666666]">slug: {project.slug}</span>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2 text-xs">
+                  <div className="flex items-center justify-between gap-3 border-b border-[#222222] pb-3">
+                    <div>
+                      <div className="text-xs font-bold text-[#ededed]">Прокторинг для организации</div>
+                      <div className="text-[11px] text-[#777777] mt-0.5">
+                        {project.proctoringEnabled
+                          ? "Включён: у учеников запрашивается камера, детекторы ниже активны"
+                          : "Выключен: камера не запрашивается, детекторы ниже игнорируются"}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => toggleProctoringEnabled(project.id)}
+                      className={`shrink-0 px-4 py-1.5 rounded-md text-xs font-bold border transition cursor-pointer ${
+                        project.proctoringEnabled
+                          ? "bg-[#0b2a1d] border-[#1c6b45] text-[#50e3c2]"
+                          : "bg-[#2a1215] border-[#5c2226] text-[#f87171]"
+                      }`}
+                    >
+                      {project.proctoringEnabled ? "ВКЛЮЧЁН" : "ВЫКЛЮЧЕН"}
+                    </button>
+                  </div>
+
+                  <div className={`grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2 text-xs ${project.proctoringEnabled ? "" : "opacity-40 pointer-events-none"}`}>
                     {[
                       { key: "gazeAway", label: "Отведение взгляда" },
                       { key: "faceCount", label: "Детектор лиц" },

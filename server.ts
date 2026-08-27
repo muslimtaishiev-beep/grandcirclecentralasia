@@ -668,7 +668,36 @@ app.get("/api/exams/questions", async (req, res) => {
       });
     }
 
-    return res.json({ success: true, questions: sanitized, timeLimitMinutes: testData.timeLimitMinutes || 90 });
+    // Proctoring config travels with the questions: the student is anonymous
+    // and cannot read the tenant document from Firestore, so this is the only
+    // channel that reaches them. Master switch off => the browser never even
+    // asks for camera permission.
+    let proctoring: { enabled: boolean; detectors: Record<string, boolean> } = {
+      enabled: false,
+      detectors: {},
+    };
+    try {
+      const tenantSnap = await admin.firestore().collection("tenants").doc(resolvedTenantId).get();
+      const tenant = tenantSnap.data();
+      if (tenant) {
+        const moduleOn = Array.isArray(tenant.enabledModules)
+          ? tenant.enabledModules.includes("MODULE_ANTI_CHEAT_PROCTORING")
+          : true; // tenants predating the module list are not silently disabled
+        proctoring = {
+          enabled: moduleOn && tenant.proctoringEnabled !== false,
+          detectors: tenant.proctoringFlags || {},
+        };
+      }
+    } catch (e: any) {
+      console.warn("[Exams/Questions] Could not read proctoring config:", e.message);
+    }
+
+    return res.json({
+      success: true,
+      questions: sanitized,
+      timeLimitMinutes: testData.timeLimitMinutes || 90,
+      proctoring,
+    });
   } catch (e: any) {
     console.error("[Exams/Questions]", e);
     return res.status(500).json({ success: false, error: e.message });
