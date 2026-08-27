@@ -820,8 +820,20 @@ export default function Testing() {
           cheated: data.cheated
         });
         setPendingSubmission(false);
-        // Do not set finished here! We move to intermediate phase.
-        setPhase("intermediate");
+        // The intermediate screen exists solely to offer the English test.
+        // Grade 7 has none, so it announced "Основной тест сдан" and then
+        // asked the student to come back for a test that does not exist.
+        // Where there is no English section, go straight to the result.
+        const engQuestions = (firestoreTestData as any)?.questions?.english
+          || (grade ? (testsData as any)[grade]?.english : null)
+          || [];
+        if (engQuestions.length === 0) {
+          setFinished(true);
+          setPhase("final");
+          if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+        } else {
+          setPhase("intermediate");
+        }
       } else {
         if (data.error && (data.error.includes("уже сдавали") || data.error.includes("already submitted") || data.error.includes("already"))) {
              // Recover student and proceed gracefully
