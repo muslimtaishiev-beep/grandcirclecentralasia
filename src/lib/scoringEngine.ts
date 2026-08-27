@@ -140,12 +140,21 @@ export function isAnswerCorrect(userAnsRaw: any, targetAnsRaw: any): boolean {
   // 1. Direct match (normalized)
   if (normUser === normTarget) return true;
 
+  // Cyrillic↔Latin lookalike fold, applied ONLY to short option-letter tokens
+  // (never to full text — folding "в"→"b" would corrupt real Russian words).
+  // Seed data mixes alphabets: e.g. grade 8 math options render "А) 117°" with a
+  // CYRILLIC А while the stored key is a LATIN "A" — different code points, so a
+  // student clicking the correct option scored 0 on those questions.
+  const LOOKALIKES: Record<string, string> = { 'а': 'a', 'в': 'b', 'с': 'c', 'е': 'e', 'к': 'k', 'м': 'm', 'н': 'h', 'о': 'o', 'р': 'p', 'т': 't', 'х': 'x', 'у': 'y' };
+  const foldLookalikes = (s: string) => s.split('').map(ch => LOOKALIKES[ch] ?? ch).join('');
+
   // 2. Multiple choice prefix match (e.g. user chose "2) Текст", target is "2" or "2)")
   // Or user chose "А) 4/9", target is "А" or "A"
   const prefixMatch = userStr.match(/^([1-9A-Za-zА-Яа-яЁё]+)[\)\.\s]/);
   if (prefixMatch) {
     const prefixNorm = normalizeString(prefixMatch[1]);
     if (prefixNorm === normTarget) return true;
+    if (normTarget.length <= 2 && foldLookalikes(prefixNorm) === foldLookalikes(normTarget)) return true;
   }
 
   // 3. Substring match for list answers like "нн, н", inline inputs, drag-and-drop, dropdowns
@@ -153,7 +162,7 @@ export function isAnswerCorrect(userAnsRaw: any, targetAnsRaw: any): boolean {
     // If target is just a single character prefix like "1", "2", "a", "b",
     // only match via prefix to avoid false positives on words containing 'a'
     if (/^[a-z0-9а-я]$/i.test(normTarget)) {
-      return prefixMatch ? normalizeString(prefixMatch[1]) === normTarget : normUser.startsWith(normTarget);
+      return prefixMatch ? foldLookalikes(normalizeString(prefixMatch[1])) === foldLookalikes(normTarget) : normUser.startsWith(normTarget);
     }
     return true;
   }
