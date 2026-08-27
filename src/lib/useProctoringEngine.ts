@@ -60,7 +60,7 @@ export interface ProctoringTelemetry {
 export interface ProctoringEvent {
   id: string;
   timestamp: number;
-  type: 'GAZE_LEFT' | 'GAZE_RIGHT' | 'EXTRA_FACE' | 'HAND_BELOW' | 'SWIPE' | 'LIGHT_ANOMALY' | 'FAST_ANSWER' | 'PASTE_DETECTED' | 'TAB_SWITCH' | 'FACE_LOST' | 'PHONE_DETECTED' | 'BOOK_DETECTED' | 'SPEECH_CHEAT_DETECTED' | 'GESTURE_SIGNAL_DETECTED' | 'SILENT_LIP_SPEAKING_DETECTED';
+  type: 'GAZE_LEFT' | 'GAZE_RIGHT' | 'EXTRA_FACE' | 'HAND_BELOW' | 'SWIPE' | 'LIGHT_ANOMALY' | 'FAST_ANSWER' | 'PASTE_DETECTED' | 'TAB_SWITCH' | 'FACE_LOST' | 'PHONE_DETECTED' | 'BOOK_DETECTED' | 'SPEECH_CHEAT_DETECTED' | 'GESTURE_SIGNAL_DETECTED' | 'SILENT_LIP_SPEAKING_DETECTED' | 'CAMERA_OFF';
   severity: 'LOW' | 'MEDIUM' | 'HIGH';
   description: string;
 }
@@ -76,20 +76,25 @@ export interface WarningMessage {
 }
 
 export const PROCTORING_WARNING_MESSAGES: Record<ProctoringEvent['type'], WarningMessage> = {
-  GAZE_LEFT:  { icon: '👁️', title: 'Смотрите в экран!', body: 'Отведение взгляда зафиксировано. Сосредоточьтесь на тесте.', severity: 'MEDIUM' },
-  GAZE_RIGHT: { icon: '👁️', title: 'Смотрите в экран!', body: 'Отведение взгляда зафиксировано. Сосредоточьтесь на тесте.', severity: 'MEDIUM' },
-  EXTRA_FACE: { icon: '👥', title: 'Посторонние в кадре!', body: 'Обнаружен посторонний человек. Проходите тест самостоятельно.', severity: 'HIGH' },
-  FACE_LOST:  { icon: '👤', title: 'Вернитесь в кадр!', body: 'Ваше лицо не обнаружено. Встаньте перед камерой.', severity: 'HIGH' },
-  HAND_BELOW: { icon: '✋', title: 'Поднимите руки!', body: 'Руки должны быть видны на столе во время теста.', severity: 'MEDIUM' },
-  SWIPE:      { icon: '👆', title: 'Не подсказывайте жестами!', body: 'Жесты руками зафиксированы. Сигнализирование ответов запрещено.', severity: 'HIGH' },
-  PHONE_DETECTED:    { icon: '📱', title: 'Уберите телефон!', body: 'Телефон обнаружен в кадре. Использование устройств запрещено.', severity: 'HIGH' },
-  BOOK_DETECTED:     { icon: '📖', title: 'Уберите конспект!', body: 'Книга или конспект обнаружены. Использование материалов запрещено.', severity: 'HIGH' },
-  SPEECH_CHEAT_DETECTED:   { icon: '🗣️', title: 'Не разговаривайте!', body: 'Речь зафиксирована. Разговоры и просьбы о помощи запрещены.', severity: 'HIGH' },
-  GESTURE_SIGNAL_DETECTED: { icon: '🖐', title: 'Не подсказывайте жестами!', body: 'Сигнал пальцами зафиксирован. Жестовые подсказки запрещены.', severity: 'HIGH' },
-  LIGHT_ANOMALY:     { icon: '💡', title: 'Уберите телефон!', body: 'Свечение от экрана устройства обнаружено снизу.', severity: 'MEDIUM' },
-  PASTE_DETECTED:    { icon: '📋', title: 'Вставка текста запрещена!', body: 'Обнаружена вставка текста из буфера обмена.', severity: 'HIGH' },
-  TAB_SWITCH:        { icon: '🔀', title: 'Вернитесь на страницу теста!', body: 'Смена вкладки или окна браузера зафиксирована.', severity: 'HIGH' },
-  // ✅ Lip reading is DISABLED — telemetry runs but never fires a user-visible warning
+  GAZE_LEFT:  { icon: '👀', title: 'А куда это мы смотрим?', body: 'Взгляд ушёл в сторону. Смотри на экран.', severity: 'MEDIUM' },
+  GAZE_RIGHT: { icon: '👀', title: 'А куда это мы смотрим?', body: 'Взгляд ушёл в сторону. Смотри на экран.', severity: 'MEDIUM' },
+  EXTRA_FACE: { icon: '😠', title: 'Мне вам оценку на двоих делить?', body: 'В кадре второй человек. Тест проходят в одиночку.', severity: 'HIGH' },
+  FACE_LOST:  { icon: '🫥', title: 'Вернись в кадр', body: 'Лицо не видно. Сядь перед камерой.', severity: 'HIGH' },
+  HAND_BELOW: { icon: '✋', title: 'Держи руки на виду', body: 'Руки должны быть видны на столе.', severity: 'MEDIUM' },
+  SWIPE:      { icon: '😠', title: 'Без подсказок!', body: 'Жесты руками запрещены.', severity: 'HIGH' },
+  PHONE_DETECTED:    { icon: '📱', title: 'УБЕРИ ТЕЛЕФОН', body: 'Телефон в кадре. Устройства запрещены.', severity: 'HIGH' },
+  BOOK_DETECTED:     { icon: '📖', title: 'Убери конспект', body: 'Книга или конспект в кадре.', severity: 'HIGH' },
+  SPEECH_CHEAT_DETECTED:   { icon: '🤫', title: 'Не разговаривай', body: 'Разговоры и просьбы о помощи запрещены.', severity: 'HIGH' },
+  GESTURE_SIGNAL_DETECTED: { icon: '😠', title: 'Без подсказок!', body: 'Сигнал пальцами зафиксирован.', severity: 'HIGH' },
+  CAMERA_OFF: { icon: '📷', title: 'Эй, камеру включи', body: 'Камера отключена во время теста.', severity: 'HIGH' },
+  PASTE_DETECTED:    { icon: '📋', title: 'Вставка текста запрещена', body: 'Обнаружена вставка из буфера обмена.', severity: 'HIGH' },
+  // Suppressed inside the real exam: Testing.tsx runs its own blur/tab budget
+  // with a suspend flow, and two systems punishing the same action confused
+  // students who had already been warned once.
+  TAB_SWITCH:        { icon: '🔀', title: 'Вернись на страницу теста', body: 'Смена вкладки зафиксирована.', severity: 'HIGH' },
+  // Light anomaly is telemetry-only now — kept for type completeness.
+  LIGHT_ANOMALY:     { icon: '💡', title: '', body: '', severity: 'LOW' },
+  // Lip reading is disabled — telemetry runs but never warns.
   SILENT_LIP_SPEAKING_DETECTED: { icon: '👄', title: '', body: 'Нарушений не выявлено', severity: 'LOW' },
   FAST_ANSWER: { icon: '⚡', title: '', body: '', severity: 'LOW' }, // disabled
 };
@@ -246,10 +251,27 @@ function classifyHandGesture(landmarks: { x: number; y: number; z: number }[]): 
   const pinkyPip = landmarks[18];
   const thumbMcp = landmarks[2];
 
-  const isIndexUp = indexTip.y < indexPip.y;
-  const isMiddleUp = middleTip.y < middlePip.y;
-  const isRingUp = ringTip.y < ringPip.y;
-  const isPinkyUp = pinkyTip.y < pinkyPip.y;
+  // A finger counts as extended only if its tip is farther from the wrist than
+  // its own middle joint. The previous rule was `tip.y < pip.y`, which only
+  // holds for an upright hand: a hand resting flat on the desk or rotated
+  // sideways read as two extended fingers and fired a HIGH "gesture signal"
+  // violation at a student who was simply sitting still.
+  const middleMcp = landmarks[9];
+  const palmSpan = Math.hypot(middleMcp.x - wrist.x, middleMcp.y - wrist.y) || 0.0001;
+  const distFromWrist = (p: { x: number; y: number }) => Math.hypot(p.x - wrist.x, p.y - wrist.y);
+  const isExtended = (tip: { x: number; y: number }, pip: { x: number; y: number }) =>
+    distFromWrist(tip) > distFromWrist(pip) * 1.15;
+
+  const isIndexUp = isExtended(indexTip, indexPip);
+  const isMiddleUp = isExtended(middleTip, middlePip);
+  const isRingUp = isExtended(ringTip, ringPip);
+  const isPinkyUp = isExtended(pinkyTip, pinkyPip);
+
+  // Only trust finger counting when the palm is roughly upright and fully in
+  // view. A tilted/edge-on hand gives unreliable landmarks, and misreading it
+  // as a "signal to a helper" is exactly the false positive we're removing.
+  const palmVerticality = Math.abs(wrist.y - middleMcp.y) / palmSpan;
+  const isPalmUpright = palmVerticality > 0.55 && middleMcp.y < wrist.y;
 
   const isThumbOut = Math.hypot(thumbTip.x - wrist.x, thumbTip.y - wrist.y) > Math.hypot(thumbMcp.x - wrist.x, thumbMcp.y - wrist.y) * 1.20;
 
@@ -258,6 +280,12 @@ function classifyHandGesture(landmarks: { x: number; y: number; z: number }[]): 
   if (isMiddleUp) count++;
   if (isRingUp) count++;
   if (isPinkyUp) count++;
+
+  if (!isPalmUpright) {
+    // Hand present but not in a readable orientation — report it as a neutral
+    // palm so telemetry still shows the hand, without accusing anyone.
+    return { gesture: 'NONE', label: 'Ладонь', extendedFingers: count };
+  }
 
   if (isThumbOut && !isIndexUp && !isMiddleUp && !isRingUp && !isPinkyUp) {
     if (thumbTip.y < wrist.y - 0.08) {
@@ -325,7 +353,11 @@ function evaluateSemanticIntent(text: string, currentQuestionText?: string): {
     }
   }
 
-  const hasAiOrDeviceCall = /(?:сири|siri|эй чувак|чувак|эй|эй брат|гугл|яндекс|алиса|сафари|гпт|gpt|chat|джипити|поиск|найди)/i.test(clean);
+  // Note the bare "эй" is gone: it matched the interjection on its own, so a
+  // student muttering "эй, ну ладно" was scored 95% "talking to an AI
+  // assistant" and got a HIGH violation. Wake-words must now be the actual
+  // assistant names, or "эй" bound to one of them.
+  const hasAiOrDeviceCall = /(?:сири|siri|окей гугл|эй гугл|гугл|яндекс|алиса|сафари|гпт|gpt|chatgpt|джипити|эй чувак|эй брат)/i.test(clean);
   if (hasAiOrDeviceCall) {
     return {
       probability: 95,
@@ -334,8 +366,13 @@ function evaluateSemanticIntent(text: string, currentQuestionText?: string): {
     };
   }
 
-  const hasConversationalAnswerPrompt = /(?:что в|что во|какой|какая|какое|че там|чо там|подскажи|помоги|скажи|выбери)\s*(?:первом|втором|третьем|четвертом|пятом|шестом|седьмом|восьмом|варианте|букве|ответ)?/i.test(clean)
-    || /(?:первое|второе|третье|четвертое|пятое|первый|второй|третий|четвертый|пятый)\b/i.test(clean);
+  // A bare ordinal ("первое", "второй") no longer counts on its own — students
+  // routinely read the numbered options aloud while thinking, and that alone
+  // was scored 90%. An ordinal now only matters when paired with an explicit
+  // ask ("подскажи второе", "какой ответ").
+  const hasAskVerb = /(?:что в|что во|какой|какая|какое|че там|чо там|подскажи|помоги|скажи|выбери|ответ)/i.test(clean);
+  const hasOrdinalReference = /(?:перв(?:ое|ый|ом)|втор(?:ое|ой|ом)|треть(?:е|ий|ем)|четверт(?:ое|ый|ом)|пят(?:ое|ый|ом)|вариант|букв)/i.test(clean);
+  const hasConversationalAnswerPrompt = hasAskVerb && hasOrdinalReference;
 
   if (hasConversationalAnswerPrompt) {
     return {
@@ -423,11 +460,35 @@ function getLightCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingCont
   return _lightCtx ? { canvas: _lightCanvas, ctx: _lightCtx } : null;
 }
 
+/** Which detectors a tenant has switched on. Absent flags default to enabled. */
+export interface ProctoringDetectorFlags {
+  gazeAway?: boolean;
+  faceCount?: boolean;
+  handTracking?: boolean;
+  audioAnalysis?: boolean;
+  phoneDetection?: boolean;
+}
+
+/** Event types each tenant-facing detector flag governs. */
+const DETECTOR_EVENT_MAP: Record<keyof ProctoringDetectorFlags, ProctoringEvent['type'][]> = {
+  gazeAway: ['GAZE_LEFT', 'GAZE_RIGHT'],
+  faceCount: ['EXTRA_FACE', 'FACE_LOST'],
+  handTracking: ['HAND_BELOW', 'SWIPE', 'GESTURE_SIGNAL_DETECTED'],
+  audioAnalysis: ['SPEECH_CHEAT_DETECTED'],
+  phoneDetection: ['PHONE_DETECTED', 'BOOK_DETECTED'],
+};
+
 export function useProctoringEngine(
   videoRef: RefObject<HTMLVideoElement | null>,
   canvasRef: RefObject<HTMLCanvasElement | null>,
   isActive: boolean,
-  currentQuestionText?: string
+  currentQuestionText?: string,
+  options?: {
+    /** Per-tenant detector switches from the superadmin console. */
+    detectors?: ProctoringDetectorFlags;
+    /** Event types to drop entirely (the exam suppresses TAB_SWITCH). */
+    suppressEvents?: ProctoringEvent['type'][];
+  }
 ) {
   const [telemetry, setTelemetry] = useState<ProctoringTelemetry>({
     headPose: { pitch: 0, yaw: 0, roll: 0 },
@@ -510,6 +571,7 @@ export function useProctoringEngine(
 
   // Hand tracking
   const previousWristX = useRef<number | null>(null);
+  const swipeConfirmCount = useRef<number>(0);
   const lastWristTime = useRef<number>(0);
   const gestureHoldStart = useRef<number | null>(null);
   const activeGestureNameRef = useRef<string | null>(null);
@@ -525,7 +587,24 @@ export function useProctoringEngine(
   const currentQuestionTextRef = useRef<string | undefined>(currentQuestionText);
   currentQuestionTextRef.current = currentQuestionText;
 
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
   const addEvent = useCallback((eventInit: Omit<ProctoringEvent, 'id' | 'timestamp'>) => {
+    // Single choke point for tenant detector switches and exam-level
+    // suppression, so a disabled detector costs no honesty points and never
+    // reaches the student's screen or the manager's report.
+    const opts = optionsRef.current;
+    if (opts?.suppressEvents?.includes(eventInit.type)) return;
+    const detectors = opts?.detectors;
+    if (detectors) {
+      for (const [flag, types] of Object.entries(DETECTOR_EVENT_MAP)) {
+        if (types.includes(eventInit.type) && detectors[flag as keyof ProctoringDetectorFlags] === false) {
+          return;
+        }
+      }
+    }
+
     const newEvent: ProctoringEvent = {
       ...eventInit,
       id: crypto.randomUUID(),
@@ -577,7 +656,10 @@ export function useProctoringEngine(
               speechIntentCategory: intentCategory,
             }));
 
-            if (probability >= 60 && Date.now() - lastSpeechEvent.current > EVENT_COOLDOWN) {
+            // 75, not 60: the classifier's mid band is where innocent thinking
+            // aloud lands, and a false accusation of cheating is far costlier
+            // here than a missed whisper.
+            if (probability >= 75 && Date.now() - lastSpeechEvent.current > EVENT_COOLDOWN) {
               addEventRef.current({
                 type: 'SPEECH_CHEAT_DETECTED',
                 severity: probability >= 85 ? 'HIGH' : 'MEDIUM',
@@ -676,7 +758,10 @@ export function useProctoringEngine(
         setLoadingProgress('1/3 Загрузка движка WebAssembly...');
         
         const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+          // Pinned to the installed version, not @latest: an upstream release
+          // could change the WASM contract and break every live exam without a
+          // single commit on our side.
+          `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm`
         );
 
         setLoadingProgress('2/3 Загрузка нейросетей лица и рук...');
@@ -919,94 +1004,14 @@ export function useProctoringEngine(
           const minMar = Math.min(...marHistoryRef.current);
           const marDelta = maxMar - minMar;
 
-          // 🧠 ONLY Chaplin VSR Neural Network (Google Colab T4 GPU)
-          if ((marDelta > 0.02 || microRes.viseme !== 'RESTING') && !(window as any)._chaplinBusy) {
-            (window as any)._chaplinBusy = true;
-            updates.isSilentLipSpeaking = true;
-
-            const videoEl = videoRef.current;
-            const canvasEl = canvasRef.current;
-            const mediaStream = (videoEl && (videoEl as any).srcObject) || (canvasEl && canvasEl.captureStream ? canvasEl.captureStream(16) : null);
-
-            if (mediaStream) {
-              try {
-                const rec = new MediaRecorder(mediaStream, { mimeType: 'video/webm' });
-                const chunks: Blob[] = [];
-                rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
-                rec.onstop = async () => {
-                  if (chunks.length === 0) {
-                    (window as any)._chaplinBusy = false;
-                    return;
-                  }
-                  const blob = new Blob(chunks, { type: 'video/webm' });
-                  const fd = new FormData();
-                  fd.append('video', blob, 'lips.webm');
-
-                  try {
-                    const customUrl = typeof window !== 'undefined' ? localStorage.getItem('CHAPLIN_VSR_URL') : null;
-                    const urls = [
-                      customUrl,
-                      'https://flooring-soonest-accommodations-shower.trycloudflare.com/api/vsr/decode',
-                      (import.meta as any).env?.VITE_CHAPLIN_VSR_API_URL,
-                    ].filter((u): u is string => {
-                      if (!u || typeof u !== 'string') return false;
-                      if (typeof window !== 'undefined' && window.location.protocol === 'https:' && u.startsWith('http:')) return false;
-                      return true;
-                    });
-
-                    for (const targetUrl of urls) {
-                      console.log('🎥 [CHAPLIN VSR] Отправка видеоклипа рта на GPU сервер:', targetUrl);
-                      try {
-                        const res = await fetch(targetUrl, { method: 'POST', body: fd, mode: 'cors' });
-                        if (res.ok) {
-                          const json = await res.json();
-                          console.log('👄 [CHAPLIN VSR] Ответ от нейросети:', json);
-                          if (json && json.text && json.text.trim().length > 0) {
-                            const vsrText = json.text.trim();
-                            const semanticRes = evaluateSemanticIntent(vsrText, currentQuestionTextRef.current);
-
-                            setTelemetry(prev => ({
-                              ...prev,
-                              decodedLipWord: vsrText,
-                              speechProbability: semanticRes.probability,
-                              speechIntentCategory: semanticRes.intentCategory,
-                              lastTranscript: `👄 [CHAPLIN VSR]: "${vsrText}"`
-                            }));
-
-                            if (semanticRes.probability >= 40 && Date.now() - lastSilentLipEvent.current > EVENT_COOLDOWN) {
-                              // ✅ LIP READING EVENTS ARE DISABLED by product decision.
-                              // Telemetry (decodedLipWord, isSilentLipSpeaking) still updates for admin UI
-                              // but NO violation event is generated for the student or report.
-                              lastSilentLipEvent.current = Date.now();
-                            }
-                            break;
-                          }
-                        }
-                      } catch (err) {
-                        console.warn('⚠️ Chaplin VSR Ошибка сети:', err);
-                      }
-                    }
-                  } catch (e) {
-                    console.warn('⚠️ Chaplin VSR Ошибка обращения к API:', e);
-                  }
-                  
-                  // Охлаждение 2 секунды перед следующим запросом к Chaplin
-                  setTimeout(() => {
-                    (window as any)._chaplinBusy = false;
-                  }, 2000);
-                };
-
-                rec.start();
-                setTimeout(() => { if (rec.state === 'recording') rec.stop(); }, 1500);
-              } catch (e) {
-                (window as any)._chaplinBusy = false;
-              }
-            } else {
-              (window as any)._chaplinBusy = false;
-            }
-          } else {
-            updates.isSilentLipSpeaking = false;
-          }
+          // Lip reading (Chaplin VSR) removed.
+          // It POSTed a 1.5s webm clip of the student's mouth to a hardcoded
+          // *.trycloudflare.com tunnel — a dead ephemeral address — on nearly
+          // every frame where the mouth moved at all, so it burned bandwidth
+          // and CPU for nothing. It also never raised a violation by product
+          // decision, so no detection capability is lost. Talking is already
+          // caught by the microphone. Mouth telemetry below is kept.
+          updates.isSilentLipSpeaking = false;
 
           // LIGHT ANOMALY DETECTION
           const lc = getLightCanvas();
@@ -1053,23 +1058,15 @@ export function useProctoringEngine(
                 const bottomAvg = bottomPixels > 0 ? bottomSum / bottomPixels : 0;
                 const diff = bottomAvg - topAvg;
 
-                if (topAvg > 0 && bottomAvg > topAvg * 1.75 && diff > 45) {
-                  updates.lightAnomaly = true;
-                  if (!lightAnomalyStart.current) lightAnomalyStart.current = now;
-                  else if (now - lightAnomalyStart.current > 3500) {
-                    if (now - lastLightEvent.current > EVENT_COOLDOWN) {
-                      addEventRef.current({
-                        type: 'LIGHT_ANOMALY',
-                        severity: 'HIGH',
-                        description: 'Свечение от смартфона/планшета снизу (яркий холодный свет).'
-                      });
-                      lastLightEvent.current = now;
-                    }
-                  }
-                } else {
-                  updates.lightAnomaly = false;
-                  lightAnomalyStart.current = null;
-                }
+                // Telemetry only — this no longer raises a violation.
+                // The heuristic compares forehead brightness against chin
+                // brightness, so a desk lamp, a window below eye level or even a
+                // light-coloured shirt reflecting upward made the chin >1.75x
+                // brighter and produced a HIGH violation reading "Уберите
+                // телефон!" at students who had no phone. It fired on almost
+                // everything, so the signal was worthless and actively unfair.
+                updates.lightAnomaly = topAvg > 0 && bottomAvg > topAvg * 1.75 && diff > 45;
+                lightAnomalyStart.current = null;
               } catch (e) {}
             }
           }
@@ -1103,7 +1100,11 @@ export function useProctoringEngine(
           for (const handLandmarks of handLandmarksList) {
             const wrist = handLandmarks[0];
             
-            if (wrist.y > 0.72) {
+            // 0.88, not 0.72: at 0.72 a hand simply resting on the desk falls
+            // into the "below desk" band of a normal webcam frame and every
+            // student got flagged for sitting still. Only a hand that has
+            // genuinely dropped out of frame counts now.
+            if (wrist.y > 0.88) {
               isBelow = true;
             }
 
@@ -1150,13 +1151,23 @@ export function useProctoringEngine(
               const dt = now - lastWristTime.current;
               if (dt > 0 && dt <= 300) {
                 const dx = Math.abs(wrist.x - previousWristX.current);
-                if (dx > 0.20 && now - lastSwipeEvent.current > EVENT_COOLDOWN) {
+                // Require the fast motion on two consecutive frames. A single
+                // frame over the threshold is usually a tracking jump or the
+                // student reaching for the mouse, and it fired instantly with
+                // no hold at all.
+                if (dx > 0.20) {
+                  swipeConfirmCount.current += 1;
+                } else {
+                  swipeConfirmCount.current = 0;
+                }
+                if (swipeConfirmCount.current >= 2 && now - lastSwipeEvent.current > EVENT_COOLDOWN) {
                   addEventRef.current({
                     type: 'SWIPE',
                     severity: 'HIGH',
                     description: 'Резкий свайп-жест рукой (переключение на смартфоне).'
                   });
                   lastSwipeEvent.current = now;
+                  swipeConfirmCount.current = 0;
                   previousWristX.current = null;
                 }
               }
@@ -1170,7 +1181,7 @@ export function useProctoringEngine(
           if (isBelow) {
             updates.handStatus = 'BELOW_DESK';
             if (!handBelowStart.current) handBelowStart.current = now;
-            else if (now - handBelowStart.current > 1500) {
+            else if (now - handBelowStart.current > 3000) {
               if (now - lastHandBelowEvent.current > EVENT_COOLDOWN) {
                 addEventRef.current({
                   type: 'HAND_BELOW',
@@ -1296,6 +1307,49 @@ export function useProctoringEngine(
       window.removeEventListener('blur', handleBlur);
     };
   }, [isActive, addEvent]);
+
+  // Camera cut detection. Previously there was none: covering the lens or
+  // unplugging the webcam only surfaced as FACE_LOST, and killing the track
+  // outright made detectForVideo throw into a silent catch — so a student could
+  // simply switch the camera off and the session looked normal.
+  useEffect(() => {
+    if (!isActive) return;
+    const video = videoRef.current;
+    const stream = video && (video.srcObject as MediaStream | null);
+    if (!stream) return;
+
+    const tracks = stream.getVideoTracks();
+    if (tracks.length === 0) return;
+
+    let reported = false;
+    const report = (reason: string) => {
+      if (reported) return;
+      reported = true;
+      addEventRef.current({ type: 'CAMERA_OFF', severity: 'HIGH', description: `Камера отключена во время теста (${reason}).` });
+    };
+
+    const onEnded = () => report('поток завершён');
+    const onMute = () => report('поток заглушен');
+    tracks.forEach((t) => {
+      t.addEventListener('ended', onEnded);
+      t.addEventListener('mute', onMute);
+    });
+
+    // A track can go to readyState 'ended' without firing the event on some
+    // browsers, so poll as a backstop.
+    const poll = window.setInterval(() => {
+      if (tracks.some((t) => t.readyState === 'ended')) report('камера недоступна');
+      else if (tracks.every((t) => !t.enabled)) report('камера выключена');
+    }, 2000);
+
+    return () => {
+      window.clearInterval(poll);
+      tracks.forEach((t) => {
+        t.removeEventListener('ended', onEnded);
+        t.removeEventListener('mute', onMute);
+      });
+    };
+  }, [isActive, videoRef]);
 
   useEffect(() => {
     if (isActive && isReady) {
