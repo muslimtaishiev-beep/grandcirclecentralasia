@@ -139,39 +139,63 @@ export default function Testing() {
   // permission prompt.
   const proctoringWanted = Boolean(proctoringConfig?.enabled) && started && !finished && (phase === "core" || phase === "english");
 
+  // Acquires the camera once and hands the stream to the hidden <video> the
+  // engine reads from. Called from startTest (before fullscreen, inside the
+  // click gesture) and again from the effect below as a safety net for a
+  // restored/resumed session that never passed through startTest.
+  //
+  // No session recording is made: storing 90-minute video needs Firebase
+  // Storage, which requires the Blaze plan. The evidence the manager acts on —
+  // the violation log with timestamps and a snapshot at each violation — fits
+  // in Firestore and costs nothing.
+  const acquireProctoringCamera = async (): Promise<boolean> => {
+    if (proctorStreamRef.current) return true;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+        audio: Boolean(proctoringConfig?.detectors?.audioAnalysis !== false),
+      });
+      proctorStreamRef.current = stream;
+      if (proctorVideoRef.current) {
+        proctorVideoRef.current.srcObject = stream;
+        try { await proctorVideoRef.current.play(); } catch (e) {}
+      }
+      setCameraGranted(true);
+      setProctoringUnavailable(false);
+      return true;
+    } catch (e) {
+      // Denied, missing or busy camera must never cost a student their exam —
+      // they carry on, and the submission is flagged so the manager knows the
+      // session was unsupervised rather than clean.
+      console.warn("[Proctoring] camera unavailable:", e);
+      setProctoringUnavailable(true);
+      return false;
+    }
+  };
+
   useEffect(() => {
     if (!proctoringWanted) return;
+    if (proctorStreamRef.current) return;      // already granted in startTest
+    if (proctoringUnavailable) return;         // already refused; do not re-prompt
     let cancelled = false;
-
     (async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
+      const stream = await navigator.mediaDevices
+        .getUserMedia({
           video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
           audio: Boolean(proctoringConfig?.detectors?.audioAnalysis !== false),
-        });
-        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
-        proctorStreamRef.current = stream;
-        if (proctorVideoRef.current) {
-          proctorVideoRef.current.srcObject = stream;
-          try { await proctorVideoRef.current.play(); } catch (e) {}
-        }
-        setCameraGranted(true);
-
-        // No session recording. Storing 90-minute video needs Firebase Storage,
-        // which requires the Blaze plan; the evidence the manager actually acts
-        // on — the violation log with timestamps and a snapshot taken at each
-        // violation — fits in Firestore and costs nothing.
-      } catch (e) {
-        // Denied, missing or busy camera must never cost a student their exam —
-        // they carry on, and the submission is flagged so the manager knows the
-        // session was unsupervised rather than clean.
-        console.warn("[Proctoring] camera unavailable:", e);
-        if (!cancelled) setProctoringUnavailable(true);
+        })
+        .catch((e) => { console.warn("[Proctoring] camera unavailable:", e); return null; });
+      if (!stream) { if (!cancelled) setProctoringUnavailable(true); return; }
+      if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+      proctorStreamRef.current = stream;
+      if (proctorVideoRef.current) {
+        proctorVideoRef.current.srcObject = stream;
+        try { await proctorVideoRef.current.play(); } catch (e) {}
       }
+      setCameraGranted(true);
     })();
-
     return () => { cancelled = true; };
-  }, [proctoringWanted]);
+  }, [proctoringWanted, proctoringUnavailable]);
 
   // Release the camera as soon as proctoring is no longer wanted (submit, finish).
   useEffect(() => {
@@ -480,6 +504,24 @@ export default function Testing() {
     const handleFullscreenChange = () => {
       if (!document.fullscreenElement && !(document as any).webkitFullscreenElement) {
         setIsFullscreenViolation(true);
+        // Record it: leaving fullscreen is the moment an exam most often goes
+        // wrong, and it was previously invisible to both the manager and the
+        // audit log. keepalive so it still lands if the tab is being closed.
+        try {
+          fetch("/api/exams/event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            keepalive: true,
+            body: JSON.stringify({
+              event: "fullscreen_exit",
+              shortId,
+              tenantId: orgSlug || "org_future_leaders",
+              studentName,
+              grade,
+              detail: `фаза: ${phaseRef.current}`,
+            }),
+          }).catch(() => {});
+        } catch (e) { /* logging must never disturb the exam */ }
       }
     };
 
@@ -656,6 +698,15 @@ export default function Testing() {
       const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
       if (enteredPin !== EXPECTED_PIN && (!TESTER_PIN || enteredPin !== TESTER_PIN)) {
         return alert("Неверный PIN-код. Узнайте актуальный PIN у менеджера.");
+      }
+
+      // Camera BEFORE fullscreen. Browsers refuse to render the permission
+      // prompt over a fullscreen page, so asking afterwards left the student
+      // stuck: they had to press Escape, breaking out of the exam, just to
+      // grant access. Asking here also keeps the request inside the click
+      // handler, which is the gesture Safari requires.
+      if (proctoringConfig?.enabled) {
+        await acquireProctoringCamera();
       }
 
       try {

@@ -36,7 +36,16 @@ router.get("/me", requireFirebaseAuth, async (req: any, res: any) => {
     const userDoc = await db.collection("users").doc(uid).get();
     let userData = userDoc.data();
 
+    // This endpoint runs on every page render, so a log line per call would
+    // bury the audit trail in noise. Only a genuinely new session is recorded:
+    // a first-ever profile, or a gap of more than 30 minutes since the last
+    // seen request. That gives one row per sign-in, which is what an audit
+    // reader actually wants.
+    const SESSION_GAP_MS = 30 * 60 * 1000;
+    let isNewSession = false;
+
     if (!userDoc.exists) {
+      isNewSession = true;
       userData = {
         id: uid,
         email: req.user.email,
@@ -48,10 +57,27 @@ router.get("/me", requireFirebaseAuth, async (req: any, res: any) => {
       };
       await db.collection("users").doc(uid).set(userData);
     } else {
+      const prev = userData?.lastLoginAt;
+      const prevMs = prev?.toMillis ? prev.toMillis() : (prev ? Date.parse(prev) : 0);
+      isNewSession = !prevMs || (Date.now() - prevMs) > SESSION_GAP_MS;
       await db.collection("users").doc(uid).update({
         lastLoginAt: admin.firestore.FieldValue.serverTimestamp(),
       });
       userData.lastLoginAt = new Date().toISOString();
+    }
+
+    if (isNewSession) {
+      db.collection("audit_logs").add({
+        timestamp: admin.firestore.Timestamp.now(),
+        createdAt: new Date().toISOString(),
+        action: "LOGIN_SUCCESS",
+        tenantId: userData?.defaultTenantId || "unknown",
+        actorUid: uid,
+        actorEmail: req.user.email || "",
+        actorName: userData?.displayName || "",
+        ip: (req.headers["x-forwarded-for"] || "").toString().split(",")[0].trim() || req.ip || "",
+        userAgent: (req.headers["user-agent"] || "").toString().slice(0, 200),
+      }).catch(() => {});
     }
 
     // Get all memberships for user

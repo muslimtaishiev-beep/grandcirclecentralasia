@@ -303,13 +303,21 @@ export default function SuperAdminDashboard() {
         const detail = l.studentName
           ? `${l.studentName} (ID ${l.studentShortId ?? "—"}, ${l.grade ?? "?"} кл.)` +
             (l.scores ? ` — ${l.scores.total ?? 0} балл.` : "") +
+            (l.detail ? ` — ${l.detail}` : "") +
+            (l.actor ? ` — разрешил: ${l.actor}` : "") +
             (l.cheated ? " ⚠ списывание" : "")
-          : (l.details || l.action || "Событие");
+          // Staff events (logins, role changes) carry an actor rather than a
+          // student; without this they rendered as a bare action name.
+          : l.actorEmail
+            ? `${l.actorName || l.actorEmail}${l.ip ? ` · ${l.ip}` : ""}`
+            : (l.details || l.detail || l.action || "Событие");
         list.push({
           id: d.id,
           timestamp: l.timestamp?.toDate ? l.timestamp.toDate().toLocaleString("ru-RU") : (l.createdAt ? new Date(l.createdAt).toLocaleString("ru-RU") : "—"),
           orgSlug: l.tenantId || l.target || "system",
-          level: l.cheated ? "WARN" : (/REJECT|ERROR|FAIL/i.test(l.action || "") ? "WARN" : "SUCCESS"),
+          level: l.cheated || /VIOLATION|FULLSCREEN_EXIT|SUSPENDED/i.test(l.action || "")
+            ? "WARN"
+            : (/REJECT|ERROR|FAIL/i.test(l.action || "") ? "WARN" : "SUCCESS"),
           route: l.action || "AUDIT_EVENT",
           message: detail,
           durationMs: 0,

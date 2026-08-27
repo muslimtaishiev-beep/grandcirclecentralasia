@@ -118,6 +118,30 @@ try {
   console.warn("⚠️ Failed to initialize Firebase Admin. Falling back to local db.json.", e);
 }
 
+// ── AUDIT TRAIL ───────────────────────────────────────────────────────────
+// One writer for every logged action, so the superadmin log and the manager
+// dashboard see the same shape no matter which endpoint produced the entry.
+// Fire-and-forget by design: an audit write must never delay or fail the
+// operation it is recording — losing a log line is bad, losing a student's
+// exam because logging hiccuped is far worse.
+export type AuditAction =
+  | "EXAM_STARTED" | "EXAM_SUBMITTED" | "EXAM_ENGLISH_SUBMITTED"
+  | "EXAM_SUSPENDED" | "EXAM_RESUME_REQUESTED" | "EXAM_RESUME_APPROVED"
+  | "EXAM_FULLSCREEN_EXIT" | "PROCTORING_REPORT" | "PROCTORING_VIOLATION"
+  | "LOGIN_SUCCESS" | "LOGIN_FAILED" | "LOGOUT"
+  | "TENANT_CREATED" | "TENANT_UPDATED" | "MEMBER_INVITED" | "MEMBER_ROLE_CHANGED";
+
+function writeAuditLog(action: AuditAction, tenantId: string, fields: Record<string, any> = {}) {
+  if (!useFirebase) return;
+  admin.firestore().collection("audit_logs").add({
+    timestamp: admin.firestore.Timestamp.now(),
+    createdAt: new Date().toISOString(),
+    action,
+    tenantId: tenantId || "unknown",
+    ...fields,
+  }).catch((e) => console.warn(`[Audit] ${action} write failed:`, e?.message));
+}
+
 // Middleware
 // Removed duplicate app.use(express.json()) to preserve the 10MB limit set above.
 // Memory active sessions store
@@ -728,6 +752,35 @@ app.post("/api/exams/telemetry", async (req, res) => {
   }
 });
 
+// 2a. POST /api/exams/event — client-side exam events that only the browser can
+// observe (leaving fullscreen, closing the tab mid-exam). Anonymous by design:
+// the student has no auth session. Only a fixed set of action names is accepted
+// so an open endpoint cannot be used to forge arbitrary audit history.
+const STUDENT_EVENT_ACTIONS: Record<string, AuditAction> = {
+  fullscreen_exit: "EXAM_FULLSCREEN_EXIT",
+  resume_requested: "EXAM_RESUME_REQUESTED",
+  violation: "PROCTORING_VIOLATION",
+};
+
+app.post("/api/exams/event", (req, res) => {
+  try {
+    const { event, shortId, tenantId, studentName, grade, detail } = req.body || {};
+    const action = STUDENT_EVENT_ACTIONS[String(event)];
+    if (!action) return res.status(400).json({ success: false, error: "Unknown event" });
+    if (!shortId) return res.status(400).json({ success: false, error: "Missing shortId" });
+
+    writeAuditLog(action, tenantId || "org_future_leaders", {
+      studentShortId: String(shortId),
+      studentName: studentName || "",
+      grade: Number(grade) || 0,
+      detail: typeof detail === "string" ? detail.slice(0, 300) : "",
+    });
+    return res.json({ success: true });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message || "Failed" });
+  }
+});
+
 // 2b. POST /api/exams/proctoring-report — the session dossier the manager reads.
 // Students are anonymous, so this cannot be a client-side Firestore write; the
 // server attaches it to the submission the manager already opens.
@@ -1057,19 +1110,18 @@ async function processExamSubmission(payload: any) {
       };
       await admin.firestore().collection("crm_deals").doc(dealId).set(dealDoc, { merge: true });
 
-      // Audit Log
-      admin.firestore().collection("audit_logs").add({
-        timestamp: admin.firestore.Timestamp.now(),
-        createdAt: new Date().toISOString(),
-        action: "EXAM_SUBMITTED",
-        tenantId: resolvedTenantId,
+      // Audit Log. The two submits are distinguished because a student can hand
+      // in the core test and take English later — one row for both made an
+      // unfinished attempt look identical to a completed one.
+      writeAuditLog(action === "submitEnglishTest" ? "EXAM_ENGLISH_SUBMITTED" : "EXAM_SUBMITTED", resolvedTenantId, {
         sessionId: submissionId,
         studentName: studentName || "Неизвестно",
         studentShortId: String(shortId),
         grade: Number(grade) || 0,
         scores: scores,
-        cheated: Boolean(cheated)
-      }).catch(e => console.error("Audit log write notice:", e));
+        cheated: Boolean(cheated),
+        isTester: Boolean(isTester),
+      });
     } catch (fsErr) {
       console.warn("[Exams/Submit] Firestore write notice:", fsErr);
     }
@@ -1366,6 +1418,22 @@ app.post("/api/gas", async (req, res) => {
       }).catch(err => console.warn(`[GAS Mirror] ${mirrorPayload.action} notice:`, err.message));
     };
 
+    // The start of an exam was not recorded anywhere, so a session that never
+    // reached submit (student dropped out, browser died) left no trace at all:
+    // the superadmin log showed nothing and the manager could not tell an
+    // interrupted attempt from one that never happened.
+    if (payload.action === "registerStudent" && payload.shortId) {
+      writeAuditLog("EXAM_STARTED", payload.tenantId || "org_future_leaders", {
+        studentShortId: String(payload.shortId),
+        studentName: payload.studentName || "",
+        studentPhone: payload.studentPhone || "",
+        studentEmail: payload.studentEmail || "",
+        grade: Number(payload.grade) || 0,
+        sessionId: payload.testId || "",
+        isTester: Boolean(payload.isTester),
+      });
+    }
+
     if (payload.action === "suspendTest" && useFirebase && payload.shortId) {
       try {
         await admin.firestore().collection("exam_suspensions").doc(String(payload.shortId)).set({
@@ -1378,6 +1446,13 @@ app.post("/api/gas", async (req, res) => {
           status: "ПРИОСТАНОВЛЕН",
           suspendedAt: admin.firestore.Timestamp.now(),
         }, { merge: true });
+        writeAuditLog("EXAM_SUSPENDED", payload.tenantId || "org_future_leaders", {
+          studentShortId: String(payload.shortId),
+          studentName: payload.studentName || "",
+          grade: Number(payload.grade) || 0,
+          phase: payload.phase || "core",
+          reason: payload.reason || "Выход из режима теста",
+        });
         mirrorToGas(payload);
         return res.json({ success: true, status: "ПРИОСТАНОВЛЕН" });
       } catch (e: any) {
@@ -1444,7 +1519,13 @@ app.post("/api/gas", async (req, res) => {
           shortId: String(payload.shortId),
           status: "В ПРОЦЕССЕ",
           unblockedAt: admin.firestore.Timestamp.now(),
+          unblockedBy: payload.managerName || payload.actorEmail || "",
         }, { merge: true });
+        writeAuditLog("EXAM_RESUME_APPROVED", payload.tenantId || "org_future_leaders", {
+          studentShortId: String(payload.shortId),
+          studentName: payload.studentName || "",
+          actor: payload.managerName || payload.actorEmail || "",
+        });
         mirrorToGas(payload);
         return res.json({ success: true });
       } catch (e: any) {

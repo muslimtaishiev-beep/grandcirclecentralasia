@@ -20,6 +20,11 @@ export default function ManagerDashboard() {
   const { tenant } = useTenant();
   const navigate = useNavigate();
   const [dossierFor, setDossierFor] = useState<string | null>(null);
+  // Exams a student was thrown out of (lost fullscreen, tab killed, connection
+  // dropped). The server already tracked these in `exam_suspensions` and could
+  // already unblock them, but there was no way for a manager to see or act on
+  // one — the student simply stayed locked out.
+  const [suspended, setSuspended] = useState<any[]>([]);
   const { user, loading: authLoading } = useAuth();
   const { orgId: routeOrgId } = useParams();
   const activeTenantId = routeOrgId || tenant?.id;
@@ -475,8 +480,50 @@ export default function ManagerDashboard() {
     }
     if (user && activeTenantId) {
       fetchStudents();
+      fetchSuspended(activeTenantId);
     }
   }, [user, activeTenantId, navigate]);
+
+  const fetchSuspended = async (tenantId: string) => {
+    try {
+      const { query, where, getDocs, collection } = await import('firebase/firestore');
+      const { db } = await import('../lib/firebase');
+      const snap = await getDocs(query(
+        collection(db, 'exam_suspensions'),
+        where('tenantId', '==', tenantId),
+        where('status', '==', 'ПРИОСТАНОВЛЕН'),
+      ));
+      setSuspended(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      // A failure here must not blank the whole dashboard — the roster below
+      // is the primary content and loads independently.
+      console.warn('[Manager] suspensions load failed:', e);
+    }
+  };
+
+  const unblockStudent = async (row: any) => {
+    if (!confirm(`Разрешить ${row.studentName || row.shortId} продолжить тест?`)) return;
+    setUnblockingId(row.shortId);
+    try {
+      const res = await fetchGasAPI("/api/gas", {
+        action: "unblockStudent",
+        shortId: row.shortId,
+        tenantId: activeTenantId || 'org_future_leaders',
+        studentName: row.studentName || "",
+        managerName: user?.displayName || user?.email || "",
+      }, "");
+      if (res?.success) {
+        toast.success(`✅ ${row.studentName || row.shortId} может продолжить тест`);
+        setSuspended(prev => prev.filter(x => x.shortId !== row.shortId));
+      } else {
+        toast.error("Не удалось разрешить: " + (res?.error || "неизвестная ошибка"));
+      }
+    } catch (e: any) {
+      toast.error("Ошибка: " + e.message);
+    } finally {
+      setUnblockingId(null);
+    }
+  };
 
   const fetchStudents = async () => {
     setLoading(true);
@@ -768,6 +815,50 @@ export default function ManagerDashboard() {
             <button onClick={() => navigate(`/workspace/${activeTenantId}/tests/check`)} className="bg-blue-600 text-white px-4 py-2 rounded-xl shadow font-medium hover:bg-blue-700">+ Новая анкета</button>
           </div>
         </div>
+
+        {/* Interrupted exams awaiting a decision. Shown above the roster because
+            a student sitting locked out of a running exam is time-critical —
+            unlike the roster, which can be read at any point. */}
+        {suspended.length > 0 && (
+          <div className="mb-6 bg-amber-50 border border-amber-300 rounded-2xl overflow-hidden">
+            <div className="px-5 py-3 border-b border-amber-200 flex items-center gap-2">
+              <span className="text-lg">⏸️</span>
+              <h3 className="font-bold text-amber-900">
+                Прерванные тесты — ожидают решения ({suspended.length})
+              </h3>
+            </div>
+            <div className="divide-y divide-amber-200">
+              {suspended.map((row) => (
+                <div key={row.id} className="px-5 py-3 flex items-center justify-between gap-4 flex-wrap">
+                  <div className="text-sm">
+                    <div className="font-semibold text-slate-900">
+                      {row.studentName || "Без имени"}
+                      <span className="ml-2 font-mono text-slate-500">{row.shortId}</span>
+                    </div>
+                    <div className="text-slate-600">
+                      {row.grade ? `${row.grade} класс · ` : ""}
+                      этап: {row.phase === "english" ? "английский" : "основной"}
+                      {row.suspendedAt?.toDate
+                        ? ` · прервано ${row.suspendedAt.toDate().toLocaleString("ru-RU")}`
+                        : ""}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => unblockStudent(row)}
+                    disabled={unblockingId === row.shortId}
+                    className={`text-sm px-4 py-2 rounded-lg font-semibold shadow-sm ${
+                      unblockingId === row.shortId
+                        ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                        : "bg-emerald-600 text-white hover:bg-emerald-700"
+                    }`}
+                  >
+                    {unblockingId === row.shortId ? "Разрешаю…" : "▶ Разрешить продолжить"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center py-20 text-slate-500">Загрузка данных...</div>
