@@ -808,6 +808,20 @@ export function useProctoringEngine(
           });
         }
 
+        // Start analysing the moment face and hands exist. Even served from
+        // our own origin the four model files are ~30 MB, which measured 53s
+        // on a real connection — and the object detector is the last 13s of
+        // that. Waiting for it meant the exam ran unsupervised throughout,
+        // silently. Phone detection simply joins a few seconds later.
+        //
+        // Deliberately NOT guarded by a timeout or per-run ownership: an
+        // earlier attempt did both, and under StrictMode (the init effect runs
+        // twice, sharing these refs) the cancellation logic closed models the
+        // surviving run was still using, killing detection outright.
+        if (active) {
+          setIsReady(true);
+        }
+
         setLoadingProgress('3/3 Загрузка нейросети предмета (EfficientDet)...');
         try {
           objectDetectorRef.current = await ObjectDetector.createFromOptions(vision, {
