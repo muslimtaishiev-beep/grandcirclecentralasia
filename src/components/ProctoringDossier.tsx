@@ -37,6 +37,9 @@ export interface ProctoringReport {
 
 interface EvidenceSnapshot {
   type?: string;
+  // The server stores the offset as `atMs` (see /api/exams/proctoring-report);
+  // `timestamp` is only accepted for older evidence documents.
+  atMs?: number;
   timestamp?: number;
   dataUrl?: string;
   image?: string;
@@ -62,18 +65,27 @@ const SEVERITY_CLASS: Record<string, string> = {
   LOW: 'bg-slate-100 text-slate-700 border-slate-200',
 };
 
+// Keys must match ProctoringEvent['type'] in useProctoringEngine.ts exactly.
+// An earlier version of this map invented names (GAZE_AWAY, HAND_SIGNAL,
+// MULTIPLE_FACES...) that the engine never emits, so real violations printed
+// as raw English enum names in the manager's protocol.
 const TYPE_LABEL: Record<string, string> = {
   PHONE_DETECTED: 'Обнаружен телефон',
-  SPEECH_DETECTED: 'Разговор',
-  WHISPER_DETECTED: 'Шёпот / подсказка',
-  MULTIPLE_FACES: 'В кадре более одного человека',
+  BOOK_DETECTED: 'Обнаружена книга или конспект',
+  SPEECH_CHEAT_DETECTED: 'Разговор или просьба о помощи',
+  GESTURE_SIGNAL_DETECTED: 'Сигнал пальцами',
+  SWIPE: 'Жест рукой',
+  HAND_BELOW: 'Руки вне поля зрения',
+  EXTRA_FACE: 'В кадре второй человек',
   FACE_LOST: 'Лицо вне кадра',
-  HEAD_TURN: 'Поворот головы',
-  GAZE_AWAY: 'Взгляд в сторону',
+  GAZE_LEFT: 'Взгляд в сторону (влево)',
+  GAZE_RIGHT: 'Взгляд в сторону (вправо)',
   CAMERA_OFF: 'Камера отключена',
-  HAND_SIGNAL: 'Жестовый сигнал',
-  HAND_BELOW_DESK: 'Руки под столом',
+  PASTE_DETECTED: 'Вставка текста из буфера',
   TAB_SWITCH: 'Переключение вкладки',
+  LIGHT_ANOMALY: 'Изменение освещения',
+  SILENT_LIP_SPEAKING_DETECTED: 'Беззвучная артикуляция',
+  FAST_ANSWER: 'Подозрительно быстрый ответ',
 };
 
 /** Offset from exam start as mm:ss — the manager scrubs the video to it. */
@@ -298,8 +310,8 @@ export default function ProctoringDossier({ shortId, studentName, grade, report,
                       <img src={src} alt={`Снимок ${i + 1}`} className="w-full block" />
                       <figcaption className="text-xs text-slate-600 px-2 py-1 bg-slate-50">
                         {TYPE_LABEL[s.type || ''] || s.type || 'Снимок'}
-                        {s.timestamp
-                          ? ` · ${formatOffset(s.timestamp, report.startedAt)}`
+                        {typeof (s.atMs ?? s.timestamp) === 'number'
+                          ? ` · ${formatOffset((s.atMs ?? s.timestamp)!, report.startedAt)}`
                           : ''}
                       </figcaption>
                     </figure>

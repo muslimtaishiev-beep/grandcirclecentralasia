@@ -1043,30 +1043,35 @@ export default function ManagerDashboard() {
                             )}
                           </button>
 
-                          {/* Proctoring dossier. Only offered when a report actually
-                              exists — a session with no report has nothing to show,
-                              and claiming "нарушений нет" for an unobserved exam would
-                              be a false assurance to the manager. */}
-                          {s.proctoring ? (
-                            <button
-                              onClick={() => setDossierFor(s.shortId)}
-                              className={`text-xs px-2 py-1 rounded shadow-sm w-full font-medium flex items-center justify-center gap-1 border ${
-                                s.proctoring.unavailable
-                                  ? "bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200"
-                                  : (s.proctoring.totalViolations || 0) > 0
-                                    ? "bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-300"
-                                    : "bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border-emerald-300"
-                              }`}
-                            >
-                              📦 Протокол прокторинга
-                            </button>
-                          ) : (
-                            <div className="text-xs px-2 py-1 rounded w-full text-center bg-slate-50 text-slate-400 border border-slate-200">
-                              🛡️ Прокторинг не велся
-                            </div>
-                          )}
                         </div>
                       )}
+                      {/* Proctoring dossier. Deliberately OUTSIDE the diagnostics
+                          block above: proctoring and diagnostics are independent,
+                          so nesting it there hid the protocol for every supervised
+                          student who had no diagnostic report. Only offered when a
+                          report exists — claiming "нарушений нет" for an unobserved
+                          exam would be a false assurance to the manager. */}
+                      <div className="mt-2">
+                      {s.proctoring ? (
+                        <button
+                          onClick={() => setDossierFor(s.shortId)}
+                          className={`text-xs px-2 py-1 rounded shadow-sm w-full font-medium flex items-center justify-center gap-1 border ${
+                            s.proctoring.unavailable
+                              ? "bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200"
+                              : (s.proctoring.totalViolations || 0) > 0
+                                ? "bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-300"
+                                : "bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border-emerald-300"
+                          }`}
+                        >
+                          📦 Протокол прокторинга
+                        </button>
+                      ) : (
+                        <div className="text-xs px-2 py-1 rounded w-full text-center bg-slate-50 text-slate-400 border border-slate-200">
+                          🛡️ Прокторинг не велся
+                        </div>
+                      )}
+                      </div>
+
                       {/* Recheck button */}
                       <button
                         onClick={async () => {
