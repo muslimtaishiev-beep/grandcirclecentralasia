@@ -1007,6 +1007,11 @@ export default function Testing() {
       const data = await fetchGasAPI("/api/gas", { action: "checkSuspendStatus", shortId });
       if (data.success && data.status !== "ПРИОСТАНОВЛЕН") {
         setDisqualified(false);
+        // Clear the fullscreen warning too: leaving the tab drops fullscreen as
+        // well, so without this the student is handed straight back to the
+        // violation screen the moment the manager lets them continue.
+        setIsFullscreenViolation(false);
+        try { sessionStorage.removeItem("isFullscreenViolation"); } catch (e) {}
         const resumePhase = sessionStorage.getItem("suspendedPhase") || localStorage.getItem("persist_suspendedPhase") || "core";
         setPhase(resumePhase as any);
         setTotalBlurTime(0);
@@ -1146,7 +1151,13 @@ export default function Testing() {
   );
 
   // Fullscreen Violation UI
-  if (isFullscreenViolation) {
+  // Suspension outranks the fullscreen warning. Both can be true at once — the
+  // student is suspended for being away, and leaving the tab also drops
+  // fullscreen — and this branch used to win, so the suspended screen was
+  // unreachable: "Вернуться к тесту" cleared the flag, the suspended screen
+  // appeared, resuming re-entered fullscreen, and the warning came straight
+  // back. The student could never reach the manager's permission at all.
+  if (isFullscreenViolation && phase !== "suspended") {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center z-50">
         {ProctoringLayer}
