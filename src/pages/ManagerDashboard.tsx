@@ -1054,7 +1054,22 @@ export default function ManagerDashboard() {
                       <div className="mt-2">
                       {s.proctoring ? (
                         <button
-                          onClick={() => setDossierFor(s.shortId)}
+                          onClick={() => {
+                            // Temporary diagnostics: the button was reported as
+                            // doing nothing on production while every static
+                            // check said it should work. Logs what the click
+                            // actually sees so the failure names itself.
+                            console.log("[Dossier] клик:", {
+                              shortId: s.shortId,
+                              типId: typeof s.shortId,
+                              естьОтчёт: !!s.proctoring,
+                              нарушений: s.proctoring?.totalViolations,
+                              снимков: s.proctoring?.snapshotCount,
+                              найденВСписке: students.some(x => x.shortId === s.shortId),
+                              всегоСтрок: students.length,
+                            });
+                            setDossierFor(s.shortId);
+                          }}
                           className={`text-xs px-2 py-1 rounded shadow-sm w-full font-medium flex items-center justify-center gap-1 border ${
                             s.proctoring.unavailable
                               ? "bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200"
@@ -1690,19 +1705,29 @@ export default function ManagerDashboard() {
           />
         )}
 
-        {/* Proctoring session dossier */}
+        {/* Proctoring session dossier. Rendered through a portal to document.body:
+            the dashboard nests this cell inside a horizontally scrolling table
+            container, and any ancestor that establishes a stacking context (a
+            transform, a filter, a backdrop-blur) traps a position:fixed overlay
+            inside it — the modal mounts and updates state, but the viewer never
+            sees it, which reads exactly like a dead button. The certificate
+            modal on this page already uses createPortal for the same reason. */}
         {(() => {
           if (!dossierFor) return null;
           const st = students.find(x => x.shortId === dossierFor);
-          if (!st?.proctoring) return null;
-          return (
+          if (!st?.proctoring) {
+            console.warn("[Dossier] строка не найдена или без отчёта:", dossierFor);
+            return null;
+          }
+          return createPortal(
             <ProctoringDossier
               shortId={st.shortId}
               studentName={st.childName || st.studentName || `Ученик ${st.shortId}`}
               grade={st.grade}
               report={st.proctoring}
               onClose={() => setDossierFor(null)}
-            />
+            />,
+            document.body,
           );
         })()}
 
