@@ -11,7 +11,6 @@ import { useTenant } from "../context/TenantContext";
 import QuestionFactory from "../components/tests/QuestionFactory";
 import { useProctoringEngine, ProctoringDetectorFlags } from "../lib/useProctoringEngine";
 import ProctoringWarningOverlay from "../components/ProctoringWarningOverlay";
-import { uploadProctoringVideo } from "../lib/proctoringVideoUpload";
 import { useParams } from "react-router-dom";
 
 export default function Testing() {
@@ -106,8 +105,6 @@ export default function Testing() {
   const proctorVideoRef = useRef<HTMLVideoElement | null>(null);
   const proctorCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const proctorStreamRef = useRef<MediaStream | null>(null);
-  const proctorRecorderRef = useRef<MediaRecorder | null>(null);
-  const proctorChunksRef = useRef<Blob[]>([]);
   const [shortId, setShortId] = useState(() => {
     const saved = safeGetSession("shortId", "");
     if (saved && saved !== "undefined" && saved !== "null") return saved;
@@ -160,24 +157,10 @@ export default function Testing() {
         }
         setCameraGranted(true);
 
-        // Record the session straight off the camera stream. (The shared
-        // recorder hook records a canvas, but nothing paints to the canvas
-        // during a real exam, so it would capture a black rectangle.)
-        try {
-          const candidates = [
-            "video/webm;codecs=vp9,opus",
-            "video/webm;codecs=vp8,opus",
-            "video/webm",
-          ];
-          const mimeType = candidates.find(t => (window as any).MediaRecorder?.isTypeSupported?.(t));
-          const rec = new MediaRecorder(stream, mimeType ? { mimeType, videoBitsPerSecond: 600000 } : undefined);
-          proctorChunksRef.current = [];
-          rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) proctorChunksRef.current.push(e.data); };
-          rec.start(5000); // flush every 5s so a crash still leaves usable footage
-          proctorRecorderRef.current = rec;
-        } catch (e) {
-          console.warn("[Proctoring] recorder unavailable:", e);
-        }
+        // No session recording. Storing 90-minute video needs Firebase Storage,
+        // which requires the Blaze plan; the evidence the manager actually acts
+        // on — the violation log with timestamps and a snapshot taken at each
+        // violation — fits in Firestore and costs nothing.
       } catch (e) {
         // Denied, missing or busy camera must never cost a student their exam —
         // they carry on, and the submission is flagged so the manager knows the
@@ -243,13 +226,19 @@ export default function Testing() {
       try {
         const ctx = canvas.getContext("2d");
         if (!ctx || !video.videoWidth) continue;
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+        // Downscale to 640px wide. These frames are base64 inside a single
+        // Firestore document, and 20 full 720p JPEGs come to ~3 MB — past the
+        // 1 MB document limit, so the whole evidence write would be rejected
+        // and the manager would get nothing. At 640px the set stays under
+        // ~0.7 MB while a phone or a second person is still plainly visible.
+        const scale = Math.min(1, 640 / video.videoWidth);
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         proctorSnapshotsRef.current.push({
           type: ev.type,
           atMs: ev.timestamp,
-          dataUrl: canvas.toDataURL("image/jpeg", 0.7),
+          dataUrl: canvas.toDataURL("image/jpeg", 0.6),
         });
       } catch (e) { /* a frame we cannot grab is not worth failing the exam over */ }
     }
@@ -262,31 +251,6 @@ export default function Testing() {
     if (!proctoringConfig?.enabled) return;
     if (!proctoringActive && !proctoringUnavailable) return;
     const tenantId = orgSlug || "org_future_leaders";
-
-    // Close the recording and push it to Storage first, so the report can carry
-    // the video URL. Storage, not Firestore: a 90-minute recording is orders of
-    // magnitude past the 1 MB document limit.
-    let videoUrl: string | undefined;
-    let videoPath: string | undefined;
-    try {
-      const rec = proctorRecorderRef.current;
-      if (rec && rec.state !== "inactive") {
-        await new Promise<void>((resolve) => {
-          rec.onstop = () => resolve();
-          try { rec.stop(); } catch { resolve(); }
-          setTimeout(resolve, 5000); // never hang the submit on a stuck recorder
-        });
-      }
-      proctorRecorderRef.current = null;
-      if (proctorChunksRef.current.length > 0) {
-        const blob = new Blob(proctorChunksRef.current, { type: "video/webm" });
-        const up = await uploadProctoringVideo(blob, tenantId, String(shortId));
-        if (up.success) { videoUrl = up.url; videoPath = up.path; }
-        proctorChunksRef.current = [];
-      }
-    } catch (e) {
-      console.warn("[Proctoring] video upload skipped:", e);
-    }
 
     try {
       await fetch("/api/exams/proctoring-report", {
@@ -303,8 +267,6 @@ export default function Testing() {
             type: e.type, severity: e.severity, description: e.description, timestamp: e.timestamp,
           })),
           snapshots: proctorSnapshotsRef.current,
-          videoUrl,
-          videoPath,
         }),
         signal: AbortSignal.timeout(20000),
       });

@@ -733,7 +733,7 @@ app.post("/api/exams/telemetry", async (req, res) => {
 // server attaches it to the submission the manager already opens.
 app.post("/api/exams/proctoring-report", async (req, res) => {
   try {
-    const { shortId, tenantId, violations, honestyIndex, unavailable, startedAt, endedAt, snapshots, videoUrl, videoPath } = req.body || {};
+    const { shortId, tenantId, violations, honestyIndex, unavailable, startedAt, endedAt, snapshots } = req.body || {};
     if (!shortId) return res.status(400).json({ success: false, error: "Missing shortId" });
     if (!useFirebase) return res.status(503).json({ success: false, error: "Firestore not configured" });
 
@@ -756,6 +756,24 @@ app.post("/api/exams/proctoring-report", async (req, res) => {
       return acc;
     }, {});
 
+    // Snapshots are the only visual evidence there is (no session video), so
+    // this write must not be lost to Firestore's 1 MB document limit. Take
+    // frames only while they fit under a 900 KB budget: a partial set of
+    // violations is evidence, a rejected write is nothing. Decided before the
+    // report is built so snapshotCount reports what was actually stored.
+    const incomingSnapshots = Array.isArray(snapshots) ? snapshots.slice(0, 20) : [];
+    const keptSnapshots: any[] = [];
+    let snapshotBytes = 0;
+    for (const s of incomingSnapshots) {
+      const size = typeof s?.dataUrl === "string" ? s.dataUrl.length : 0;
+      if (snapshotBytes + size > 900 * 1024) break;
+      snapshotBytes += size;
+      keptSnapshots.push(s);
+    }
+    if (keptSnapshots.length < incomingSnapshots.length) {
+      console.warn(`[Proctoring] ${shortId}: kept ${keptSnapshots.length}/${incomingSnapshots.length} snapshots (size budget)`);
+    }
+
     const report = {
       generatedAt: admin.firestore.Timestamp.now(),
       startedAt: startedAt || null,
@@ -771,26 +789,20 @@ app.post("/api/exams/proctoring-report", async (req, res) => {
         // Offset from exam start, so the manager can scrub straight to it.
         atMs: Number(v.timestamp) || 0,
       })),
-      snapshotCount: Array.isArray(snapshots) ? snapshots.length : 0,
-      // Recording of the whole session, in Storage. Only accept an URL that
-      // actually points at this project's bucket — the body is anonymous.
-      videoUrl:
-        typeof videoUrl === "string" && /^https:\/\/firebasestorage\.googleapis\.com\//.test(videoUrl)
-          ? videoUrl
-          : null,
-      videoPath: typeof videoPath === "string" ? videoPath.slice(0, 300) : null,
+      snapshotCount: keptSnapshots.length,
     };
 
     await subRef.set({ proctoring: report }, { merge: true });
 
     // Snapshots live in their own doc: a submission read happens on every
     // dashboard render and base64 frames would bloat it badly.
-    if (Array.isArray(snapshots) && snapshots.length > 0) {
+    if (keptSnapshots.length > 0) {
       await admin.firestore().collection("proctoring_evidence").doc(`ev_${shortId}`).set({
         shortId: String(shortId),
         tenantId: resolvedTenantId,
         updatedAt: admin.firestore.Timestamp.now(),
-        snapshots: snapshots.slice(0, 20),
+        snapshots: keptSnapshots,
+        droppedForSize: incomingSnapshots.length - keptSnapshots.length,
       }, { merge: true });
     }
 

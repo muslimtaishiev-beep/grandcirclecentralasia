@@ -3,8 +3,12 @@ import { collection, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 /**
- * Official proctoring dossier for one exam session: the session video, every
- * violation with its timestamp, and the snapshot captured at each violation.
+ * Official proctoring dossier for one exam session: every violation with its
+ * timestamp, and the snapshot captured at the moment of each one.
+ *
+ * There is deliberately no session video — storing 90-minute recordings needs
+ * Firebase Storage, which requires the Blaze plan. Snapshots carry the evidence
+ * a manager actually acts on and live in Firestore at no cost.
  *
  * The violation list lives on the submission document (read with the students),
  * but the snapshots are in `proctoring_evidence/ev_{shortId}` — base64 frames
@@ -29,8 +33,6 @@ export interface ProctoringReport {
   bySeverity?: Record<string, number>;
   violations?: ProctoringViolation[];
   snapshotCount?: number;
-  videoUrl?: string | null;
-  videoPath?: string | null;
 }
 
 interface EvidenceSnapshot {
@@ -228,28 +230,6 @@ export default function ProctoringDossier({ shortId, studentName, grade, report,
                   </p>
                 )}
               </div>
-            )}
-          </section>
-
-          {/* Video */}
-          <section>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
-              Видеозапись сессии
-            </h3>
-            {report.videoUrl ? (
-              <video
-                src={report.videoUrl}
-                controls
-                controlsList="nodownload"
-                onContextMenu={(e) => e.preventDefault()}
-                className="w-full rounded border border-slate-300 bg-black max-h-[420px]"
-              />
-            ) : (
-              <p className="text-sm text-slate-500 border border-slate-200 rounded p-4">
-                {report.unavailable
-                  ? 'Запись не производилась — камера не была предоставлена.'
-                  : 'Запись недоступна: загрузка видео не была завершена.'}
-              </p>
             )}
           </section>
 
