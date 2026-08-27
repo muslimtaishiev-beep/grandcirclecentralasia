@@ -143,6 +143,85 @@ export default function ProctoringDossier({ shortId, studentName, grade, report,
   }, [shortId, report.snapshotCount]);
 
   const violations = report.violations || [];
+
+  // window.print() prints the whole document, and this modal is a fixed,
+  // scrolling overlay on top of the dashboard — printing it directly produced
+  // the roster behind it, or one clipped screenful. Rendering the protocol into
+  // its own window sidesteps the dashboard's layout entirely and gives the
+  // manager a clean document to print or save as PDF.
+  const openPrintable = () => {
+    const w = window.open("", "_blank", "width=900,height=1000");
+    if (!w) {
+      alert("Браузер заблокировал окно печати. Разрешите всплывающие окна для этого сайта.");
+      return;
+    }
+    const esc = (v: any) => String(v ?? "")
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    const verdict = report.unavailable
+      ? "Видеонаблюдение не велось — камера не была предоставлена экзаменуемым."
+      : violations.length === 0
+        ? "За время сессии нарушений не зафиксировано."
+        : `Зафиксировано нарушений: ${violations.length}` +
+          (high ? ` · грубых: ${high}` : "") + (medium ? ` · средних: ${medium}` : "") +
+          (typeof report.honestyIndex === "number"
+            ? `. Индекс добросовестности: ${report.honestyIndex} из 100.` : ".");
+
+    w.document.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8">
+      <title>Протокол ${esc(shortId)} — ${esc(studentName)}</title>
+      <style>
+        @page { margin: 16mm; }
+        body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #0f172a; margin: 0; }
+        h1 { font-size: 18px; text-transform: uppercase; letter-spacing: .04em; border-bottom: 2px solid #0f172a; padding-bottom: 10px; }
+        h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #64748b; margin-top: 22px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; page-break-inside: auto; }
+        th { text-align: left; border-bottom: 2px solid #cbd5e1; padding: 6px 8px 6px 0; }
+        td { border-bottom: 1px solid #f1f5f9; padding: 6px 8px 6px 0; vertical-align: top; }
+        tr { page-break-inside: avoid; }
+        .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 32px; font-size: 13px; }
+        .facts div { display: flex; justify-content: space-between; border-bottom: 1px solid #f1f5f9; padding: 3px 0; }
+        .facts span:first-child { color: #64748b; }
+        .verdict { border: 1px solid #cbd5e1; background: #f8fafc; padding: 12px; border-radius: 4px; font-size: 13px; }
+        .shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        figure { margin: 0; border: 1px solid #e2e8f0; border-radius: 4px; overflow: hidden; page-break-inside: avoid; }
+        figure img { width: 100%; display: block; }
+        figcaption { font-size: 10px; padding: 3px 5px; background: #f8fafc; color: #475569; }
+        .mono { font-family: ui-monospace, monospace; }
+        footer { margin-top: 28px; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 8px; }
+      </style></head><body>
+      <h1>Протокол наблюдения за экзаменом</h1>
+      <h2>Сведения о сессии</h2>
+      <div class="facts">
+        <div><span>Экзаменуемый</span><span><b>${esc(studentName)}</b></span></div>
+        <div><span>Идентификатор</span><span class="mono">${esc(shortId)}</span></div>
+        <div><span>Класс</span><span>${esc(grade || "—")}</span></div>
+        <div><span>Продолжительность</span><span>${esc(formatDuration(report.startedAt, report.endedAt))}</span></div>
+        <div><span>Начало</span><span>${esc(formatClock(report.startedAt))}</span></div>
+        <div><span>Окончание</span><span>${esc(formatClock(report.endedAt))}</span></div>
+      </div>
+      <h2>Заключение</h2>
+      <p class="verdict">${esc(verdict)}</p>
+      ${violations.length ? `<h2>Журнал нарушений</h2>
+      <table><thead><tr><th style="width:64px">Время</th><th>Нарушение</th><th>Описание</th><th style="width:90px">Категория</th></tr></thead>
+      <tbody>${violations.map(v => `<tr>
+        <td class="mono">${esc(formatOffset(v.atMs, report.startedAt))}</td>
+        <td>${esc(TYPE_LABEL[v.type] || v.type)}</td>
+        <td style="color:#475569">${esc(v.description || "—")}</td>
+        <td>${esc(SEVERITY_LABEL[v.severity] || v.severity)}</td></tr>`).join("")}</tbody></table>` : ""}
+      ${snapshots.length ? `<h2>Снимки момента нарушения (${snapshots.length})</h2>
+      <div class="shots">${snapshots.map((sn, i) => {
+        const src = sn.dataUrl || sn.image;
+        if (!src) return "";
+        const at = sn.atMs ?? sn.timestamp;
+        return `<figure><img src="${src}" alt="Снимок ${i + 1}"><figcaption>${esc(TYPE_LABEL[sn.type || ""] || sn.type || "Снимок")}${typeof at === "number" ? " · " + esc(formatOffset(at, report.startedAt)) : ""}</figcaption></figure>`;
+      }).join("")}</div>` : ""}
+      <footer>Документ сформирован автоматически системой прокторинга и не требует подписи.</footer>
+      </body></html>`);
+    w.document.close();
+    // Wait for the base64 snapshots to decode, or the print dialog opens over
+    // a page of blank frames.
+    w.onload = () => setTimeout(() => { w.focus(); w.print(); }, 400);
+  };
   const high = report.bySeverity?.HIGH || 0;
   const medium = report.bySeverity?.MEDIUM || 0;
 
@@ -328,7 +407,7 @@ export default function ProctoringDossier({ shortId, studentName, grade, report,
           </p>
           <div className="flex gap-2">
             <button
-              onClick={() => window.print()}
+              onClick={openPrintable}
               className="px-4 py-2 text-sm rounded border border-slate-300 text-slate-700 hover:bg-slate-50"
             >
               Печать / PDF
