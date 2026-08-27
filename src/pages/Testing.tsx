@@ -151,6 +151,16 @@ export default function Testing() {
   const acquireProctoringCamera = async (): Promise<boolean> => {
     if (proctorStreamRef.current) return true;
     try {
+      // navigator.mediaDevices is absent entirely — not merely blocked — on a
+      // page served over plain HTTP and in older Android WebViews. Reaching
+      // straight for .getUserMedia there throws a synchronous TypeError rather
+      // than rejecting, so a promise .catch() never sees it. Check first and
+      // fall through to the unsupervised path like any other refusal.
+      if (!navigator.mediaDevices?.getUserMedia) {
+        console.warn("[Proctoring] getUserMedia unavailable (insecure context or old browser)");
+        setProctoringUnavailable(true);
+        return false;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
         audio: Boolean(proctoringConfig?.detectors?.audioAnalysis !== false),
@@ -179,20 +189,13 @@ export default function Testing() {
     if (proctoringUnavailable) return;         // already refused; do not re-prompt
     let cancelled = false;
     (async () => {
-      const stream = await navigator.mediaDevices
-        .getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-          audio: Boolean(proctoringConfig?.detectors?.audioAnalysis !== false),
-        })
-        .catch((e) => { console.warn("[Proctoring] camera unavailable:", e); return null; });
-      if (!stream) { if (!cancelled) setProctoringUnavailable(true); return; }
-      if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
-      proctorStreamRef.current = stream;
-      if (proctorVideoRef.current) {
-        proctorVideoRef.current.srcObject = stream;
-        try { await proctorVideoRef.current.play(); } catch (e) {}
+      await acquireProctoringCamera();
+      // Started elsewhere in the meantime, or the component went away: drop the
+      // stream rather than leaving the camera light on after the exam.
+      if (cancelled && proctorStreamRef.current) {
+        proctorStreamRef.current.getTracks().forEach((t) => t.stop());
+        proctorStreamRef.current = null;
       }
-      setCameraGranted(true);
     })();
     return () => { cancelled = true; };
   }, [proctoringWanted, proctoringUnavailable]);
@@ -1110,10 +1113,33 @@ export default function Testing() {
     </div>
   ) : null;
 
+  // Proctoring has to survive every early return below. The hidden <video> is
+  // what the engine reads frames from, so unmounting it stops detection dead —
+  // and leaving fullscreen (the most common way an exam goes wrong) hit exactly
+  // that path: the student saw the violation screen, the camera went dark, and
+  // no warning could ever appear again for the rest of the exam.
+  const ProctoringLayer = (
+    <>
+      {proctoringWanted && (
+        <>
+          <video
+            ref={proctorVideoRef}
+            className="fixed -top-[9999px] -left-[9999px] w-[640px] h-[480px] pointer-events-none opacity-0"
+            playsInline
+            muted
+          />
+          <canvas ref={proctorCanvasRef} className="hidden" width={640} height={480} />
+        </>
+      )}
+      <ProctoringWarningOverlay events={proctor.events} isActive={proctoringActive} />
+    </>
+  );
+
   // Fullscreen Violation UI
   if (isFullscreenViolation) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center z-50">
+        {ProctoringLayer}
         <h1 className="text-3xl font-bold mb-4">Нарушение режима</h1>
         <p className="text-lg text-slate-300 mb-8 max-w-md">Вы покинули полноэкранный режим. Тестирование должно проходить только в полноэкранном режиме, чтобы избежать списывания.</p>
         <button
@@ -1134,6 +1160,7 @@ export default function Testing() {
   if (phase === "suspended") {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        {ProctoringLayer}
         <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-amber-500 to-amber-700"></div>
           <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">⏸️</div>
@@ -1559,21 +1586,8 @@ export default function Testing() {
   return (
     <div className="min-h-screen bg-white text-slate-900 pb-20 select-none relative">
       {/* Proctoring runs invisibly: the student sees no preview of themselves,
-          only the warning overlay when something is actually flagged. Kept
-          inside this render (not beside the fullscreen-violation early return,
-          which unmounts the whole tree). */}
-      {proctoringWanted && (
-        <>
-          <video
-            ref={proctorVideoRef}
-            className="fixed -top-[9999px] -left-[9999px] w-[640px] h-[480px] pointer-events-none opacity-0"
-            playsInline
-            muted
-          />
-          <canvas ref={proctorCanvasRef} className="hidden" width={640} height={480} />
-        </>
-      )}
-      <ProctoringWarningOverlay events={proctor.events} isActive={proctoringActive} />
+          only the warning overlay when something is actually flagged. */}
+      {ProctoringLayer}
 
       {isSubmitting && (
         <div className="fixed inset-0 bg-white/70 backdrop-blur-sm z-50 flex items-center justify-center">
