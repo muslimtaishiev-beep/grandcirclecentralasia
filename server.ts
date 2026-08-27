@@ -1200,6 +1200,72 @@ app.post("/api/gas", async (req, res) => {
       }
     }
 
+    // Local-first suspend/approve/resume state machine. This whole loop used to live
+    // exclusively in GAS: the student's suspendTest (carrying their in-progress
+    // answers), the manager's unblockStudent click, and the student's 4-second
+    // checkSuspendStatus poll were all straight proxies to Google Apps Script. When
+    // GAS was slow or 503ing (observed live in production), the manager's "разрешить
+    // продолжение" click did nothing visible, students stayed stuck on the suspended
+    // screen indefinitely, and the answers snapshot sent with suspendTest was lost
+    // outright. Firestore is now the source of truth for all three actions; GAS gets
+    // a fire-and-forget mirror so the Sheets side stays roughly in sync. Falls
+    // through to the plain GAS proxy only on a local error or (for the status check)
+    // a legacy suspension that predates this and only exists in Sheets.
+    const mirrorToGas = (mirrorPayload: any) => {
+      fetch(gasUrl, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ ...mirrorPayload, apiKey: gasApiKey }),
+        signal: AbortSignal.timeout(10000)
+      }).catch(err => console.warn(`[GAS Mirror] ${mirrorPayload.action} notice:`, err.message));
+    };
+
+    if (payload.action === "suspendTest" && useFirebase && payload.shortId) {
+      try {
+        await admin.firestore().collection("exam_suspensions").doc(String(payload.shortId)).set({
+          shortId: String(payload.shortId),
+          tenantId: payload.tenantId || "org_future_leaders",
+          studentName: payload.studentName || "",
+          grade: Number(payload.grade) || 0,
+          phase: payload.phase || "core",
+          answersJson: typeof payload.answers === "string" ? payload.answers : JSON.stringify(payload.answers || {}),
+          status: "ПРИОСТАНОВЛЕН",
+          suspendedAt: admin.firestore.Timestamp.now(),
+        }, { merge: true });
+        mirrorToGas(payload);
+        return res.json({ success: true, status: "ПРИОСТАНОВЛЕН" });
+      } catch (e: any) {
+        console.warn("[Suspend] Local Firestore write failed, falling back to GAS:", e.message);
+      }
+    }
+
+    if (payload.action === "checkSuspendStatus" && useFirebase && payload.shortId) {
+      try {
+        const snap = await admin.firestore().collection("exam_suspensions").doc(String(payload.shortId)).get();
+        if (snap.exists) {
+          const d = snap.data()!;
+          return res.json({ success: true, status: d.status || "ПРИОСТАНОВЛЕН", answers: d.answersJson || "{}" });
+        }
+        // No local record — legacy suspension stored only in GAS; fall through to proxy.
+      } catch (e: any) {
+        console.warn("[Suspend] Local status check failed, falling back to GAS:", e.message);
+      }
+    }
+
+    if (payload.action === "unblockStudent" && useFirebase && payload.shortId) {
+      try {
+        await admin.firestore().collection("exam_suspensions").doc(String(payload.shortId)).set({
+          shortId: String(payload.shortId),
+          status: "В ПРОЦЕССЕ",
+          unblockedAt: admin.firestore.Timestamp.now(),
+        }, { merge: true });
+        mirrorToGas(payload);
+        return res.json({ success: true });
+      } catch (e: any) {
+        console.warn("[Suspend] Local unblock failed, falling back to GAS:", e.message);
+      }
+    }
+
     let rawText = "";
     let data;
     
