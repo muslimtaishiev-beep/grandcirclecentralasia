@@ -69,6 +69,7 @@ const TeacherPayroll = lazy(() => import("./pages/workspace/edu/TeacherPayrollPa
 
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { GracefulErrorBoundary } from "./components/ui/GracefulErrorBoundary";
+import ExamErrorBoundary from "./components/ExamErrorBoundary";
 import { TenantProvider } from './context/TenantContext';
 import DashboardSkeleton from "./components/skeletons/DashboardSkeleton";
 import CrmSkeleton from "./components/skeletons/CrmSkeleton";
@@ -231,8 +232,11 @@ export default function App() {
 
           {/* Admission Portal Routes */}
           <Route path="/:orgSlug/admission" element={<Landing lang={lang} />} />
-          <Route path="/:orgSlug/test" element={<Testing />} />
-          <Route path="/:orgSlug/test/:testId" element={<Testing />} />
+          {/* The exam routes had no error boundary at all: a render crash
+              unmounted the tree and left the student on a blank grey page
+              mid-exam, with no way back. */}
+          <Route path="/:orgSlug/test" element={<ExamErrorBoundary><Testing /></ExamErrorBoundary>} />
+          <Route path="/:orgSlug/test/:testId" element={<ExamErrorBoundary><Testing /></ExamErrorBoundary>} />
           <Route path="/login" element={<Login lang={lang} />} />
           <Route path="/register" element={<Signup lang={lang} />} />
           <Route path="/dashboard" element={

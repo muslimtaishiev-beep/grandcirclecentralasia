@@ -139,6 +139,15 @@ export default function Testing() {
   // permission prompt.
   const proctoringWanted = Boolean(proctoringConfig?.enabled) && started && !finished && (phase === "core" || phase === "english");
 
+  // Whether to HOLD the camera, which is broader than whether to analyse it.
+  // A suspended exam is paused, not over: releasing the stream there meant the
+  // browser re-prompted for permission the moment the manager let the student
+  // back in — a permission dialog appearing mid-exam, outside any click, which
+  // Chrome renders over the page and Safari may refuse outright.
+  const proctoringCameraNeeded =
+    Boolean(proctoringConfig?.enabled) && started && !finished &&
+    (phase === "core" || phase === "english" || phase === "suspended" || isFullscreenViolation);
+
   // Acquires the camera once and hands the stream to the hidden <video> the
   // engine reads from. Called from startTest (before fullscreen, inside the
   // click gesture) and again from the effect below as a safety net for a
@@ -184,7 +193,7 @@ export default function Testing() {
   };
 
   useEffect(() => {
-    if (!proctoringWanted) return;
+    if (!proctoringCameraNeeded) return;
     if (proctorStreamRef.current) return;      // already granted in startTest
     if (proctoringUnavailable) return;         // already refused; do not re-prompt
     let cancelled = false;
@@ -198,11 +207,12 @@ export default function Testing() {
       }
     })();
     return () => { cancelled = true; };
-  }, [proctoringWanted, proctoringUnavailable]);
+  }, [proctoringCameraNeeded, proctoringUnavailable]);
 
-  // Release the camera as soon as proctoring is no longer wanted (submit, finish).
+  // Release the camera only once the exam is genuinely over (submit, finish) —
+  // never for a pause the student is expected to come back from.
   useEffect(() => {
-    if (proctoringWanted) return;
+    if (proctoringCameraNeeded) return;
     if (proctorStreamRef.current) {
       proctorStreamRef.current.getTracks().forEach(t => t.stop());
       proctorStreamRef.current = null;
@@ -1120,7 +1130,7 @@ export default function Testing() {
   // no warning could ever appear again for the rest of the exam.
   const ProctoringLayer = (
     <>
-      {proctoringWanted && (
+      {proctoringCameraNeeded && (
         <>
           <video
             ref={proctorVideoRef}

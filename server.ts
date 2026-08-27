@@ -129,7 +129,8 @@ export type AuditAction =
   | "EXAM_SUSPENDED" | "EXAM_RESUME_REQUESTED" | "EXAM_RESUME_APPROVED"
   | "EXAM_FULLSCREEN_EXIT" | "PROCTORING_REPORT" | "PROCTORING_VIOLATION"
   | "LOGIN_SUCCESS" | "LOGIN_FAILED" | "LOGOUT"
-  | "TENANT_CREATED" | "TENANT_UPDATED" | "MEMBER_INVITED" | "MEMBER_ROLE_CHANGED";
+  | "TENANT_CREATED" | "TENANT_UPDATED" | "MEMBER_INVITED" | "MEMBER_ROLE_CHANGED"
+  | "CLIENT_ERROR";
 
 function writeAuditLog(action: AuditAction, tenantId: string, fields: Record<string, any> = {}) {
   if (!useFirebase) return;
@@ -760,6 +761,7 @@ const STUDENT_EVENT_ACTIONS: Record<string, AuditAction> = {
   fullscreen_exit: "EXAM_FULLSCREEN_EXIT",
   resume_requested: "EXAM_RESUME_REQUESTED",
   violation: "PROCTORING_VIOLATION",
+  client_error: "CLIENT_ERROR",
 };
 
 app.post("/api/exams/event", (req, res) => {
