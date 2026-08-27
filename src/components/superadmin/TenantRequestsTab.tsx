@@ -1,10 +1,24 @@
 import React, { useState, useEffect } from "react";
 import { Check, X, Building, Mail, Phone, Clock } from "lucide-react";
+import { auth } from "../../lib/firebase";
+
+/**
+ * Both endpoints here are behind requireFirebaseAuth + requireSuperAdmin, so
+ * they need the caller's live Firebase ID token. This component used to read
+ * localStorage("superadmin_token") — a key nothing in the app ever writes — so
+ * it sent "Bearer " with an empty token and every request came back 401. The
+ * tab silently showed no requests at all.
+ */
+async function authHeader(): Promise<Record<string, string>> {
+  const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 export function TenantRequestsTab() {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchRequests();
@@ -15,16 +29,26 @@ export function TenantRequestsTab() {
       setLoading(true);
       // Ensure superadmin has auth token in headers for real implementation
       const res = await fetch("/api/superadmin/tenant-requests", {
-        headers: {
-          "Authorization": `Bearer ${localStorage.getItem("superadmin_token") || ""}` // Fallback logic
-        }
+        headers: await authHeader(),
       });
+      if (!res.ok) {
+        // Surface it rather than rendering an empty list, which reads as
+        // "no requests" when it actually means "not authorised".
+        setError(res.status === 401 || res.status === 403
+          ? "Нет прав суперадминистратора — войдите заново."
+          : `Не удалось загрузить заявки (${res.status})`);
+        return;
+      }
       const data = await res.json();
       if (data.success) {
         setRequests(data.requests || []);
+        setError(null);
+      } else {
+        setError(data.error || "Не удалось загрузить заявки");
       }
     } catch (e) {
       console.error("Failed to fetch requests", e);
+      setError("Ошибка сети при загрузке заявок");
     } finally {
       setLoading(false);
     }
@@ -39,7 +63,7 @@ export function TenantRequestsTab() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("superadmin_token") || ""}`
+          ...(await authHeader()),
         },
         body: JSON.stringify({ action, rejectReason: action === "reject" ? "Rejected by SuperAdmin" : undefined })
       });
@@ -71,6 +95,12 @@ export function TenantRequestsTab() {
         <h3 className="text-sm font-bold text-[#ffffff]">Organization Join Requests</h3>
         <p className="text-xs text-[#888888] mt-0.5">Approve or reject new schools applying for the platform</p>
       </div>
+
+      {error && (
+        <div className="bg-[#2a1111] border border-[#5c2020] rounded-md p-3 text-xs text-[#ff9b9b] font-mono">
+          ⚠ {error}
+        </div>
+      )}
 
       {pendingRequests.length === 0 ? (
         <div className="bg-[#111111] border border-[#222222] rounded-md p-8 text-center text-[#666666] font-mono text-xs">

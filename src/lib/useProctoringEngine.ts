@@ -757,13 +757,10 @@ export function useProctoringEngine(
         setIsLoading(true);
         setLoadingProgress('1/3 Загрузка движка WebAssembly...');
         
-        // Served from our own origin, copied at build time from the installed
-        // @mediapipe/tasks-vision package (see public/mediapipe-wasm). The
-        // runtime is a single 11.7 MB .wasm file, and fetching it from
-        // jsdelivr measured 23-53s on a real connection — the whole exam ran
-        // unsupervised for that long, every time. Locally it comes off the
-        // same CDN as the rest of the app, and cannot break when an upstream
-        // release changes the WASM contract.
+        // Served from our own origin (public/mediapipe-wasm, copied from the
+        // installed @mediapipe/tasks-vision package). The 11.7 MB WASM runtime
+        // took 23-53s from jsdelivr on a real connection — the exam ran
+        // unsupervised that whole time.
         const vision = await FilesetResolver.forVisionTasks('/mediapipe-wasm');
 
         setLoadingProgress('2/3 Загрузка нейросетей лица и рук...');
@@ -811,47 +808,27 @@ export function useProctoringEngine(
           });
         }
 
-        // Start watching NOW. Face, gaze, hands and audio are ready at this
-        // point, and the object detector below adds ~12s more on top of the
-        // ~26s already spent fetching models — during which the exam is
-        // running completely unsupervised. Phone detection simply switches on
-        // a few seconds later instead of holding everything else hostage.
-        if (active) {
-          setIsReady(true);
-          setLoadingProgress('Лицо и руки отслеживаются, загружается детектор предметов...');
-        }
-
         setLoadingProgress('3/3 Загрузка нейросети предмета (EfficientDet)...');
-        // The object detector is the ONLY optional model here: without it we
-        // lose phone/book detection, but face, gaze, hands and audio all still
-        // work. It used to be awaited unguarded, so when its creation hung —
-        // not threw, hung, which no catch can see — isReady was never set and
-        // the analysis loop never started. The result was proctoring that
-        // appeared enabled and detected absolutely nothing.
-        const OBJECT_MODEL = '/mediapipe-models/efficientdet_lite0.tflite';
-        const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T | null> =>
-          Promise.race([p, new Promise<null>(res => setTimeout(() => res(null), ms))]);
-
         try {
-          objectDetectorRef.current = await withTimeout(
-            ObjectDetector.createFromOptions(vision, {
-              baseOptions: { modelAssetPath: OBJECT_MODEL, delegate: 'GPU' },
-              scoreThreshold: 0.30,
-              runningMode: 'VIDEO',
-            }), 15000);
-          if (!objectDetectorRef.current) {
-            objectDetectorRef.current = await withTimeout(
-              ObjectDetector.createFromOptions(vision, {
-                baseOptions: { modelAssetPath: OBJECT_MODEL, delegate: 'CPU' },
-                scoreThreshold: 0.30,
-                runningMode: 'VIDEO',
-              }), 15000);
-          }
+          objectDetectorRef.current = await ObjectDetector.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: '/mediapipe-models/efficientdet_lite0.tflite',
+              delegate: 'GPU'
+            },
+            scoreThreshold: 0.30,
+            runningMode: 'VIDEO'
+          });
         } catch (e) {
-          objectDetectorRef.current = null;
-        }
-        if (!objectDetectorRef.current) {
-          console.warn('[Proctoring] детектор предметов недоступен — телефон/книга не отслеживаются, остальные детекторы работают');
+          try {
+            objectDetectorRef.current = await ObjectDetector.createFromOptions(vision, {
+              baseOptions: {
+                modelAssetPath: '/mediapipe-models/efficientdet_lite0.tflite',
+                delegate: 'CPU'
+              },
+              scoreThreshold: 0.30,
+              runningMode: 'VIDEO'
+            });
+          } catch (e2) {}
         }
 
         if (active) {
@@ -860,7 +837,6 @@ export function useProctoringEngine(
           setLoadingProgress('Все ML-модели готовы');
         }
       } catch (err: any) {
-        console.error('[Proctoring] ошибка инициализации моделей:', err?.message || err);
         if (active) {
           setError(err.message || 'Ошибка инициализации ML-моделей');
           setIsLoading(false);
@@ -1375,12 +1351,6 @@ export function useProctoringEngine(
   }, [isActive, videoRef]);
 
   useEffect(() => {
-    // A live exam with the camera granted but no analysis running is silent
-    // failure: the student is unsupervised and nothing says so. Warn once so
-    // the cause is visible instead of being inferred from an empty report.
-    if (isActive && !isReady) {
-      console.warn('[Proctoring] камера активна, но ML-модели ещё не готовы — анализ не идёт');
-    }
     if (isActive && isReady) {
       requestRef.current = requestAnimationFrame(processFrame);
     } else {

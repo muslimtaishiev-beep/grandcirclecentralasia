@@ -32,6 +32,12 @@ export class SubdomainHostResolver {
       return sub;
     }
 
+    // Vercel preview/deployment hosts look like
+    // project-hash-team.vercel.app — the first label is the project name, not
+    // a tenant, so treating it as one sent every preview visit hunting for a
+    // tenant that cannot exist and filled the logs with 404s.
+    if (hostname.endsWith('.vercel.app')) return null;
+
     // e.g. futureleaders.studyfreeforum.com
     if (parts.length >= 3) {
       const sub = parts[0];
