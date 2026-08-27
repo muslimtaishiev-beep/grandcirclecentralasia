@@ -14,10 +14,12 @@ import { DiagnosticReportPdf } from "../components/DiagnosticReportPdf";
 import { SchoolCertificatePdf } from "../components/SchoolCertificatePdf";
 import { useTenant } from "../context/TenantContext";
 import { DocumentIssuerModal } from "../components/DocumentIssuerModal";
+import ProctoringDossier from "../components/ProctoringDossier";
 
 export default function ManagerDashboard() {
   const { tenant } = useTenant();
   const navigate = useNavigate();
+  const [dossierFor, setDossierFor] = useState<string | null>(null);
   const { user, loading: authLoading } = useAuth();
   const { orgId: routeOrgId } = useParams();
   const activeTenantId = routeOrgId || tenant?.id;
@@ -937,23 +939,27 @@ export default function ManagerDashboard() {
                             )}
                           </button>
 
-                          {/* Proctoring Evidence Button */}
-                          {s.proctoringUrl ? (
-                            <a 
-                              href={s.proctoringUrl} 
-                              target="_blank" 
-                              rel="noreferrer"
-                              className="text-xs px-2 py-1 rounded shadow-sm w-full font-medium flex items-center justify-center gap-1 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300"
-                            >
-                              📦 Отчёт прокторинга
-                            </a>
-                          ) : (
+                          {/* Proctoring dossier. Only offered when a report actually
+                              exists — a session with no report has nothing to show,
+                              and claiming "нарушений нет" for an unobserved exam would
+                              be a false assurance to the manager. */}
+                          {s.proctoring ? (
                             <button
-                              onClick={() => toast.success(`Прокторинг для ученика ${s.childName || s.shortId}: Нарушений не зафиксировано, отчёт сохранён в архиве.`)}
-                              className="text-xs px-2 py-1 rounded shadow-sm w-full font-medium flex items-center justify-center gap-1 bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200"
+                              onClick={() => setDossierFor(s.shortId)}
+                              className={`text-xs px-2 py-1 rounded shadow-sm w-full font-medium flex items-center justify-center gap-1 border ${
+                                s.proctoring.unavailable
+                                  ? "bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200"
+                                  : (s.proctoring.totalViolations || 0) > 0
+                                    ? "bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-300"
+                                    : "bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border-emerald-300"
+                              }`}
                             >
-                              🛡️ Прокторинг: Норма
+                              📦 Протокол прокторинга
                             </button>
+                          ) : (
+                            <div className="text-xs px-2 py-1 rounded w-full text-center bg-slate-50 text-slate-400 border border-slate-200">
+                              🛡️ Прокторинг не велся
+                            </div>
                           )}
                         </div>
                       )}
@@ -1569,11 +1575,27 @@ export default function ManagerDashboard() {
         )}
         {/* New Document Issuer Modal */}
         {isDocIssuerOpen && tenant && (
-          <DocumentIssuerModal 
-            tenantId={tenant.id} 
-            onClose={() => setIsDocIssuerOpen(false)} 
+          <DocumentIssuerModal
+            tenantId={tenant.id}
+            onClose={() => setIsDocIssuerOpen(false)}
           />
         )}
+
+        {/* Proctoring session dossier */}
+        {(() => {
+          if (!dossierFor) return null;
+          const st = students.find(x => x.shortId === dossierFor);
+          if (!st?.proctoring) return null;
+          return (
+            <ProctoringDossier
+              shortId={st.shortId}
+              studentName={st.childName || st.studentName || `Ученик ${st.shortId}`}
+              grade={st.grade}
+              report={st.proctoring}
+              onClose={() => setDossierFor(null)}
+            />
+          );
+        })()}
 
       </div>
     </div>

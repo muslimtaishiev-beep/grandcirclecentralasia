@@ -733,7 +733,7 @@ app.post("/api/exams/telemetry", async (req, res) => {
 // server attaches it to the submission the manager already opens.
 app.post("/api/exams/proctoring-report", async (req, res) => {
   try {
-    const { shortId, tenantId, violations, honestyIndex, unavailable, startedAt, endedAt, snapshots } = req.body || {};
+    const { shortId, tenantId, violations, honestyIndex, unavailable, startedAt, endedAt, snapshots, videoUrl, videoPath } = req.body || {};
     if (!shortId) return res.status(400).json({ success: false, error: "Missing shortId" });
     if (!useFirebase) return res.status(503).json({ success: false, error: "Firestore not configured" });
 
@@ -772,6 +772,13 @@ app.post("/api/exams/proctoring-report", async (req, res) => {
         atMs: Number(v.timestamp) || 0,
       })),
       snapshotCount: Array.isArray(snapshots) ? snapshots.length : 0,
+      // Recording of the whole session, in Storage. Only accept an URL that
+      // actually points at this project's bucket — the body is anonymous.
+      videoUrl:
+        typeof videoUrl === "string" && /^https:\/\/firebasestorage\.googleapis\.com\//.test(videoUrl)
+          ? videoUrl
+          : null,
+      videoPath: typeof videoPath === "string" ? videoPath.slice(0, 300) : null,
     };
 
     await subRef.set({ proctoring: report }, { merge: true });

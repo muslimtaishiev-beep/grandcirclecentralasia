@@ -11,6 +11,7 @@ import { useTenant } from "../context/TenantContext";
 import QuestionFactory from "../components/tests/QuestionFactory";
 import { useProctoringEngine, ProctoringDetectorFlags } from "../lib/useProctoringEngine";
 import ProctoringWarningOverlay from "../components/ProctoringWarningOverlay";
+import { uploadProctoringVideo } from "../lib/proctoringVideoUpload";
 import { useParams } from "react-router-dom";
 
 export default function Testing() {
@@ -105,6 +106,8 @@ export default function Testing() {
   const proctorVideoRef = useRef<HTMLVideoElement | null>(null);
   const proctorCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const proctorStreamRef = useRef<MediaStream | null>(null);
+  const proctorRecorderRef = useRef<MediaRecorder | null>(null);
+  const proctorChunksRef = useRef<Blob[]>([]);
   const [shortId, setShortId] = useState(() => {
     const saved = safeGetSession("shortId", "");
     if (saved && saved !== "undefined" && saved !== "null") return saved;
@@ -156,6 +159,25 @@ export default function Testing() {
           try { await proctorVideoRef.current.play(); } catch (e) {}
         }
         setCameraGranted(true);
+
+        // Record the session straight off the camera stream. (The shared
+        // recorder hook records a canvas, but nothing paints to the canvas
+        // during a real exam, so it would capture a black rectangle.)
+        try {
+          const candidates = [
+            "video/webm;codecs=vp9,opus",
+            "video/webm;codecs=vp8,opus",
+            "video/webm",
+          ];
+          const mimeType = candidates.find(t => (window as any).MediaRecorder?.isTypeSupported?.(t));
+          const rec = new MediaRecorder(stream, mimeType ? { mimeType, videoBitsPerSecond: 600000 } : undefined);
+          proctorChunksRef.current = [];
+          rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) proctorChunksRef.current.push(e.data); };
+          rec.start(5000); // flush every 5s so a crash still leaves usable footage
+          proctorRecorderRef.current = rec;
+        } catch (e) {
+          console.warn("[Proctoring] recorder unavailable:", e);
+        }
       } catch (e) {
         // Denied, missing or busy camera must never cost a student their exam —
         // they carry on, and the submission is flagged so the manager knows the
@@ -239,13 +261,40 @@ export default function Testing() {
   const sendProctoringReport = async () => {
     if (!proctoringConfig?.enabled) return;
     if (!proctoringActive && !proctoringUnavailable) return;
+    const tenantId = orgSlug || "org_future_leaders";
+
+    // Close the recording and push it to Storage first, so the report can carry
+    // the video URL. Storage, not Firestore: a 90-minute recording is orders of
+    // magnitude past the 1 MB document limit.
+    let videoUrl: string | undefined;
+    let videoPath: string | undefined;
+    try {
+      const rec = proctorRecorderRef.current;
+      if (rec && rec.state !== "inactive") {
+        await new Promise<void>((resolve) => {
+          rec.onstop = () => resolve();
+          try { rec.stop(); } catch { resolve(); }
+          setTimeout(resolve, 5000); // never hang the submit on a stuck recorder
+        });
+      }
+      proctorRecorderRef.current = null;
+      if (proctorChunksRef.current.length > 0) {
+        const blob = new Blob(proctorChunksRef.current, { type: "video/webm" });
+        const up = await uploadProctoringVideo(blob, tenantId, String(shortId));
+        if (up.success) { videoUrl = up.url; videoPath = up.path; }
+        proctorChunksRef.current = [];
+      }
+    } catch (e) {
+      console.warn("[Proctoring] video upload skipped:", e);
+    }
+
     try {
       await fetch("/api/exams/proctoring-report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           shortId,
-          tenantId: orgSlug || "org_future_leaders",
+          tenantId,
           unavailable: proctoringUnavailable,
           honestyIndex: proctor.honestyIndex,
           startedAt: proctorStartedAtRef.current,
@@ -254,6 +303,8 @@ export default function Testing() {
             type: e.type, severity: e.severity, description: e.description, timestamp: e.timestamp,
           })),
           snapshots: proctorSnapshotsRef.current,
+          videoUrl,
+          videoPath,
         }),
         signal: AbortSignal.timeout(20000),
       });

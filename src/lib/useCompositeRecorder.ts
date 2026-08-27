@@ -3,7 +3,9 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 const MAX_RECORDING_TIME_MS = 90 * 60 * 1000; // 90 minutes
 
 /**
- * Hook to record a Canvas stream (optionally composited with audio) into a downloadable video file.
+ * Hook to record a Canvas stream (optionally composited with audio).
+ * The resulting blob is uploaded to Firebase Storage for the manager — it is
+ * never handed to the student.
  * 
  * @param canvasRef - Reference to the HTMLCanvasElement to record
  */
@@ -141,17 +143,18 @@ export function useCompositeRecorder(canvasRef: React.RefObject<HTMLCanvasElemen
         setRecordingDuration(prev => prev + 1);
       }, 1000);
 
-      // 90 minute auto-stop
+      // 90 minute auto-stop. Deliberately does NOT download: handing the
+      // student a copy of their own proctoring footage defeats the point of
+      // recording it, and on the exam page a surprise file download mid-test
+      // is alarming. The blob stays in memory for the uploader.
       maxTimeTimeoutRef.current = setTimeout(() => {
-        stopRecording().then(() => {
-          downloadRecording();
-        });
+        void stopRecording();
       }, MAX_RECORDING_TIME_MS);
       
     } catch (err) {
       console.error('Failed to start composite recording:', err);
     }
-  }, [canvasRef, stopRecording, downloadRecording]);
+  }, [canvasRef, stopRecording]);
 
   // Cleanup on unmount
   useEffect(() => {
