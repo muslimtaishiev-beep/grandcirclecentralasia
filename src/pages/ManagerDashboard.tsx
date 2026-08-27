@@ -480,26 +480,39 @@ export default function ManagerDashboard() {
     }
     if (user && activeTenantId) {
       fetchStudents();
-      fetchSuspended(activeTenantId);
     }
   }, [user, activeTenantId, navigate]);
 
-  const fetchSuspended = async (tenantId: string) => {
-    try {
-      const { query, where, getDocs, collection } = await import('firebase/firestore');
-      const { db } = await import('../lib/firebase');
-      const snap = await getDocs(query(
-        collection(db, 'exam_suspensions'),
-        where('tenantId', '==', tenantId),
-        where('status', '==', 'ПРИОСТАНОВЛЕН'),
-      ));
-      setSuspended(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    } catch (e) {
-      // A failure here must not blank the whole dashboard — the roster below
-      // is the primary content and loads independently.
-      console.warn('[Manager] suspensions load failed:', e);
-    }
-  };
+  // Live subscription rather than a one-off read: a student is suspended in the
+  // middle of an exam, almost always after the manager already has this page
+  // open. Fetching once meant the row simply never appeared and the student sat
+  // locked out while the manager stared at an empty panel.
+  useEffect(() => {
+    if (!activeTenantId) return;
+    let unsub: (() => void) | undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { query, where, onSnapshot, collection } = await import('firebase/firestore');
+        const { db } = await import('../lib/firebase');
+        if (cancelled) return;
+        unsub = onSnapshot(
+          query(
+            collection(db, 'exam_suspensions'),
+            where('tenantId', '==', activeTenantId),
+            where('status', '==', 'ПРИОСТАНОВЛЕН'),
+          ),
+          (snap) => setSuspended(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+          // A failure here must not blank the whole dashboard — the roster
+          // below is the primary content and loads independently.
+          (e) => console.warn('[Manager] suspensions subscription failed:', e),
+        );
+      } catch (e) {
+        console.warn('[Manager] suspensions subscription failed:', e);
+      }
+    })();
+    return () => { cancelled = true; if (unsub) unsub(); };
+  }, [activeTenantId]);
 
   const unblockStudent = async (row: any) => {
     if (!confirm(`Разрешить ${row.studentName || row.shortId} продолжить тест?`)) return;
