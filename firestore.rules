@@ -170,6 +170,17 @@ service cloud.firestore {
       allow update, delete: if hasTenantAccess();
     }
     
+    // Suspended exams. The manager dashboard subscribes to these to show who is
+    // locked out and needs permission to continue, so staff of the owning
+    // tenant must be able to read them. Writes stay server-only: the student
+    // is anonymous and suspend/unblock go through the Admin SDK, which bypasses
+    // these rules — letting a client write here would let anyone unblock
+    // themselves.
+    match /exam_suspensions/{shortId} {
+      allow read: if hasTenantAccess();
+      allow write: if false;
+    }
+
     match /submissions/{subId} {
       allow read, write: if hasTenantAccess();
     }
