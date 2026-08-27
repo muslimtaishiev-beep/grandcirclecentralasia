@@ -778,6 +778,23 @@ async function processExamSubmission(payload: any) {
     }
   }
 
+  // Prune stale/duplicate answer-key entries down to the actual question ids of
+  // this test. test_answer_keys has accumulated leftovers from past re-seeds under
+  // older id schemes ("russian_1", "ma_1_9", numeric "0".."13" — all alongside the
+  // real "ru_7_q1"-style ids). They never granted or removed points (a student's
+  // answers object can't contain those ids), but calculateScoresTs counts EVERY key
+  // toward diagnosticsRaw's per-topic "possible" totals, so the topic breakdown
+  // shown to students and in managers' PDF reports claimed e.g. 24 possible points
+  // for a topic in a grade-7 russian section that only has 9 questions in total.
+  // English is left untouched: realQuestions doesn't capture the english list and
+  // its keys only drive the separate CEFR level.
+  if (realQuestions) {
+    for (const subject of ['russian', 'math', 'logic'] as const) {
+      const realIds = new Set(realQuestions[subject].map((q: any) => q.id));
+      keys[subject] = Object.fromEntries(Object.entries(keys[subject] || {}).filter(([id]) => realIds.has(id)));
+    }
+  }
+
   // 2. Parse answers if string
   let parsedAnswers = answers;
   if (typeof answers === 'string') {
