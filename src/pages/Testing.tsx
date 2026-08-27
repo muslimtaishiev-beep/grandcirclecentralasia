@@ -457,7 +457,7 @@ export default function Testing() {
          }
          
          try {
-           const data = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId: resumeShortId });
+           const data = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId: resumeShortId, tenantId: orgSlug || "org_future_leaders" });
            if (!data.success) return alert(data.error || "Не найдено");
            
            const student = data.student;
@@ -607,7 +607,7 @@ export default function Testing() {
              // Recover student and proceed gracefully
              if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
              try {
-               const recoverData = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId });
+               const recoverData = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId, tenantId: orgSlug || "org_future_leaders" });
                if (recoverData.success) {
                  setResultData({
                    totalScore: recoverData.student.totalScore,

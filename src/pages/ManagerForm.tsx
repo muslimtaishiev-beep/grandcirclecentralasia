@@ -92,7 +92,7 @@ export default function ManagerForm() {
     setLoading(true);
     setError("");
     try {
-      const data = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId });
+      const data = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId, tenantId });
       if (data.success) {
         setStudent(data.student);
         setChildName(data.student.studentName);

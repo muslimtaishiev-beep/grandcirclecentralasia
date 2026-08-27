@@ -401,7 +401,7 @@ export default function ManagerDashboard() {
     if (!currentStudent.diagnosticsRaw || Object.keys(currentStudent.diagnosticsRaw).length === 0) {
       setAnalyzingId(student.shortId);
       try {
-        const data = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId: student.shortId }, "");
+        const data = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId: student.shortId, tenantId: activeTenantId }, "");
         if (data && data.success && data.student && data.student.diagnosticsRaw) {
           currentStudent = { ...student, diagnosticsRaw: data.student.diagnosticsRaw };
         } else {

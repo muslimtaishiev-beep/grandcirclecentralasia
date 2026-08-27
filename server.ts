@@ -1182,15 +1182,17 @@ app.post("/api/gas", async (req, res) => {
       delete payload.testerPin; // do not send pin to GAS
     }
     
-    // For protected actions, verify Firebase Auth token
+    // For protected actions, verify Firebase Auth token.
+    // getCertificateRegistry is NOT public — it's only ever called from the manager
+    // dashboard, and exposing the whole certificate registry to anonymous callers
+    // leaked every tenant's issued documents.
     const publicActions = [
-      "submitTest", 
-      "submitEnglishTest", 
-      "registerStudent", 
-      "suspendTest", 
-      "checkSuspendStatus", 
-      "getStudentByShortId", 
-      "getCertificateRegistry"
+      "submitTest",
+      "submitEnglishTest",
+      "registerStudent",
+      "suspendTest",
+      "checkSuspendStatus",
+      "getStudentByShortId"
     ];
     if (!publicActions.includes(payload.action)) {
       const authHeader = req.headers["authorization"] || "";
@@ -1266,6 +1268,46 @@ app.post("/api/gas", async (req, res) => {
         // No local record — legacy suspension stored only in GAS; fall through to proxy.
       } catch (e: any) {
         console.warn("[Suspend] Local status check failed, falling back to GAS:", e.message);
+      }
+    }
+
+    // Tenant-scoped student lookup. This action is public (an anonymous student
+    // needs it to resume their English section and to recover after an "already
+    // submitted" error), and it used to be a straight GAS proxy keyed on shortId
+    // alone — so ANY caller could read ANY tenant's student record, name, scores
+    // and all, just by guessing a 6-digit id. Served from Firestore now with a
+    // hard tenantId match; GAS remains the fallback only when no local submission
+    // exists yet (student registered but hasn't submitted).
+    if (payload.action === "getStudentByShortId" && useFirebase && payload.shortId) {
+      try {
+        const requestedTenantId = payload.tenantId || "org_future_leaders";
+        const snap = await admin.firestore().collection("submissions").doc(`sub_${payload.shortId}`).get();
+        const d = snap.data();
+        if (d) {
+          if (d.tenantId && d.tenantId !== requestedTenantId) {
+            console.warn(`[Security] getStudentByShortId cross-tenant blocked: ${payload.shortId} belongs to ${d.tenantId}, requested by ${requestedTenantId}`);
+            return res.json({ success: false, error: "Ученик не найден" });
+          }
+          return res.json({
+            success: true,
+            student: {
+              shortId: d.studentShortId,
+              studentName: d.studentName,
+              grade: d.grade,
+              russian: d.scores?.russian ?? "",
+              math: d.scores?.math ?? "",
+              logic: d.scores?.logic ?? "",
+              english: d.scores?.english ?? "",
+              totalScore: d.scores?.total ?? "",
+              cheated: Boolean(d.cheated),
+              diagnosticsReport: d.diagnosticSummary || "",
+              testId: d.testId,
+            },
+          });
+        }
+        // No local submission — fall through to GAS (student may only exist in Sheets).
+      } catch (e: any) {
+        console.warn("[getStudentByShortId] Local lookup failed, falling back to GAS:", e.message);
       }
     }
 
@@ -1478,18 +1520,12 @@ app.post("/api/admin/login", async (req, res) => {
       console.warn("[ADMIN_AUTH] Admin SDK verify notice:", sdkErr.message);
     }
 
-    // Fallback: Decode signed JWT payload if Admin SDK service account key is unconfigured
-    if (!isSuperAdmin && idToken) {
-      try {
-        const parts = idToken.split(".");
-        if (parts.length === 3) {
-          const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf8"));
-          email = payload.email || "";
-          uid = payload.user_id || payload.sub || "";
-          isSuperAdmin = Boolean(email.endsWith("@studyfreeforum.com")) || payload.admin === true;
-        }
-      } catch (e) {}
-    }
+    // NOTE: there used to be a fallback here that base64-decoded the JWT payload
+    // WITHOUT verifying its signature and granted superadmin on a matching email
+    // claim. That is a full authentication bypass — anyone could mint
+    // `{"email":"x@studyfreeforum.com"}` as an unsigned token and be let straight
+    // into the superadmin console (verified reproducible before removal). Admin SDK
+    // verification is now the only accepted path; if it can't run, access is denied.
 
     if (!isSuperAdmin) {
       console.warn(`[ADMIN_AUTH] Access denied for: ${email || uid}`);
@@ -1534,17 +1570,7 @@ app.get("/api/admin/check", async (req, res) => {
       }
     } catch (sdkErr: any) {}
 
-    if (!isSuperAdmin) {
-      try {
-        const parts = token.split(".");
-        if (parts.length === 3) {
-          const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf8"));
-          email = payload.email || "";
-          uid = payload.user_id || payload.sub || "";
-          isSuperAdmin = Boolean(email.endsWith("@studyfreeforum.com")) || payload.admin === true;
-        }
-      } catch (e) {}
-    }
+    // Unsigned-JWT fallback removed here too — see /api/admin/login above.
 
     if (!isSuperAdmin) {
       return res.json({ success: false, valid: false });

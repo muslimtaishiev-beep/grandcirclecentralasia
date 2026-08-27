@@ -18,21 +18,10 @@ export const requireFirebaseAuth = async (req: any, res: any, next: any) => {
     req.user = decodedToken;
     next();
   } catch (error) {
-    // Fail-safe payload decoding for signed tokens / SuperAdmin
-    try {
-      const parts = token.split(".");
-      if (parts.length === 3) {
-        const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf-8"));
-        if (payload && (payload.uid || payload.sub || payload.email)) {
-          req.user = {
-            uid: payload.uid || payload.sub || "superadmin",
-            email: payload.email || "admin@studyfreeforum.com",
-            name: payload.name || "SuperAdmin"
-          };
-          return next();
-        }
-      }
-    } catch (e) {}
+    // NOTE: a "fail-safe" fallback used to decode the JWT payload WITHOUT
+    // verifying its signature and accept any uid/sub/email it contained — an
+    // authentication bypass for every endpoint behind this middleware
+    // (/api/auth/me, staff invites). Signature verification is now mandatory.
     return res.status(401).json({ error: "Unauthorized: Invalid token" });
   }
 };
