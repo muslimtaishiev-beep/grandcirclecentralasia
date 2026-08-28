@@ -544,11 +544,14 @@ app.post("/api/exams/start", async (req, res) => {
       return res.status(400).json({ success: false, error: "Missing studentName or grade" });
     }
 
-    const EXPECTED_PIN = getHourlyPIN();
+    // Accept the neighbouring hours too: the PIN rotates on the hour, so one
+    // read out at 10:59 was rejected at 11:00 even though the student typed it
+    // correctly. Also covers a device clock that is a few minutes out.
+    const pinOk = [-1, 0, 1].some(offset => String(enteredPin || "").trim() === getHourlyPIN(offset));
     const TESTER_PIN = process.env.VITE_TESTER_PIN || process.env.TESTER_PIN;
     const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
 
-    if (enteredPin !== EXPECTED_PIN && !isTester) {
+    if (!pinOk && !isTester) {
       return res.status(403).json({ success: false, error: "Неверный PIN-код. Узнайте актуальный PIN у менеджера." });
     }
 

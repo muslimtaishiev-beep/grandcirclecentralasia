@@ -20,6 +20,16 @@ export default function ManagerDashboard() {
   const { tenant } = useTenant();
   const navigate = useNavigate();
   const [dossierFor, setDossierFor] = useState<string | null>(null);
+  // The PIN rotates on the hour, but this panel rendered it once. A manager
+  // with the dashboard open since before the turn read out a stale code and
+  // the student was told it was wrong. Re-render every 15s and show how long
+  // the current one has left.
+  const [pinTick, setPinTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setPinTick(v => v + 1), 15000);
+    return () => clearInterval(t);
+  }, []);
+  const pinMinutesLeft = 60 - new Date().getUTCMinutes();
   // Exams a student was thrown out of (lost fullscreen, tab killed, connection
   // dropped). The server already tracked these in `exam_suspensions` and could
   // already unblock them, but there was no way for a manager to see or act on
@@ -800,7 +810,12 @@ export default function ManagerDashboard() {
             <h1 className="text-3xl font-bold text-slate-800">CRM Учеников</h1>
             <div className="bg-white px-4 py-2 rounded-xl border border-blue-200 shadow-sm flex items-center gap-3">
               <span className="text-sm text-slate-500 font-medium">PIN-код для тестов:</span>
-              <span className="text-xl font-mono font-bold text-blue-600 tracking-widest bg-blue-50 px-3 py-1 rounded">{getHourlyPIN()}</span>
+              <span key={pinTick} className="text-xl font-mono font-bold text-blue-600 tracking-widest bg-blue-50 px-3 py-1 rounded">{getHourlyPIN()}</span>
+              <span className={`text-xs font-medium ${pinMinutesLeft <= 5 ? "text-amber-600" : "text-slate-400"}`}>
+                {pinMinutesLeft <= 5
+                  ? `сменится через ${pinMinutesLeft} мин`
+                  : `действует ещё ${pinMinutesLeft} мин`}
+              </span>
             </div>
           </div>
           <div className="flex gap-4">

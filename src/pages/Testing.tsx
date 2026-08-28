@@ -4,7 +4,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { Reorder } from "framer-motion";
 import { testsData } from "../data/testsData";
 import { Question } from "../types";
-import { getHourlyPIN, formatMathText, getCEFRLevel, fetchGasAPI } from "../lib/utils";
+import { getHourlyPIN, isValidHourlyPIN, formatMathText, getCEFRLevel, fetchGasAPI } from "../lib/utils";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useTenant } from "../context/TenantContext";
@@ -659,9 +659,8 @@ export default function Testing() {
          if (!resumeShortId.trim()) return alert("Введите Test ID");
          if (!enteredPin.trim()) return alert("Введите PIN");
          
-         const EXPECTED_PIN = getHourlyPIN();
          const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
-         if (enteredPin !== EXPECTED_PIN && (!TESTER_PIN || enteredPin !== TESTER_PIN)) {
+         if (!isValidHourlyPIN(enteredPin) && (!TESTER_PIN || enteredPin !== TESTER_PIN)) {
             return alert("Неверный PIN-код. Узнайте актуальный PIN у менеджера.");
          }
          
@@ -707,9 +706,8 @@ export default function Testing() {
         return alert("Введите PIN-код менеджера.");
       }
       
-      const EXPECTED_PIN = getHourlyPIN();
       const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
-      if (enteredPin !== EXPECTED_PIN && (!TESTER_PIN || enteredPin !== TESTER_PIN)) {
+      if (!isValidHourlyPIN(enteredPin) && (!TESTER_PIN || enteredPin !== TESTER_PIN)) {
         return alert("Неверный PIN-код. Узнайте актуальный PIN у менеджера.");
       }
 

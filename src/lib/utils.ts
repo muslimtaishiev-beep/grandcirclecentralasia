@@ -10,6 +10,21 @@ export function generateShortId(): string {
 }
 
 // Generates a deterministic 4-digit PIN that changes every hour
+/**
+ * Accepts the PIN for the current hour and the two either side of it.
+ *
+ * The PIN rotates on the hour, so a manager reading one out at 10:59 gave a
+ * code that stopped working sixty seconds later — the student typed exactly
+ * what they were told and was refused. The window also absorbs a device clock
+ * that is a few minutes off, which is common on phones and was indistinguishable
+ * from the student mistyping.
+ */
+export function isValidHourlyPIN(entered: string): boolean {
+  const clean = String(entered || "").trim();
+  if (!clean) return false;
+  return [-1, 0, 1].some(offset => clean === getHourlyPIN(offset));
+}
+
 export function getHourlyPIN(hourOffset: number = 0): string {
   const d = new Date();
   d.setUTCHours(d.getUTCHours() + hourOffset);
