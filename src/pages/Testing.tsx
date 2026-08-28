@@ -4,7 +4,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { Reorder } from "framer-motion";
 import { testsData } from "../data/testsData";
 import { Question } from "../types";
-import { getHourlyPIN, isValidHourlyPIN, formatMathText, getCEFRLevel, fetchGasAPI } from "../lib/utils";
+import { getHourlyPIN, isValidHourlyPIN, normalizeDigits, formatMathText, getCEFRLevel, fetchGasAPI } from "../lib/utils";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useTenant } from "../context/TenantContext";
@@ -708,6 +708,24 @@ export default function Testing() {
       
       const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
       if (!isValidHourlyPIN(enteredPin) && (!TESTER_PIN || enteredPin !== TESTER_PIN)) {
+        // Say which case it is. A student typing the right code and being told
+        // it is wrong has nothing to act on; a student whose device clock is
+        // off needs to know that, not to go ask for the PIN again.
+        const digits = normalizeDigits(enteredPin);
+        if (!digits) {
+          return alert("Введите PIN-код цифрами.");
+        }
+        if (digits.length !== 4) {
+          return alert(`PIN состоит из 4 цифр, а вы ввели ${digits.length}. Проверьте код.`);
+        }
+        // Correct for some other hour: their clock is wrong, not the code.
+        const clockOff = [-6,-5,-4,-3,-2,2,3,4,5,6].some(o => digits === getHourlyPIN(o));
+        if (clockOff) {
+          return alert(
+            "PIN верный, но часы на вашем устройстве идут неточно, поэтому код не совпал.\n\n" +
+            "Включите автоматическую установку времени в настройках телефона и попробуйте снова."
+          );
+        }
         return alert("Неверный PIN-код. Узнайте актуальный PIN у менеджера.");
       }
 

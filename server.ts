@@ -547,7 +547,16 @@ app.post("/api/exams/start", async (req, res) => {
     // Accept the neighbouring hours too: the PIN rotates on the hour, so one
     // read out at 10:59 was rejected at 11:00 even though the student typed it
     // correctly. Also covers a device clock that is a few minutes out.
-    const pinOk = [-1, 0, 1].some(offset => String(enteredPin || "").trim() === getHourlyPIN(offset));
+    // Digits only: phone keyboards and paste smuggle in characters that render
+    // as nothing (non-breaking space, zero-width space, RTL marks) and survive
+    // trim(), so a correctly typed PIN was rejected. Non-Latin numerals are
+    // folded because they are visually identical to the code being read out.
+    const cleanPin = String(enteredPin || "")
+      .replace(/[\u0660-\u0669]/g, (c: string) => String(c.charCodeAt(0) - 0x0660))
+      .replace(/[\u06F0-\u06F9]/g, (c: string) => String(c.charCodeAt(0) - 0x06F0))
+      .replace(/[\uFF10-\uFF19]/g, (c: string) => String(c.charCodeAt(0) - 0xFF10))
+      .replace(/\D/g, "");
+    const pinOk = Boolean(cleanPin) && [-1, 0, 1].some(offset => cleanPin === getHourlyPIN(offset));
     const TESTER_PIN = process.env.VITE_TESTER_PIN || process.env.TESTER_PIN;
     const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
 

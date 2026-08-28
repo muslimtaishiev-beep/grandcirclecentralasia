@@ -20,9 +20,24 @@ export function generateShortId(): string {
  * from the student mistyping.
  */
 export function isValidHourlyPIN(entered: string): boolean {
-  const clean = String(entered || "").trim();
+  // Keep only the digits. A student reported being refused while typing the
+  // correct code: phone keyboards and paste routinely smuggle in characters
+  // that look like nothing — a non-breaking space, a zero-width space, an RTL
+  // mark — and String.trim() removes none of them. Full-width and Arabic-Indic
+  // digits are folded too, since a non-Latin numeric keyboard produces those
+  // and they are visually identical to what the manager read out.
+  const clean = normalizeDigits(entered);
   if (!clean) return false;
   return [-1, 0, 1].some(offset => clean === getHourlyPIN(offset));
+}
+
+/** Extracts the digits from user input, folding non-Latin numerals to ASCII. */
+export function normalizeDigits(raw: string): string {
+  return String(raw || "")
+    .replace(/[\u0660-\u0669]/g, c => String(c.charCodeAt(0) - 0x0660))  // ٠-٩
+    .replace(/[\u06F0-\u06F9]/g, c => String(c.charCodeAt(0) - 0x06F0))  // ۰-۹
+    .replace(/[\uFF10-\uFF19]/g, c => String(c.charCodeAt(0) - 0xFF10))  // ０-９
+    .replace(/\D/g, "");
 }
 
 export function getHourlyPIN(hourOffset: number = 0): string {
