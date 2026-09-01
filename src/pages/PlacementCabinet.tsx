@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { auth } from "../lib/firebase";
 import QuestionImport from "../components/placement/QuestionImport";
 import { exportStreamCSV, openStudentReport } from "../lib/placementExport";
+import { openCertificate } from "../lib/placementCertificate";
 import WorkReview from "../components/placement/WorkReview";
 
 /**
@@ -428,9 +429,9 @@ export default function PlacementCabinet() {
                             {r.approved && <span className="ml-2 text-xs text-slate-400">утверждено</span>}
                           </td>
                           <td className="p-3 text-right whitespace-nowrap">
-                            <button onClick={() => openStudentReport(r as any) || setError("Браузер заблокировал окно — разрешите всплывающие окна.")}
+                            <button onClick={() => openCertificate(r as any) || setError("Браузер заблокировал окно — разрешите всплывающие окна.")}
                               className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium mr-1">
-                              📄 Протокол
+                              🎓 Сертификат
                             </button>
                             <button onClick={() => setReviewId(r.id)}
                               className={`text-xs px-3 py-1.5 rounded-lg font-medium border ${
@@ -770,6 +771,10 @@ export default function PlacementCabinet() {
                   Расчёт системы: <b>{openStudent.recommendation}</b>. Решение принимает школа.
                 </p>
                 <div className="flex gap-2 flex-wrap">
+                  <button onClick={() => openCertificate(openStudent) || setError("Браузер заблокировал окно — разрешите всплывающие окна.")}
+                    className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-semibold text-sm hover:bg-slate-50">
+                    🎓 Сертификат
+                  </button>
                   <button onClick={() => openStudentReport(openStudent) || setError("Браузер заблокировал окно — разрешите всплывающие окна.")}
                     className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-semibold text-sm hover:bg-slate-50">
                     📄 Протокол

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
+import { openCertificate } from "../lib/placementCertificate";
 
 /**
  * Портал проверки результатов среза для учеников.
@@ -17,7 +18,8 @@ type Result = {
   studentName: string; shortId: string; grade: number;
   correct: number; total: number; percent: number;
   satMath: number | null; decision: string; approved: boolean;
-  adjusted: boolean;
+  assignedClass: string | null; photo?: string | null; adjusted: boolean;
+  finishedAt?: any;
   sections: { title: string; correct: number; total: number; percent: number; sat: number | null }[];
 };
 
@@ -136,8 +138,10 @@ export default function PlacementResultPortal() {
 
               <div className={`rounded-xl p-4 border ${
                 result.approved ? "bg-emerald-50 border-emerald-200" : "bg-slate-50 border-slate-200"}`}>
-                <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">Решение школы</div>
-                <div className="text-lg font-bold text-slate-900">{result.decision}</div>
+                <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">Класс зачисления</div>
+                <div className="text-2xl font-bold text-slate-900">
+                  {result.assignedClass || result.decision}
+                </div>
                 {!result.approved && (
                   <div className="text-xs text-slate-500 mt-1">
                     Предварительно. Окончательное распределение объявит школа.
@@ -150,6 +154,12 @@ export default function PlacementResultPortal() {
                   Балл уточнён комиссией после проверки письменной работы.
                 </p>
               )}
+
+              <button onClick={() => openCertificate(result as any) ||
+                  setError("Браузер заблокировал окно — разрешите всплывающие окна для этого сайта.")}
+                className="w-full py-3.5 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 shadow">
+                🎓 Открыть сертификат
+              </button>
 
               <button onClick={() => { setResult(null); setShortId(""); setLastName(""); }}
                 className="text-sm text-blue-600 font-semibold text-center">
