@@ -151,11 +151,13 @@ let activeSessions = new Set<string>();
 import authRoutes from "./src/routes/authRoutes.js";
 import tenantRoutes from "./src/routes/tenantRoutes.js";
 import superAdminRoutes from "./src/routes/superAdminRoutes.js";
+import placementRoutes from "./src/routes/placementRoutes.js";
 import { sendTestResultEmail } from "./emailService.js";
 
 app.use("/api/auth", authRoutes);
 app.use("/api/tenants", tenantRoutes);
 app.use("/api/superadmin", superAdminRoutes);
+app.use("/api/placement", placementRoutes);
 
 let memoryDbStore: any = null;
 

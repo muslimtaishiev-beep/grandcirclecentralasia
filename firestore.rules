@@ -170,6 +170,28 @@ service cloud.firestore {
       allow update, delete: if hasTenantAccess();
     }
     
+    // Placement exam (вступительный срез 5-11). The question bank holds the
+    // correct answers, so NO client may read it — students receive questions
+    // through the server API with answers stripped, and the завуч cabinet also
+    // goes through the API. Blueprints are read by staff for the cabinet UI;
+    // writes go through the server (role check for «завуч» lives there).
+    match /exam_questions/{qid} {
+      allow read, write: if false;
+    }
+    match /exam_blueprints/{bpId} {
+      allow read: if hasTenantAccess();
+      allow write: if false;
+    }
+    match /placement_sessions/{sid} {
+      allow read, write: if false;
+    }
+    // Results feed the завуч cabinet with a live subscription, like the
+    // suspension panel; they contain no answer keys.
+    match /placement_results/{rid} {
+      allow read: if hasTenantAccess();
+      allow write: if false;
+    }
+
     // Suspended exams. The manager dashboard subscribes to these to show who is
     // locked out and needs permission to continue, so staff of the owning
     // tenant must be able to read them. Writes stay server-only: the student
