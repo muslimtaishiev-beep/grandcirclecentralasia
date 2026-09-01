@@ -144,11 +144,13 @@ router.get("/blueprint", requireFirebaseAuth, async (req: any, res: any) => {
 
     const bp = await loadBlueprint(tenantId, grade);
     const bank = await db().collection("exam_questions")
-      .where("tenantId", "==", tenantId).where("active", "==", true).get();
+      .where("tenantId", "==", tenantId)
+      .where("active", "==", true)
+      .where("grades", "array-contains", grade)
+      .get();
     const availability: Record<string, Record<string, number>> = { math: { "1": 0, "2": 0, "3": 0 }, english: { "1": 0, "2": 0, "3": 0 } };
     bank.forEach(d => {
       const q = d.data();
-      if (!Array.isArray(q.grades) || !q.grades.includes(grade)) return;
       const s = availability[q.subject]; if (!s) return;
       s[String(q.difficulty)] = (s[String(q.difficulty)] || 0) + 1;
     });
@@ -344,11 +346,17 @@ router.post("/start", async (req: any, res: any) => {
     }
 
     const bp = await loadBlueprint(tenantId, g);
+
+    // Фильтруем по классу в ЗАПРОСЕ, а не после него. Читая весь банк и
+    // отбрасывая лишнее в памяти, мы платили 232 чтения за каждый старт —
+    // при потоке в 200 человек это 46 000 чтений на ровном месте, и первый
+    // же экзаменационный день упирался в дневную квоту Firestore.
     const bankSnap = await db().collection("exam_questions")
-      .where("tenantId", "==", tenantId).where("active", "==", true).get();
-    const pool = bankSnap.docs
-      .map(d => ({ ...d.data(), docId: d.id }))
-      .filter((q: any) => Array.isArray(q.grades) && q.grades.includes(g));
+      .where("tenantId", "==", tenantId)
+      .where("active", "==", true)
+      .where("grades", "array-contains", g)
+      .get();
+    const pool = bankSnap.docs.map(d => ({ ...d.data(), docId: d.id }));
 
     const sections: any[] = [];
     const shortages: string[] = [];
