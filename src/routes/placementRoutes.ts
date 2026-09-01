@@ -488,6 +488,24 @@ router.post("/start", async (req: any, res: any) => {
   }
 });
 
+// POST /api/placement/check-pin — проверка кода до шага фотографии.
+// Без неё ученик с неверным PIN фотографировался бы впустую и узнавал об
+// отказе только после съёмки. Ответ намеренно скупой — ни кода, ни подсказок.
+router.post("/check-pin", async (req: any, res: any) => {
+  try {
+    const { tenantId, enteredPin } = req.body || {};
+    if (!tenantId) return res.status(400).json({ success: false, error: "Bad request" });
+    const tenantDoc = await db().collection("tenants").doc(String(tenantId)).get();
+    if (!tenantDoc.exists) return res.status(404).json({ success: false, error: "Организация не найдена" });
+    if (!pinAccepted(enteredPin, String(tenantId))) {
+      return res.status(403).json({ success: false, error: "Неверный PIN-код. Узнайте актуальный PIN у завуча." });
+    }
+    return res.json({ success: true });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // POST /api/placement/photo — фото ученика для сертификата.
 //
 // Снимается ОДИН раз перед стартом экзамена, по просьбе посмотреть в камеру.
@@ -661,9 +679,12 @@ router.post("/finish-section", async (req: any, res: any) => {
     await ref.set(sess);
     return res.json({
       success: true,
-      sectionResult: { correct, total, percent: cur.result.percent },
+      // Ученику НЕ отдаём ни баллы, ни разбор: работу ещё сверяют с
+      // черновиком, а в items лежат правильные ответы — открыв инструменты
+      // разработчика, ученик увидел бы ключи ко всему варианту.
+      sectionResult: { done: true },
       nextSection: isLast ? null : { index: sess.currentSection, deadline: sess.sections[sess.currentSection].deadline },
-      final,
+      final: final ? { finished: true } : null,
     });
   } catch (e: any) {
     console.error("[Placement] finish error:", e);
@@ -1094,8 +1115,16 @@ router.post("/my-result", async (req: any, res: any) => {
 
     if (r.superseded) return res.status(404).json(notFound);
     if (!r.published) {
-      return res.json({ success: true, pending: true,
-        message: "Результаты ещё не опубликованы. Дождитесь объявления школы." });
+      // Разные стадии — разные сообщения. «Ждите объявления» человеку, чью
+      // работу ещё не открывали, звучит так, будто её потеряли.
+      const reviewed = r.reviewStatus === "reviewed";
+      return res.json({
+        success: true, pending: true, reviewed,
+        studentName: r.studentName, shortId: r.shortId,
+        message: reviewed
+          ? "Ваша работа проверена. Результаты будут опубликованы после того, как школа завершит распределение по классам."
+          : "Ваша работа принята и ожидает проверки комиссией. Результат появится здесь после публикации.",
+      });
     }
     if (r.annulled) {
       return res.json({ success: true, annulled: true, studentName: r.studentName, shortId: r.shortId,

@@ -5,6 +5,7 @@ import QuestionImport from "../components/placement/QuestionImport";
 import { exportStreamCSV, openStudentReport } from "../lib/placementExport";
 import { openCertificate } from "../lib/placementCertificate";
 import WorkReview from "../components/placement/WorkReview";
+import ClassDistribution from "../components/placement/ClassDistribution";
 
 /**
  * Кабинет завуча — вступительный срез 5-11.
@@ -35,7 +36,7 @@ export default function PlacementCabinet() {
   const { orgId } = useParams<{ orgId: string }>();
   const tenantId = orgId || "";
 
-  const [tab, setTab] = useState<"results" | "setup" | "bank">("results");
+  const [tab, setTab] = useState<"results" | "classes" | "setup" | "bank">("results");
   const [bank, setBank] = useState<any[]>([]);
   const [bankNeedsReview, setBankNeedsReview] = useState(0);
   const [editing, setEditing] = useState<any>(null);
@@ -306,7 +307,9 @@ export default function PlacementCabinet() {
         {notice && <div className="mb-4 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">{notice}</div>}
 
         <div className="flex gap-2 mb-5">
-          {([["results", `Результаты (${stats.done})`], ["setup", "Настройка экзамена"],
+          {([["results", `Результаты (${stats.done})`],
+             ["classes", "Распределение по классам"],
+             ["setup", "Настройка экзамена"],
              ["bank", `Банк вопросов (${bank.length})${bankNeedsReview ? ` · ${bankNeedsReview} на проверку` : ""}`]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
               className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
@@ -546,6 +549,10 @@ export default function PlacementCabinet() {
               Изменения действуют для экзаменов, начатых после сохранения. У тех, кто уже пишет, вариант не меняется.
             </p>
           </div>
+        )}
+
+        {tab === "classes" && (
+          <ClassDistribution tenantId={tenantId} onChanged={() => void loadResults()} />
         )}
 
         {tab === "bank" && (

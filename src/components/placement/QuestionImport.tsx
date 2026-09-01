@@ -44,6 +44,28 @@ export default function QuestionImport({ tenantId, onImported }: { tenantId: str
   const [filter, setFilter] = useState<"all" | "problems">("problems");
   const inputRef = useRef<HTMLInputElement>(null);
 
+  /** Шаблон с примерами обоих типов вопросов — в UTF-8 с BOM, чтобы Excel
+   *  открыл кириллицу без искажений. */
+  const downloadTemplate = () => {
+    const rows = [
+      "id,предмет,классы,тема,сложность,тип,вопрос,вариант_А,вариант_Б,вариант_В,вариант_Г,правильный",
+      `,математика,5;6,Натуральные числа,1,выбор,"Вычислите: 348 + 267",615,605,625,715,А`,
+      `,математика,7;8,Дроби и проценты,2,выбор,"Найдите 15% от числа 240",24,36,30,42,Б`,
+      `,математика,9;10;11,Уравнения,3,вписать,"Решите уравнение: 3x − 12 = 0. В ответ запишите x.",,,,,4`,
+      `,английский,5;6,Present Simple,1,выбор,"She ___ to school every day.",go,goes,going,gone,Б`,
+      `,английский,7;8;9,Past Simple,2,выбор,"They ___ the film last night.",watch,watches,watched,watching,В`,
+    ].join("\n");
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), rows], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Шаблон_вопросов_среза.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
+
   const pickFile = async (file: File) => {
     setError(null); setDone(null); setReport(null);
     if (file.size > 4 * 1024 * 1024) { setError("Файл больше 4 МБ — разделите его на части."); return; }
@@ -101,6 +123,33 @@ export default function QuestionImport({ tenantId, onImported }: { tenantId: str
         Файл CSV из шаблона школы. Перед записью система разберёт его и покажет,
         что попадёт в банк — импорт начнётся только после вашего подтверждения.
       </p>
+
+      {/* Шаблон скачивается отсюда: учитель, который открыл эту страницу,
+          не должен искать файл в переписке — а файл, собранный не по шаблону,
+          придётся разбирать вручную. */}
+      <div className="rounded-xl bg-blue-50 border border-blue-200 p-4 mb-4">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="text-sm text-blue-900">
+            <b>Готовите вопросы?</b> Скачайте шаблон и заполните его — так файл
+            загрузится без ручной правки.
+          </div>
+          <button onClick={downloadTemplate}
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 shrink-0">
+            ⬇ Скачать шаблон
+          </button>
+        </div>
+        <details className="mt-3 text-xs text-blue-900">
+          <summary className="cursor-pointer font-semibold">Как заполнять</summary>
+          <ul className="mt-2 ml-4 list-disc grid gap-1">
+            <li><b>id</b> — можно оставить пустым, система создаст сама.</li>
+            <li><b>классы</b> — через точку с запятой: <code>7;8</code>. Вопрос попадёт в оба.</li>
+            <li><b>сложность</b> — 1 лёгкий, 2 средний, 3 сложный. Влияет на подбор варианта и на SAT-балл.</li>
+            <li><b>тип</b> — «выбор» (варианты А–Г) или «вписать» (ученик вводит ответ).</li>
+            <li><b>правильный</b> — буква варианта (<code>Б</code>) либо сам текст ответа.</li>
+            <li>Для типа «вписать» колонки вариантов оставьте пустыми.</li>
+          </ul>
+        </details>
+      </div>
 
       <div className="flex items-center gap-3 flex-wrap mb-4">
         <input ref={inputRef} type="file" accept=".csv,text/csv,text/plain" className="hidden"

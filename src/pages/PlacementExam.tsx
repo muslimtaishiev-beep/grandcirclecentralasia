@@ -155,6 +155,21 @@ export default function PlacementExam() {
 
   const openPhotoStep = async () => {
     setPhotoError(null);
+    // PIN проверяется ДО съёмки: сфотографироваться, чтобы затем услышать
+    // «неверный код», — обидно и бессмысленно.
+    setBusy(true);
+    try {
+      const res = await fetch("/api/placement/check-pin", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId, enteredPin }),
+      });
+      const data = await res.json();
+      if (!data.success) { setError(data.error || "Не удалось проверить PIN."); return; }
+    } catch (e) {
+      setError("Нет связи с сервером. Проверьте интернет и попробуйте снова.");
+      return;
+    } finally { setBusy(false); }
+
     setPhase("photo");
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -473,27 +488,31 @@ export default function PlacementExam() {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-lg w-full text-center border border-slate-200">
+          {/* Баллы здесь НЕ показываются. Машинная проверка — только начало:
+              работу ещё сверяют с черновиком, могут снять вопрос или зачесть
+              половину, а класс назначает школа. Цифра, показанная сейчас,
+              разошлась бы с итоговой и превратилась бы в спор. */}
           <div className="text-4xl mb-3">🎓</div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Экзамен сдан</h2>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Поздравляем, экзамен сдан!</h2>
+          <p className="text-slate-600 mb-6">
+            Ваша работа передана на проверку. Результат будет опубликован
+            после того, как комиссия сверит работы — мы сообщим вам об этом.
+          </p>
+
           <div className="rounded-2xl border-2 border-blue-200 bg-blue-50 p-5 mb-6">
             <div className="text-sm text-blue-900 mb-1">Номер вашей работы</div>
             <div className="text-4xl font-mono font-bold text-blue-700 tracking-widest">{shortIdRef.current}</div>
             <div className="text-xs text-blue-800 mt-2">
               Запишите или сфотографируйте. По этому номеру и вашей фамилии
-              вы найдёте результат, когда школа его опубликует.
+              вы посмотрите результат, когда школа его опубликует.
             </div>
           </div>
-          <div className="grid gap-2 mb-6">
-            {final.sections.map((s: any) => (
-              <div key={s.key} className="flex justify-between items-center border border-slate-200 rounded-xl px-4 py-3">
-                <span className="text-slate-700">{s.title}</span>
-                <span className="font-mono font-bold text-slate-900">{s.correct} / {s.total}</span>
-              </div>
-            ))}
-          </div>
-          <p className="text-slate-600">
-            Результат передан завучу. Решение о классе объявит школа — оно может отличаться
-            от предварительного расчёта.
+
+          <p className="text-sm text-slate-500">
+            Проверить результат позже:{" "}
+            <span className="font-medium text-slate-700">
+              {typeof window !== "undefined" ? `${window.location.host}/${tenantId}/results` : ""}
+            </span>
           </p>
         </div>
       </div>
