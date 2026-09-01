@@ -187,6 +187,11 @@ service cloud.firestore {
     }
     // Results feed the завуч cabinet with a live subscription, like the
     // suspension panel; they contain no answer keys.
+    // Архив попыток при пересдаче: только сервер пишет, читает персонал тенанта.
+    match /placement_attempts/{aid} {
+      allow read: if hasTenantAccess();
+      allow write: if false;
+    }
     match /placement_results/{rid} {
       allow read: if hasTenantAccess();
       allow write: if false;

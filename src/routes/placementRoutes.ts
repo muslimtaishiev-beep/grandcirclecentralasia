@@ -326,6 +326,8 @@ router.post("/start", async (req: any, res: any) => {
       studentPhone: String(studentPhone || "").slice(0, 40),
       studentEmail: String(studentEmail || "").slice(0, 120),
       status: "active", currentSection: 0,
+      attempt: 1 + (await db().collection("placement_attempts")
+        .where("shortId", "==", sid).where("tenantId", "==", tenantId).get()).size,
       sections, answers: {},
       blueprintSnapshot: bp, // score against the rules that applied at start
       startedAt: admin.firestore.Timestamp.now(),
@@ -584,6 +586,57 @@ router.post("/import", requireFirebaseAuth, async (req: any, res: any) => {
       detail: `записано ${written}, пропущено с ошибками ${report.errors}${includeWarnings ? ", замечания приняты" : ""}`,
     });
     return res.json({ success: true, written, skipped: report.errors, needsReview: toWrite.filter(q => q.status === "warning").length });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST /api/placement/allow-retake — завуч разрешает вторую попытку.
+// A finished exam refuses a restart by design; without this a student whose
+// connection died or who fell ill mid-exam is simply stuck, and nobody can
+// help them. The previous attempt is archived rather than deleted: the school
+// must be able to see that a retake happened and what the first result was.
+router.post("/allow-retake", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const { tenantId, shortId, reason } = req.body || {};
+    if (!tenantId || !shortId) return res.status(400).json({ success: false, error: "Нужны tenantId и shortId" });
+    if (!(await canManagePlacement(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав на разрешение пересдачи" });
+    }
+
+    const sid = sessionId(tenantId, String(shortId));
+    const sessRef = db().collection("placement_sessions").doc(sid);
+    const sessSnap = await sessRef.get();
+    if (!sessSnap.exists) return res.status(404).json({ success: false, error: "Сессия не найдена" });
+
+    const sess: any = sessSnap.data();
+    const attempt = Number(sess.attempt || 1);
+    const actor = req.user?.email || req.user?.uid || "";
+
+    // Archive the attempt before clearing it — a retake must never quietly
+    // erase what the student did the first time.
+    await db().collection("placement_attempts").doc(`${sid}_a${attempt}`).set({
+      ...sess, archivedAt: admin.firestore.Timestamp.now(),
+      archivedBy: actor, retakeReason: String(reason || "").slice(0, 300),
+    });
+
+    await sessRef.delete();
+    // The result row is kept but marked superseded, so the cabinet shows the
+    // history instead of a gap.
+    const resRef = db().collection("placement_results").doc(sid);
+    if ((await resRef.get()).exists) {
+      await resRef.update({
+        superseded: true, supersededAt: admin.firestore.Timestamp.now(),
+        supersededBy: actor, retakeReason: String(reason || "").slice(0, 300),
+      });
+    }
+
+    audit("PLACEMENT_RETAKE_ALLOWED", tenantId, {
+      studentShortId: String(shortId), studentName: sess.studentName || "",
+      grade: sess.grade || 0, actorEmail: actor,
+      detail: `попытка ${attempt} заархивирована; причина: ${String(reason || "не указана").slice(0, 120)}`,
+    });
+    return res.json({ success: true, attempt: attempt + 1 });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }

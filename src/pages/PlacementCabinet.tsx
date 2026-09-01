@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { auth } from "../lib/firebase";
 import QuestionImport from "../components/placement/QuestionImport";
+import { exportStreamCSV, openStudentReport } from "../lib/placementExport";
 
 /**
  * Кабинет завуча — вступительный срез 5-11.
@@ -47,6 +48,7 @@ export default function PlacementCabinet() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [openStudent, setOpenStudent] = useState<any>(null);
+  const [gradeFilter, setGradeFilter] = useState<number | 0>(0);
 
   const loadBlueprint = useCallback(async (g: number) => {
     try {
@@ -163,12 +165,39 @@ export default function PlacementCabinet() {
     } catch (e) { setError("Нет связи с сервером."); }
   };
 
+  const allowRetake = async (row: any) => {
+    const reason = prompt(
+      `Разрешить пересдачу для ${row.studentName}?\n\n` +
+      "Текущая попытка будет заархивирована — результат сохранится в истории.\n" +
+      "Укажите причину (её увидит комиссия):", "Технический сбой во время экзамена");
+    if (reason === null) return;
+    try {
+      const res = await fetch("/api/placement/allow-retake", {
+        method: "POST", headers: await authHeaders(),
+        body: JSON.stringify({ tenantId, shortId: row.shortId, reason }),
+      });
+      const data = await res.json();
+      if (!data.success) { setError(data.error || "Не удалось разрешить пересдачу."); return; }
+      setNotice(`${row.studentName} может сдавать заново (попытка ${data.attempt}).`);
+      setTimeout(() => setNotice(null), 5000);
+      setOpenStudent(null);
+      void loadResults();
+    } catch (e) { setError("Нет связи с сервером."); }
+  };
+
   const stats = useMemo(() => {
-    const done = results.length;
-    const avg = done ? Math.round(results.reduce((a, r) => a + (r.percent || 0), 0) / done) : 0;
-    const pending = results.filter(r => !r.approved).length;
+    // Superseded attempts stay in the list for history but must not skew the
+    // averages the завуч reports to the committee.
+    const live = results.filter(r => !r.superseded);
+    const done = live.length;
+    const avg = done ? Math.round(live.reduce((a, r) => a + (r.percent || 0), 0) / done) : 0;
+    const pending = live.filter(r => !r.approved).length;
     return { done, avg, pending };
   }, [results]);
+
+  const visibleResults = useMemo(
+    () => results.filter(r => !gradeFilter || Number(r.grade) === gradeFilter),
+    [results, gradeFilter]);
 
   const totalQuestions = blueprint
     ? blueprint.sections.reduce((a, s) => a + Object.values(s.counts).reduce((x, y) => x + (y || 0), 0), 0)
@@ -224,8 +253,32 @@ export default function PlacementCabinet() {
               ))}
             </div>
 
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <span className="text-sm text-slate-500">Класс:</span>
+              <button onClick={() => setGradeFilter(0)}
+                className={`px-3 h-8 rounded-lg text-sm font-semibold border ${
+                  gradeFilter === 0 ? "bg-slate-900 border-slate-900 text-white" : "border-slate-200 text-slate-600"}`}>
+                все
+              </button>
+              {GRADES.map(g => (
+                <button key={g} onClick={() => setGradeFilter(g)}
+                  className={`w-9 h-8 rounded-lg text-sm font-semibold border ${
+                    gradeFilter === g ? "bg-slate-900 border-slate-900 text-white" : "border-slate-200 text-slate-600"}`}>
+                  {g}
+                </button>
+              ))}
+              <button onClick={() => exportStreamCSV(results as any, gradeFilter || undefined)}
+                disabled={visibleResults.length === 0}
+                className={`ml-auto px-4 h-9 rounded-lg text-sm font-semibold ${
+                  visibleResults.length === 0
+                    ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                    : "bg-emerald-600 text-white hover:bg-emerald-700"}`}>
+                📊 Выгрузить таблицу{gradeFilter ? ` (${gradeFilter} кл.)` : ""}
+              </button>
+            </div>
+
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-              {results.length === 0 ? (
+              {visibleResults.length === 0 ? (
                 <div className="p-10 text-center text-slate-400 text-sm">
                   Пока никто не сдавал срез. Результаты появятся здесь сразу после завершения экзамена.
                 </div>
@@ -242,10 +295,14 @@ export default function PlacementCabinet() {
                       </tr>
                     </thead>
                     <tbody>
-                      {results.map(r => (
-                        <tr key={r.id} className="border-b border-slate-100 last:border-0">
+                      {visibleResults.map(r => (
+                        <tr key={r.id} className={`border-b border-slate-100 last:border-0 ${
+                          r.superseded ? "opacity-50" : ""}`}>
                           <td className="p-3">
-                            <div className="font-medium text-slate-900">{r.studentName}</div>
+                            <div className="font-medium text-slate-900">
+                              {r.studentName}
+                              {r.superseded && <span className="ml-2 text-xs font-normal text-slate-400">(пересдал)</span>}
+                            </div>
                             <div className="font-mono text-xs text-slate-400">{r.shortId}</div>
                           </td>
                           <td className="p-3 text-slate-600">{r.grade}</td>
@@ -259,7 +316,11 @@ export default function PlacementCabinet() {
                             </span>
                             {r.approved && <span className="ml-2 text-xs text-slate-400">утверждено</span>}
                           </td>
-                          <td className="p-3 text-right">
+                          <td className="p-3 text-right whitespace-nowrap">
+                            <button onClick={() => openStudentReport(r as any) || setError("Браузер заблокировал окно — разрешите всплывающие окна.")}
+                              className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium mr-1">
+                              📄 Протокол
+                            </button>
                             <button onClick={() => setOpenStudent(r)}
                               className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium">
                               Разбор
@@ -566,6 +627,14 @@ export default function PlacementCabinet() {
                   Расчёт системы: <b>{openStudent.recommendation}</b>. Решение принимает школа.
                 </p>
                 <div className="flex gap-2 flex-wrap">
+                  <button onClick={() => openStudentReport(openStudent) || setError("Браузер заблокировал окно — разрешите всплывающие окна.")}
+                    className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-semibold text-sm hover:bg-slate-50">
+                    📄 Протокол
+                  </button>
+                  <button onClick={() => allowRetake(openStudent)}
+                    className="px-4 py-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 font-semibold text-sm hover:bg-amber-100">
+                    ↻ Разрешить пересдачу
+                  </button>
                   <button onClick={() => decide(openStudent, openStudent.recommendation)}
                     className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700">
                     Утвердить
