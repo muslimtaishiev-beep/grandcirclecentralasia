@@ -56,6 +56,24 @@ const LOOKALIKES: Record<string, string> = { "а": "a", "в": "b", "с": "c", "�
 const foldAnswer = (s: unknown) =>
   String(s ?? "").trim().toLowerCase().split("").map(ch => LOOKALIKES[ch] ?? ch).join("");
 
+/**
+ * Machine marking for one answer. Text input is compared numerically when both
+ * sides look numeric ("0,5", "0.5" and "0.50" are one answer); everything else
+ * compares the folded option letter.
+ */
+function markOf(q: any, given: string): boolean {
+  if (!given) return false;
+  if (q.type === "text_input") {
+    const num = (v: string) => {
+      const cleaned = String(v).replace(/\s/g, "").replace(",", ".");
+      return /^-?\d+(\.\d+)?$/.test(cleaned) ? Number(cleaned) : null;
+    };
+    const a = num(given), b = num(String(q.answer));
+    return (a !== null && b !== null) ? a === b : foldAnswer(given) === foldAnswer(q.answer);
+  }
+  return foldAnswer(given) === foldAnswer(q.answer);
+}
+
 function audit(action: string, tenantId: string, fields: Record<string, unknown> = {}) {
   db().collection("audit_logs").add({
     timestamp: admin.firestore.Timestamp.now(),
@@ -430,28 +448,32 @@ router.post("/finish-section", async (req: any, res: any) => {
       const d = String(q.difficulty);
       byDifficulty[d] = byDifficulty[d] || { correct: 0, total: 0 }; byDifficulty[d].total++;
       const given = String(sess.answers?.[qid] ?? "");
-      // Text-input answers are compared as numbers when both sides look
-      // numeric ("0,5" and "0.5" and "0.50" are the same answer), otherwise
-      // as folded text. Multiple choice compares the option letter.
-      let isCorrect = false;
-      if (given !== "") {
-        if (q.type === "text_input") {
-          const num = (v: string) => {
-            const cleaned = v.replace(/\s/g, "").replace(",", ".");
-            return /^-?\d+(\.\d+)?$/.test(cleaned) ? Number(cleaned) : null;
-          };
-          const a = num(given), b = num(String(q.answer));
-          isCorrect = (a !== null && b !== null) ? a === b : foldAnswer(given) === foldAnswer(q.answer);
-        } else {
-          isCorrect = foldAnswer(given) === foldAnswer(q.answer);
-        }
-      }
+      const isCorrect = markOf(q, given);
       if (isCorrect) {
         correct++; byTopic[t].correct++; byDifficulty[d].correct++;
       }
     }
+    // Per-question record for the teacher's review: what was asked, what the
+    // student clicked, what the key says. Without it the завуч sees a number
+    // and has nothing to check the draft against.
+    const items = cur.questionIds.map((qid: string) => {
+      const q = qs.get(qid);
+      if (!q) return null;
+      const given = String(sess.answers?.[qid] ?? "");
+      const auto = markOf(q, given);
+      return {
+        id: qid, topic: q.topic || "", difficulty: q.difficulty,
+        type: q.type || "multiple_choice",
+        text: q.text, options: q.options || [],
+        given, answer: q.answer,
+        autoCorrect: auto,          // как посчитала машина
+        mark: auto ? 1 : 0,         // текущий балл: правится учителем
+        overridden: false, overrideNote: "",
+      };
+    }).filter(Boolean);
+
     cur.finished = true;
-    cur.result = { correct, total, percent: total ? Math.round((correct / total) * 100) : 0, byTopic, byDifficulty };
+    cur.result = { correct, total, percent: total ? Math.round((correct / total) * 100) : 0, byTopic, byDifficulty, items };
 
     const isLast = idx >= sess.sections.length - 1;
     let final: any = null;
@@ -487,6 +509,9 @@ router.post("/finish-section", async (req: any, res: any) => {
         scaleSnapshot: scale,
         // Результаты не видны ученику, пока завуч не опубликует поток.
         published: false, annulled: false,
+        // Проверка учителем: работа ждёт, пока её не откроют с черновиком.
+        reviewStatus: "pending", reviewedBy: "", reviewedAt: null,
+        overrides: 0,
         // Ручная правка балла завучем после проверки черновиков.
         adjustedCorrect: null, adjustedTotal: null, adjustmentNote: "",
         startedAt: sess.startedAt, finishedAt: sess.finishedAt,
@@ -554,50 +579,133 @@ router.post("/decide", requireFirebaseAuth, async (req: any, res: any) => {
   }
 });
 
-// POST /api/placement/adjust — завуч правит балл после проверки черновиков.
-// The exam is machine-marked, but the school re-reads the drafts: a student may
-// have shown correct working and mis-clicked, or answered in a way the key did
-// not anticipate. The adjustment is stored ALONGSIDE the machine score, never
-// over it, so a challenged decision can always be traced back.
-router.post("/adjust", requireFirebaseAuth, async (req: any, res: any) => {
+// GET /api/placement/review — работа целиком для проверки с черновиком:
+// каждый вопрос, что ответил ученик, что говорит ключ, текущий балл.
+router.get("/review/:resultId", requireFirebaseAuth, async (req: any, res: any) => {
   try {
-    const { tenantId, resultId, correct, note } = req.body || {};
-    if (!tenantId || !resultId) return res.status(400).json({ success: false, error: "Bad request" });
+    const tenantId = String(req.query.tenantId || "");
+    if (!(await canManagePlacement(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав на проверку работ" });
+    }
+    const snap = await db().collection("placement_results").doc(String(req.params.resultId)).get();
+    if (!snap.exists || snap.data()!.tenantId !== tenantId) {
+      return res.status(404).json({ success: false, error: "Работа не найдена" });
+    }
+    return res.json({ success: true, result: { id: snap.id, ...snap.data() } });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/** Пересчёт итога после правок учителя. Возвращает поля для записи. */
+function recomputeFromItems(row: any) {
+  const sections = (row.sections || []).map((sec: any) => {
+    const items = sec.items || [];
+    const scored = items.reduce((a: number, i: any) => a + (Number(i.mark) || 0), 0);
+    return { ...sec, correct: scored, percent: items.length ? Math.round((scored / items.length) * 100) : 0 };
+  });
+  const correct = sections.reduce((a: number, s: any) => a + (s.correct || 0), 0);
+  const total = sections.reduce((a: number, s: any) => a + (s.total || 0), 0);
+  const percent = total ? Math.round((correct / total) * 100) : 0;
+  const scale = (row.scaleSnapshot || []).slice().sort((a: any, b: any) => b.minPercent - a.minPercent);
+  const band = scale.find((b: any) => percent >= b.minPercent);
+
+  // SAT пересчитывается по фактическим баллам: снять вопрос — значит изменить
+  // и взвешенную оценку, иначе цифры в протоколе разойдутся между собой.
+  const math = sections.find((s: any) => s.key === "math");
+  let satMath = null;
+  if (math?.items?.length) {
+    let earned = 0, possible = 0;
+    for (const it of math.items) {
+      const w = DIFFICULTY_WEIGHT[String(it.difficulty)] ?? 1;
+      earned += (Number(it.mark) || 0) * w;
+      possible += w;
+    }
+    satMath = possible ? Math.round((200 + (earned / possible) * 600) / 10) * 10 : null;
+  }
+  return { sections, correct, total, percent, satMath,
+    recommendation: band?.label || row.recommendation,
+    overrides: sections.reduce((a: number, s: any) =>
+      a + (s.items || []).filter((i: any) => i.overridden).length, 0) };
+}
+
+// POST /api/placement/review/mark — учитель меняет балл за ОДИН вопрос.
+// Half marks exist because a draft often shows correct working with a
+// mis-clicked answer; annulling the question (mark 0 for everyone would be
+// unfair to those who got it) is a different decision, made per question below.
+router.post("/review/mark", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const { tenantId, resultId, sectionKey, questionId, mark, note } = req.body || {};
+    if (!tenantId || !resultId || !sectionKey || !questionId) {
+      return res.status(400).json({ success: false, error: "Bad request" });
+    }
+    if (!(await canManagePlacement(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+    const value = Number(mark);
+    if (![0, 0.5, 1].includes(value)) {
+      return res.status(400).json({ success: false, error: "Балл за вопрос: 0, 0.5 или 1" });
+    }
+
+    const ref = db().collection("placement_results").doc(String(resultId));
+    const snap = await ref.get();
+    if (!snap.exists || snap.data()!.tenantId !== tenantId) {
+      return res.status(404).json({ success: false, error: "Работа не найдена" });
+    }
+    const row = snap.data()!;
+    if (row.published) return res.status(409).json({ success: false, error: "Результаты опубликованы — правка закрыта" });
+
+    let found = false;
+    const sections = (row.sections || []).map((sec: any) => {
+      if (sec.key !== sectionKey) return sec;
+      return { ...sec, items: (sec.items || []).map((it: any) => {
+        if (it.id !== questionId) return it;
+        found = true;
+        return { ...it, mark: value,
+          overridden: value !== (it.autoCorrect ? 1 : 0),
+          overrideNote: String(note || "").slice(0, 200),
+          overriddenBy: req.user?.email || "" };
+      }) };
+    });
+    if (!found) return res.status(404).json({ success: false, error: "Вопрос не найден в работе" });
+
+    const recomputed = recomputeFromItems({ ...row, sections });
+    await ref.update({
+      ...recomputed,
+      reviewStatus: "in_progress",
+      lastReviewBy: req.user?.email || "",
+      lastReviewAt: admin.firestore.Timestamp.now(),
+    });
+    audit("PLACEMENT_QUESTION_REMARKED", tenantId, {
+      studentShortId: row.shortId, studentName: row.studentName, actorEmail: req.user?.email || "",
+      detail: `${questionId}: ${value} балла${note ? ` — ${String(note).slice(0, 100)}` : ""}`,
+    });
+    return res.json({ success: true, ...recomputed });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST /api/placement/review/complete — учитель закончил работу.
+router.post("/review/complete", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const { tenantId, resultId } = req.body || {};
     if (!(await canManagePlacement(req.user, tenantId))) {
       return res.status(403).json({ success: false, error: "Нет прав" });
     }
     const ref = db().collection("placement_results").doc(String(resultId));
     const snap = await ref.get();
     if (!snap.exists || snap.data()!.tenantId !== tenantId) {
-      return res.status(404).json({ success: false, error: "Результат не найден" });
+      return res.status(404).json({ success: false, error: "Работа не найдена" });
     }
-    const row = snap.data()!;
-    if (row.published) return res.status(409).json({ success: false, error: "Результаты уже опубликованы — правка невозможна" });
-
-    const total = Number(row.total) || 0;
-    const adjusted = Number(correct);
-    // Half marks are the point of the feature, so fractions are allowed — but
-    // a score above the maximum or below zero is a typo, not a decision.
-    if (!Number.isFinite(adjusted) || adjusted < 0 || adjusted > total) {
-      return res.status(400).json({ success: false, error: `Балл должен быть от 0 до ${total}` });
-    }
-
-    const percent = total ? Math.round((adjusted / total) * 100) : 0;
-    const scale = (row.scaleSnapshot || []).slice().sort((a: any, b: any) => b.minPercent - a.minPercent);
-    const band = scale.find((b: any) => percent >= b.minPercent);
-
+    const actor = req.user?.email || req.user?.uid || "";
     await ref.update({
-      adjustedCorrect: adjusted, adjustedTotal: total,
-      adjustmentNote: String(note || "").slice(0, 300),
-      adjustedPercent: percent,
-      adjustedRecommendation: band?.label || row.recommendation,
-      adjustedBy: req.user?.email || "", adjustedAt: admin.firestore.Timestamp.now(),
+      reviewStatus: "reviewed", reviewedBy: actor, reviewedAt: admin.firestore.Timestamp.now(),
     });
-    audit("PLACEMENT_SCORE_ADJUSTED", tenantId, {
-      studentShortId: row.shortId, studentName: row.studentName, actorEmail: req.user?.email || "",
-      detail: `${row.correct} → ${adjusted} из ${total}. ${String(note || "").slice(0, 120)}`,
+    audit("PLACEMENT_REVIEW_COMPLETED", tenantId, {
+      studentShortId: snap.data()!.shortId, studentName: snap.data()!.studentName, actorEmail: actor,
     });
-    return res.json({ success: true, percent, recommendation: band?.label });
+    return res.json({ success: true, reviewedBy: actor });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }
@@ -643,7 +751,7 @@ router.post("/annul", requireFirebaseAuth, async (req: any, res: any) => {
 // visible, and a half-checked stream leaking out is exactly what that protects.
 router.post("/publish", requireFirebaseAuth, async (req: any, res: any) => {
   try {
-    const { tenantId, grade, resultIds } = req.body || {};
+    const { tenantId, grade, resultIds, force } = req.body || {};
     if (!tenantId) return res.status(400).json({ success: false, error: "Нужен tenantId" });
     if (!(await canManagePlacement(req.user, tenantId))) {
       return res.status(403).json({ success: false, error: "Нет прав на публикацию" });
@@ -654,12 +762,30 @@ router.post("/publish", requireFirebaseAuth, async (req: any, res: any) => {
     const snap = await query.get();
 
     const wanted = Array.isArray(resultIds) && resultIds.length ? new Set(resultIds) : null;
-    const targets = snap.docs.filter(d => {
+    const candidates = snap.docs.filter(d => {
       const r = d.data();
       if (r.superseded) return false;          // архивная попытка не публикуется
       if (r.published) return false;           // уже опубликовано
       return !wanted || wanted.has(d.id);
     });
+
+    // Публиковать непроверенные работы нельзя: смысл статуса «проверен» в том,
+    // что кто-то сверил ответы с черновиком и поставил своё имя под этим.
+    // Аннулированные проверять не нужно — они и так без балла.
+    const unreviewed = candidates.filter(d => {
+      const r = d.data();
+      return !r.annulled && r.reviewStatus !== "reviewed";
+    });
+    if (unreviewed.length && !force) {
+      return res.status(409).json({
+        success: false, needsReview: unreviewed.length,
+        error: `Не проверено работ: ${unreviewed.length}. Проверьте их с черновиками или подтвердите публикацию без проверки.`,
+        students: unreviewed.slice(0, 10).map(d => ({
+          id: d.id, studentName: d.data().studentName, shortId: d.data().shortId, grade: d.data().grade })),
+      });
+    }
+
+    const targets = candidates;
     if (!targets.length) return res.json({ success: true, published: 0, message: "Нечего публиковать" });
 
     const actor = req.user?.email || req.user?.uid || "";
@@ -674,7 +800,8 @@ router.post("/publish", requireFirebaseAuth, async (req: any, res: any) => {
 
     audit("PLACEMENT_PUBLISHED", tenantId, {
       actorEmail: actor, grade: Number(grade) || 0,
-      detail: `опубликовано результатов: ${published}${grade ? `, ${grade} класс` : ", весь поток"}`,
+      detail: `опубликовано результатов: ${published}${grade ? `, ${grade} класс` : ", весь поток"}` +
+        (force ? " (без обязательной проверки)" : ""),
     });
     return res.json({ success: true, published });
   } catch (e: any) {

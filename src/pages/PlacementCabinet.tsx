@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { auth } from "../lib/firebase";
 import QuestionImport from "../components/placement/QuestionImport";
 import { exportStreamCSV, openStudentReport } from "../lib/placementExport";
+import WorkReview from "../components/placement/WorkReview";
 
 /**
  * Кабинет завуча — вступительный срез 5-11.
@@ -50,6 +51,7 @@ export default function PlacementCabinet() {
   const [openStudent, setOpenStudent] = useState<any>(null);
   const [gradeFilter, setGradeFilter] = useState<number | 0>(0);
   const [publishing, setPublishing] = useState(false);
+  const [reviewId, setReviewId] = useState<string | null>(null);
 
   const loadBlueprint = useCallback(async (g: number) => {
     try {
@@ -186,32 +188,6 @@ export default function PlacementCabinet() {
     } catch (e) { setError("Нет связи с сервером."); }
   };
 
-  const adjustScore = async (row: any) => {
-    const total = row.total || 0;
-    const current = row.adjustedCorrect ?? row.correct;
-    const raw = prompt(
-      `Балл после проверки черновика — ${row.studentName}\n\n` +
-      `Машинная проверка: ${row.correct} из ${total}.\n` +
-      "Можно указать дробное значение (например, 27.5).", String(current));
-    if (raw === null) return;
-    const value = Number(String(raw).replace(",", "."));
-    if (!Number.isFinite(value) || value < 0 || value > total) {
-      setError(`Балл должен быть числом от 0 до ${total}.`); return;
-    }
-    const note = prompt("Основание для изменения (увидит комиссия):", row.adjustmentNote || "Проверка письменной работы") ?? "";
-    try {
-      const res = await fetch("/api/placement/adjust", {
-        method: "POST", headers: await authHeaders(),
-        body: JSON.stringify({ tenantId, resultId: row.id, correct: value, note }),
-      });
-      const data = await res.json();
-      if (!data.success) { setError(data.error || "Не удалось изменить балл."); return; }
-      setNotice(`Балл ${row.studentName}: ${value} из ${total} (${data.percent}%).`);
-      setTimeout(() => setNotice(null), 4000);
-      setOpenStudent(null); void loadResults();
-    } catch (e) { setError("Нет связи с сервером."); }
-  };
-
   const toggleAnnul = async (row: any) => {
     const on = !row.annulled;
     let reason = "";
@@ -253,7 +229,27 @@ export default function PlacementCabinet() {
         body: JSON.stringify({ tenantId, grade: gradeFilter || undefined }),
       });
       const data = await res.json();
-      if (!data.success) { setError(data.error || "Не удалось опубликовать."); return; }
+      if (!data.success) {
+        if (data.needsReview) {
+          const names = (data.students || []).map((s: any) => s.studentName).join(", ");
+          if (confirm(
+            `${data.error}\n\n` + (names ? `Например: ${names}\n\n` : "") +
+            "Опубликовать всё равно, без проверки черновиков?")) {
+            const forced = await fetch("/api/placement/publish", {
+              method: "POST", headers: await authHeaders(),
+              body: JSON.stringify({ tenantId, grade: gradeFilter || undefined, force: true }),
+            });
+            const fd = await forced.json();
+            if (fd.success) {
+              setNotice(`Опубликовано без проверки: ${fd.published}.`);
+              setTimeout(() => setNotice(null), 6000);
+              void loadResults();
+            } else setError(fd.error || "Не удалось опубликовать.");
+          }
+          return;
+        }
+        setError(data.error || "Не удалось опубликовать."); return;
+      }
       setNotice(`Опубликовано результатов: ${data.published}. Ученики видят их на портале.`);
       setTimeout(() => setNotice(null), 6000);
       void loadResults();
@@ -269,7 +265,8 @@ export default function PlacementCabinet() {
     const avg = done ? Math.round(live.reduce((a, r) => a + (r.percent || 0), 0) / done) : 0;
     const pending = live.filter(r => !r.approved).length;
     const unpublished = live.filter(r => !r.published).length;
-    return { done, avg, pending, unpublished };
+    const unreviewed = live.filter(r => !r.annulled && r.reviewStatus !== "reviewed").length;
+    return { done, avg, pending, unpublished, unreviewed };
   }, [results]);
 
   const visibleResults = useMemo(
@@ -320,9 +317,10 @@ export default function PlacementCabinet() {
 
         {tab === "results" && (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
               {[["Сдали экзамен", stats.done, ""], ["Средний результат", `${stats.avg}%`, ""],
                 ["Ждут решения", stats.pending, stats.pending ? "text-amber-600" : ""],
+                ["Не проверено", stats.unreviewed, stats.unreviewed ? "text-amber-600" : ""],
                 ["Не опубликовано", stats.unpublished, stats.unpublished ? "text-blue-600" : ""]].map(([l, v, cls]) => (
                 <div key={String(l)} className="bg-white border border-slate-200 rounded-xl p-4">
                   <div className={`text-2xl font-bold tabular-nums ${cls}`}>{v}</div>
@@ -374,6 +372,7 @@ export default function PlacementCabinet() {
                         <th className="p-3">Класс</th>
                         <th className="p-3">Балл</th>
                         <th className="p-3">SAT матем.</th>
+                        <th className="p-3">Проверка</th>
                         <th className="p-3">Рекомендация</th>
                         <th className="p-3"></th>
                       </tr>
@@ -406,6 +405,21 @@ export default function PlacementCabinet() {
                           <td className="p-3 font-mono tabular-nums text-blue-700">
                             {r.satMath ?? "—"}
                           </td>
+                          <td className="p-3 text-xs">
+                            {r.reviewStatus === "reviewed" ? (
+                              <span className="text-emerald-700 font-semibold">
+                                ✓ проверена
+                                {r.reviewedBy && <div className="text-slate-400 font-normal truncate max-w-[120px]">{r.reviewedBy}</div>}
+                              </span>
+                            ) : r.reviewStatus === "in_progress" ? (
+                              <span className="text-amber-600 font-semibold">в процессе</span>
+                            ) : (
+                              <span className="text-slate-400">ждёт</span>
+                            )}
+                            {r.overrides > 0 && (
+                              <div className="text-blue-600 font-medium">правок: {r.overrides}</div>
+                            )}
+                          </td>
                           <td className="p-3">
                             <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${
                               r.approved ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"}`}>
@@ -418,9 +432,12 @@ export default function PlacementCabinet() {
                               className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium mr-1">
                               📄 Протокол
                             </button>
-                            <button onClick={() => setOpenStudent(r)}
-                              className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium">
-                              Разбор
+                            <button onClick={() => setReviewId(r.id)}
+                              className={`text-xs px-3 py-1.5 rounded-lg font-medium border ${
+                                r.reviewStatus === "reviewed"
+                                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                                  : "border-blue-300 bg-blue-50 text-blue-700"}`}>
+                              {r.reviewStatus === "reviewed" ? "✓ Проверена" : "Проверить"}
                             </button>
                           </td>
                         </tr>
@@ -674,6 +691,12 @@ export default function PlacementCabinet() {
           </div>
         )}
 
+        {reviewId && (
+          <WorkReview tenantId={tenantId} resultId={reviewId}
+            onClose={() => setReviewId(null)}
+            onChanged={() => void loadResults()} />
+        )}
+
         {openStudent && (
           <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 overflow-y-auto"
             onClick={() => setOpenStudent(null)}>
@@ -751,14 +774,9 @@ export default function PlacementCabinet() {
                     className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-semibold text-sm hover:bg-slate-50">
                     📄 Протокол
                   </button>
-                  <button onClick={() => adjustScore(openStudent)}
-                    disabled={openStudent.published}
-                    title={openStudent.published ? "Результаты опубликованы — правка закрыта" : ""}
-                    className={`px-4 py-2 rounded-xl font-semibold text-sm border ${
-                      openStudent.published
-                        ? "border-slate-200 text-slate-300 cursor-not-allowed"
-                        : "border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100"}`}>
-                    ✎ Изменить балл
+                  <button onClick={() => { setReviewId(openStudent.id); setOpenStudent(null); }}
+                    className="px-4 py-2 rounded-xl font-semibold text-sm border border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100">
+                    ✎ Проверить по вопросам
                   </button>
                   <button onClick={() => toggleAnnul(openStudent)}
                     className={`px-4 py-2 rounded-xl font-semibold text-sm border ${
