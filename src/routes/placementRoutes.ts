@@ -1,6 +1,7 @@
 import { Router } from "express";
 import admin from "firebase-admin";
 import { requireFirebaseAuth } from "./authRoutes.js";
+import { analyseFile } from "../lib/placementParser.js";
 
 /**
  * Вступительный срез знаний (placement exam) для распределения по классам 5-11.
@@ -243,7 +244,8 @@ const sessionId = (tenantId: string, shortId: string) => `pl_${tenantId}_${short
 /** Question payload for the student: everything EXCEPT the answer. */
 const publicQuestion = (q: any) => ({
   id: q.docId, subject: q.subject, topic: q.topic || "",
-  difficulty: q.difficulty, text: q.text, options: q.options, points: q.points || 1,
+  difficulty: q.difficulty, type: q.type || "multiple_choice",
+  text: q.text, options: q.options || [], points: q.points || 1,
 });
 
 async function sessionPayload(sess: any, questionsById: Map<string, any>) {
@@ -399,7 +401,24 @@ router.post("/finish-section", async (req: any, res: any) => {
       byTopic[t] = byTopic[t] || { correct: 0, total: 0 }; byTopic[t].total++;
       const d = String(q.difficulty);
       byDifficulty[d] = byDifficulty[d] || { correct: 0, total: 0 }; byDifficulty[d].total++;
-      if (foldAnswer(sess.answers?.[qid]) === foldAnswer(q.answer) && String(sess.answers?.[qid] ?? "") !== "") {
+      const given = String(sess.answers?.[qid] ?? "");
+      // Text-input answers are compared as numbers when both sides look
+      // numeric ("0,5" and "0.5" and "0.50" are the same answer), otherwise
+      // as folded text. Multiple choice compares the option letter.
+      let isCorrect = false;
+      if (given !== "") {
+        if (q.type === "text_input") {
+          const num = (v: string) => {
+            const cleaned = v.replace(/\s/g, "").replace(",", ".");
+            return /^-?\d+(\.\d+)?$/.test(cleaned) ? Number(cleaned) : null;
+          };
+          const a = num(given), b = num(String(q.answer));
+          isCorrect = (a !== null && b !== null) ? a === b : foldAnswer(given) === foldAnswer(q.answer);
+        } else {
+          isCorrect = foldAnswer(given) === foldAnswer(q.answer);
+        }
+      }
+      if (isCorrect) {
         correct++; byTopic[t].correct++; byDifficulty[d].correct++;
       }
     }
@@ -491,6 +510,143 @@ router.post("/decide", requireFirebaseAuth, async (req: any, res: any) => {
       studentShortId: snap.data()!.shortId, actorEmail: req.user?.email || "",
       detail: String(finalDecision || "").slice(0, 80),
     });
+    return res.json({ success: true });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ── Импорт банка вопросов ─────────────────────────────────────────────────
+
+// POST /api/placement/preview — разбор файла БЕЗ записи. The manager sees
+// exactly what would be imported, which rows are broken and why, and decides.
+// Nothing here touches the database: previewing a file is not importing it.
+router.post("/preview", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const { tenantId, csv } = req.body || {};
+    if (!tenantId || typeof csv !== "string") return res.status(400).json({ success: false, error: "Нужны tenantId и содержимое файла" });
+    if (!(await canManagePlacement(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав на загрузку вопросов" });
+    }
+    if (csv.length > 4 * 1024 * 1024) return res.status(413).json({ success: false, error: "Файл больше 4 МБ — разделите на части" });
+
+    const existing = new Set<string>();
+    (await db().collection("exam_questions").where("tenantId", "==", tenantId).get())
+      .forEach(d => existing.add(d.id));
+
+    const report = analyseFile(csv, existing);
+    return res.json({ success: true, ...report });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST /api/placement/import — записывает то, что менеджер подтвердил.
+// Re-analyses server-side rather than trusting the preview the browser sends
+// back: a client could otherwise post questions that never passed validation.
+router.post("/import", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const { tenantId, csv, includeWarnings } = req.body || {};
+    if (!tenantId || typeof csv !== "string") return res.status(400).json({ success: false, error: "Нужны tenantId и содержимое файла" });
+    if (!(await canManagePlacement(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав на загрузку вопросов" });
+    }
+
+    const existing = new Set<string>();
+    (await db().collection("exam_questions").where("tenantId", "==", tenantId).get())
+      .forEach(d => existing.add(d.id));
+    const report = analyseFile(csv, existing);
+    if (report.fatal.length) return res.status(400).json({ success: false, error: report.fatal.join(" ") });
+
+    // Broken rows are never written — they would become questions no student
+    // can answer correctly. Warnings are written only if explicitly accepted.
+    const toWrite = report.questions.filter(q =>
+      q.status === "ok" || (q.status === "warning" && includeWarnings));
+    if (!toWrite.length) return res.status(400).json({ success: false, error: "Нечего импортировать — все строки с ошибками" });
+
+    let batch = db().batch(), inBatch = 0, written = 0;
+    for (const q of toWrite) {
+      batch.set(db().collection("exam_questions").doc(q.id), {
+        id: q.id, tenantId, subject: q.subject, grades: q.grades, topic: q.topic,
+        difficulty: q.difficulty, type: q.type, text: q.text, options: q.options,
+        answer: q.answer, points: 1, active: true,
+        needsReview: q.status === "warning",
+        importIssues: q.issues.slice(0, 5),
+        importedAt: admin.firestore.Timestamp.now(),
+        importedBy: req.user?.email || req.user?.uid || "",
+      });
+      if (++inBatch === 400) { await batch.commit(); written += inBatch; batch = db().batch(); inBatch = 0; }
+    }
+    if (inBatch) { await batch.commit(); written += inBatch; }
+
+    audit("PLACEMENT_QUESTIONS_IMPORTED", tenantId, {
+      actorEmail: req.user?.email || "",
+      detail: `записано ${written}, пропущено с ошибками ${report.errors}${includeWarnings ? ", замечания приняты" : ""}`,
+    });
+    return res.json({ success: true, written, skipped: report.errors, needsReview: toWrite.filter(q => q.status === "warning").length });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// GET /api/placement/questions — банк для кабинета (без правильных ответов
+// в списке: их видно только при открытии конкретного вопроса на правку).
+router.get("/questions", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const tenantId = String(req.query.tenantId || "");
+    if (!(await canManagePlacement(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+    const snap = await db().collection("exam_questions").where("tenantId", "==", tenantId).get();
+    const questions = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a: any, b: any) => Number(b.needsReview) - Number(a.needsReview) || a.id.localeCompare(b.id));
+    return res.json({ success: true, questions, total: questions.length,
+      needsReview: questions.filter((q: any) => q.needsReview).length });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// PUT /api/placement/questions/:id — правка вопроса после импорта.
+router.put("/questions/:id", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const { tenantId, text, options, answer, topic, difficulty, grades, type, active } = req.body || {};
+    if (!(await canManagePlacement(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+    const ref = db().collection("exam_questions").doc(String(req.params.id));
+    const snap = await ref.get();
+    if (!snap.exists || snap.data()!.tenantId !== tenantId) {
+      return res.status(404).json({ success: false, error: "Вопрос не найден" });
+    }
+
+    const patch: Record<string, unknown> = { needsReview: false, importIssues: [] };
+    if (typeof text === "string" && text.trim()) patch.text = text.trim();
+    if (typeof topic === "string" && topic.trim()) patch.topic = topic.trim();
+    if ([1, 2, 3].includes(Number(difficulty))) patch.difficulty = Number(difficulty);
+    if (Array.isArray(grades) && grades.length) patch.grades = grades.map(Number).filter((g: number) => g >= 5 && g <= 11);
+    if (["multiple_choice", "text_input"].includes(type)) patch.type = type;
+    if (Array.isArray(options)) patch.options = options.map(String).slice(0, 6);
+    if (typeof answer === "string" && answer.trim()) patch.answer = answer.trim();
+    if (typeof active === "boolean") patch.active = active;
+
+    // The answer must still name an existing option, or we have re-created the
+    // exact defect the preview exists to catch.
+    const finalType = (patch.type as string) || snap.data()!.type;
+    const finalOptions = (patch.options as string[]) || snap.data()!.options || [];
+    const finalAnswer = String(patch.answer ?? snap.data()!.answer ?? "");
+    if (finalType === "multiple_choice") {
+      const letters = ["А", "Б", "В", "Г", "Д", "Е"];
+      const idx = letters.indexOf(finalAnswer.toUpperCase());
+      if (idx === -1 || idx >= finalOptions.length) {
+        return res.status(400).json({ success: false, error: `Правильный ответ «${finalAnswer}» не соответствует ни одному варианту` });
+      }
+    } else if (!finalAnswer) {
+      return res.status(400).json({ success: false, error: "Для вопроса с вводом нужен правильный ответ" });
+    }
+
+    await ref.update({ ...patch, updatedAt: admin.firestore.Timestamp.now(), updatedBy: req.user?.email || "" });
+    audit("PLACEMENT_QUESTION_EDITED", tenantId, { actorEmail: req.user?.email || "", detail: String(req.params.id) });
     return res.json({ success: true });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { auth } from "../lib/firebase";
+import QuestionImport from "../components/placement/QuestionImport";
 
 /**
  * Кабинет завуча — вступительный срез 5-11.
@@ -31,7 +32,10 @@ export default function PlacementCabinet() {
   const { orgId } = useParams<{ orgId: string }>();
   const tenantId = orgId || "";
 
-  const [tab, setTab] = useState<"results" | "setup">("results");
+  const [tab, setTab] = useState<"results" | "setup" | "bank">("results");
+  const [bank, setBank] = useState<any[]>([]);
+  const [bankNeedsReview, setBankNeedsReview] = useState(0);
+  const [editing, setEditing] = useState<any>(null);
   const [grade, setGrade] = useState(7);
   const [blueprint, setBlueprint] = useState<Blueprint | null>(null);
   const [availability, setAvailability] = useState<Availability>({});
@@ -66,6 +70,16 @@ export default function PlacementCabinet() {
     }
   }, [tenantId]);
 
+  const loadBank = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/placement/questions?tenantId=${encodeURIComponent(tenantId)}`, {
+        headers: await authHeaders(),
+      });
+      const data = await res.json();
+      if (data.success) { setBank(data.questions || []); setBankNeedsReview(data.needsReview || 0); }
+    } catch (e) { /* bank is secondary to results */ }
+  }, [tenantId]);
+
   const loadResults = useCallback(async () => {
     try {
       const res = await fetch(`/api/placement/results?tenantId=${encodeURIComponent(tenantId)}`, {
@@ -80,10 +94,10 @@ export default function PlacementCabinet() {
     if (!tenantId) return;
     (async () => {
       setLoading(true);
-      await Promise.all([loadBlueprint(grade), loadResults()]);
+      await Promise.all([loadBlueprint(grade), loadResults(), loadBank()]);
       setLoading(false);
     })();
-  }, [tenantId, grade, loadBlueprint, loadResults]);
+  }, [tenantId, grade, loadBlueprint, loadResults, loadBank]);
 
   // Results and the PIN both go stale while the page sits open during an exam.
   useEffect(() => {
@@ -188,7 +202,8 @@ export default function PlacementCabinet() {
         {notice && <div className="mb-4 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">{notice}</div>}
 
         <div className="flex gap-2 mb-5">
-          {([["results", `Результаты (${stats.done})`], ["setup", "Настройка экзамена"]] as const).map(([k, label]) => (
+          {([["results", `Результаты (${stats.done})`], ["setup", "Настройка экзамена"],
+             ["bank", `Банк вопросов (${bank.length})${bankNeedsReview ? ` · ${bankNeedsReview} на проверку` : ""}`]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
               className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
                 tab === k ? "bg-slate-900 text-white" : "bg-white border border-slate-200 text-slate-600 hover:border-slate-300"}`}>
@@ -354,6 +369,150 @@ export default function PlacementCabinet() {
             <p className="text-xs text-slate-400 mt-3">
               Изменения действуют для экзаменов, начатых после сохранения. У тех, кто уже пишет, вариант не меняется.
             </p>
+          </div>
+        )}
+
+        {tab === "bank" && (
+          <div className="grid gap-4">
+            <QuestionImport tenantId={tenantId} onImported={() => { void loadBank(); void loadBlueprint(grade); }} />
+
+            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between gap-3 flex-wrap">
+                <h3 className="font-bold text-slate-900">В банке: {bank.length} вопросов</h3>
+                {bankNeedsReview > 0 && (
+                  <span className="text-xs px-2 py-1 rounded-lg bg-amber-50 text-amber-700 font-semibold">
+                    {bankNeedsReview} требуют проверки
+                  </span>
+                )}
+              </div>
+              {bank.length === 0 ? (
+                <div className="p-10 text-center text-slate-400 text-sm">
+                  Банк пуст. Загрузите файл с вопросами выше.
+                </div>
+              ) : (
+                <div className="max-h-[28rem] overflow-y-auto">
+                  {bank.slice(0, 200).map((q: any) => (
+                    <button key={q.id} onClick={() => setEditing({ ...q })}
+                      className={`w-full text-left px-5 py-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 ${
+                        q.needsReview ? "bg-amber-50/40" : ""}`}>
+                      <div className="flex items-center gap-2 text-xs text-slate-500 mb-0.5 flex-wrap">
+                        <span className="font-mono">{q.id}</span>
+                        <span>{q.subject === "english" ? "английский" : "математика"} · сложн. {q.difficulty}</span>
+                        <span>{q.type === "text_input" ? "вписать ответ" : "выбор варианта"}</span>
+                        {q.needsReview && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold">проверить</span>}
+                        {q.active === false && <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">выключен</span>}
+                      </div>
+                      <div className="text-sm text-slate-800 truncate">{q.text}</div>
+                    </button>
+                  ))}
+                  {bank.length > 200 && (
+                    <div className="px-5 py-3 text-xs text-slate-400">Показаны первые 200 из {bank.length}.</div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {editing && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 overflow-y-auto"
+            onClick={() => setEditing(null)}>
+            <div className="bg-white rounded-2xl max-w-xl w-full my-8 p-6" onClick={e => e.stopPropagation()}>
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Правка вопроса</h2>
+                  <p className="text-xs font-mono text-slate-400">{editing.id}</p>
+                </div>
+                <button onClick={() => setEditing(null)} className="text-slate-400 text-2xl leading-none">×</button>
+              </div>
+
+              {editing.importIssues?.length > 0 && (
+                <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 mb-4 text-sm text-amber-900">
+                  <b>Замечания при загрузке:</b>
+                  <ul className="mt-1 ml-4 list-disc text-xs">
+                    {editing.importIssues.map((i: string, n: number) => <li key={n}>{i}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              <label className="block text-sm font-medium text-slate-700 mb-1">Текст вопроса</label>
+              <textarea value={editing.text || ""} rows={3}
+                onChange={e => setEditing({ ...editing, text: e.target.value })}
+                className="w-full border border-slate-300 rounded-xl p-3 mb-3 text-sm" />
+
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Тема</label>
+                  <input value={editing.topic || ""} onChange={e => setEditing({ ...editing, topic: e.target.value })}
+                    className="w-full border border-slate-300 rounded-xl p-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Сложность</label>
+                  <select value={editing.difficulty} onChange={e => setEditing({ ...editing, difficulty: Number(e.target.value) })}
+                    className="w-full border border-slate-300 rounded-xl p-2 text-sm">
+                    <option value={1}>1 — лёгкий</option><option value={2}>2 — средний</option><option value={3}>3 — сложный</option>
+                  </select>
+                </div>
+              </div>
+
+              {editing.type === "text_input" ? (
+                <>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Правильный ответ</label>
+                  <input value={editing.answer || ""} onChange={e => setEditing({ ...editing, answer: e.target.value })}
+                    className="w-full border border-slate-300 rounded-xl p-2 mb-3 text-sm" />
+                </>
+              ) : (
+                <>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Варианты — отметьте правильный</label>
+                  <div className="grid gap-2 mb-3">
+                    {(editing.options || []).map((o: string, i: number) => {
+                      const letter = ["А", "Б", "В", "Г", "Д", "Е"][i];
+                      return (
+                        <div key={i} className="flex items-center gap-2">
+                          <button onClick={() => setEditing({ ...editing, answer: letter })}
+                            className={`w-8 h-8 rounded-full border grid place-items-center text-sm font-bold shrink-0 ${
+                              editing.answer === letter ? "bg-emerald-600 border-emerald-600 text-white" : "border-slate-300 text-slate-500"}`}>
+                            {letter}
+                          </button>
+                          <input value={o.replace(/^[А-ЯA-Z][).]\s*/, "")}
+                            onChange={e => setEditing({ ...editing,
+                              options: editing.options.map((x: string, j: number) => j === i ? `${letter}) ${e.target.value}` : x) })}
+                            className="flex-1 border border-slate-300 rounded-lg p-2 text-sm" />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              <label className="flex items-center gap-2 text-sm text-slate-700 mb-4 cursor-pointer">
+                <input type="checkbox" checked={editing.active !== false}
+                  onChange={e => setEditing({ ...editing, active: e.target.checked })} />
+                Вопрос участвует в экзаменах
+              </label>
+
+              <div className="flex gap-2">
+                <button onClick={async () => {
+                    try {
+                      const res = await fetch(`/api/placement/questions/${encodeURIComponent(editing.id)}`, {
+                        method: "PUT", headers: await authHeaders(),
+                        body: JSON.stringify({ tenantId, ...editing }),
+                      });
+                      const data = await res.json();
+                      if (!data.success) { setError(data.error || "Не удалось сохранить."); return; }
+                      setEditing(null); void loadBank();
+                      setNotice("Вопрос сохранён."); setTimeout(() => setNotice(null), 3000);
+                    } catch (e) { setError("Нет связи с сервером."); }
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700">
+                  Сохранить
+                </button>
+                <button onClick={() => setEditing(null)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-600 font-semibold text-sm">
+                  Отмена
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

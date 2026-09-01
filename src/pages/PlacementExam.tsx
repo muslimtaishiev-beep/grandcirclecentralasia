@@ -17,6 +17,7 @@ import { useParams } from "react-router-dom";
 
 type Question = {
   id: string; subject: string; topic: string; difficulty: number;
+  type?: "multiple_choice" | "text_input";
   text: string; options: string[]; points: number;
 };
 type Section = {
@@ -372,6 +373,19 @@ export default function PlacementExam() {
 
           <p className="text-lg sm:text-xl font-semibold text-slate-900 mb-5 leading-snug">{question.text}</p>
 
+          {question.type === "text_input" ? (
+            <div>
+              <input
+                value={answers[question.id] || ""}
+                onChange={e => answer(question.id, e.target.value)}
+                placeholder="Введите ответ"
+                autoComplete="off" autoCorrect="off" spellCheck={false}
+                className="w-full border border-slate-300 rounded-xl p-4 text-lg bg-white focus:border-blue-500 focus:outline-none" />
+              <p className="text-xs text-slate-400 mt-2">
+                Ответ засчитывается независимо от запятой или точки в десятичной дроби.
+              </p>
+            </div>
+          ) : (
           <div className="grid gap-2">
             {question.options.map((opt, i) => {
               const letter = LETTERS[i];
@@ -389,6 +403,7 @@ export default function PlacementExam() {
               );
             })}
           </div>
+          )}
 
           <div className="flex gap-3 mt-6">
             <button onClick={() => setCursor(c => Math.max(0, c - 1))} disabled={cursor === 0}

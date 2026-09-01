@@ -1,126 +1,82 @@
 #!/usr/bin/env node
 /**
- * Импорт банка вопросов среза из CSV-шаблона школы.
+ * Импорт банка вопросов среза из CSV — командная строка.
  *
- *   node scripts/importPlacementQuestions.cjs <файл.csv> [--tenant org_future_leaders] [--dry]
+ *   node scripts/importPlacementQuestions.cjs <файл.csv> [--tenant org_x] [--dry] [--with-warnings]
  *
- * Колонки шаблона (Ключи_ответов/Шаблон_вопросов_для_школы.csv):
- *   id | предмет | классы | тема | сложность | вопрос | вариант_А..Г | правильный
- *
- * Every row is validated BEFORE anything is written: duplicate ids, an empty
- * question, a difficulty outside 1-3, a correct answer that names a missing
- * option — each failure is reported with its row number. A file with any
- * error writes nothing: half-imported banks are how students meet questions
- * with no right answer.
- *
- * --dry prints the report without writing.
+ * Использует ТОТ ЖЕ разбор, что и кабинет завуча (src/lib/placementParser.ts),
+ * поэтому файл, который чисто выглядит в браузере, импортируется здесь
+ * идентично. Строки с ошибками не пишутся никогда: вопрос, на который нельзя
+ * ответить правильно, хуже отсутствующего.
  */
 const admin = require("firebase-admin");
-const { readFileSync } = require("fs");
+const { readFileSync, existsSync, mkdirSync } = require("fs");
+const { execSync } = require("child_process");
 const path = require("path");
 
 const args = process.argv.slice(2);
 const file = args.find(a => !a.startsWith("--"));
 const tenantId = (args.includes("--tenant") ? args[args.indexOf("--tenant") + 1] : null) || "org_future_leaders";
 const dry = args.includes("--dry");
-if (!file) { console.error("Укажите CSV-файл: node scripts/importPlacementQuestions.cjs вопросы.csv"); process.exit(1); }
+const withWarnings = args.includes("--with-warnings");
+if (!file) { console.error("Укажите CSV: node scripts/importPlacementQuestions.cjs вопросы.csv"); process.exit(1); }
 
-admin.initializeApp({ credential: admin.credential.cert(JSON.parse(readFileSync(path.join(process.cwd(), "serviceAccountKey.json"), "utf8"))) });
+// Собираем парсер из TypeScript, чтобы не держать вторую копию логики.
+const out = path.join(process.cwd(), "scratch", ".placementParser.cjs");
+if (!existsSync(path.dirname(out))) mkdirSync(path.dirname(out), { recursive: true });
+execSync(`npx esbuild src/lib/placementParser.ts --bundle --format=cjs --platform=node --outfile=${out}`, { stdio: "pipe" });
+const { analyseFile } = require(out);
+
+admin.initializeApp({ credential: admin.credential.cert(JSON.parse(readFileSync("serviceAccountKey.json", "utf8"))) });
 const db = admin.firestore();
 
-// Tiny CSV parser that survives quoted fields with commas and newlines.
-function parseCSV(text) {
-  const rows = []; let row = [], cell = "", inQ = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inQ) {
-      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
-      else if (c === '"') inQ = false;
-      else cell += c;
-    } else if (c === '"') inQ = true;
-    else if (c === ",") { row.push(cell); cell = ""; }
-    else if (c === "\n" || c === "\r") {
-      if (c === "\r" && text[i + 1] === "\n") i++;
-      row.push(cell); cell = "";
-      if (row.some(x => x.trim() !== "")) rows.push(row);
-      row = [];
-    } else cell += c;
-  }
-  if (cell !== "" || row.length) { row.push(cell); if (row.some(x => x.trim() !== "")) rows.push(row); }
-  return rows;
-}
-
-const SUBJECTS = { "математика": "math", "math": "math", "английский": "english", "english": "english", "англ": "english" };
-const LETTERS = ["А", "Б", "В", "Г"];
-const foldLetter = s => String(s || "").trim().toUpperCase()
-  .replace("A", "А").replace("B", "Б").replace("V", "В").replace("G", "Г");
-
 (async () => {
-  const raw = readFileSync(file, "utf8").replace(/^﻿/, "");
-  const rows = parseCSV(raw);
-  const header = rows.shift().map(h => h.trim().toLowerCase());
-  const col = name => header.findIndex(h => h.includes(name));
-  const C = {
-    id: col("id"), subject: col("предмет"), grades: col("класс"), topic: col("тема"),
-    difficulty: col("сложн"), text: col("вопрос"), correct: col("правильн"),
-    opts: LETTERS.map(l => header.findIndex(h => h.includes(l.toLowerCase()) && h.includes("вариант"))),
-  };
-  for (const [k, v] of Object.entries({ id: C.id, предмет: C.subject, классы: C.grades, тема: C.topic, сложность: C.difficulty, вопрос: C.text, правильный: C.correct })) {
-    if (v === -1) { console.error(`🔴 В файле нет колонки «${k}» — используйте шаблон.`); process.exit(1); }
-  }
+  const existing = new Set();
+  (await db.collection("exam_questions").where("tenantId", "==", tenantId).get()).forEach(d => existing.add(d.id));
 
-  const errors = [], questions = [], seen = new Set();
-  rows.forEach((r, i) => {
-    const line = i + 2;
-    const id = (r[C.id] || "").trim();
-    const subject = SUBJECTS[(r[C.subject] || "").trim().toLowerCase()];
-    const grades = (r[C.grades] || "").split(/[;,\s]+/).map(Number).filter(g => g >= 5 && g <= 11);
-    const topic = (r[C.topic] || "").trim();
-    const difficulty = Number(r[C.difficulty]);
-    const text = (r[C.text] || "").trim();
-    const options = C.opts.map(ix => (ix >= 0 ? (r[ix] || "").trim() : "")).filter(Boolean);
-    const correct = foldLetter(r[C.correct]);
-
-    if (!id) errors.push(`строка ${line}: пустой id`);
-    else if (seen.has(id)) errors.push(`строка ${line}: id «${id}» уже встречался`);
-    seen.add(id);
-    if (!subject) errors.push(`строка ${line}: предмет «${r[C.subject]}» — нужно «математика» или «английский»`);
-    if (!grades.length) errors.push(`строка ${line}: классы «${r[C.grades]}» — укажите 5–11 через точку с запятой`);
-    if (!topic) errors.push(`строка ${line}: пустая тема`);
-    if (![1, 2, 3].includes(difficulty)) errors.push(`строка ${line}: сложность «${r[C.difficulty]}» — нужно 1, 2 или 3`);
-    if (!text) errors.push(`строка ${line}: пустой текст вопроса`);
-    if (options.length < 2) errors.push(`строка ${line}: меньше двух вариантов ответа`);
-    if (!LETTERS.includes(correct)) errors.push(`строка ${line}: правильный ответ «${r[C.correct]}» — нужна буква А–Г`);
-    else if (LETTERS.indexOf(correct) >= options.length) errors.push(`строка ${line}: правильный ответ ${correct}, но варианта ${correct} нет`);
-
-    questions.push({ id, tenantId, subject, grades, topic, difficulty, type: "multiple_choice",
-      text, options: options.map((o, j) => `${LETTERS[j]}) ${o}`), answer: correct, points: 1, active: true });
-  });
-
-  console.log(`строк прочитано: ${rows.length}`);
-  if (errors.length) {
-    console.log(`\n🔴 ОШИБОК: ${errors.length} — файл НЕ импортирован, исправьте и запустите снова:`);
-    errors.slice(0, 30).forEach(e => console.log("   • " + e));
-    if (errors.length > 30) console.log(`   … и ещё ${errors.length - 30}`);
+  const report = analyseFile(readFileSync(file, "utf8"), existing);
+  if (report.fatal.length) {
+    console.error("🔴 Файл не подходит:");
+    report.fatal.forEach(f => console.error("   • " + f));
     process.exit(1);
   }
 
-  const byKey = {};
-  questions.forEach(q => {
-    const k = `${q.subject} · сложность ${q.difficulty}`;
-    byKey[k] = (byKey[k] || 0) + 1;
-  });
-  console.log("\nраспределение:");
-  Object.entries(byKey).sort().forEach(([k, n]) => console.log(`   ${k}: ${n}`));
+  console.log(`строк: ${report.questions.length} — готовы ${report.ok}, с замечаниями ${report.warnings}, с ошибками ${report.errors}\n`);
 
-  if (dry) { console.log("\n--dry: ничего не записано"); process.exit(0); }
+  const problems = report.questions.filter(q => q.status !== "ok");
+  if (problems.length) {
+    console.log("Проблемные строки:");
+    problems.slice(0, 25).forEach(q => {
+      const mark = q.status === "error" ? "🔴 НЕ ЗАГРУЗИТСЯ" : "⚠  проверьте";
+      console.log(`  ${mark} стр.${q.row}: ${(q.text || "(пусто)").slice(0, 50)}`);
+      q.issues.forEach(i => console.log(`        ${i}`));
+    });
+    if (problems.length > 25) console.log(`  … и ещё ${problems.length - 25}`);
+    console.log("");
+  }
+
+  console.log("Пополнение банка:");
+  Object.entries(report.byBucket).sort().forEach(([k, n]) => console.log(`   ${k}: ${n}`));
+
+  const toWrite = report.questions.filter(q => q.status === "ok" || (q.status === "warning" && withWarnings));
+  console.log(`\nбудет записано: ${toWrite.length}` +
+    (report.warnings && !withWarnings ? `  (замечания пропущены; --with-warnings чтобы включить)` : ""));
+
+  if (dry) { console.log("--dry: ничего не записано"); process.exit(0); }
+  if (!toWrite.length) { console.error("Нечего импортировать."); process.exit(1); }
 
   let batch = db.batch(), inBatch = 0, written = 0;
-  for (const q of questions) {
-    batch.set(db.collection("exam_questions").doc(q.id), { ...q, importedAt: admin.firestore.Timestamp.now() });
+  for (const q of toWrite) {
+    batch.set(db.collection("exam_questions").doc(q.id), {
+      id: q.id, tenantId, subject: q.subject, grades: q.grades, topic: q.topic,
+      difficulty: q.difficulty, type: q.type, text: q.text, options: q.options,
+      answer: q.answer, points: 1, active: true,
+      needsReview: q.status === "warning", importIssues: q.issues.slice(0, 5),
+      importedAt: admin.firestore.Timestamp.now(),
+    });
     if (++inBatch === 400) { await batch.commit(); written += inBatch; batch = db.batch(); inBatch = 0; }
   }
   if (inBatch) { await batch.commit(); written += inBatch; }
-  console.log(`\n✅ записано вопросов: ${written} (tenant: ${tenantId})`);
+  console.log(`\n✅ записано: ${written} (tenant: ${tenantId})`);
   process.exit(0);
 })();

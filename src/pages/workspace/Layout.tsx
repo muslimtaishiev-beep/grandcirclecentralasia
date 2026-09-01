@@ -31,7 +31,8 @@ import {
   FolderTree,
   FileCheck2,
   Sliders,
-  Settings2
+  Settings2,
+  GraduationCap
 } from "lucide-react";
 import GlobalNotifications from "../../components/workspace/GlobalNotifications";
 import SpotlightCommandBar from "../../components/common/SpotlightCommandBar";
@@ -156,6 +157,11 @@ export default function WorkspaceLayout() {
     (hasPerm('crm:read') || hasPerm('crm:manage')) && { name: "CRM", path: `/workspace/${activeTenant.id}/crm/contacts`, icon: Briefcase },
     (hasPerm('tests:read') || hasPerm('tests:manage')) && { name: "Тесты", path: `/workspace/${activeTenant.id}/tests`, icon: FileQuestion },
     (hasPerm('tests:review') || hasPerm('tests:manage')) && { name: "Проверка & Прокторинг", path: `/workspace/${activeTenant.id}/tests/manage`, icon: ShieldCheck },
+    // Вступительный срез: администрация и роль «завуч». hasPerm already treats
+    // owner/admin/директор as full access, so the role check only has to add
+    // завуч on top.
+    (hasPerm('tests:manage') || hasPerm('tests:review') || /завуч/i.test(String(activeTenant.role || ''))) &&
+      { name: "Вступительный срез", path: `/workspace/${activeTenant.id}/placement`, icon: GraduationCap },
     (hasPerm('team:manage') || hasPerm('certificates:issue') || hasPerm('crm:manage')) && { name: "Заявки & QR", path: `/workspace/${activeTenant.id}/builder/forms`, icon: FileCheck2 },
     (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Function Studio", path: `/workspace/${activeTenant.id}/functions/studio`, icon: Settings2 },
     (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Оргструктура & Отделы", path: `/workspace/${activeTenant.id}/settings/departments`, icon: FolderTree },
