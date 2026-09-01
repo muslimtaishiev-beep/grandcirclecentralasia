@@ -99,6 +99,86 @@ interface Blueprint {
   scale: { minPercent: number; label: string }[];
 }
 
+/**
+ * Классы школы и их вместимость — основа автоматического распределения.
+ *
+ * Семиклассников две возрастные группы («младшие» и «старшие» по новой
+ * системе): ученик сначала попадает в свою группу по возрасту, и только
+ * внутри неё сортируется по баллу. Смешивать их нельзя — это разные
+ * возрасты, а не разные уровни.
+ *
+ * Буквы идут по алфавиту от сильных к слабым: А — самый сильный класс.
+ * Школа меняет структуру в кабинете; здесь только значения по умолчанию.
+ */
+export interface ClassGroup {
+  /** Ключ для распределения: класс + необязательная возрастная группа. */
+  key: string;
+  grade: number;
+  /** Подпись группы, если параллелей несколько («младшие» / «старшие»). */
+  stream?: string;
+  /** Сколько классов в этой группе: 2 → А и Б. */
+  count: number;
+  /** С какой буквы начинается группа: 0 → А, 2 → В. Нужно, когда одну
+   *  параллель делят несколько возрастных групп. */
+  firstLetter?: number;
+}
+
+const DEFAULT_CLASS_STRUCTURE: ClassGroup[] = [
+  { key: "5", grade: 5, count: 1, firstLetter: 0 },
+  { key: "6", grade: 6, count: 0, firstLetter: 0 },
+  // Две возрастные группы седьмых делят один алфавит: младшие получают
+  // 7А-7Б, старшие продолжают с 7В. Иначе в школе оказалось бы два разных
+  // «7А», и списки, журналы и сертификаты перестали бы различать их.
+  { key: "7-junior", grade: 7, stream: "младшие", count: 2, firstLetter: 0 },
+  { key: "7-senior", grade: 7, stream: "старшие", count: 2, firstLetter: 2 },
+  { key: "8", grade: 8, count: 3, firstLetter: 0 },
+  { key: "9", grade: 9, count: 3, firstLetter: 0 },
+  { key: "10", grade: 10, count: 5, firstLetter: 0 },
+  { key: "11", grade: 11, count: 2, firstLetter: 0 },
+];
+
+const CLASS_LETTERS = ["А", "Б", "В", "Г", "Д", "Е", "Ж", "З", "И", "К"];
+
+async function loadClassStructure(tenantId: string): Promise<ClassGroup[]> {
+  const snap = await db().collection("exam_blueprints").doc(`classes_${tenantId}`).get();
+  const saved = snap.exists ? snap.data()?.groups : null;
+  return Array.isArray(saved) && saved.length ? saved : DEFAULT_CLASS_STRUCTURE;
+}
+
+/**
+ * Предложение системы: разложить учеников по буквам внутри их группы.
+ *
+ * Rank order, strongest into А — but this is a PROPOSAL, never a decision.
+ * The школа confirms it by publishing; until then every assignment can be
+ * overridden by hand, and a class with no places left simply overflows into
+ * the last letter rather than silently dropping anyone.
+ */
+export function proposeClassAssignment(
+  students: { id: string; grade: number; stream?: string; percent: number }[],
+  structure: ClassGroup[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+
+  for (const group of structure) {
+    if (group.count < 1) continue;
+    const inGroup = students
+      .filter(s => Number(s.grade) === group.grade &&
+        (!group.stream || String(s.stream || "") === group.stream))
+      .sort((a, b) => b.percent - a.percent);
+    if (!inGroup.length) continue;
+
+    // Равные по размеру классы: остаток распределяется по сильнейшим буквам,
+    // чтобы «лишний» ученик не создавал класс из одного человека.
+    const per = Math.ceil(inGroup.length / group.count);
+    const offset = group.firstLetter || 0;
+    inGroup.forEach((st, i) => {
+      const letterIdx = offset + Math.min(Math.floor(i / per), group.count - 1);
+      out[st.id] = `${group.grade}${CLASS_LETTERS[letterIdx] || "?"}`;
+    });
+  }
+  return out;
+}
+
 const DEFAULT_BLUEPRINT = (tenantId: string, grade: number): Blueprint => ({
   tenantId, grade,
   sections: [
@@ -384,6 +464,16 @@ router.post("/start", async (req: any, res: any) => {
       blueprintSnapshot: bp, // score against the rules that applied at start
       startedAt: admin.firestore.Timestamp.now(),
     };
+
+    // Фото сделали до старта — переносим в сессию и убираем временную запись.
+    const photoRef = db().collection("placement_photos").doc(ref.id);
+    const photoSnap = await photoRef.get();
+    if (photoSnap.exists) {
+      (sess as any).photo = photoSnap.data()!.photo;
+      (sess as any).photoTakenAt = photoSnap.data()!.takenAt;
+      photoRef.delete().catch(() => {});
+    }
+
     await ref.set(sess);
     audit("PLACEMENT_STARTED", tenantId, {
       studentShortId: sid, studentName: sess.studentName, grade: g,
@@ -394,6 +484,43 @@ router.post("/start", async (req: any, res: any) => {
     return res.json({ success: true, resumed: false, session: await sessionPayload(sess, qs) });
   } catch (e: any) {
     console.error("[Placement] start error:", e);
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST /api/placement/photo — фото ученика для сертификата.
+//
+// Снимается ОДИН раз перед стартом экзамена, по просьбе посмотреть в камеру.
+// К прокторингу отношения не имеет: движок в этот момент не запущен, кадр
+// никуда не анализируется и нарушением стать не может. Хранится прямо в
+// сессии как небольшой JPEG — на сертификате это марка размером с паспортное
+// фото, а отдельное хранилище ради 30 КБ заводить незачем.
+router.post("/photo", async (req: any, res: any) => {
+  try {
+    const { tenantId, shortId, photo } = req.body || {};
+    if (!tenantId || !shortId || typeof photo !== "string") {
+      return res.status(400).json({ success: false, error: "Bad request" });
+    }
+    if (!photo.startsWith("data:image/")) {
+      return res.status(400).json({ success: false, error: "Ожидается изображение" });
+    }
+    // 400 КБ хватает на 640×480 JPEG; больше — это не фото на документ.
+    if (photo.length > 400 * 1024) {
+      return res.status(413).json({ success: false, error: "Снимок слишком большой" });
+    }
+
+    const ref = db().collection("placement_sessions").doc(sessionId(String(tenantId), String(shortId)));
+    const snap = await ref.get();
+    if (!snap.exists) {
+      // Фото делается до старта: держим его отдельно, пока сессии нет.
+      await db().collection("placement_photos").doc(sessionId(String(tenantId), String(shortId))).set({
+        tenantId, shortId: String(shortId), photo, takenAt: admin.firestore.Timestamp.now(),
+      });
+      return res.json({ success: true, stored: "pending" });
+    }
+    await ref.update({ photo, photoTakenAt: admin.firestore.Timestamp.now() });
+    return res.json({ success: true, stored: "session" });
+  } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }
 });
@@ -513,6 +640,7 @@ router.post("/finish-section", async (req: any, res: any) => {
         tenantId, shortId: sess.shortId, grade: sess.grade,
         studentName: sess.studentName, studentPhone: sess.studentPhone, studentEmail: sess.studentEmail,
         ...final,
+        photo: sess.photo || null,
         approved: false, approvedBy: "", finalDecision: "",
         scaleSnapshot: scale,
         // Результаты не видны ученику, пока завуч не опубликует поток.
@@ -753,6 +881,114 @@ router.post("/annul", requireFirebaseAuth, async (req: any, res: any) => {
   }
 });
 
+// GET/PUT /api/placement/classes — структура классов школы.
+router.get("/classes", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const tenantId = String(req.query.tenantId || "");
+    if (!(await canManagePlacement(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+    return res.json({ success: true, groups: await loadClassStructure(tenantId), letters: CLASS_LETTERS });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+router.put("/classes", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const { tenantId, groups } = req.body || {};
+    if (!(await canManagePlacement(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+    if (!Array.isArray(groups) || !groups.length) {
+      return res.status(400).json({ success: false, error: "Опишите хотя бы одну параллель" });
+    }
+    const clean = groups.map((g: any) => ({
+      key: String(g.key || `${g.grade}${g.stream ? "-" + g.stream : ""}`).slice(0, 40),
+      grade: Number(g.grade),
+      stream: g.stream ? String(g.stream).slice(0, 30) : undefined,
+      count: Math.max(0, Math.min(10, Number(g.count) || 0)),
+      firstLetter: Math.max(0, Math.min(9, Number(g.firstLetter) || 0)),
+    })).filter((g: any) => g.grade >= 5 && g.grade <= 11);
+    if (!clean.length) return res.status(400).json({ success: false, error: "Классы должны быть с 5 по 11" });
+
+    await db().collection("exam_blueprints").doc(`classes_${tenantId}`).set({
+      tenantId, groups: clean,
+      updatedAt: admin.firestore.Timestamp.now(), updatedBy: req.user?.email || "",
+    });
+    audit("PLACEMENT_CLASSES_UPDATED", tenantId, { actorEmail: req.user?.email || "" });
+    return res.json({ success: true, groups: clean });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST /api/placement/propose-classes — предложение системы, БЕЗ записи.
+// Deliberately does not save: the школа looks at the proposal, moves whoever
+// they disagree with, and only publishing makes it real. A distribution that
+// wrote itself into the database would be a decision, not a suggestion.
+router.post("/propose-classes", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const { tenantId, grade } = req.body || {};
+    if (!(await canManagePlacement(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+    const structure = await loadClassStructure(tenantId);
+    let q = db().collection("placement_results").where("tenantId", "==", tenantId);
+    if (grade) q = q.where("grade", "==", Number(grade));
+    const snap = await q.get();
+
+    const eligible = snap.docs
+      .map(d => ({ id: d.id, ...d.data() } as any))
+      .filter(r => !r.superseded && !r.annulled && !r.published);
+    const proposal = proposeClassAssignment(
+      eligible.map(r => ({
+        id: r.id, grade: Number(r.grade), stream: r.stream,
+        percent: Number(r.adjustedPercent ?? r.percent ?? 0),
+      })), structure);
+
+    // Считаем наполняемость, чтобы завуч видел перекос до публикации.
+    const fill: Record<string, number> = {};
+    Object.values(proposal).forEach(cls => { fill[cls] = (fill[cls] || 0) + 1; });
+
+    return res.json({
+      success: true, proposal, fill, structure,
+      students: eligible.map(r => ({
+        id: r.id, shortId: r.shortId, studentName: r.studentName, grade: r.grade,
+        stream: r.stream || "", percent: r.adjustedPercent ?? r.percent,
+        assignedClass: r.assignedClass || null, proposed: proposal[r.id] || null,
+      })).sort((a, b) => Number(a.grade) - Number(b.grade) || b.percent - a.percent),
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST /api/placement/assign-class — завуч правит предложение вручную.
+router.post("/assign-class", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const { tenantId, resultId, assignedClass } = req.body || {};
+    if (!(await canManagePlacement(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+    const ref = db().collection("placement_results").doc(String(resultId));
+    const snap = await ref.get();
+    if (!snap.exists || snap.data()!.tenantId !== tenantId) {
+      return res.status(404).json({ success: false, error: "Результат не найден" });
+    }
+    if (snap.data()!.published) {
+      return res.status(409).json({ success: false, error: "Результаты опубликованы — класс уже объявлен ученику" });
+    }
+    await ref.update({
+      assignedClass: String(assignedClass || "").slice(0, 10),
+      assignedBy: req.user?.email || "", assignedAt: admin.firestore.Timestamp.now(),
+    });
+    return res.json({ success: true });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // POST /api/placement/publish — публикация результатов потока ученикам.
 // Until this runs, the student portal returns "результаты ещё не опубликованы"
 // — the школа must be able to re-read drafts and adjust before anything is
@@ -795,6 +1031,21 @@ router.post("/publish", requireFirebaseAuth, async (req: any, res: any) => {
 
     const targets = candidates;
     if (!targets.length) return res.json({ success: true, published: 0, message: "Нечего публиковать" });
+
+    // Класс зачисления обязателен: сертификат без него бессмыслен, а публикация
+    // и есть тот момент, когда предложение системы становится решением школы.
+    const structure = await loadClassStructure(tenantId);
+    const needClass = targets.filter(d => !d.data().assignedClass && !d.data().annulled);
+    if (needClass.length && !force) {
+      const proposal = proposeClassAssignment(
+        needClass.map(d => ({ id: d.id, grade: Number(d.data().grade),
+          stream: d.data().stream, percent: Number(d.data().adjustedPercent ?? d.data().percent ?? 0) })),
+        structure);
+      return res.status(409).json({
+        success: false, needsClasses: needClass.length, proposal,
+        error: `Не назначен класс: ${needClass.length}. Подтвердите распределение перед публикацией.`,
+      });
+    }
 
     const actor = req.user?.email || req.user?.uid || "";
     let batch = db().batch(), inBatch = 0, published = 0;
@@ -858,6 +1109,7 @@ router.post("/my-result", async (req: any, res: any) => {
       correct, total: r.total, percent,
       satMath: r.satMath ?? null,
       decision: r.finalDecision || r.adjustedRecommendation || r.recommendation,
+      assignedClass: r.assignedClass || null,
       approved: Boolean(r.approved),
       sections: (r.sections || []).map((s: any) => ({
         title: s.title, correct: s.correct, total: s.total, percent: s.percent, sat: s.sat ?? null,

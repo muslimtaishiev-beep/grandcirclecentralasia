@@ -44,7 +44,7 @@ export default function PlacementExam() {
   const { orgSlug } = useParams<{ orgSlug: string }>();
   const tenantId = orgSlug || "";
 
-  const [phase, setPhase] = useState<"login" | "exam" | "between" | "final">("login");
+  const [phase, setPhase] = useState<"login" | "photo" | "exam" | "between" | "final">("login");
   const [session, setSession] = useState<Session | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [flags, setFlags] = useState<Record<string, boolean>>({});
@@ -61,6 +61,16 @@ export default function PlacementExam() {
   const [studentEmail, setStudentEmail] = useState("");
   const [grade, setGrade] = useState("7");
   const [enteredPin, setEnteredPin] = useState("");
+
+  // Фото для сертификата: снимается ДО экзамена, отдельным шагом. Движок
+  // прокторинга в этот момент ещё не работает, поэтому кадр не может стать
+  // нарушением — это фото на документ, а не наблюдение.
+  const photoVideoRef = useRef<HTMLVideoElement | null>(null);
+  const photoCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const photoStreamRef = useRef<MediaStream | null>(null);
+  const [photoData, setPhotoData] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
 
   const shortIdRef = useRef<string>("");
   const pendingRef = useRef<Record<string, string>>({});
@@ -134,6 +144,75 @@ export default function PlacementExam() {
       persistLocal({ flags: next });
       return next;
     });
+  };
+
+  const stopPhotoCamera = useCallback(() => {
+    if (photoStreamRef.current) {
+      photoStreamRef.current.getTracks().forEach(t => t.stop());
+      photoStreamRef.current = null;
+    }
+  }, []);
+
+  const openPhotoStep = async () => {
+    setPhotoError(null);
+    setPhase("photo");
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setPhotoError("Камера недоступна на этом устройстве. Можно продолжить без фото.");
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" }, audio: false,
+      });
+      photoStreamRef.current = stream;
+      if (photoVideoRef.current) {
+        photoVideoRef.current.srcObject = stream;
+        try { await photoVideoRef.current.play(); } catch (e) {}
+      }
+    } catch (e) {
+      // Отказ от камеры не должен закрывать дорогу к экзамену — сертификат
+      // просто будет без фотографии.
+      setPhotoError("Камера не разрешена. Можно продолжить без фото — сертификат будет без снимка.");
+    }
+  };
+
+  const takePhoto = () => {
+    // Обратный отсчёт: ученику сказано смотреть в камеру, и снимок должен
+    // случиться предсказуемо, а не в момент, когда он тянется к мыши.
+    setCountdown(3);
+    const tick = (n: number) => {
+      if (n === 0) {
+        const v = photoVideoRef.current, c = photoCanvasRef.current;
+        setCountdown(null);
+        if (!v || !c || !v.videoWidth) { setPhotoError("Не удалось сделать снимок. Попробуйте ещё раз."); return; }
+        // Квадратный кадр по центру — как на документе.
+        const side = Math.min(v.videoWidth, v.videoHeight);
+        c.width = 400; c.height = 400;
+        const ctx = c.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(v, (v.videoWidth - side) / 2, (v.videoHeight - side) / 2, side, side, 0, 0, 400, 400);
+        setPhotoData(c.toDataURL("image/jpeg", 0.82));
+        return;
+      }
+      setCountdown(n);
+      setTimeout(() => tick(n - 1), 1000);
+    };
+    setTimeout(() => tick(2), 1000);
+  };
+
+  const confirmPhotoAndStart = async () => {
+    if (photoData) {
+      const sid = shortIdRef.current || String(Math.floor(100000 + Math.random() * 900000));
+      shortIdRef.current = sid;
+      try {
+        await fetch("/api/placement/photo", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tenantId, shortId: sid, photo: photoData }),
+        });
+      } catch (e) { /* без фото экзамен всё равно должен начаться */ }
+    }
+    stopPhotoCamera();
+    await startExam();
   };
 
   const startExam = async () => {
@@ -267,11 +346,95 @@ export default function PlacementExam() {
             <div className="mb-4 rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-800">{error}</div>
           )}
 
-          <button onClick={startExam} disabled={busy}
+          <button onClick={() => {
+              setError(null);
+              if (!studentName.trim() || studentName.trim().split(/\s+/).length < 2) {
+                return setError("Введите фамилию и имя полностью.");
+              }
+              if (!enteredPin.trim()) return setError("Введите PIN-код аудитории — его называет завуч.");
+              void openPhotoStep();
+            }} disabled={busy}
             className={`w-full py-4 rounded-xl font-bold text-white text-lg transition ${
               busy ? "bg-slate-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-lg"}`}>
-            {busy ? "Собираем вариант…" : "Начать экзамен"}
+            {busy ? "Собираем вариант…" : "Продолжить"}
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Фото для сертификата ─────────────────────────────────────────────────
+  if (phase === "photo") {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-xl p-6 sm:p-8 max-w-md w-full border border-slate-200 text-center">
+          <h2 className="text-xl font-bold text-slate-900 mb-1">Фотография для сертификата</h2>
+          <p className="text-sm text-slate-500 mb-5">
+            Посмотрите прямо в камеру. Снимок займёт пару секунд и попадёт
+            на ваш сертификат — как фото на документе.
+          </p>
+
+          <div className="relative rounded-2xl overflow-hidden bg-slate-900 aspect-square mb-4">
+            {photoData ? (
+              <img src={photoData} alt="Ваше фото" className="w-full h-full object-cover" />
+            ) : (
+              <>
+                <video ref={photoVideoRef} playsInline muted
+                  className="w-full h-full object-cover scale-x-[-1]" />
+                {countdown !== null && (
+                  <div className="absolute inset-0 grid place-items-center bg-black/40">
+                    <span className="text-7xl font-bold text-white tabular-nums">{countdown}</span>
+                  </div>
+                )}
+                {/* Овал-подсказка, куда поместить лицо */}
+                {countdown === null && (
+                  <div className="absolute inset-0 grid place-items-center pointer-events-none">
+                    <div className="w-40 h-52 rounded-[50%] border-2 border-white/50" />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          <canvas ref={photoCanvasRef} className="hidden" />
+
+          {photoError && (
+            <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900 mb-4 text-left">
+              {photoError}
+            </div>
+          )}
+
+          <div className="grid gap-2">
+            {photoData ? (
+              <>
+                <button onClick={confirmPhotoAndStart} disabled={busy}
+                  className={`w-full py-4 rounded-xl font-bold text-white text-lg ${
+                    busy ? "bg-slate-400" : "bg-blue-600 hover:bg-blue-700 shadow-lg"}`}>
+                  {busy ? "Собираем вариант…" : "Хорошо, начать экзамен"}
+                </button>
+                <button onClick={() => { setPhotoData(null); void openPhotoStep(); }}
+                  className="w-full py-3 rounded-xl border border-slate-300 text-slate-600 font-semibold">
+                  Переснять
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={takePhoto} disabled={countdown !== null || !!photoError}
+                  className={`w-full py-4 rounded-xl font-bold text-white text-lg ${
+                    countdown !== null || photoError ? "bg-slate-400" : "bg-blue-600 hover:bg-blue-700 shadow-lg"}`}>
+                  {countdown !== null ? "Смотрите в камеру…" : "📷 Сделать снимок"}
+                </button>
+                <button onClick={() => { stopPhotoCamera(); void startExam(); }}
+                  className="w-full py-3 rounded-xl border border-slate-300 text-slate-600 font-semibold">
+                  Продолжить без фото
+                </button>
+              </>
+            )}
+          </div>
+
+          <p className="text-xs text-slate-400 mt-4">
+            Снимок используется только для сертификата. К проверке работы
+            и наблюдению за экзаменом он отношения не имеет.
+          </p>
         </div>
       </div>
     );
