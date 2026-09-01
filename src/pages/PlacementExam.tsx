@@ -379,8 +379,10 @@ export default function PlacementExam() {
               <img src={photoData} alt="Ваше фото" className="w-full h-full object-cover" />
             ) : (
               <>
+                {/* Без зеркала: снимок пишется с камеры как есть, и зеркальный
+                    предпросмотр показывал бы не то, что попадёт на сертификат. */}
                 <video ref={photoVideoRef} playsInline muted
-                  className="w-full h-full object-cover scale-x-[-1]" />
+                  className="w-full h-full object-cover" />
                 {countdown !== null && (
                   <div className="absolute inset-0 grid place-items-center bg-black/40">
                     <span className="text-7xl font-bold text-white tabular-nums">{countdown}</span>
