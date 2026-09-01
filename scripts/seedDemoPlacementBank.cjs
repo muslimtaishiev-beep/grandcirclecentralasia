@@ -31,24 +31,33 @@ function mcq(correctValue, wrongs) {
   return { options: opts.map((o, i) => `${L[i]}) ${o}`), answer };
 }
 
+// Тексты не должны повторяться: два одинаковых вопроса под разными id — это
+// вопрос, который ученик увидит дважды за экзамен.
+const usedTexts = new Set();
+
 function mathQuestion(grade, difficulty, n) {
   let text, correct, wrongs, topic;
-  if (difficulty === 1) {
-    const a = ri(12, 89) * grade, b = ri(11, 78);
-    topic = "Арифметика";
-    text = `Вычислите: ${a} + ${b}`;
-    correct = a + b; wrongs = [correct + 10, correct - 10, correct + 1];
-  } else if (difficulty === 2) {
-    const base = ri(2, 9) * 20, pct = [10, 15, 20, 25, 50][ri(0, 4)];
-    topic = "Дроби и проценты";
-    text = `Найдите ${pct}% от числа ${base}`;
-    correct = base * pct / 100; wrongs = [correct + 5, correct * 2, Math.max(1, correct - 5)];
-  } else {
-    const x = ri(2, 9), b = ri(1, 15), c = x * ri(2, 6) + b;
-    topic = "Уравнения";
-    text = `Решите уравнение: ${Math.round((c - b) / x)}x + ${b} = ${c}`;
-    correct = x; wrongs = [x + 1, x - 1 || x + 2, x + 3];
+  // Перебираем параметры, пока не получим формулировку, которой ещё не было.
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (difficulty === 1) {
+      const a = ri(12, 89) * grade, b = ri(11, 78);
+      topic = "Арифметика";
+      text = `Вычислите: ${a} + ${b}`;
+      correct = a + b; wrongs = [correct + 10, correct - 10, correct + 1];
+    } else if (difficulty === 2) {
+      const base = ri(2, 40) * 5, pct = [10, 15, 20, 25, 40, 50, 75][ri(0, 6)];
+      topic = "Дроби и проценты";
+      text = `Найдите ${pct}% от числа ${base}`;
+      correct = base * pct / 100; wrongs = [correct + 5, correct * 2, Math.max(1, correct - 5)];
+    } else {
+      const x = ri(2, 19), k = ri(2, 9), b = ri(1, 40);
+      topic = "Уравнения";
+      text = `Решите уравнение: ${k}x + ${b} = ${k * x + b}`;
+      correct = x; wrongs = [x + 1, x - 1 || x + 2, x + 3];
+    }
+    if (!usedTexts.has(text)) break;
   }
+  usedTexts.add(text);
   const { options, answer } = mcq(correct, wrongs);
   return { id: `demo_ma_${grade}_${difficulty}_${n}`, subject: "math", grades: [grade], topic, difficulty, text, options, answer };
 }

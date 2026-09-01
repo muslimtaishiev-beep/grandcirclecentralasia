@@ -339,10 +339,19 @@ function shuffle<T>(arr: T[]): T[] {
 function assembleSection(pool: any[], section: BlueprintSection): { ids: string[]; shortage: number } {
   const chosen: any[] = [];
   let shortage = 0;
+
+  // Один и тот же вопрос не должен встретиться дважды даже под разными id.
+  // Банк собирают люди и генераторы, и дубликаты в нём — вопрос времени;
+  // студент, увидевший задание повторно, справедливо решит, что экзамен
+  // сломан. Сравниваем по нормализованному тексту.
+  const seenText = new Set<string>();
+  const textKey = (q: any) => String(q.text || "").trim().toLowerCase().replace(/\s+/g, " ");
+
   for (const diff of ["1", "2", "3"] as const) {
     const want = section.counts[diff] || 0;
     if (!want) continue;
-    const candidates = shuffle(pool.filter(q => String(q.difficulty) === diff && !chosen.includes(q)));
+    const candidates = shuffle(pool.filter(q =>
+      String(q.difficulty) === diff && !chosen.includes(q) && !seenText.has(textKey(q))));
     // Topic spread first: one from each topic until minTopics covered.
     const byTopic = new Map<string, any[]>();
     candidates.forEach(q => {
@@ -351,13 +360,23 @@ function assembleSection(pool: any[], section: BlueprintSection): { ids: string[
       byTopic.get(t)!.push(q);
     });
     const picked: any[] = [];
+    const take = (q: any) => {
+      if (!q || seenText.has(textKey(q))) return false;
+      seenText.add(textKey(q));
+      picked.push(q);
+      return true;
+    };
     for (const [, qs] of shuffle([...byTopic.entries()])) {
       if (picked.length >= want) break;
-      picked.push(qs.shift());
+      // Берём первый непросмотренный вопрос темы: shift() может отдать дубль,
+      // и тогда тема должна уступить место следующей, а не потерять слот.
+      while (qs.length && picked.length < want) {
+        if (take(qs.shift())) break;
+      }
     }
     for (const q of candidates) {
       if (picked.length >= want) break;
-      if (!picked.includes(q)) picked.push(q);
+      if (!picked.includes(q)) take(q);
     }
     shortage += Math.max(0, want - picked.length);
     chosen.push(...picked);
