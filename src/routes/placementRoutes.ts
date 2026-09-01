@@ -977,9 +977,7 @@ router.post("/propose-classes", requireFirebaseAuth, async (req: any, res: any) 
       students: eligible.map(r => ({
         id: r.id, shortId: r.shortId, studentName: r.studentName, grade: r.grade,
         stream: r.stream || "", percent: r.adjustedPercent ?? r.percent,
-        assignedClass: r.assignedClass || null,
-      photo: r.photo || null,
-      finishedAt: r.finishedAt || null, proposed: proposal[r.id] || null,
+        assignedClass: r.assignedClass || null, proposed: proposal[r.id] || null,
       })).sort((a, b) => Number(a.grade) - Number(b.grade) || b.percent - a.percent),
     });
   } catch (e: any) {
@@ -1141,6 +1139,9 @@ router.post("/my-result", async (req: any, res: any) => {
       satMath: r.satMath ?? null,
       decision: r.finalDecision || r.adjustedRecommendation || r.recommendation,
       assignedClass: r.assignedClass || null,
+      // Фото и дата нужны сертификату, который ученик открывает отсюда.
+      photo: r.photo || null,
+      finishedAt: r.finishedAt || null,
       approved: Boolean(r.approved),
       sections: (r.sections || []).map((s: any) => ({
         title: s.title, correct: s.correct, total: s.total, percent: s.percent, sat: s.sat ?? null,
