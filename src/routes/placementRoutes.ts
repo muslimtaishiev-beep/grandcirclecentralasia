@@ -24,13 +24,19 @@ const router = Router();
 const db = () => admin.firestore();
 
 // ── PIN (same hourly scheme as the entrance tests, same forgiving window) ──
-function getHourlyPIN(hourOffset = 0): string {
+function getHourlyPIN(hourOffset = 0, tenantId = ""): string {
   const d = new Date();
   d.setUTCHours(d.getUTCHours() + hourOffset);
-  const seed = d.getUTCFullYear() * 1000000 + (d.getUTCMonth() + 1) * 10000 + d.getUTCDate() * 100 + d.getUTCHours();
+  // Salted by tenant: the entrance tests use one global hourly PIN, but a
+  // placement PIN announced by one school's завуч must not open sessions in
+  // another school's tenant. The завуч cabinet reads the current value from
+  // GET /blueprint, so both sides always agree.
+  let salt = 0;
+  for (const ch of tenantId) salt = (salt * 31 + ch.charCodeAt(0)) % 100000;
+  const seed = d.getUTCFullYear() * 1000000 + (d.getUTCMonth() + 1) * 10000 + d.getUTCDate() * 100 + d.getUTCHours() + salt;
   return Math.abs((seed * 1103515245 + 12345) % 9000 + 1000).toString();
 }
-function pinAccepted(entered: unknown): boolean {
+function pinAccepted(entered: unknown, tenantId: string): boolean {
   const clean = String(entered ?? "")
     .replace(/[٠-٩]/g, c => String(c.charCodeAt(0) - 0x0660))
     .replace(/[۰-۹]/g, c => String(c.charCodeAt(0) - 0x06F0))
@@ -39,7 +45,7 @@ function pinAccepted(entered: unknown): boolean {
   if (!clean) return false;
   const TESTER_PIN = process.env.VITE_TESTER_PIN || process.env.TESTER_PIN;
   if (TESTER_PIN && String(entered) === TESTER_PIN) return true;
-  return [-1, 0, 1].some(o => clean === getHourlyPIN(o));
+  return [-1, 0, 1].some(o => clean === getHourlyPIN(o, tenantId));
 }
 
 // Answer comparison: the UI sends the option letter, but fold the alphabets —
@@ -127,7 +133,12 @@ router.get("/blueprint", requireFirebaseAuth, async (req: any, res: any) => {
       const s = availability[q.subject]; if (!s) return;
       s[String(q.difficulty)] = (s[String(q.difficulty)] || 0) + 1;
     });
-    return res.json({ success: true, blueprint: bp, availability });
+    return res.json({
+      success: true, blueprint: bp, availability,
+      // Current PIN for THIS tenant — the завуч announces it to the room.
+      pin: getHourlyPIN(0, tenantId),
+      pinMinutesLeft: 60 - new Date().getUTCMinutes(),
+    });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }
@@ -266,7 +277,11 @@ router.post("/start", async (req: any, res: any) => {
     const g = Number(grade);
     if (!tenantId || !g || !studentName) return res.status(400).json({ success: false, error: "Заполните имя и класс" });
     if (!(g >= 5 && g <= 11)) return res.status(400).json({ success: false, error: "Срез проводится для 5–11 классов" });
-    if (!pinAccepted(enteredPin)) return res.status(403).json({ success: false, error: "Неверный PIN-код. Узнайте актуальный PIN у завуча." });
+    // The tenant must exist before anything else: a mistyped or guessed id
+    // must not mint sessions against an organisation that isn't there.
+    const tenantDoc = await db().collection("tenants").doc(String(tenantId)).get();
+    if (!tenantDoc.exists) return res.status(404).json({ success: false, error: "Организация не найдена" });
+    if (!pinAccepted(enteredPin, String(tenantId))) return res.status(403).json({ success: false, error: "Неверный PIN-код. Узнайте актуальный PIN у завуча." });
 
     const sid = String(shortId || Math.floor(100000 + Math.random() * 900000));
     const ref = db().collection("placement_sessions").doc(sessionId(tenantId, sid));
