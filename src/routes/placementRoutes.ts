@@ -1000,9 +1000,21 @@ router.post("/assign-class", requireFirebaseAuth, async (req: any, res: any) => 
     if (snap.data()!.published) {
       return res.status(409).json({ success: false, error: "Результаты опубликованы — класс уже объявлен ученику" });
     }
+    // Назначение класса И ЕСТЬ решение школы — отдельная кнопка «Утвердить»
+    // была лишним шагом, из-за которого распределённые ученики продолжали
+    // числиться «ждущими решения». Снятие класса возвращает работу в
+    // ожидание, иначе счётчик врал бы в обратную сторону.
+    const cls = String(assignedClass || "").slice(0, 10);
     await ref.update({
-      assignedClass: String(assignedClass || "").slice(0, 10),
+      assignedClass: cls,
       assignedBy: req.user?.email || "", assignedAt: admin.firestore.Timestamp.now(),
+      approved: Boolean(cls),
+      approvedBy: cls ? (req.user?.email || "") : "",
+      finalDecision: cls || "",
+    });
+    audit("PLACEMENT_CLASS_ASSIGNED", tenantId, {
+      studentShortId: snap.data()!.shortId, studentName: snap.data()!.studentName,
+      actorEmail: req.user?.email || "", detail: cls || "класс снят",
     });
     return res.json({ success: true });
   } catch (e: any) {

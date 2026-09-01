@@ -156,19 +156,6 @@ export default function PlacementCabinet() {
     } finally { setSaving(false); }
   };
 
-  const decide = async (row: any, finalDecision: string) => {
-    try {
-      const res = await fetch("/api/placement/decide", {
-        method: "POST", headers: await authHeaders(),
-        body: JSON.stringify({ tenantId, resultId: row.id, finalDecision }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setResults(rs => rs.map(r => r.id === row.id ? { ...r, approved: true, finalDecision } : r));
-        setOpenStudent(null);
-      } else setError(data.error || "Не удалось сохранить решение.");
-    } catch (e) { setError("Нет связи с сервером."); }
-  };
 
   const allowRetake = async (row: any) => {
     const reason = prompt(
@@ -265,7 +252,9 @@ export default function PlacementCabinet() {
     const live = results.filter(r => !r.superseded);
     const done = live.length;
     const avg = done ? Math.round(live.reduce((a, r) => a + (r.percent || 0), 0) / done) : 0;
-    const pending = live.filter(r => !r.approved).length;
+    // «Ждут решения» = нет назначенного класса. Назначение класса и есть
+    // решение школы; отдельный флаг approved держится только для истории.
+    const pending = live.filter(r => !r.annulled && !r.assignedClass).length;
     const unpublished = live.filter(r => !r.published).length;
     const unreviewed = live.filter(r => !r.annulled && r.reviewStatus !== "reviewed").length;
     return { done, avg, pending, unpublished, unreviewed };
@@ -775,7 +764,11 @@ export default function PlacementCabinet() {
 
               <div className="border-t border-slate-200 pt-4">
                 <p className="text-sm text-slate-600 mb-2">
-                  Расчёт системы: <b>{openStudent.recommendation}</b>. Решение принимает школа.
+                  {openStudent.assignedClass ? (
+                    <>Зачислен в класс: <b>{openStudent.assignedClass}</b>. Изменить — во вкладке «Распределение по классам».</>
+                  ) : (
+                    <>Класс не назначен. Распределите ученика во вкладке «Распределение по классам» — это и будет решением школы.</>
+                  )}
                 </p>
                 <div className="flex gap-2 flex-wrap">
                   <button onClick={() => openCertificate(openStudent) || setError("Браузер заблокировал окно — разрешите всплывающие окна.")}
@@ -801,16 +794,9 @@ export default function PlacementCabinet() {
                     className="px-4 py-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 font-semibold text-sm hover:bg-amber-100">
                     ↻ Разрешить пересдачу
                   </button>
-                  <button onClick={() => decide(openStudent, openStudent.recommendation)}
+                  <button onClick={() => { setOpenStudent(null); setTab("classes"); }}
                     className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700">
-                    Утвердить
-                  </button>
-                  <button onClick={() => {
-                      const v = prompt("Укажите класс или уровень для этого ученика:", openStudent.finalDecision || openStudent.recommendation);
-                      if (v && v.trim()) void decide(openStudent, v.trim());
-                    }}
-                    className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-semibold text-sm hover:bg-slate-50">
-                    Изменить решение
+                    {openStudent.assignedClass ? "Изменить класс" : "Назначить класс"}
                   </button>
                 </div>
               </div>
