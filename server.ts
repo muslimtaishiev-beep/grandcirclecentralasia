@@ -97,7 +97,14 @@ const DB_PATH = path.join(process.cwd(), "data", "db.json");
 let useFirebase = false;
 try {
   const keyPath = path.join(process.cwd(), "serviceAccountKey.json");
-  if (existsSync(keyPath)) {
+  if (process.env.FIRESTORE_EMULATOR_HOST) {
+    // Локальная разработка против эмулятора: никаких боевых ключей, никакого
+    // расхода квоты и никакого риска задеть настоящие данные учеников.
+    // Эмулятор не проверяет учётные данные, поэтому projectId достаточно.
+    admin.initializeApp({ projectId: process.env.GCLOUD_PROJECT || "study-64ebf" });
+    useFirebase = true;
+    console.log(`🧪 Firestore EMULATOR: ${process.env.FIRESTORE_EMULATOR_HOST} — боевая база не используется.`);
+  } else if (existsSync(keyPath)) {
     const serviceAccount = JSON.parse(readFileSync(keyPath, "utf8"));
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
