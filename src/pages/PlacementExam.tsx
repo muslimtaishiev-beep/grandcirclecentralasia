@@ -310,9 +310,14 @@ export default function PlacementExam() {
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-lg w-full text-center border border-slate-200">
           <div className="text-4xl mb-3">🎓</div>
           <h2 className="text-2xl font-bold text-slate-900 mb-2">Экзамен сдан</h2>
-          <p className="text-slate-500 mb-6 text-sm">
-            Ваш номер: <span className="font-mono font-bold text-slate-800">{shortIdRef.current}</span>
-          </p>
+          <div className="rounded-2xl border-2 border-blue-200 bg-blue-50 p-5 mb-6">
+            <div className="text-sm text-blue-900 mb-1">Номер вашей работы</div>
+            <div className="text-4xl font-mono font-bold text-blue-700 tracking-widest">{shortIdRef.current}</div>
+            <div className="text-xs text-blue-800 mt-2">
+              Запишите или сфотографируйте. По этому номеру и вашей фамилии
+              вы найдёте результат, когда школа его опубликует.
+            </div>
+          </div>
           <div className="grid gap-2 mb-6">
             {final.sections.map((s: any) => (
               <div key={s.key} className="flex justify-between items-center border border-slate-200 rounded-xl px-4 py-3">
@@ -341,9 +346,14 @@ export default function PlacementExam() {
     <div className="min-h-screen bg-slate-50 flex flex-col select-none">
       {/* Top bar: section, clock, position */}
       <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex items-center justify-between gap-3 sticky top-0 z-20">
-        <div className="text-sm text-slate-600">
+        <div className="text-sm text-slate-600 min-w-0">
           <span className="font-semibold text-slate-900">{activeSection.title}</span>
           <span className="hidden sm:inline"> · секция {session.currentSection + 1} из {session.sections.length}</span>
+          {/* Имя и номер работы всё время на виду: результат ищется по номеру,
+              и ученик должен запомнить его к концу экзамена, а не искать потом. */}
+          <div className="text-xs text-slate-400 truncate">
+            {studentName} · № <span className="font-mono font-semibold text-slate-600">{shortIdRef.current}</span>
+          </div>
         </div>
         <div className={`font-mono font-bold text-lg tabular-nums px-3 py-1 rounded-lg ${
           lowTime ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-800"}`}>

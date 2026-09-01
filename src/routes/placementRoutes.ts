@@ -194,6 +194,32 @@ router.put("/blueprint", requireFirebaseAuth, async (req: any, res: any) => {
   }
 });
 
+/**
+ * SAT-эквивалент по математике, шкала 200–800.
+ *
+ * Weighted by difficulty rather than a flat percentage, because that is what
+ * the real SAT does and what the school asked for: a student who answers the
+ * hard items is not equivalent to one who answers the same COUNT of easy ones.
+ * Weights 1 / 2 / 3 mirror the difficulty labels the bank already uses.
+ *
+ * The floor is 200 (the real SAT never returns less for a completed section)
+ * and the result is rounded to 10, as College Board reports it.
+ */
+const DIFFICULTY_WEIGHT: Record<string, number> = { "1": 1, "2": 2, "3": 3 };
+
+function satEquivalent(byDifficulty: Record<string, { correct: number; total: number }> | undefined): number | null {
+  if (!byDifficulty) return null;
+  let earned = 0, possible = 0;
+  for (const [d, v] of Object.entries(byDifficulty)) {
+    const w = DIFFICULTY_WEIGHT[d] ?? 1;
+    earned += (v.correct || 0) * w;
+    possible += (v.total || 0) * w;
+  }
+  if (!possible) return null;
+  const raw = 200 + (earned / possible) * 600;
+  return Math.round(raw / 10) * 10;
+}
+
 // ── Variant assembly ───────────────────────────────────────────────────────
 
 function shuffle<T>(arr: T[]): T[] {
@@ -438,10 +464,15 @@ router.post("/finish-section", async (req: any, res: any) => {
       const percent = allTotal ? Math.round((allCorrect / allTotal) * 100) : 0;
       const scale = (sess.blueprintSnapshot?.scale || []).sort((a: any, b: any) => b.minPercent - a.minPercent);
       const band = scale.find((b: any) => percent >= b.minPercent);
+      const mathSection = sess.sections.find((s: any) => s.key === "math");
       final = {
         correct: allCorrect, total: allTotal, percent,
         recommendation: band?.label || "—",
-        sections: sess.sections.map((s: any) => ({ key: s.key, title: s.title, ...s.result })),
+        satMath: satEquivalent(mathSection?.result?.byDifficulty),
+        sections: sess.sections.map((s: any) => ({
+          key: s.key, title: s.title, ...s.result,
+          sat: s.key === "math" ? satEquivalent(s.result?.byDifficulty) : null,
+        })),
       };
       sess.status = "finished";
       sess.finishedAt = admin.firestore.Timestamp.now();
@@ -453,6 +484,11 @@ router.post("/finish-section", async (req: any, res: any) => {
         studentName: sess.studentName, studentPhone: sess.studentPhone, studentEmail: sess.studentEmail,
         ...final,
         approved: false, approvedBy: "", finalDecision: "",
+        scaleSnapshot: scale,
+        // Результаты не видны ученику, пока завуч не опубликует поток.
+        published: false, annulled: false,
+        // Ручная правка балла завучем после проверки черновиков.
+        adjustedCorrect: null, adjustedTotal: null, adjustmentNote: "",
         startedAt: sess.startedAt, finishedAt: sess.finishedAt,
       });
       audit("PLACEMENT_FINISHED", tenantId, {
@@ -513,6 +549,186 @@ router.post("/decide", requireFirebaseAuth, async (req: any, res: any) => {
       detail: String(finalDecision || "").slice(0, 80),
     });
     return res.json({ success: true });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST /api/placement/adjust — завуч правит балл после проверки черновиков.
+// The exam is machine-marked, but the school re-reads the drafts: a student may
+// have shown correct working and mis-clicked, or answered in a way the key did
+// not anticipate. The adjustment is stored ALONGSIDE the machine score, never
+// over it, so a challenged decision can always be traced back.
+router.post("/adjust", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const { tenantId, resultId, correct, note } = req.body || {};
+    if (!tenantId || !resultId) return res.status(400).json({ success: false, error: "Bad request" });
+    if (!(await canManagePlacement(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+    const ref = db().collection("placement_results").doc(String(resultId));
+    const snap = await ref.get();
+    if (!snap.exists || snap.data()!.tenantId !== tenantId) {
+      return res.status(404).json({ success: false, error: "Результат не найден" });
+    }
+    const row = snap.data()!;
+    if (row.published) return res.status(409).json({ success: false, error: "Результаты уже опубликованы — правка невозможна" });
+
+    const total = Number(row.total) || 0;
+    const adjusted = Number(correct);
+    // Half marks are the point of the feature, so fractions are allowed — but
+    // a score above the maximum or below zero is a typo, not a decision.
+    if (!Number.isFinite(adjusted) || adjusted < 0 || adjusted > total) {
+      return res.status(400).json({ success: false, error: `Балл должен быть от 0 до ${total}` });
+    }
+
+    const percent = total ? Math.round((adjusted / total) * 100) : 0;
+    const scale = (row.scaleSnapshot || []).slice().sort((a: any, b: any) => b.minPercent - a.minPercent);
+    const band = scale.find((b: any) => percent >= b.minPercent);
+
+    await ref.update({
+      adjustedCorrect: adjusted, adjustedTotal: total,
+      adjustmentNote: String(note || "").slice(0, 300),
+      adjustedPercent: percent,
+      adjustedRecommendation: band?.label || row.recommendation,
+      adjustedBy: req.user?.email || "", adjustedAt: admin.firestore.Timestamp.now(),
+    });
+    audit("PLACEMENT_SCORE_ADJUSTED", tenantId, {
+      studentShortId: row.shortId, studentName: row.studentName, actorEmail: req.user?.email || "",
+      detail: `${row.correct} → ${adjusted} из ${total}. ${String(note || "").slice(0, 120)}`,
+    });
+    return res.json({ success: true, percent, recommendation: band?.label });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST /api/placement/annul — аннулирование работы.
+router.post("/annul", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const { tenantId, resultId, annulled, reason } = req.body || {};
+    if (!tenantId || !resultId) return res.status(400).json({ success: false, error: "Bad request" });
+    if (!(await canManagePlacement(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+    const ref = db().collection("placement_results").doc(String(resultId));
+    const snap = await ref.get();
+    if (!snap.exists || snap.data()!.tenantId !== tenantId) {
+      return res.status(404).json({ success: false, error: "Результат не найден" });
+    }
+    const on = annulled !== false;
+    if (on && !String(reason || "").trim()) {
+      // An annulled exam without a stated reason cannot be defended to a parent.
+      return res.status(400).json({ success: false, error: "Укажите причину аннулирования" });
+    }
+    await ref.update({
+      annulled: on,
+      annulReason: on ? String(reason).slice(0, 300) : "",
+      annulledBy: on ? (req.user?.email || "") : "",
+      annulledAt: on ? admin.firestore.Timestamp.now() : null,
+    });
+    audit(on ? "PLACEMENT_ANNULLED" : "PLACEMENT_ANNUL_CANCELLED", tenantId, {
+      studentShortId: snap.data()!.shortId, studentName: snap.data()!.studentName,
+      actorEmail: req.user?.email || "", detail: String(reason || "").slice(0, 200),
+    });
+    return res.json({ success: true });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST /api/placement/publish — публикация результатов потока ученикам.
+// Until this runs, the student portal returns "результаты ещё не опубликованы"
+// — the школа must be able to re-read drafts and adjust before anything is
+// visible, and a half-checked stream leaking out is exactly what that protects.
+router.post("/publish", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const { tenantId, grade, resultIds } = req.body || {};
+    if (!tenantId) return res.status(400).json({ success: false, error: "Нужен tenantId" });
+    if (!(await canManagePlacement(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав на публикацию" });
+    }
+
+    let query = db().collection("placement_results").where("tenantId", "==", tenantId);
+    if (grade) query = query.where("grade", "==", Number(grade));
+    const snap = await query.get();
+
+    const wanted = Array.isArray(resultIds) && resultIds.length ? new Set(resultIds) : null;
+    const targets = snap.docs.filter(d => {
+      const r = d.data();
+      if (r.superseded) return false;          // архивная попытка не публикуется
+      if (r.published) return false;           // уже опубликовано
+      return !wanted || wanted.has(d.id);
+    });
+    if (!targets.length) return res.json({ success: true, published: 0, message: "Нечего публиковать" });
+
+    const actor = req.user?.email || req.user?.uid || "";
+    let batch = db().batch(), inBatch = 0, published = 0;
+    for (const d of targets) {
+      batch.update(d.ref, {
+        published: true, publishedAt: admin.firestore.Timestamp.now(), publishedBy: actor,
+      });
+      if (++inBatch === 400) { await batch.commit(); published += inBatch; batch = db().batch(); inBatch = 0; }
+    }
+    if (inBatch) { await batch.commit(); published += inBatch; }
+
+    audit("PLACEMENT_PUBLISHED", tenantId, {
+      actorEmail: actor, grade: Number(grade) || 0,
+      detail: `опубликовано результатов: ${published}${grade ? `, ${grade} класс` : ", весь поток"}`,
+    });
+    return res.json({ success: true, published });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST /api/placement/my-result — портал ученика. Public: ученик анонимен.
+// Требуется И номер, И фамилия: результаты несовершеннолетних — персональные
+// данные, а шестизначный номер перебирается автоматом за минуты.
+router.post("/my-result", async (req: any, res: any) => {
+  try {
+    const { tenantId, shortId, lastName } = req.body || {};
+    if (!tenantId || !shortId || !lastName) {
+      return res.status(400).json({ success: false, error: "Укажите номер работы и фамилию" });
+    }
+    const snap = await db().collection("placement_results").doc(sessionId(String(tenantId), String(shortId))).get();
+
+    // Same answer whether the id is unknown or the surname is wrong: a
+    // different message would confirm which ids exist.
+    const notFound = { success: false, error: "Работа не найдена. Проверьте номер и фамилию." };
+    if (!snap.exists) return res.status(404).json(notFound);
+    const r = snap.data()!;
+
+    const fold = (v: string) => String(v || "").trim().toLowerCase().replace(/ё/g, "е").replace(/\s+/g, "");
+    const surnameGiven = fold(lastName);
+    const surnameOnFile = fold(String(r.studentName || "").split(/\s+/)[0]);
+    if (!surnameGiven || surnameGiven !== surnameOnFile) return res.status(404).json(notFound);
+
+    if (r.superseded) return res.status(404).json(notFound);
+    if (!r.published) {
+      return res.json({ success: true, pending: true,
+        message: "Результаты ещё не опубликованы. Дождитесь объявления школы." });
+    }
+    if (r.annulled) {
+      return res.json({ success: true, annulled: true, studentName: r.studentName, shortId: r.shortId,
+        message: "Работа аннулирована. Обратитесь к завучу." });
+    }
+
+    // Only what the student may see: no answer keys, no per-question detail.
+    const correct = r.adjustedCorrect ?? r.correct;
+    const percent = r.adjustedPercent ?? r.percent;
+    return res.json({
+      success: true, published: true,
+      studentName: r.studentName, shortId: r.shortId, grade: r.grade,
+      correct, total: r.total, percent,
+      satMath: r.satMath ?? null,
+      decision: r.finalDecision || r.adjustedRecommendation || r.recommendation,
+      approved: Boolean(r.approved),
+      sections: (r.sections || []).map((s: any) => ({
+        title: s.title, correct: s.correct, total: s.total, percent: s.percent, sat: s.sat ?? null,
+      })),
+      adjusted: r.adjustedCorrect != null,
+    });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }

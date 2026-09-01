@@ -49,6 +49,7 @@ export default function PlacementCabinet() {
   const [notice, setNotice] = useState<string | null>(null);
   const [openStudent, setOpenStudent] = useState<any>(null);
   const [gradeFilter, setGradeFilter] = useState<number | 0>(0);
+  const [publishing, setPublishing] = useState(false);
 
   const loadBlueprint = useCallback(async (g: number) => {
     try {
@@ -185,6 +186,81 @@ export default function PlacementCabinet() {
     } catch (e) { setError("Нет связи с сервером."); }
   };
 
+  const adjustScore = async (row: any) => {
+    const total = row.total || 0;
+    const current = row.adjustedCorrect ?? row.correct;
+    const raw = prompt(
+      `Балл после проверки черновика — ${row.studentName}\n\n` +
+      `Машинная проверка: ${row.correct} из ${total}.\n` +
+      "Можно указать дробное значение (например, 27.5).", String(current));
+    if (raw === null) return;
+    const value = Number(String(raw).replace(",", "."));
+    if (!Number.isFinite(value) || value < 0 || value > total) {
+      setError(`Балл должен быть числом от 0 до ${total}.`); return;
+    }
+    const note = prompt("Основание для изменения (увидит комиссия):", row.adjustmentNote || "Проверка письменной работы") ?? "";
+    try {
+      const res = await fetch("/api/placement/adjust", {
+        method: "POST", headers: await authHeaders(),
+        body: JSON.stringify({ tenantId, resultId: row.id, correct: value, note }),
+      });
+      const data = await res.json();
+      if (!data.success) { setError(data.error || "Не удалось изменить балл."); return; }
+      setNotice(`Балл ${row.studentName}: ${value} из ${total} (${data.percent}%).`);
+      setTimeout(() => setNotice(null), 4000);
+      setOpenStudent(null); void loadResults();
+    } catch (e) { setError("Нет связи с сервером."); }
+  };
+
+  const toggleAnnul = async (row: any) => {
+    const on = !row.annulled;
+    let reason = "";
+    if (on) {
+      const r = prompt(
+        `Аннулировать работу ${row.studentName}?\n\n` +
+        "Ученик увидит, что работа аннулирована, и будет направлен к завучу.\n" +
+        "Укажите причину:", "Нарушение правил проведения экзамена");
+      if (r === null) return;
+      if (!r.trim()) { setError("Без указания причины аннулировать нельзя."); return; }
+      reason = r;
+    } else if (!confirm(`Снять аннулирование с работы ${row.studentName}?`)) return;
+
+    try {
+      const res = await fetch("/api/placement/annul", {
+        method: "POST", headers: await authHeaders(),
+        body: JSON.stringify({ tenantId, resultId: row.id, annulled: on, reason }),
+      });
+      const data = await res.json();
+      if (!data.success) { setError(data.error || "Не удалось выполнить."); return; }
+      setNotice(on ? "Работа аннулирована." : "Аннулирование снято.");
+      setTimeout(() => setNotice(null), 4000);
+      setOpenStudent(null); void loadResults();
+    } catch (e) { setError("Нет связи с сервером."); }
+  };
+
+  const publish = async () => {
+    const scope = gradeFilter ? `${gradeFilter} класса` : "всего потока";
+    const count = visibleResults.filter((r: any) => !r.published && !r.superseded).length;
+    if (!count) { setError("Все результаты уже опубликованы."); return; }
+    if (!confirm(
+      `Опубликовать результаты ${scope}?\n\n` +
+      `Станут видны ученикам: ${count}.\n` +
+      "После публикации балл править нельзя — сначала проверьте черновики.")) return;
+    setPublishing(true);
+    try {
+      const res = await fetch("/api/placement/publish", {
+        method: "POST", headers: await authHeaders(),
+        body: JSON.stringify({ tenantId, grade: gradeFilter || undefined }),
+      });
+      const data = await res.json();
+      if (!data.success) { setError(data.error || "Не удалось опубликовать."); return; }
+      setNotice(`Опубликовано результатов: ${data.published}. Ученики видят их на портале.`);
+      setTimeout(() => setNotice(null), 6000);
+      void loadResults();
+    } catch (e) { setError("Нет связи с сервером."); }
+    finally { setPublishing(false); }
+  };
+
   const stats = useMemo(() => {
     // Superseded attempts stay in the list for history but must not skew the
     // averages the завуч reports to the committee.
@@ -192,7 +268,8 @@ export default function PlacementCabinet() {
     const done = live.length;
     const avg = done ? Math.round(live.reduce((a, r) => a + (r.percent || 0), 0) / done) : 0;
     const pending = live.filter(r => !r.approved).length;
-    return { done, avg, pending };
+    const unpublished = live.filter(r => !r.published).length;
+    return { done, avg, pending, unpublished };
   }, [results]);
 
   const visibleResults = useMemo(
@@ -243,9 +320,10 @@ export default function PlacementCabinet() {
 
         {tab === "results" && (
           <>
-            <div className="grid grid-cols-3 gap-3 mb-5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
               {[["Сдали экзамен", stats.done, ""], ["Средний результат", `${stats.avg}%`, ""],
-                ["Ждут решения", stats.pending, stats.pending ? "text-amber-600" : ""]].map(([l, v, cls]) => (
+                ["Ждут решения", stats.pending, stats.pending ? "text-amber-600" : ""],
+                ["Не опубликовано", stats.unpublished, stats.unpublished ? "text-blue-600" : ""]].map(([l, v, cls]) => (
                 <div key={String(l)} className="bg-white border border-slate-200 rounded-xl p-4">
                   <div className={`text-2xl font-bold tabular-nums ${cls}`}>{v}</div>
                   <div className="text-xs text-slate-500">{l}</div>
@@ -267,9 +345,14 @@ export default function PlacementCabinet() {
                   {g}
                 </button>
               ))}
+              <button onClick={publish} disabled={publishing}
+                className={`ml-auto px-4 h-9 rounded-lg text-sm font-semibold ${
+                  publishing ? "bg-slate-300 text-slate-500" : "bg-blue-600 text-white hover:bg-blue-700"}`}>
+                {publishing ? "Публикуем…" : `📢 Опубликовать результаты${gradeFilter ? ` (${gradeFilter} кл.)` : ""}`}
+              </button>
               <button onClick={() => exportStreamCSV(results as any, gradeFilter || undefined)}
                 disabled={visibleResults.length === 0}
-                className={`ml-auto px-4 h-9 rounded-lg text-sm font-semibold ${
+                className={`px-4 h-9 rounded-lg text-sm font-semibold ${
                   visibleResults.length === 0
                     ? "bg-slate-200 text-slate-400 cursor-not-allowed"
                     : "bg-emerald-600 text-white hover:bg-emerald-700"}`}>
@@ -290,6 +373,7 @@ export default function PlacementCabinet() {
                         <th className="p-3">Ученик</th>
                         <th className="p-3">Класс</th>
                         <th className="p-3">Балл</th>
+                        <th className="p-3">SAT матем.</th>
                         <th className="p-3">Рекомендация</th>
                         <th className="p-3"></th>
                       </tr>
@@ -302,12 +386,25 @@ export default function PlacementCabinet() {
                             <div className="font-medium text-slate-900">
                               {r.studentName}
                               {r.superseded && <span className="ml-2 text-xs font-normal text-slate-400">(пересдал)</span>}
+                              {r.annulled && <span className="ml-2 text-xs font-semibold text-red-600">аннулирована</span>}
+                              {r.published && <span className="ml-2 text-xs font-normal text-emerald-600">опубликован</span>}
                             </div>
                             <div className="font-mono text-xs text-slate-400">{r.shortId}</div>
                           </td>
                           <td className="p-3 text-slate-600">{r.grade}</td>
                           <td className="p-3 font-mono tabular-nums">
-                            {r.correct}/{r.total} <span className="text-slate-400">({r.percent}%)</span>
+                            {r.adjustedCorrect != null ? (
+                              <>
+                                <span className="line-through text-slate-400">{r.correct}</span>{" "}
+                                <b>{r.adjustedCorrect}</b>/{r.total}{" "}
+                                <span className="text-slate-400">({r.adjustedPercent}%)</span>
+                              </>
+                            ) : (
+                              <>{r.correct}/{r.total} <span className="text-slate-400">({r.percent}%)</span></>
+                            )}
+                          </td>
+                          <td className="p-3 font-mono tabular-nums text-blue-700">
+                            {r.satMath ?? "—"}
                           </td>
                           <td className="p-3">
                             <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${
@@ -591,10 +688,33 @@ export default function PlacementCabinet() {
                 <button onClick={() => setOpenStudent(null)} className="text-slate-400 text-2xl leading-none">×</button>
               </div>
 
-              <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 mb-4">
-                <div className="text-3xl font-bold tabular-nums">{openStudent.percent}%</div>
-                <div className="text-sm text-slate-500">{openStudent.correct} из {openStudent.total} правильных</div>
+              <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 mb-4 flex items-end justify-between gap-4 flex-wrap">
+                <div>
+                  <div className="text-3xl font-bold tabular-nums">
+                    {openStudent.adjustedPercent ?? openStudent.percent}%
+                  </div>
+                  <div className="text-sm text-slate-500">
+                    {openStudent.adjustedCorrect ?? openStudent.correct} из {openStudent.total} баллов
+                    {openStudent.adjustedCorrect != null && (
+                      <span className="text-blue-600"> · машинная проверка: {openStudent.correct}</span>
+                    )}
+                  </div>
+                  {openStudent.adjustmentNote && (
+                    <div className="text-xs text-slate-500 mt-1">Основание: {openStudent.adjustmentNote}</div>
+                  )}
+                </div>
+                {openStudent.satMath != null && (
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-blue-700 tabular-nums">{openStudent.satMath}</div>
+                    <div className="text-xs text-slate-500">SAT-эквивалент<br/>математика</div>
+                  </div>
+                )}
               </div>
+              {openStudent.annulled && (
+                <div className="rounded-xl bg-red-50 border border-red-200 p-3 mb-4 text-sm text-red-900">
+                  <b>Работа аннулирована.</b> {openStudent.annulReason}
+                </div>
+              )}
 
               {(openStudent.sections || []).map((s: any) => (
                 <div key={s.key} className="mb-4">
@@ -630,6 +750,22 @@ export default function PlacementCabinet() {
                   <button onClick={() => openStudentReport(openStudent) || setError("Браузер заблокировал окно — разрешите всплывающие окна.")}
                     className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-semibold text-sm hover:bg-slate-50">
                     📄 Протокол
+                  </button>
+                  <button onClick={() => adjustScore(openStudent)}
+                    disabled={openStudent.published}
+                    title={openStudent.published ? "Результаты опубликованы — правка закрыта" : ""}
+                    className={`px-4 py-2 rounded-xl font-semibold text-sm border ${
+                      openStudent.published
+                        ? "border-slate-200 text-slate-300 cursor-not-allowed"
+                        : "border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100"}`}>
+                    ✎ Изменить балл
+                  </button>
+                  <button onClick={() => toggleAnnul(openStudent)}
+                    className={`px-4 py-2 rounded-xl font-semibold text-sm border ${
+                      openStudent.annulled
+                        ? "border-slate-300 text-slate-700 hover:bg-slate-50"
+                        : "border-red-300 bg-red-50 text-red-800 hover:bg-red-100"}`}>
+                    {openStudent.annulled ? "Снять аннулирование" : "⊘ Аннулировать"}
                   </button>
                   <button onClick={() => allowRetake(openStudent)}
                     className="px-4 py-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 font-semibold text-sm hover:bg-amber-100">

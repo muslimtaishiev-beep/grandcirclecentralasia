@@ -26,6 +26,7 @@ const Landing = lazy(() => import("./pages/Landing"));
 const Testing = lazy(() => import("./pages/Testing"));
 const PlacementExam = lazy(() => import("./pages/PlacementExam"));
 const PlacementCabinet = lazy(() => import("./pages/PlacementCabinet"));
+const PlacementResultPortal = lazy(() => import("./pages/PlacementResultPortal"));
 const ManagerForm = lazy(() => import("./pages/ManagerForm"));
 const ManagerDashboard = lazy(() => import("./pages/ManagerDashboard"));
 const Receipt = lazy(() => import("./pages/Receipt"));
@@ -191,7 +192,7 @@ export default function App() {
       <GlobalTooltip />
       
       {/* Header is global */}
-      {!isAdminPath && !currentPath.startsWith("/super-admin") && !currentPath.startsWith("/workspace") && !currentPath.match(/^\/[^\/]+\/(admission|test|placement)/) && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && !currentPath.startsWith("/sandbox") && (
+      {!isAdminPath && !currentPath.startsWith("/super-admin") && !currentPath.startsWith("/workspace") && !currentPath.match(/^\/[^\/]+\/(admission|test|placement|results)/) && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && !currentPath.startsWith("/sandbox") && (
         <Header 
           lang={lang} 
           setLang={setLang} 
@@ -200,7 +201,7 @@ export default function App() {
       )}
 
       {/* Floating Language Switcher for Admission Portal Pages */}
-      {(!isAdminPath && (currentPath.match(/^\/[^\/]+\/(admission|test|placement)/) || currentPath.startsWith("/login") || currentPath.startsWith("/register") || currentPath.startsWith("/dashboard") || currentPath.startsWith("/decision"))) && (
+      {(!isAdminPath && (currentPath.match(/^\/[^\/]+\/(admission|test|placement|results)/) || currentPath.startsWith("/login") || currentPath.startsWith("/register") || currentPath.startsWith("/dashboard") || currentPath.startsWith("/decision"))) && (
         <div className="absolute top-4 right-4 md:top-8 md:right-8 z-50">
           <button 
             onClick={() => setLang(lang === "ru" ? "en" : lang === "en" ? "kg" : "ru")}
@@ -239,6 +240,8 @@ export default function App() {
               mid-exam, with no way back. */}
           {/* Вступительный срез — тенантный маршрут, как и остальные экзамены. */}
           <Route path="/:orgSlug/placement" element={<ExamErrorBoundary><PlacementExam /></ExamErrorBoundary>} />
+          {/* Портал результатов — ученики ищут себя по номеру работы и фамилии. */}
+          <Route path="/:orgSlug/results" element={<ExamErrorBoundary><PlacementResultPortal /></ExamErrorBoundary>} />
           <Route path="/:orgSlug/test" element={<ExamErrorBoundary><Testing /></ExamErrorBoundary>} />
           <Route path="/:orgSlug/test/:testId" element={<ExamErrorBoundary><Testing /></ExamErrorBoundary>} />
           <Route path="/login" element={<Login lang={lang} />} />
