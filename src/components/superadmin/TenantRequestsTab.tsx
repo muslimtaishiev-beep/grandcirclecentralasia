@@ -183,6 +183,11 @@ export function TenantRequestsTab() {
                 {approved[req.id]?.urls && (
                   <div className="bg-[#112211] border border-[#224422] rounded p-2 text-[11px] font-mono text-[#50e3c2] space-y-0.5">
                     <div>✓ Создано: {approved[req.id].tenantId}</div>
+                    <div className={approved[req.id].inviteEmailSent ? "" : "text-[#f5a623]"}>
+                      {approved[req.id].inviteEmailSent
+                        ? `✉ Письмо для входа отправлено: ${approved[req.id].ownerEmail}`
+                        : `⚠ Письмо не отправлено — пришлите владельцу сброс пароля вручную`}
+                    </div>
                     <div>Экзамены: {approved[req.id].urls.directory}</div>
                     <div>Воркспейс: {approved[req.id].urls.workspace}</div>
                     {/* Субдомен записан в организацию, но адрес заработает

@@ -36,17 +36,21 @@ export const requireSuperAdmin = async (req: any, res: any, next: any) => {
     const uid = req.user.uid;
     const db = admin.firestore();
 
-    const userDoc = await db.collection("users").doc(uid).get();
-    if (!userDoc.exists) {
-      return res.status(403).json({ error: "Access denied. User not found." });
-    }
+    // Суперадминство в системе живёт в двух местах: коллекция superadmins
+    // (из неё же собираются custom claims — по ним работают срез и формы) и
+    // поле users.globalRole. Раньше этот роут требовал только globalRole, и
+    // человек, признанный суперадмином всем остальным кодом, получал здесь
+    // 403. Принимаем любой из трёх источников.
+    if (req.user?.isSuperadmin === true) return next();
 
-    const userData = userDoc.data();
-    if (userData?.globalRole !== "superadmin") {
-      return res.status(403).json({ error: "Access denied. Requires superadmin role." });
+    const [saDoc, userDoc] = await Promise.all([
+      db.collection("superadmins").doc(uid).get(),
+      db.collection("users").doc(uid).get(),
+    ]);
+    if (saDoc.exists || userDoc.data()?.globalRole === "superadmin") {
+      return next();
     }
-
-    next();
+    return res.status(403).json({ error: "Access denied. Requires superadmin role." });
   } catch (error: any) {
     return res.status(500).json({ error: error.message });
   }
@@ -203,8 +207,10 @@ router.post("/tenant-requests/:id", requireFirebaseAuth, requireSuperAdmin, asyn
           gasApiKey: null
         },
         contacts: {
-          email: requestData.contactEmail,
-          phone: requestData.contactPhone
+          // Пустые строки, не undefined: Firestore отказывается писать
+          // документ с undefined, а телефон в заявке необязателен.
+          email: requestData.contactEmail || "",
+          phone: requestData.contactPhone || ""
         }
       };
 
@@ -219,11 +225,47 @@ router.post("/tenant-requests/:id", requireFirebaseAuth, requireSuperAdmin, asyn
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
-      if (requestData.requestedByUserId) {
-        const membershipId = `mem_${requestData.requestedByUserId}_${tenantId}`;
+      // Аккаунт владельца и письмо-приглашение.
+      //
+      // Firebase сам писем не шлёт: создание пользователя через Admin SDK —
+      // тихая операция, а generatePasswordResetLink только возвращает ссылку.
+      // Раньше заявку часто подавали без регистрации, requestedByUserId был
+      // пуст, членство записывалось с userId: undefined — и владелец
+      // одобренной организации не мог войти вообще: ни аккаунта, ни письма.
+      let ownerUid = requestData.requestedByUserId || "";
+      let inviteEmailSent = false;
+      const ownerEmail = String(requestData.contactEmail || "").trim().toLowerCase();
+      if (ownerEmail) {
+        try {
+          let ownerUser;
+          try {
+            ownerUser = await admin.auth().getUserByEmail(ownerEmail);
+          } catch {
+            ownerUser = await admin.auth().createUser({ email: ownerEmail, emailVerified: false });
+          }
+          ownerUid = ownerUser.uid;
+
+          // Письмо «установите пароль» — через REST sendOobCode: только этот
+          // путь реально отправляет почту силами Firebase. Для уже
+          // существующего аккаунта это обычный сброс пароля — тоже уместно.
+          const apiKey = process.env.VITE_FIREBASE_API_KEY || "AIzaSyBefuNSd2j9CJJ92EWcg0am9s3zBSSHS4Y";
+          const oob = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requestType: "PASSWORD_RESET", email: ownerEmail }),
+          });
+          inviteEmailSent = oob.ok;
+        } catch (e: any) {
+          // Организация важнее письма: если почтовый шаг упал, одобрение всё
+          // равно проходит, а суперадмин видит в ответе, что письмо не ушло.
+          console.error("[approve] не удалось создать владельца/отправить письмо:", e?.message);
+        }
+      }
+
+      if (ownerUid) {
+        const membershipId = `mem_${ownerUid}_${tenantId}`;
         await db.collection("memberships").doc(membershipId).set({
           id: membershipId,
-          userId: requestData.requestedByUserId,
+          userId: ownerUid,
           tenantId: tenantId,
           role: "org:owner",
           status: "active",
@@ -251,6 +293,8 @@ router.post("/tenant-requests/:id", requireFirebaseAuth, requireSuperAdmin, asyn
       return res.json({
         success: true, message: "Tenant approved and created", tenantId,
         subdomain: rawSub,
+        inviteEmailSent,
+        ownerEmail,
         urls: {
           site: `https://${rawSub}.studyfreeforum.com`,
           directory: `/${tenantId}/admission`,
