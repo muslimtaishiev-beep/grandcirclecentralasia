@@ -1158,20 +1158,26 @@ router.post("/my-result", async (req: any, res: any) => {
   try {
     const { tenantId, shortId, lastName } = req.body || {};
     if (!tenantId || !shortId || !lastName) {
-      return res.status(400).json({ success: false, error: "Укажите номер работы и фамилию" });
+      return res.status(400).json({ success: false, error: "Укажите номер работы и имя или фамилию" });
     }
     const snap = await db().collection("placement_results").doc(sessionId(String(tenantId), String(shortId))).get();
 
     // Same answer whether the id is unknown or the surname is wrong: a
     // different message would confirm which ids exist.
-    const notFound = { success: false, error: "Работа не найдена. Проверьте номер и фамилию." };
+    const notFound = { success: false, error: "Работа не найдена. Проверьте номер и имя." };
     if (!snap.exists) return res.status(404).json(notFound);
     const r = snap.data()!;
 
-    const fold = (v: string) => String(v || "").trim().toLowerCase().replace(/ё/g, "е").replace(/\s+/g, "");
-    const surnameGiven = fold(lastName);
-    const surnameOnFile = fold(String(r.studentName || "").split(/\s+/)[0]);
-    if (!surnameGiven || surnameGiven !== surnameOnFile) return res.status(404).json(notFound);
+    // Принимаем имя ИЛИ фамилию: на записи одни пишут «Иванов Иван», другие
+    // «Иван Иванов», и требовать угадать порядок — значит не пустить ученика к
+    // собственному результату. Сверяем с любой частью записанного ФИО;
+    // отчество тоже подойдёт. Второй фактор от этого не слабеет: номер работы
+    // по-прежнему нужно знать, а перебирать приходится по-прежнему их пару.
+    const fold = (v: string) => String(v || "").trim().toLowerCase()
+      .replace(/ё/g, "е").replace(/\s+/g, "");
+    const given = fold(lastName);
+    const parts = String(r.studentName || "").split(/\s+/).map(fold).filter(Boolean);
+    if (!given || !parts.includes(given)) return res.status(404).json(notFound);
 
     if (r.superseded) return res.status(404).json(notFound);
     if (!r.published) {

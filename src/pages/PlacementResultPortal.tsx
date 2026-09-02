@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { openCertificate } from "../lib/placementCertificate";
+import { openCertificate, certificateHTML } from "../lib/placementCertificate";
 
 /**
  * Портал проверки результатов среза для учеников.
@@ -34,12 +34,15 @@ export default function PlacementResultPortal() {
   const [pending, setPending] = useState<string | null>(null);
   const [annulled, setAnnulled] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
+  // Сертификат, показанный прямо на странице: запасной путь, когда браузер
+  // не дал открыть окно (телефоны и Safari блокируют их по умолчанию).
+  const [inlineCert, setInlineCert] = useState<string | null>(null);
 
   const lookup = async () => {
     setError(null); setResult(null); setPending(null); setAnnulled(null);
     const digits = shortId.replace(/\D/g, "");
     if (!digits) return setError("Введите номер работы — он был на экране во время экзамена.");
-    if (!lastName.trim()) return setError("Введите фамилию так, как записывались на экзамен.");
+    if (!lastName.trim()) return setError("Введите имя или фамилию так, как записывались на экзамен.");
     setBusy(true);
     try {
       const res = await fetch("/api/placement/my-result", {
@@ -61,7 +64,7 @@ export default function PlacementResultPortal() {
       <div className="w-full max-w-lg">
         <h1 className="text-2xl font-bold text-slate-900 mb-1">Результаты вступительного среза</h1>
         <p className="text-slate-500 text-sm mb-6">
-          Введите номер работы и фамилию — те же, что были на экзамене.
+          Введите номер работы и своё имя или фамилию — так, как записывались на экзамен.
         </p>
 
         {!result && !annulled && (
@@ -71,9 +74,9 @@ export default function PlacementResultPortal() {
               inputMode="numeric" placeholder="например, 482913" autoComplete="off"
               className="w-full border border-slate-300 rounded-xl p-3 mb-4 bg-slate-50 font-mono tracking-widest text-lg" />
 
-            <label className="block text-sm font-medium text-slate-700 mb-1">Фамилия</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Имя или фамилия</label>
             <input value={lastName} onChange={e => setLastName(e.target.value)}
-              placeholder="Иванов" autoComplete="family-name"
+              placeholder="Иванов" autoComplete="name"
               onKeyDown={e => { if (e.key === "Enter") void lookup(); }}
               className="w-full border border-slate-300 rounded-xl p-3 mb-5 bg-slate-50" />
 
@@ -155,8 +158,13 @@ export default function PlacementResultPortal() {
                 </p>
               )}
 
-              <button onClick={() => openCertificate(result as any) ||
-                  setError("Браузер заблокировал окно — разрешите всплывающие окна для этого сайта.")}
+              <button onClick={() => {
+                  if (!openCertificate(result as any)) {
+                    // Окно не открылось — показываем сертификат здесь же,
+                    // вместо того чтобы просить ученика лезть в настройки.
+                    setInlineCert(certificateHTML(result as any));
+                  }
+                }}
                 className="w-full py-3.5 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 shadow">
                 🎓 Открыть сертификат
               </button>
@@ -166,6 +174,26 @@ export default function PlacementResultPortal() {
                 Проверить другую работу
               </button>
             </div>
+          </div>
+        )}
+
+        {inlineCert && (
+          <div className="fixed inset-0 z-50 bg-slate-900/70 flex flex-col p-2 sm:p-4">
+            <div className="flex gap-2 justify-end mb-2">
+              <button onClick={() => {
+                  const f = document.getElementById("cert-frame") as HTMLIFrameElement | null;
+                  f?.contentWindow?.print();
+                }}
+                className="px-4 py-2 rounded-lg bg-white text-slate-800 font-semibold text-sm shadow">
+                Печать / PDF
+              </button>
+              <button onClick={() => setInlineCert(null)}
+                className="px-4 py-2 rounded-lg bg-white text-slate-800 font-semibold text-sm shadow">
+                Закрыть
+              </button>
+            </div>
+            <iframe id="cert-frame" title="Сертификат" srcDoc={inlineCert}
+              className="flex-1 w-full bg-white rounded-lg" />
           </div>
         )}
 

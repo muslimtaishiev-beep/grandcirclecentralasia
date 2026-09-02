@@ -50,11 +50,8 @@ function fmtDate(v: any): string {
   } catch { return new Date().toLocaleDateString("ru-RU"); }
 }
 
-/** Открывает сертификат в новом окне. Возвращает false, если окно заблокировано. */
-export function openCertificate(data: CertificateData, stampUrl = "/stamp.png"): boolean {
-  const w = window.open("", "_blank", "width=900,height=1180");
-  if (!w) return false;
-
+/** Собирает разметку сертификата. Открытие окна — отдельно, см. openCertificate. */
+export function certificateHTML(data: CertificateData, stampUrl = "/stamp.png"): string {
   const math = (data.sections || []).find(s => s.key === "math");
   const eng = (data.sections || []).find(s => s.key === "english");
   const overall = bandScore(data.percent);
@@ -70,7 +67,7 @@ export function openCertificate(data: CertificateData, stampUrl = "/stamp.png"):
     </tr>`;
   };
 
-  w.document.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8">
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <title>Сертификат ${esc(data.shortId)} — ${esc(data.studentName)}</title>
 <style>
   @page { size: A4; margin: 0; }
@@ -210,7 +207,43 @@ export function openCertificate(data: CertificateData, stampUrl = "/stamp.png"):
     </div>
   </div>
 </div>
-</body></html>`);
-  w.document.close();
-  return true;
+</body></html>`;
+}
+
+/**
+ * Открывает сертификат для просмотра и печати.
+ *
+ * Возвращает false, только если показать сертификат не удалось совсем.
+ *
+ * Раньше здесь был один window.open с пустым URL и document.write. Телефонные
+ * браузеры (и Safari по умолчанию) блокируют такие окна молча, кнопка казалась
+ * сломанной, а сообщение об этом рендерилось в скрытом блоке формы — ученик не
+ * видел вообще ничего. Теперь при блокировке пробуем blob-ссылку, а решение,
+ * что показать при полном провале, принимает вызывающая сторона.
+ */
+export function openCertificate(data: CertificateData, stampUrl = "/stamp.png"): boolean {
+  const html = certificateHTML(data, stampUrl);
+
+  const w = window.open("", "_blank", "width=900,height=1180");
+  if (w && w.document) {
+    w.document.write(html);
+    w.document.close();
+    return true;
+  }
+
+  // Окно заблокировано: отдаём тот же документ как blob. Это обычная навигация,
+  // и всплывающими окнами она не считается.
+  try {
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    const opened = window.open(url, "_blank");
+    if (opened) {
+      // Освобождаем не сразу: окно ещё читает документ по этой ссылке.
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      return true;
+    }
+    URL.revokeObjectURL(url);
+  } catch {
+    // Blob недоступен — падаем в false, вызывающая сторона покажет запасной вид.
+  }
+  return false;
 }
