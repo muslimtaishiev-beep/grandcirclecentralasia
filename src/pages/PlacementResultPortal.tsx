@@ -162,7 +162,7 @@ export default function PlacementResultPortal() {
                   if (!openCertificate(result as any)) {
                     // Окно не открылось — показываем сертификат здесь же,
                     // вместо того чтобы просить ученика лезть в настройки.
-                    setInlineCert(certificateHTML(result as any));
+                    setInlineCert(certificateHTML(result as any, "/stamp.png", { toolbar: false }));
                   }
                 }}
                 className="w-full py-3.5 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 shadow">

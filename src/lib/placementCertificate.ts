@@ -51,9 +51,19 @@ function fmtDate(v: any): string {
 }
 
 /** Собирает разметку сертификата. Открытие окна — отдельно, см. openCertificate. */
-export function certificateHTML(data: CertificateData, stampUrl = "/stamp.png"): string {
-  const math = (data.sections || []).find(s => s.key === "math");
-  const eng = (data.sections || []).find(s => s.key === "english");
+export function certificateHTML(
+  data: CertificateData,
+  stampUrl = "/stamp.png",
+  opts: { toolbar?: boolean } = {},
+): string {
+  // Своя панель нужна только в отдельном окне. Во врезке на странице кнопки
+  // уже есть снаружи, а window.close() из iframe ничего не закроет.
+  const showToolbar = opts.toolbar !== false;
+  // По key, а если его нет — по названию: сертификат не должен молча терять
+  // строки из-за того, что одна сторона забыла поле.
+  const secs = data.sections || [];
+  const math = secs.find(s => s.key === "math") || secs.find(s => /матем/i.test(s.title || ""));
+  const eng = secs.find(s => s.key === "english") || secs.find(s => /англ/i.test(s.title || ""));
   const overall = bandScore(data.percent);
 
   const scoreRow = (label: string, sec: { correct: number; total: number; percent: number } | undefined, sat?: number | null) => {
@@ -82,6 +92,21 @@ export function certificateHTML(data: CertificateData, stampUrl = "/stamp.png"):
   }
   @media print { body { background: #fff; } .sheet { margin: 0; box-shadow: none; } .noprint { display: none !important; } }
   @media screen { .sheet { box-shadow: 0 2px 20px rgba(0,0,0,.15); margin: 16px auto; } }
+
+  /* Телефон. Лист A4 — это 794px, экран iPhone — 375px: без масштабирования
+     ученик видел левую треть документа и возил его пальцем вбок.
+     Масштабируем через zoom, а не transform: scale(calc(100vw/810)) WebKit
+     молча игнорирует (безразмерный calc внутри scale он не вычисляет), а zoom
+     он поддерживает давно и, в отличие от transform, тот честно уменьшает
+     занимаемое место — иначе под листом остаётся пустота во всю высоту A4.
+     На печать не влияет: правила печати объявлены выше. */
+  @media screen and (max-width: 820px) {
+    html, body { overflow-x: hidden; }
+    .sheet { zoom: 0.46; margin: 8px auto; }
+  }
+  @media screen and (max-width: 430px) {
+    .sheet { zoom: 0.44; }
+  }
 
   .head { display: flex; justify-content: space-between; align-items: flex-start;
           border-bottom: 3px double #14181f; padding-bottom: 10mm; }
@@ -117,7 +142,11 @@ export function certificateHTML(data: CertificateData, stampUrl = "/stamp.png"):
   .placement .label { font-size: 9pt; text-transform: uppercase; letter-spacing: .1em; color: #55606e; }
   .placement .value { font-size: 26pt; font-weight: bold; letter-spacing: .04em; }
 
-  .scale { font-size: 8.5pt; color: #55606e; line-height: 1.55; border-top: 1px solid #e6e8eb; padding-top: 4mm; }
+  /* Подвал с печатью прибит к низу листа (position:absolute), поэтому текст
+     над ним обязан закончиться раньше — иначе печать ложится прямо на слова.
+     40mm — высота подвала (печать 34mm) плюс воздух. */
+  .scale { font-size: 8.5pt; color: #55606e; line-height: 1.55; border-top: 1px solid #e6e8eb;
+           padding-top: 4mm; margin-bottom: 40mm; }
   .scale b { color: #14181f; }
 
   .foot { position: absolute; left: 16mm; right: 16mm; bottom: 14mm;
@@ -134,10 +163,10 @@ export function certificateHTML(data: CertificateData, stampUrl = "/stamp.png"):
   .toolbar button.ghost { background: #fff; color: #1f2937; border: 1px solid #c8ccd2; }
 </style></head><body>
 
-<div class="toolbar noprint">
+${showToolbar ? `<div class="toolbar noprint">
   <button onclick="window.print()">Печать / сохранить PDF</button>
   <button class="ghost" onclick="window.close()">Закрыть</button>
-</div>
+</div>` : ""}
 
 <div class="sheet">
   <div class="head">

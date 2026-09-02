@@ -1211,8 +1211,11 @@ router.post("/my-result", async (req: any, res: any) => {
       photo: r.photo || null,
       finishedAt: r.finishedAt || null,
       approved: Boolean(r.approved),
+      // key обязателен: сертификат ищет разделы по нему, и без него таблица
+      // результатов приходила пустой — оставалась одна строка «Общий результат».
       sections: (r.sections || []).map((s: any) => ({
-        title: s.title, correct: s.correct, total: s.total, percent: s.percent, sat: s.sat ?? null,
+        key: s.key, title: s.title, correct: s.correct, total: s.total,
+        percent: s.percent, sat: s.sat ?? null,
       })),
       adjusted: r.adjustedCorrect != null,
     });
