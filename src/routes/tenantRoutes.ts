@@ -204,9 +204,33 @@ router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: 
       joinedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
+    // Письмо сотруднику. Firebase сам ничего не шлёт: аккаунт создавался с
+    // временным паролем, который видел только админ на экране, — сотрудник
+    // оставался без письма и без пароля, если админ не переслал его руками.
+    // sendOobCode — единственный путь, где письмо отправляет сам Firebase;
+    // для нового аккаунта это «установите пароль», для существующего — сброс.
+    let inviteEmailSent = false;
+    try {
+      const apiKey = process.env.VITE_FIREBASE_API_KEY || "AIzaSyBefuNSd2j9CJJ92EWcg0am9s3zBSSHS4Y";
+      const oob = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestType: "PASSWORD_RESET", email }),
+      });
+      inviteEmailSent = oob.ok;
+    } catch (e: any) {
+      // Членство важнее письма: сотрудник добавлен, а про письмо честно
+      // говорим в ответе — админ дошлёт руками.
+      console.error("[Tenants/Invite] письмо не отправилось:", e?.message);
+    }
+
     return res.json({ 
       success: true, 
-      message: createdTempPassword ? `Аккаунт создан! Временный пароль: ${createdTempPassword}` : "Сотрудник успешно добавлен в организацию",
+      inviteEmailSent,
+      message: inviteEmailSent
+        ? `Сотрудник добавлен. Письмо со ссылкой для входа отправлено на ${email}`
+        : (createdTempPassword
+            ? `Сотрудник добавлен, но письмо не ушло. Передайте временный пароль: ${createdTempPassword}`
+            : "Сотрудник добавлен, но письмо не ушло — отправьте ему сброс пароля вручную"),
       tempPassword: createdTempPassword
     });
   } catch (error: any) {
