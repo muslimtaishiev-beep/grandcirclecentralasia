@@ -11,10 +11,15 @@ import { useTenant } from "../context/TenantContext";
 import QuestionFactory from "../components/tests/QuestionFactory";
 import { useProctoringEngine, ProctoringDetectorFlags } from "../lib/useProctoringEngine";
 import ProctoringWarningOverlay from "../components/ProctoringWarningOverlay";
+import { useResolvedTenantId } from "../lib/resolveTenant";
 import { useParams } from "react-router-dom";
 
 export default function Testing() {
   const { orgSlug, testId: urlTestId } = useParams<{ orgSlug: string, testId?: string }>();
+  // Слаг из URL → id организации. Раньше при любом неизвестном имени здесь
+  // молча подставлялась Академия — чужая школа получала её тесты и PIN.
+  const tenantResolve = useResolvedTenantId(orgSlug);
+  const resolvedTenantId = tenantResolve.tenantId;
 
   const safeGetSession = (key: string, defaultVal: any) => {
     try { 
@@ -287,7 +292,7 @@ export default function Testing() {
   const sendProctoringReport = async () => {
     if (!proctoringConfig?.enabled) return;
     if (!proctoringActive && !proctoringUnavailable) return;
-    const tenantId = orgSlug || "org_future_leaders";
+    const tenantId = resolvedTenantId;
 
     try {
       await fetch("/api/exams/proctoring-report", {
@@ -528,7 +533,7 @@ export default function Testing() {
             body: JSON.stringify({
               event: "fullscreen_exit",
               shortId,
-              tenantId: orgSlug || "org_future_leaders",
+              tenantId: resolvedTenantId,
               studentName,
               grade,
               detail: `фаза: ${phaseRef.current}`,
@@ -665,7 +670,7 @@ export default function Testing() {
          }
          
          try {
-           const data = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId: resumeShortId, tenantId: orgSlug || "org_future_leaders" });
+           const data = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId: resumeShortId, tenantId: resolvedTenantId });
            if (!data.success) return alert(data.error || "Не найдено");
            
            const student = data.student;
@@ -755,7 +760,7 @@ export default function Testing() {
       // Notify backend that student has started the test
       fetchGasAPI("/api/gas", {
          action: "registerStudent",
-         tenantId: orgSlug || "org_future_leaders",
+         tenantId: resolvedTenantId,
          testId: newTestId,
          shortId: shortId,
          studentName,
@@ -808,7 +813,7 @@ export default function Testing() {
 
     const payload = {
       action: "submitTest",
-      tenantId: orgSlug || "org_future_leaders",
+      tenantId: resolvedTenantId,
       testId: payloadTestId,
       shortId: shortId,
       studentName,
@@ -855,7 +860,7 @@ export default function Testing() {
              // Recover student and proceed gracefully
              if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
              try {
-               const recoverData = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId, tenantId: orgSlug || "org_future_leaders" });
+               const recoverData = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId, tenantId: resolvedTenantId });
                if (recoverData.success) {
                  setResultData({
                    totalScore: recoverData.student.totalScore,
@@ -911,7 +916,7 @@ export default function Testing() {
 
     const payload = {
       action: "submitEnglishTest",
-      tenantId: orgSlug || "org_future_leaders",
+      tenantId: resolvedTenantId,
       shortId: activeShortId,
       studentName,
       studentPhone,
@@ -1185,6 +1190,19 @@ export default function Testing() {
   // unreachable: "Вернуться к тесту" cleared the flag, the suspended screen
   // appeared, resuming re-entered fullscreen, and the warning came straight
   // back. The student could never reach the manager's permission at all.
+  if (tenantResolve.notFound) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center max-w-md">
+          <div className="text-4xl mb-3">🏫</div>
+          <h1 className="text-xl font-bold text-slate-900 mb-2">Организация не найдена</h1>
+          <p className="text-slate-500 text-sm">Проверьте адрес — возможно, в ссылке опечатка.</p>
+        </div>
+      </div>
+    );
+  }
+
+
   if (isFullscreenViolation && phase !== "suspended") {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center z-50">

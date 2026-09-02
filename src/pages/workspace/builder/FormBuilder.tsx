@@ -22,12 +22,15 @@ import {
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
 import FancyQr, { QR_THEMES, QrThemePicker, downloadQr, type QrTheme } from '../../../components/forms/FancyQr';
+import { STATUS_LABEL, STATUS_COLOR, MODE_STATUSES, type FormMode } from '../../../shared/formStatuses';
 import { auth } from '../../../lib/firebase';
 
 export default function FormBuilder() {
   const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
-  const currentOrgId = activeTenant?.id || orgId || 'org_future_leaders';
+  // Без организации не подписываемся ни на что: подставной тенант означал
+  // бы показать чужие заявки.
+  const currentOrgId = activeTenant?.id || orgId || '';
 
   const [forms, setForms] = useState<any[]>([]);
   const [submissions, setSubmissions] = useState<any[]>([]);
@@ -40,21 +43,20 @@ export default function FormBuilder() {
   const [formTitle, setFormTitle] = useState('');
   const [formDesc, setFormDesc] = useState('');
   const [qrTrackingEnabled, setQrTrackingEnabled] = useState(true);
+  // Режим формы: обычная заявка или билет на событие. От него зависят набор
+  // статусов и появление QR-билета у гостя после одобрения.
+  const [formMode, setFormMode] = useState<FormMode>('application');
+  const [scannerCode, setScannerCode] = useState('');
   // Статистика по формам: сколько заявок пришло, в каких они статусах.
   const [stats, setStats] = useState<any | null>(null);
   const [qrTheme, setQrTheme] = useState<QrTheme>(QR_THEMES[0]);
   // Какая форма показывает свой QR (QR на саму форму, не на заявку).
   const [formQr, setFormQr] = useState<any | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  // Просмотр приложенного документа (фото удостоверения из file-поля заявки).
+  const [docView, setDocView] = useState<{ name: string; src: string } | null>(null);
 
-  const STATUS_LABEL: Record<string, string> = {
-    new: 'Новые', review: 'На рассмотрении', testing: 'Тестирование',
-    approved: 'Одобрено', rejected: 'Отклонено',
-  };
-  const STATUS_COLOR: Record<string, string> = {
-    new: 'bg-blue-500', review: 'bg-amber-500', testing: 'bg-violet-500',
-    approved: 'bg-emerald-500', rejected: 'bg-red-500',
-  };
+
 
   /** Сводка по одной форме: сколько заявок и в каких они статусах. */
   const statsFor = (formId: string) => {
@@ -152,6 +154,10 @@ export default function FormBuilder() {
         description: formDesc.trim(),
         fields,
         qrTrackingEnabled,
+        mode: formMode,
+        // Код сканера хранится на документе формы; наружу его не отдаёт ни
+        // один публичный эндпоинт — только сверка на сервере при чек-ине.
+        scannerCode: formMode === 'ticket' ? scannerCode.trim() : '',
         active: true,
         updatedAt: serverTimestamp(),
         ...(!editingFormId && { createdAt: serverTimestamp() })
@@ -165,14 +171,27 @@ export default function FormBuilder() {
     }
   };
 
+  /**
+   * Статус меняется через сервер, а не напрямую в Firestore.
+   *
+   * Прямая запись выглядела так же, но молча ломала три вещи: не росла
+   * история статусов (таймлайн у заявителя навсегда застывал на «Заявка
+   * принята»), не писалось, КТО сменил статус, и обходилась серверная
+   * проверка принадлежности заявки организации.
+   */
   const updateSubmissionStatus = async (subId: string, newStatus: string) => {
     try {
-      await setDoc(doc(db, 'form_submissions', subId), {
-        status: newStatus,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+      const res = await fetch('/api/forms/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tenantId: currentOrgId, submissionId: subId, status: newStatus }),
+      });
+      const data = await res.json();
+      if (!data.success) alert(data.error || 'Не удалось сменить статус');
+      // onSnapshot сам подтянет обновление — локально ничего не трогаем.
     } catch(e: any) {
-      alert(`Ошибка обследования: ${e.message}`);
+      alert(`Не удалось сменить статус: ${e.message}`);
     }
   };
 
@@ -212,6 +231,12 @@ export default function FormBuilder() {
               setEditingFormId(null);
               setFormTitle('');
               setFormDesc('');
+              setFormMode('application');
+              setScannerCode('');
+              setQrTrackingEnabled(true);
+              setFields([
+                { id: `field_${Date.now()}`, label: 'Фамилия и имя', type: 'text', required: true, placeholder: '' },
+              ]);
               setIsModalOpen(true);
             }}
             className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition cursor-pointer shadow-xs"
@@ -322,6 +347,22 @@ export default function FormBuilder() {
                       className="text-[var(--text-muted)] hover:text-emerald-500 font-bold flex items-center gap-1.5 transition">
                       <ExternalLink className="w-3.5 h-3.5" /> Открыть
                     </a>
+                    <button onClick={() => {
+                        // Редактирование существующей формы: гидратируем модалку
+                        // из карточки. Раньше этой кнопки не было вовсе, и
+                        // изменить форму после создания было нельзя.
+                        setEditingFormId(form.id);
+                        setFormTitle(form.title || '');
+                        setFormDesc(form.description || '');
+                        setFields(Array.isArray(form.fields) && form.fields.length ? form.fields : []);
+                        setFormMode(form.mode === 'ticket' ? 'ticket' : 'application');
+                        setScannerCode(form.scannerCode || '');
+                        setQrTrackingEnabled(form.qrTrackingEnabled !== false);
+                        setIsModalOpen(true);
+                      }}
+                      className="text-[var(--text-muted)] hover:text-emerald-500 font-bold flex items-center gap-1.5 transition cursor-pointer">
+                      ✎ Изменить
+                    </button>
                     <button onClick={() => copy(formUrl(form.id), form.id)}
                       className="text-emerald-500 hover:text-emerald-400 font-bold flex items-center gap-1.5 transition cursor-pointer">
                       <Copy className="w-3.5 h-3.5" /> {copied === form.id ? 'Скопировано' : 'Ссылка'}
@@ -378,17 +419,31 @@ export default function FormBuilder() {
                         onChange={(e) => updateSubmissionStatus(sub.id, e.target.value)}
                         className="bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-lg px-2.5 py-1 text-[11px] font-bold font-mono text-[var(--text-main)] focus:outline-none focus:border-emerald-500"
                       >
-                        <option value="new">🆕 Новый</option>
-                        <option value="review">🔍 На проверке</option>
-                        <option value="testing">📐 Экзамен / Тест</option>
-                        <option value="approved">✅ Зачислен / Принят</option>
-                        <option value="rejected">❌ Отклонен</option>
+                        {/* Набор статусов зависит от режима формы: у билета
+                            есть «Оплачено» и «Гость пришёл», у заявки — нет. */}
+                        {MODE_STATUSES[(forms.find(f => f.id === sub.formId)?.mode === 'ticket' ? 'ticket' : 'application') as FormMode]
+                          .map(st => (
+                            <option key={st} value={st}>{STATUS_LABEL[st]}</option>
+                          ))}
                       </select>
                     </td>
                     <td className="px-5 py-3.5 text-[11px] font-mono text-[var(--text-muted)]">
                       {sub.createdAt ? new Date(sub.createdAt.seconds ? sub.createdAt.seconds * 1000 : sub.createdAt).toLocaleDateString() : 'Сегодня'}
                     </td>
                     <td className="px-5 py-3.5 text-right">
+                      {(() => {
+                        // Первое файловое поле формы этой заявки — там лежит
+                        // фото документа, если гость его прикладывал.
+                        const ff = (forms.find(f => f.id === sub.formId)?.fields || []).find((x: any) => x.type === 'file');
+                        const src = ff ? sub.data?.[ff.id] : null;
+                        return src ? (
+                          <button
+                            onClick={() => setDocView({ name: sub.applicantName || 'Документ', src })}
+                            className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 px-3 py-1 rounded-lg font-bold text-[11px] inline-flex items-center gap-1.5 transition cursor-pointer mr-2">
+                            📄 Документ
+                          </button>
+                        ) : null;
+                      })()}
                       <button 
                         onClick={() => setSelectedSubmissionForQr(sub)}
                         className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 px-3 py-1 rounded-lg font-bold text-[11px] inline-flex items-center gap-1.5 transition cursor-pointer"
@@ -444,6 +499,53 @@ export default function FormBuilder() {
 
               {/* Dynamic Fields List */}
               <div className="space-y-3 pt-2">
+                {/* Режим определяет судьбу заявки после одобрения: заявка
+                    просто получает статус, билет — ещё и QR для входа. */}
+                <div className="space-y-2 p-3 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl">
+                  <label className="font-bold text-[var(--text-muted)] uppercase font-mono text-[11px]">Тип формы</label>
+                  <div className="flex gap-2">
+                    {([['application', 'Приём заявок'], ['ticket', 'Билеты на событие']] as const).map(([m, label]) => (
+                      <button key={m} type="button" onClick={() => setFormMode(m)}
+                        className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold border transition ${
+                          formMode === m
+                            ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500'
+                            : 'border-[var(--border-color)] text-[var(--text-muted)] hover:border-emerald-500/30'}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {formMode === 'ticket' && (
+                    <div className="space-y-1.5 pt-1">
+                      <p className="text-[11px] text-[var(--text-muted)]">
+                        QR-билет появится у гостя на странице отслеживания, как только заявку одобрят.
+                        На входе билет проверяют по коду ниже: волонтёр сканирует QR гостя, вводит код
+                        и отмечает вход. Повторный вход по тому же билету блокируется.
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={scannerCode}
+                          onChange={(e) => setScannerCode(e.target.value.toUpperCase())}
+                          placeholder="Код волонтёра для проверки на входе"
+                          className="flex-1 px-3 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg text-xs font-mono tracking-wider"
+                        />
+                        <button type="button"
+                          onClick={() => {
+                            const AB = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+                            setScannerCode(Array.from({ length: 6 }, () => AB[Math.floor(Math.random() * AB.length)]).join(''));
+                          }}
+                          className="px-3 py-1.5 rounded-lg border border-[var(--border-color)] text-xs font-bold text-emerald-500 hover:bg-emerald-500/10">
+                          Сгенерировать
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <label className="flex items-center gap-2 text-[11px] text-[var(--text-muted)] cursor-pointer pt-1">
+                    <input type="checkbox" checked={qrTrackingEnabled} onChange={(e) => setQrTrackingEnabled(e.target.checked)} />
+                    Выдавать QR-код отслеживания после отправки
+                  </label>
+                </div>
+
                 <div className="flex items-center justify-between">
                   <label className="font-bold text-[var(--text-muted)] uppercase font-mono text-[11px]">Поля формы:</label>
                   <button type="button" onClick={addField} className="text-emerald-500 font-bold flex items-center gap-1 hover:underline">
@@ -452,27 +554,51 @@ export default function FormBuilder() {
                 </div>
 
                 {fields.map((field, idx) => (
-                  <div key={field.id} className="p-3 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl flex items-center gap-3">
-                    <input 
-                      type="text" 
-                      value={field.label}
-                      onChange={(e) => updateField(idx, 'label', e.target.value)}
-                      placeholder="Название поля"
-                      className="flex-1 px-3 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg text-xs"
-                    />
-                    <select 
-                      value={field.type}
-                      onChange={(e) => updateField(idx, 'type', e.target.value)}
-                      className="px-2.5 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg text-xs"
-                    >
-                      <option value="text">Текст</option>
-                      <option value="select">Выбор из списка</option>
-                      <option value="file">Загрузка файла</option>
-                      <option value="date">Дата</option>
-                    </select>
-                    <button type="button" onClick={() => removeField(idx)} className="text-red-500 p-1 hover:bg-red-500/10 rounded">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                  <div key={field.id} className="p-3 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl space-y-2">
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="text" 
+                        value={field.label}
+                        onChange={(e) => updateField(idx, 'label', e.target.value)}
+                        placeholder="Название поля"
+                        className="flex-1 px-3 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg text-xs"
+                      />
+                      <select 
+                        value={field.type}
+                        onChange={(e) => updateField(idx, 'type', e.target.value)}
+                        className="px-2.5 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg text-xs"
+                      >
+                        <option value="text">Текст</option>
+                        <option value="textarea">Многострочный текст</option>
+                        <option value="number">Число</option>
+                        <option value="select">Выбор из списка</option>
+                        <option value="checkbox">Галочка</option>
+                        <option value="file">Загрузка файла (фото)</option>
+                        <option value="date">Дата</option>
+                      </select>
+                      <label className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)] shrink-0 cursor-pointer">
+                        <input type="checkbox" checked={!!field.required}
+                          onChange={(e) => updateField(idx, 'required', e.target.checked)} />
+                        обяз.
+                      </label>
+                      <button type="button" onClick={() => removeField(idx)} className="text-red-500 p-1 hover:bg-red-500/10 rounded">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {field.type === 'select' && (
+                      <input
+                        type="text"
+                        value={(field.options || []).join(', ')}
+                        onChange={(e) => updateField(idx, 'options', e.target.value.split(',').map((o: string) => o.trim()).filter(Boolean))}
+                        placeholder="Варианты через запятую: 9 класс, 10 класс, 11 класс"
+                        className="w-full px-3 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg text-[11px]"
+                      />
+                    )}
+                    {field.type === 'file' && (
+                      <p className="text-[11px] text-[var(--text-muted)]">
+                        Гость приложит фото документа (JPG/PNG, сжимается автоматически). Подходит для удостоверения личности.
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -485,6 +611,22 @@ export default function FormBuilder() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Просмотр приложенного документа */}
+      {docView && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setDocView(null)}>
+          <div onClick={e => e.stopPropagation()}
+            className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl max-w-lg w-full p-4 shadow-2xl relative">
+            <button onClick={() => setDocView(null)} className="absolute top-3 right-3 text-slate-400 hover:text-white">
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="text-sm font-bold text-[var(--text-main)] mb-3">{docView.name} — документ</h3>
+            <img src={docView.src} alt="Документ заявителя"
+              className="w-full rounded-xl border border-[var(--border-color)] max-h-[70vh] object-contain bg-black/30" />
           </div>
         </div>
       )}

@@ -376,7 +376,12 @@ export interface CustomForm {
   fields: FormField[];
   qrTrackingEnabled: boolean;
   active: boolean;
+  /** Режим: приём заявок (по умолчанию) или билеты на событие. */
+  mode?: "application" | "ticket";
+  /** Код проверяющего на входе (билетный режим). Наружу не отдаётся. */
+  scannerCode?: string;
   createdAt: Timestamp;
+  updatedAt?: Timestamp;
 }
 
 export interface FormSubmissionData {
@@ -388,8 +393,14 @@ export interface FormSubmissionData {
   applicantName: string;
   applicantEmail?: string;
   applicantPhone?: string;
-  status: "new" | "review" | "testing" | "approved" | "rejected";
+  status:
+    | "new" | "review" | "testing" | "waitlist"
+    | "approved" | "paid" | "checked_in" | "rejected" | "cancelled";
   data: Record<string, any>;
+  /** История смен статуса — её читает трекер заявителя. */
+  history?: { status: string; at: Timestamp; by: string; note?: string }[];
+  /** Момент отметки входа (билетный режим). */
+  checkedInAt?: Timestamp;
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }

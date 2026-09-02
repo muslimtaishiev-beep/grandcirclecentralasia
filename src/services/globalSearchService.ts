@@ -15,12 +15,14 @@ export async function searchGlobal(tenantId: string, searchQuery: string): Promi
   if (!searchQuery || searchQuery.trim().length < 1) return results;
   
   const lowerQuery = searchQuery.trim().toLowerCase();
-  const activeOrgId = tenantId || 'org_future_leaders';
+  // Без tenantId поиска нет: раньше здесь подставлялась Академия, а её id
+  // вдобавок работал как wildcard, совпадающий с данными ВСЕХ организаций, —
+  // глобальный поиск был межтенантной утечкой. Совпадение только строгое;
+  // документы без tenantId не показываем никому — принадлежность неизвестна.
+  const activeOrgId = tenantId;
+  if (!activeOrgId) return results;
 
-  const matchesTenant = (dataTenant?: string) => {
-    if (!dataTenant) return true;
-    return dataTenant === activeOrgId || activeOrgId === 'org_future_leaders';
-  };
+  const matchesTenant = (dataTenant?: string) => dataTenant === activeOrgId;
 
   try {
     // 1. Search CRM Contacts & Submissions (Students)

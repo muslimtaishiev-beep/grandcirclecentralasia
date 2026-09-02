@@ -132,14 +132,62 @@ router.post("/tenant-requests/:id", requireFirebaseAuth, requireSuperAdmin, asyn
     }
 
     if (action === "approve") {
-      const tenantId = `org_${Math.random().toString(36).substring(2, 10)}`;
-      const slug = requestData.organizationName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
-      
+      // Субдомен задаёт суперадмин при одобрении; без него — из названия.
+      //
+      // Раньше id был случайным (org_a7f3k2m9), писалось поле slug, которое
+      // никто в коде не читает, и НЕ писался subdomain — а резолвер доменов
+      // ищет именно по subdomain. Организация создавалась, но ни её адрес
+      // <sub>.studyfreeforum.com, ни директория /org_.../ не работали никогда.
+      const rawSub = String(req.body?.subdomain || requestData.organizationName || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, "-")
+        .replace(/(^-|-$)+/g, "")
+        .slice(0, 40);
+      if (!rawSub || rawSub.length < 3) {
+        return res.status(400).json({
+          success: false,
+          error: "Субдомен должен быть от 3 символов: латиница, цифры, дефис",
+        });
+      }
+      const RESERVED = new Set(["www", "app", "admin", "api", "mail", "staging", "dev", "studyfreeforum"]);
+      if (RESERVED.has(rawSub)) {
+        return res.status(400).json({ success: false, error: `Субдомен «${rawSub}» зарезервирован` });
+      }
+
+      // Читаемый id из субдомена: /org_oxford_school/placement вместо
+      // /org_a7f3k2m9/... — эти адреса печатают на афишах и диктуют по телефону.
+      const tenantId = `org_${rawSub.replace(/-/g, "_")}`;
+
+      // Занятость — и по id, и по субдомену: у старых организаций id и
+      // subdomain могут не совпадать.
+      const [idTaken, subTaken] = await Promise.all([
+        db.collection("tenants").doc(tenantId).get(),
+        db.collection("tenants").where("subdomain", "==", rawSub).limit(1).get(),
+      ]);
+      if (idTaken.exists || !subTaken.empty) {
+        return res.status(409).json({ success: false, error: `Субдомен «${rawSub}» уже занят` });
+      }
+
       const newTenant = {
         id: tenantId,
-        slug: slug,
+        // Формат документа — тот же, что у TenantProvisioningService: два пути
+        // создания обязаны давать совместимые организации, иначе у половины
+        // тенантов не работают модули и биллинг.
+        slug: rawSub,
+        subdomain: rawSub,
         name: requestData.organizationName,
+        tierId: "starter",
+        // Базовый набор модулей. Без этого поля реестр возможностей считает,
+        // что у организации не включено НИЧЕГО, — воркспейс открывается пустым,
+        // и это выглядело как «директория не сгенерировалась».
+        enabledModules: [
+          "MODULE_STUDENT_QR_IDENTIFIERS",
+          "MODULE_EDU_CORE_JOURNAL",
+          "MODULE_CRM_PIPELINES",
+        ],
+        ownerEmail: requestData.contactEmail || "",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         status: "active",
         branding: {
           logoUrl: null,
@@ -161,6 +209,15 @@ router.post("/tenant-requests/:id", requireFirebaseAuth, requireSuperAdmin, asyn
       };
 
       await db.collection("tenants").doc(tenantId).set(newTenant);
+
+      // Биллинг-поддокумент: TierLimitEnforcer без него откатывается на
+      // дефолты и лимиты считаются неверно (зеркало TenantProvisioningService).
+      await db.collection("tenants").doc(tenantId)
+        .collection("billing").doc("subscription").set({
+          tierId: "starter", status: "active",
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
 
       if (requestData.requestedByUserId) {
         const membershipId = `mem_${requestData.requestedByUserId}_${tenantId}`;
@@ -191,7 +248,15 @@ router.post("/tenant-requests/:id", requireFirebaseAuth, requireSuperAdmin, asyn
         ip: req.ip
       });
 
-      return res.json({ success: true, message: "Tenant approved and created", tenantId });
+      return res.json({
+        success: true, message: "Tenant approved and created", tenantId,
+        subdomain: rawSub,
+        urls: {
+          site: `https://${rawSub}.studyfreeforum.com`,
+          directory: `/${tenantId}/admission`,
+          workspace: `/workspace/${tenantId}`,
+        },
+      });
     } else {
       await requestRef.update({
         status: "rejected",

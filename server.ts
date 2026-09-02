@@ -51,6 +51,20 @@ const authLimiter = rateLimit({
   validate: false,
 });
 app.use("/api/auth/", authLimiter);
+
+// Чек-ин билетов: все волонтёры события обычно сидят за одним Wi-Fi (один
+// IP на всех), поэтому лимит просторный — но конечный, чтобы код сканера
+// нельзя было перебрать. 2000 за 15 минут хватает на поток в несколько сотен
+// гостей (2 запроса на гостя: сверка + подтверждение).
+const checkinLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 2000,
+  message: { success: false, error: "Слишком много проверок подряд — подождите минуту." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+});
+app.use("/api/forms/checkin", checkinLimiter);
 app.use("/api/admin/login", authLimiter);
 app.use("/api/tenants/request", authLimiter);
 
@@ -535,6 +549,42 @@ app.get("/api/tenant/config", async (req, res) => {
     
     // Fallback or not found
     return res.status(404).json({ success: false, error: "Tenant not found for subdomain: " + subdomain });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * GET /api/tenant/resolve?slug=X — публичная резолюция «человеческого» имени
+ * организации в её id.
+ *
+ * Нужна для адресов вида /oxford-school/placement: страницы экзаменов
+ * анонимны и Firestore им закрыт, а печатать на афишах org_oxford_school
+ * неудобно. Отдаём только id и название — ничего из настроек наружу.
+ */
+app.get("/api/tenant/resolve", async (req, res) => {
+  try {
+    const slug = String(req.query.slug || "").toLowerCase().trim();
+    if (!slug || slug.length > 60) {
+      return res.status(400).json({ success: false, error: "Missing slug" });
+    }
+    const col = admin.firestore().collection("tenants");
+
+    // 1. Прямое попадание в id (org_... или голое имя с - → _).
+    for (const id of [slug, `org_${slug.replace(/-/g, "_")}`]) {
+      const doc = await col.doc(id).get();
+      if (doc.exists) {
+        return res.json({ success: true, id: doc.id, name: doc.data()?.name || "" });
+      }
+    }
+    // 2. По субдомену, затем по легаси-полю slug.
+    for (const field of ["subdomain", "slug"]) {
+      const snap = await col.where(field, "==", slug).limit(1).get();
+      if (!snap.empty) {
+        return res.json({ success: true, id: snap.docs[0].id, name: snap.docs[0].data()?.name || "" });
+      }
+    }
+    return res.status(404).json({ success: false, error: "Организация не найдена" });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }

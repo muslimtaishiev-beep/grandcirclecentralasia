@@ -60,7 +60,7 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
       }
 
       if (!idTokenResult) {
-        navigate("/workspace/org_future_leaders/dashboard");
+        navigate("/workspace");
         return;
       }
 
@@ -77,10 +77,10 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
       } else if (data.user?.defaultTenantId) {
         navigate(`/workspace/${data.user.defaultTenantId}`);
       } else {
-        navigate("/workspace/org_future_leaders/dashboard");
+        navigate("/workspace");
       }
     } catch (e) {
-      navigate("/workspace/org_future_leaders/dashboard");
+      navigate("/workspace");
     }
   };
 

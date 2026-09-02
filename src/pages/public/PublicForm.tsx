@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import FancyQr, { QR_THEMES, QrThemePicker, downloadQr, type QrTheme } from "../../components/forms/FancyQr";
+import { compressImageToDataUrl } from "../../lib/compressImage";
 
 /**
  * Публичная страница заявки — то, что открывается по ссылке из конструктора.
@@ -21,6 +22,7 @@ type Field = {
 type Form = {
   id: string; title: string; description: string;
   fields: Field[]; qrTrackingEnabled: boolean;
+  mode?: "application" | "ticket";
 };
 
 export default function PublicForm() {
@@ -97,7 +99,9 @@ export default function PublicForm() {
             <div className="text-4xl mb-2">🎉</div>
             <h1 className="text-2xl font-bold text-slate-900 mb-1">Заявка принята!</h1>
             <p className="text-slate-500 text-sm">
-              Сохраните этот код — по нему вы в любой момент узнаете статус заявки.
+              {form.mode === "ticket"
+                ? "Сохраните этот код. Как только заявку одобрят, на странице отслеживания появится ваш билет с QR-кодом для входа."
+                : "Сохраните этот код — по нему вы в любой момент узнаете статус заявки."}
             </p>
           </div>
 
@@ -169,6 +173,31 @@ export default function PublicForm() {
                     className="w-5 h-5 rounded border-slate-300" />
                   <span className="text-sm text-slate-600">{f.placeholder || "Да"}</span>
                 </label>
+              ) : f.type === "file" ? (
+                values[f.id] ? (
+                  <div className="flex items-center gap-3">
+                    <img src={values[f.id]} alt="Приложенный документ"
+                      className="w-24 h-24 object-cover rounded-xl border border-slate-200" />
+                    <button type="button" onClick={() => set(f.id, "")}
+                      className="text-sm text-blue-600 font-semibold">Заменить</button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-slate-300 rounded-xl p-6 cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition">
+                    <span className="text-2xl">📷</span>
+                    <span className="text-sm font-semibold text-slate-700">Сфотографировать или выбрать файл</span>
+                    <span className="text-xs text-slate-400">JPG или PNG — сожмётся автоматически</span>
+                    <input type="file" accept="image/*" className="hidden"
+                      onChange={async e => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (!file) return;
+                        setError(null);
+                        const r = await compressImageToDataUrl(file);
+                        if ("error" in r) { setError(r.error); return; }
+                        set(f.id, r.dataUrl);
+                      }} />
+                  </label>
+                )
               ) : (
                 <input
                   type={f.type === "number" ? "number" : f.type === "date" ? "date" : "text"}

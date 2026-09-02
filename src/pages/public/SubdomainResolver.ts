@@ -7,9 +7,21 @@ export async function resolveTenantPage(
   slug: string
 ): Promise<TenantLandingPage | null> {
   try {
+    // landing_pages хранит tenantId в виде org_..., а сюда с субдомена
+    // приходит голое имя («oxford») — запрос по сырой строке не совпадал
+    // НИКОГДА, и публичные страницы по субдомену были сломаны с рождения.
+    // Сначала резолвим имя в id.
+    let tenantId = subdomainOrId;
+    if (!tenantId.startsWith('org_')) {
+      const { resolveTenantId } = await import('../../lib/resolveTenant');
+      const resolved = await resolveTenantId(tenantId);
+      if (!resolved) return null;
+      tenantId = resolved.id;
+    }
+
     const q = query(
       collection(db, 'landing_pages'),
-      where('tenantId', '==', subdomainOrId),
+      where('tenantId', '==', tenantId),
       where('slug', '==', slug),
       where('status', '==', 'published'),
       limit(1)

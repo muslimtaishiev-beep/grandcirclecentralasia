@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useProctoringEngine } from "../lib/useProctoringEngine";
+import { useResolvedTenantId } from "../lib/resolveTenant";
 import ProctoringWarningOverlay from "../components/ProctoringWarningOverlay";
 
 /**
@@ -46,7 +47,10 @@ function formatClock(ms: number): string {
 
 export default function PlacementExam() {
   const { orgSlug } = useParams<{ orgSlug: string }>();
-  const tenantId = orgSlug || "";
+  // Резолвим слаг из URL в id организации: /oxford-school/... и /org_.../...
+  // работают одинаково, а неизвестное имя — честная ошибка, не подстановка.
+  const tenantResolve = useResolvedTenantId(orgSlug);
+  const tenantId = tenantResolve.tenantId;
 
   const [phase, setPhase] = useState<"login" | "photo" | "exam" | "between" | "final">("login");
   const [session, setSession] = useState<Session | null>(null);
@@ -435,6 +439,21 @@ export default function PlacementExam() {
     [questions, answers]);
 
   // ── Login ────────────────────────────────────────────────────────────────
+  if (tenantResolve.loading) {
+    return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-400">Загрузка…</div>;
+  }
+  if (tenantResolve.notFound) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center max-w-md">
+          <div className="text-4xl mb-3">🏫</div>
+          <h1 className="text-xl font-bold text-slate-900 mb-2">Организация не найдена</h1>
+          <p className="text-slate-500 text-sm">Проверьте адрес — возможно, в ссылке опечатка.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (phase === "login") {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">

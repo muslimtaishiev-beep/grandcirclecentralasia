@@ -14,11 +14,29 @@ async function authHeader(): Promise<Record<string, string>> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+/** Кириллица → латиница для предложения субдомена из названия организации. */
+function suggestSubdomain(name: string): string {
+  const map: Record<string, string> = {
+    а:"a",б:"b",в:"v",г:"g",д:"d",е:"e",ё:"e",ж:"zh",з:"z",и:"i",й:"y",к:"k",
+    л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"h",ц:"ts",
+    ч:"ch",ш:"sh",щ:"sch",ъ:"",ы:"y",ь:"",э:"e",ю:"yu",я:"ya",
+  };
+  return name.toLowerCase()
+    .split("").map(ch => map[ch] ?? ch).join("")
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/(^-|-$)+/g, "")
+    .slice(0, 40);
+}
+
 export function TenantRequestsTab() {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Субдомен вводится при одобрении — он станет и адресом сайта организации,
+  // и её id (org_<субдомен>), поэтому редактируется до нажатия Approve.
+  const [subdomains, setSubdomains] = useState<Record<string, string>>({});
+  const [approved, setApproved] = useState<Record<string, any>>({});
 
   useEffect(() => {
     fetchRequests();
@@ -54,9 +72,9 @@ export function TenantRequestsTab() {
     }
   };
 
-  const handleAction = async (id: string, action: "approve" | "reject") => {
+  const handleAction = async (id: string, action: "approve" | "reject", suggestedSub?: string) => {
     if (!window.confirm(`Are you sure you want to ${action} this request?`)) return;
-    
+
     setProcessingId(id);
     try {
       const res = await fetch(`/api/superadmin/tenant-requests/${id}`, {
@@ -65,12 +83,17 @@ export function TenantRequestsTab() {
           "Content-Type": "application/json",
           ...(await authHeader()),
         },
-        body: JSON.stringify({ action, rejectReason: action === "reject" ? "Rejected by SuperAdmin" : undefined })
+        body: JSON.stringify({
+          action,
+          subdomain: action === "approve" ? (subdomains[id] || suggestedSub || "") : undefined,
+          rejectReason: action === "reject" ? "Rejected by SuperAdmin" : undefined,
+        })
       });
       const data = await res.json();
       if (data.success) {
-        // Optimistically update
         setRequests(requests.map(req => req.id === id ? { ...req, status: action === "approve" ? "approved" : "rejected" } : req));
+        // Адреса новой организации — суперадмин сразу шлёт их школе.
+        if (action === "approve" && data.urls) setApproved(prev => ({ ...prev, [id]: data }));
       } else {
         alert(data.error || "Action failed");
       }
@@ -127,9 +150,21 @@ export function TenantRequestsTab() {
                   </div>
                 )}
               </div>
-              <div className="flex items-start gap-2">
+              <div className="flex flex-col items-stretch gap-2 min-w-[230px]">
+                <div>
+                  <label className="block text-[10px] uppercase font-mono text-[#888888] mb-1">Субдомен</label>
+                  <div className="flex items-center gap-1">
+                    <input
+                      value={subdomains[req.id] ?? suggestSubdomain(req.organizationName || "")}
+                      onChange={e => setSubdomains(prev => ({ ...prev, [req.id]: e.target.value.toLowerCase() }))}
+                      className="w-full bg-[#0a0a0a] border border-[#333333] rounded px-2 py-1 text-xs text-[#ededed] font-mono"
+                      placeholder="school-name" />
+                    <span className="text-[10px] text-[#666666] font-mono shrink-0">.studyfreeforum.com</span>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
                 <button
-                  onClick={() => handleAction(req.id, "approve")}
+                  onClick={() => handleAction(req.id, "approve", suggestSubdomain(req.organizationName || ""))}
                   disabled={processingId === req.id}
                   className="bg-[#112211] hover:bg-[#224422] text-[#50e3c2] border border-[#224422] px-3 py-1.5 rounded transition flex items-center gap-1.5 text-xs font-bold disabled:opacity-50 cursor-pointer"
                 >
@@ -144,6 +179,15 @@ export function TenantRequestsTab() {
                   <X className="w-3.5 h-3.5" />
                   Reject
                 </button>
+                </div>
+                {approved[req.id]?.urls && (
+                  <div className="bg-[#112211] border border-[#224422] rounded p-2 text-[11px] font-mono text-[#50e3c2] space-y-0.5">
+                    <div>✓ Создано: {approved[req.id].tenantId}</div>
+                    <div>Сайт: {approved[req.id].urls.site}</div>
+                    <div>Экзамены: {approved[req.id].urls.directory}</div>
+                    <div>Воркспейс: {approved[req.id].urls.workspace}</div>
+                  </div>
+                )}
               </div>
             </div>
           ))}

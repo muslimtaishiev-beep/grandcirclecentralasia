@@ -131,7 +131,11 @@ service cloud.firestore {
     // постороннему. Не открывайте здесь публичный доступ — иначе чужие
     // заявки с телефонами и адресами станут читаемы всему интернету.
     match /custom_forms/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    match /form_submissions/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    // Заявки читает кабинет (onSnapshot), но пишет ТОЛЬКО сервер: смена
+    // статуса идёт через /api/forms/status (там история и проверка прав),
+    // отправка и чек-ин — через публичные эндпоинты. Прямая запись с клиента
+    // позволяла менять статусы мимо истории и аудита.
+    match /form_submissions/{docId} { allow read: if hasTenantAccess(); allow write: if false; }
     match /custom_business_functions/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
     match /testimonials/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
     match /app_screens/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }

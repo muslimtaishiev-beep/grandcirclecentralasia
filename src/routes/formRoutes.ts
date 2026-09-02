@@ -2,6 +2,11 @@ import { Router } from "express";
 import admin from "firebase-admin";
 import crypto from "crypto";
 import { requireFirebaseAuth } from "./authRoutes.js";
+import {
+  FORM_STATUSES, STATUS_LABEL, MODE_STATUSES, TICKET_ACTIVE,
+  isFormStatus, type FormStatus, type FormMode,
+} from "../shared/formStatuses.js";
+
 
 /**
  * Публичные формы заявок и отслеживание их статуса.
@@ -31,17 +36,10 @@ function makeToken(): string {
 
 const str = (v: unknown, max = 500) => String(v ?? "").trim().slice(0, max);
 
-/** Статусы заявки в порядке движения. */
-const STATUSES = ["new", "review", "testing", "approved", "rejected"] as const;
-type Status = typeof STATUSES[number];
+type Status = FormStatus;
+const STATUSES = FORM_STATUSES;
 
-const STATUS_LABEL: Record<Status, string> = {
-  new: "Заявка принята",
-  review: "На рассмотрении",
-  testing: "Тестирование",
-  approved: "Одобрено",
-  rejected: "Отклонено",
-};
+const formMode = (f: any): FormMode => (f?.mode === "ticket" ? "ticket" : "application");
 
 // ─────────────────────────── Публичная часть ───────────────────────────
 
@@ -72,6 +70,7 @@ router.get("/public/:formId", async (req: any, res: any) => {
         description: f.description || "",
         fields: Array.isArray(f.fields) ? f.fields : [],
         qrTrackingEnabled: f.qrTrackingEnabled !== false,
+        mode: formMode(f),
       },
     });
   } catch (e: any) {
@@ -102,7 +101,30 @@ router.post("/submit", async (req: any, res: any) => {
     const missing: string[] = [];
     for (const f of fields) {
       const raw = (data as any)[f.id];
-      const value = f.type === "checkbox" ? Boolean(raw) : str(raw, 2000);
+      let value: any;
+      if (f.type === "checkbox") {
+        value = Boolean(raw);
+      } else if (f.type === "file") {
+        // Файл приходит сжатым data-URL с клиента. Обычная обрезка до 2000
+        // символов уничтожила бы base64, поэтому у файлов свой путь: только
+        // изображения и лимит как у фото среза (placementRoutes) — этого
+        // хватает для удостоверения, которое сверяют глазами на входе.
+        value = String(raw ?? "");
+        if (value && !value.startsWith("data:image/")) {
+          return res.status(400).json({
+            success: false,
+            error: `Поле «${f.label}» принимает только изображение (JPG/PNG).`,
+          });
+        }
+        if (value.length > 400 * 1024) {
+          return res.status(413).json({
+            success: false,
+            error: `Файл в поле «${f.label}» слишком большой. Сфотографируйте документ ещё раз.`,
+          });
+        }
+      } else {
+        value = str(raw, 2000);
+      }
       if (f.required && (f.type === "checkbox" ? !value : !String(value).length)) {
         missing.push(f.label || f.id);
         continue;
@@ -113,6 +135,14 @@ router.post("/submit", async (req: any, res: any) => {
       return res.status(400).json({
         success: false,
         error: `Заполните обязательные поля: ${missing.join(", ")}`,
+      });
+    }
+    // Общий предел заявки: лимит Firestore — 1 МБ на документ, и заявка с
+    // двумя файлами не должна упереться в него уже при записи.
+    if (JSON.stringify(clean).length > 700 * 1024) {
+      return res.status(413).json({
+        success: false,
+        error: "Заявка слишком большая — уменьшите приложенные файлы.",
       });
     }
 
@@ -146,6 +176,7 @@ router.post("/submit", async (req: any, res: any) => {
       success: true,
       qrToken,
       trackUrl: `/track/${qrToken}`,
+      mode: formMode(form),
       message: "Заявка принята.",
     });
   } catch (e: any) {
@@ -179,14 +210,24 @@ router.get("/track/:token", async (req: any, res: any) => {
 
     const s = doc0.data();
     const status: Status = STATUSES.includes(s.status) ? s.status : "new";
+
+    // Режим формы нужен трекеру: в билетном режиме страница показывает
+    // QR-билет — но только когда заявка одобрена. До того билета нет.
+    const formSnap = s.formId ? await db().collection(FORMS).doc(String(s.formId)).get() : null;
+    const mode = formMode(formSnap?.exists ? formSnap.data() : null);
+
     return res.json({
       success: true,
       submission: {
         code: s.qrToken || doc0.id,
+        formId: s.formId || "",
         formTitle: s.formTitle || "Заявка",
         applicantName: s.applicantName || "",
         status,
         statusLabel: STATUS_LABEL[status],
+        mode,
+        ticketActive: mode === "ticket" && TICKET_ACTIVE.includes(status),
+        checkedInAt: s.checkedInAt || null,
         createdAt: s.createdAt || null,
         updatedAt: s.updatedAt || null,
         history: (Array.isArray(s.history) ? s.history : []).map((h: any) => ({
@@ -196,6 +237,108 @@ router.get("/track/:token", async (req: any, res: any) => {
         })),
       },
     });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * POST /api/forms/checkin — проверка билета на входе.
+ *
+ * Публичный: волонтёры — временные люди без аккаунтов, их пропуск — код
+ * сканера, заданный в настройках формы. Волонтёр сканирует QR гостя (это
+ * обычная ссылка /track/:token), вводит код один раз за смену и дальше
+ * только подтверждает вход.
+ *
+ * Два шага: без confirm — показать гостя (имя, статус, фото документа для
+ * сверки), с confirm — отметить вход. Отметка в ТРАНЗАКЦИИ: два волонтёра,
+ * отсканировавшие один билет одновременно, не должны оба увидеть «проходите» —
+ * билет, переснятый скриншотом и посланный другу, обязан сгореть у второго.
+ */
+router.post("/checkin", async (req: any, res: any) => {
+  try {
+    const { token, scannerCode, confirm } = req.body || {};
+    if (!token || !scannerCode) {
+      return res.status(400).json({ success: false, error: "Нужны код заявки и код проверяющего" });
+    }
+
+    const byToken = await db().collection(SUBS).where("qrToken", "==", String(token).trim()).limit(1).get();
+    if (byToken.empty) {
+      return res.status(404).json({ success: false, error: "Билет не найден" });
+    }
+    const subRef = byToken.docs[0].ref;
+    const sub = byToken.docs[0].data();
+
+    const formSnap = await db().collection(FORMS).doc(String(sub.formId || "")).get();
+    const form = formSnap.exists ? formSnap.data()! : null;
+    if (!form || formMode(form) !== "ticket") {
+      return res.status(400).json({ success: false, error: "Эта заявка — не билет" });
+    }
+    // Код сравнивается без регистра и пробелов: его диктуют голосом в шумном
+    // холле. Пустой код в настройках = проверка выключена совсем.
+    const norm = (v: unknown) => String(v ?? "").replace(/\s+/g, "").toUpperCase();
+    if (!form.scannerCode || norm(scannerCode) !== norm(form.scannerCode)) {
+      return res.status(403).json({ success: false, error: "Неверный код проверяющего" });
+    }
+
+    const status: Status = isFormStatus(sub.status) ? sub.status : "new";
+
+    if (!confirm) {
+      // Шаг сверки: волонтёр видит, кого пускает. Фото документа — значение
+      // первого файлового поля; здесь оно уместно, потому что доступ уже
+      // подтверждён кодом проверяющего.
+      const fileField = (Array.isArray(form.fields) ? form.fields : []).find((f: any) => f.type === "file");
+      return res.json({
+        success: true,
+        guest: {
+          name: sub.applicantName || "Без имени",
+          status, statusLabel: STATUS_LABEL[status],
+          canEnter: TICKET_ACTIVE.includes(status) && status !== "checked_in",
+          alreadyIn: status === "checked_in",
+          checkedInAt: sub.checkedInAt || null,
+          docPhoto: fileField ? (sub.data?.[fileField.id] || null) : null,
+        },
+      });
+    }
+
+    // Подтверждение входа — атомарно.
+    const result = await db().runTransaction(async tx => {
+      const fresh = await tx.get(subRef);
+      const cur = fresh.data()!;
+      const curStatus: Status = isFormStatus(cur.status) ? cur.status : "new";
+      if (curStatus === "checked_in") {
+        return { already: true as const, checkedInAt: cur.checkedInAt || null };
+      }
+      if (!TICKET_ACTIVE.includes(curStatus)) {
+        return { inactive: true as const, status: curStatus };
+      }
+      const now = admin.firestore.Timestamp.now();
+      tx.update(subRef, {
+        status: "checked_in",
+        checkedInAt: now,
+        updatedAt: now,
+        history: admin.firestore.FieldValue.arrayUnion({
+          status: "checked_in", at: now, by: "scanner", note: "",
+        }),
+      });
+      return { ok: true as const, checkedInAt: now };
+    });
+
+    if ("already" in result) {
+      // 409 — сигнал волонтёру: билет уже использован, второй раз не пускать.
+      return res.status(409).json({
+        success: false, already: true,
+        checkedInAt: result.checkedInAt,
+        error: "По этому билету уже входили",
+      });
+    }
+    if ("inactive" in result) {
+      return res.status(403).json({
+        success: false,
+        error: `Билет не активен: ${STATUS_LABEL[result.status]}`,
+      });
+    }
+    return res.json({ success: true, checkedInAt: result.checkedInAt });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }
@@ -219,7 +362,7 @@ router.post("/status", requireFirebaseAuth, async (req: any, res: any) => {
   try {
     const { tenantId, submissionId, status, note } = req.body || {};
     if (!tenantId || !submissionId) return res.status(400).json({ success: false, error: "Bad request" });
-    if (!STATUSES.includes(status)) {
+    if (!isFormStatus(status)) {
       return res.status(400).json({ success: false, error: "Неизвестный статус" });
     }
     if (!(await canManageForms(req.user, tenantId))) {
@@ -231,6 +374,17 @@ router.post("/status", requireFirebaseAuth, async (req: any, res: any) => {
     if (!snap.exists) return res.status(404).json({ success: false, error: "Заявка не найдена" });
     if (snap.data()!.tenantId !== tenantId) {
       return res.status(403).json({ success: false, error: "Заявка другой организации" });
+    }
+
+    // Статус должен существовать в режиме этой формы: «Гость пришёл» у заявки
+    // на поступление — бессмыслица, которая потом путает всю статистику.
+    const subFormSnap = await db().collection(FORMS).doc(String(snap.data()!.formId || "")).get();
+    const allowed = MODE_STATUSES[formMode(subFormSnap.exists ? subFormSnap.data() : null)];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: `Статус «${STATUS_LABEL[status]}» недоступен для этой формы`,
+      });
     }
 
     await ref.update({
