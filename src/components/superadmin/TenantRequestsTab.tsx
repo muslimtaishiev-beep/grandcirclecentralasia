@@ -183,9 +183,12 @@ export function TenantRequestsTab() {
                 {approved[req.id]?.urls && (
                   <div className="bg-[#112211] border border-[#224422] rounded p-2 text-[11px] font-mono text-[#50e3c2] space-y-0.5">
                     <div>✓ Создано: {approved[req.id].tenantId}</div>
-                    <div>Сайт: {approved[req.id].urls.site}</div>
                     <div>Экзамены: {approved[req.id].urls.directory}</div>
                     <div>Воркспейс: {approved[req.id].urls.workspace}</div>
+                    {/* Субдомен записан в организацию, но адрес заработает
+                        только после переноса DNS домена на Vercel (wildcard).
+                        Пока живём директориями — их и показываем школе. */}
+                    <div className="text-[#557755]">Субдомен (после настройки DNS): {approved[req.id].urls.site}</div>
                   </div>
                 )}
               </div>
