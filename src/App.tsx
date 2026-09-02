@@ -49,6 +49,8 @@ const WorkspaceBuilder = lazy(() => import("./pages/workspace/Builder"));
 const FormBuilder = lazy(() => import("./pages/workspace/builder/FormBuilder"));
 const TicketScanner = lazy(() => import("./pages/workspace/tickets/TicketScanner"));
 const WorkspaceSetupPage = lazy(() => import("./pages/workspace/settings/WorkspaceSetupPage"));
+import RequirePermission from "./components/workspace/RequirePermission";
+const RolesAndAccess = lazy(() => import("./pages/workspace/settings/RolesAndAccess"));
 const FunctionStudio = lazy(() => import("./pages/workspace/functions/FunctionStudio"));
 const QrTracker = lazy(() => import("./pages/public/QrTracker"));
 const PublicForm = lazy(() => import("./pages/public/PublicForm"));
@@ -282,34 +284,35 @@ export default function App() {
             <Route path=":orgId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId/dashboard" element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId/settings" element={<GracefulErrorBoundary fallbackTitle="Ошибка Настроек"><WorkspaceSettings /></GracefulErrorBoundary>} />
-            <Route path=":orgId/settings/permissions" element={<GracefulErrorBoundary fallbackTitle="Ошибка Управления Правами"><TeamPermissions /></GracefulErrorBoundary>} />
-            <Route path=":orgId/settings/workspace" element={<GracefulErrorBoundary fallbackTitle="Ошибка Настроек Воркспейса"><WorkspaceSetupPage /></GracefulErrorBoundary>} />
-            <Route path=":orgId/settings/permission-matrix" element={<GracefulErrorBoundary fallbackTitle="Ошибка Матрицы Доступов PBAC"><TeamPermissionMatrix /></GracefulErrorBoundary>} />
-            <Route path=":orgId/settings/departments" element={<GracefulErrorBoundary fallbackTitle="Ошибка Оргструктуры"><OrgStructure /></GracefulErrorBoundary>} />
+            <Route path=":orgId/settings/permissions" element={<RequirePermission navKey="permissions"><GracefulErrorBoundary fallbackTitle="Ошибка Управления Правами"><TeamPermissions /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/settings/roles" element={<GracefulErrorBoundary fallbackTitle="Ошибка Ролей"><RequirePermission navKey="permissions"><RolesAndAccess /></RequirePermission></GracefulErrorBoundary>} />
+            <Route path=":orgId/settings/workspace" element={<RequirePermission navKey="workspaceSetup"><GracefulErrorBoundary fallbackTitle="Ошибка Настроек Воркспейса"><WorkspaceSetupPage /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/settings/permission-matrix" element={<RequirePermission navKey="permissions"><GracefulErrorBoundary fallbackTitle="Ошибка Матрицы Доступов PBAC"><TeamPermissionMatrix /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/settings/departments" element={<RequirePermission navKey="departments"><GracefulErrorBoundary fallbackTitle="Ошибка Оргструктуры"><OrgStructure /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/settings/templates" element={<GracefulErrorBoundary fallbackTitle="Ошибка Шаблонов"><DocumentTemplates /></GracefulErrorBoundary>} />
             <Route path=":orgId/builder" element={<GracefulErrorBoundary fallbackTitle="Ошибка Конструктора"><WorkspaceBuilder /></GracefulErrorBoundary>} />
-            <Route path=":orgId/builder/forms" element={<GracefulErrorBoundary fallbackTitle="Ошибка Конструктора Заявок"><FormBuilder /></GracefulErrorBoundary>} />
-            <Route path=":orgId/tickets" element={<GracefulErrorBoundary fallbackTitle="Ошибка Сканера Билетов"><TicketScanner /></GracefulErrorBoundary>} />
-            <Route path=":orgId/functions/studio" element={<GracefulErrorBoundary fallbackTitle="Ошибка Визуального Конструктора"><FunctionStudio /></GracefulErrorBoundary>} />
-            <Route path=":orgId/sites" element={<GracefulErrorBoundary fallbackTitle="Ошибка Конструктора Сайтов"><SiteBuilder /></GracefulErrorBoundary>} />
+            <Route path=":orgId/builder/forms" element={<RequirePermission navKey="forms"><GracefulErrorBoundary fallbackTitle="Ошибка Конструктора Заявок"><FormBuilder /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/tickets" element={<RequirePermission navKey="tickets"><GracefulErrorBoundary fallbackTitle="Ошибка Сканера Билетов"><TicketScanner /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/functions/studio" element={<RequirePermission navKey="functions"><GracefulErrorBoundary fallbackTitle="Ошибка Визуального Конструктора"><FunctionStudio /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/sites" element={<RequirePermission navKey="sites"><GracefulErrorBoundary fallbackTitle="Ошибка Конструктора Сайтов"><SiteBuilder /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/billing" element={<GracefulErrorBoundary fallbackTitle="Ошибка Биллинга"><SubscriptionBillingDashboard /></GracefulErrorBoundary>} />
-            <Route path=":orgId/automations" element={<GracefulErrorBoundary fallbackTitle="Ошибка Автоматизаций"><AutomationsDirectoryPage /></GracefulErrorBoundary>} />
+            <Route path=":orgId/automations" element={<RequirePermission navKey="automations"><GracefulErrorBoundary fallbackTitle="Ошибка Автоматизаций"><AutomationsDirectoryPage /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/automations/logs" element={<GracefulErrorBoundary fallbackTitle="Ошибка Журнала Автоматизаций"><AutomationLogsPage /></GracefulErrorBoundary>} />
-            <Route path=":orgId/docs" element={<GracefulErrorBoundary fallbackTitle="Ошибка Документов"><Suspense fallback={<DocsSkeleton />}><DocumentsListPage /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/docs" element={<RequirePermission navKey="docs"><GracefulErrorBoundary fallbackTitle="Ошибка Документов"><Suspense fallback={<DocsSkeleton />}><DocumentsListPage /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/docs/new" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Документов"><Suspense fallback={<DocsSkeleton />}><DocumentEditorPage /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId/docs/:id" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Документов"><Suspense fallback={<DocsSkeleton />}><DocumentEditorPage /></Suspense></GracefulErrorBoundary>} />
-            <Route path=":orgId/sheets" element={<GracefulErrorBoundary fallbackTitle="Ошибка Таблиц"><Suspense fallback={<SheetsSkeleton />}><SheetsListPage /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/sheets" element={<RequirePermission navKey="sheets"><GracefulErrorBoundary fallbackTitle="Ошибка Таблиц"><Suspense fallback={<SheetsSkeleton />}><SheetsListPage /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/sheets/new" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Таблиц"><Suspense fallback={<SheetsSkeleton />}><SheetSpreadsheetPage /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId/sheets/:sheetId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Таблиц"><Suspense fallback={<SheetsSkeleton />}><SheetSpreadsheetPage /></Suspense></GracefulErrorBoundary>} />
-            <Route path=":orgId/crm/contacts" element={<GracefulErrorBoundary fallbackTitle="Ошибка CRM Контактов"><Suspense fallback={<CrmSkeleton />}><CrmContacts /></Suspense></GracefulErrorBoundary>} />
-            <Route path=":orgId/crm/deals" element={<GracefulErrorBoundary fallbackTitle="Ошибка CRM Сделок"><Suspense fallback={<CrmSkeleton />}><CrmDeals /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/crm/contacts" element={<RequirePermission navKey="crm"><GracefulErrorBoundary fallbackTitle="Ошибка CRM Контактов"><Suspense fallback={<CrmSkeleton />}><CrmContacts /></Suspense></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/crm/deals" element={<RequirePermission navKey="crm"><GracefulErrorBoundary fallbackTitle="Ошибка CRM Сделок"><Suspense fallback={<CrmSkeleton />}><CrmDeals /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             
             {/* Multi-Tenant Testing & Evaluation Routes */}
-            <Route path=":orgId/tests" element={<GracefulErrorBoundary fallbackTitle="Ошибка Тестов"><TestList /></GracefulErrorBoundary>} />
-            <Route path=":orgId/tests/new" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Тестов"><TestEditor /></GracefulErrorBoundary>} />
-            <Route path=":orgId/placement" element={<GracefulErrorBoundary fallbackTitle="Ошибка Кабинета Завуча"><PlacementCabinet /></GracefulErrorBoundary>} />
-            <Route path=":orgId/tests/manage" element={<GracefulErrorBoundary fallbackTitle="Ошибка Проверки Менеджера"><ManagerDashboard /></GracefulErrorBoundary>} />
-            <Route path=":orgId/tests/check" element={<GracefulErrorBoundary fallbackTitle="Ошибка Формы Оценки"><ManagerForm /></GracefulErrorBoundary>} />
+            <Route path=":orgId/tests" element={<RequirePermission navKey="tests"><GracefulErrorBoundary fallbackTitle="Ошибка Тестов"><TestList /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/tests/new" element={<RequirePermission navKey="tests"><GracefulErrorBoundary fallbackTitle="Ошибка Редактора Тестов"><TestEditor /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/placement" element={<RequirePermission navKey="placement"><GracefulErrorBoundary fallbackTitle="Ошибка Кабинета Завуча"><PlacementCabinet /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/tests/manage" element={<RequirePermission navKey="testsManage"><GracefulErrorBoundary fallbackTitle="Ошибка Проверки Менеджера"><ManagerDashboard /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/tests/check" element={<RequirePermission navKey="testsManage"><GracefulErrorBoundary fallbackTitle="Ошибка Формы Оценки"><ManagerForm /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/tests/check/:shortId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Формы Оценки"><ManagerForm /></GracefulErrorBoundary>} />
             <Route path=":orgId/tests/psychology/:shortId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Формы Психолога"><PsychologistForm /></GracefulErrorBoundary>} />
             <Route path=":orgId/tests/:id" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Тестов"><TestEditor /></GracefulErrorBoundary>} />
@@ -321,10 +324,10 @@ export default function App() {
             <Route path=":orgId/chat" element={<GracefulErrorBoundary fallbackTitle="Ошибка Чата"><Suspense fallback={<ChatSkeleton />}><ChatLayout /></Suspense></GracefulErrorBoundary>} />
 
             {/* Educational Core Engine (Phase 2) */}
-            <Route path=":orgId/edu/schedule" element={<GracefulErrorBoundary fallbackTitle="Ошибка Расписания"><ScheduleGrid /></GracefulErrorBoundary>} />
-            <Route path=":orgId/edu/attendance" element={<GracefulErrorBoundary fallbackTitle="Ошибка Журнала"><AttendanceJournal /></GracefulErrorBoundary>} />
-            <Route path=":orgId/edu/subscriptions" element={<GracefulErrorBoundary fallbackTitle="Ошибка Абонементов"><SubscriptionsManager /></GracefulErrorBoundary>} />
-            <Route path=":orgId/edu/payroll" element={<GracefulErrorBoundary fallbackTitle="Ошибка Зарплат"><TeacherPayroll /></GracefulErrorBoundary>} />
+            <Route path=":orgId/edu/schedule" element={<RequirePermission navKey="schedule"><GracefulErrorBoundary fallbackTitle="Ошибка Расписания"><ScheduleGrid /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/edu/attendance" element={<RequirePermission navKey="attendance"><GracefulErrorBoundary fallbackTitle="Ошибка Журнала"><AttendanceJournal /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/edu/subscriptions" element={<RequirePermission navKey="subscriptions"><GracefulErrorBoundary fallbackTitle="Ошибка Абонементов"><SubscriptionsManager /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/edu/payroll" element={<RequirePermission navKey="payroll"><GracefulErrorBoundary fallbackTitle="Ошибка Зарплат"><TeacherPayroll /></GracefulErrorBoundary></RequirePermission>} />
           </Route>
 
           {/* Main Forum Route */}

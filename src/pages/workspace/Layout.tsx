@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import GlobalNotifications from "../../components/workspace/GlobalNotifications";
 import QuickSetupWizard from "../../components/workspace/QuickSetupWizard";
+import { resolvePermissions, navAllowed, type PermissionKey } from "../../shared/permissions";
 import SpotlightCommandBar from "../../components/common/SpotlightCommandBar";
 import DemoSeedButton from "../../components/common/DemoSeedButton";
 
@@ -105,82 +106,73 @@ export default function WorkspaceLayout() {
     }
   };
 
-  const hasPerm = (perm: string) => {
-    if (!activeTenant) return false;
-    
-    // Normalize role string
-    const roleLower = String(activeTenant.role || '').toLowerCase();
-    const isFullAdmin = [
-      'owner', 'org:owner', 'superadmin', 'admin', 'org:admin', 
-      'administrator', 'руководитель', 'директор'
-    ].some(r => roleLower.includes(r));
-    
-    if (isFullAdmin) return true;
-
-    // 1. Array or Object permissions (TeamPermissions)
-    const p = activeTenant.permissions;
-    if (p) {
-      if (Array.isArray(p) && p.includes(perm)) return true;
-      if (typeof p === 'object' && !Array.isArray(p) && p[perm]) return true;
+  /**
+   * Права сотрудника. Сервер уже посчитал их в effectivePermissions —
+   * здесь только чтение. Локальный расчёт остаётся запасным путём для
+   * организаций, которые ещё не перезагрузили список после обновления.
+   *
+   * Прежняя проверка искала подстроки «admin»/«руководитель»/«директор» в
+   * названии роли: созданная владельцем должность «Директор по продажам»
+   * молча получала доступ ко всему, включая зарплаты.
+   */
+  const granted = React.useMemo(() => {
+    if (!activeTenant) return new Set<PermissionKey>();
+    if (Array.isArray(activeTenant.effectivePermissions)) {
+      return new Set(activeTenant.effectivePermissions as PermissionKey[]);
     }
+    return resolvePermissions({
+      role: activeTenant.role,
+      permissions: activeTenant.permissions,
+      customPermissions: activeTenant.customPermissions,
+      rolePermissions: activeTenant.customRole?.permissions,
+      disabledModules: activeTenant.disabledModules,
+    });
+  }, [activeTenant]);
 
-    // 2. Custom PBAC Matrix permissions (TeamPermissionMatrix)
-    const cp = activeTenant.customPermissions;
-    if (Array.isArray(cp) && cp.length > 0) {
-      const permToModule: Record<string, string[]> = {
-        'crm:read': ['mod_crm', 'mod_admissions'],
-        'crm:manage': ['mod_crm', 'mod_admissions'],
-        'tests:read': ['mod_proctoring'],
-        'tests:manage': ['mod_proctoring'],
-        'tests:review': ['mod_proctoring'],
-        'certificates:issue': ['mod_certificates', 'mod_admissions'],
-        'edu:schedule': ['mod_admissions', 'mod_payroll'],
-        'edu:payroll': ['mod_payroll'],
-        'team:manage': ['mod_settings'],
-        'settings:manage': ['mod_settings'],
-      };
+  const canSee = (navKey: string) => navAllowed(navKey, granted);
+  const hasPerm = (perm: string) => granted.has(perm as PermissionKey);
 
-      const modules = permToModule[perm] || [];
-      for (const modId of modules) {
-        const modPerm = cp.find((m: any) => m.moduleId === modId);
-        if (modPerm && (modPerm.canView || modPerm.canEdit || modPerm.canExecute)) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  };
-
-  const navItems = activeTenant ? [
-    { name: "Dashboard", path: `/workspace/${activeTenant.id}`, icon: LayoutDashboard },
-    hasPerm('edu:schedule') && { name: "Расписание", path: `/workspace/${activeTenant.id}/edu/schedule`, icon: Calendar },
-    hasPerm('edu:schedule') && { name: "Журнал", path: `/workspace/${activeTenant.id}/edu/attendance`, icon: UserCheck },
-    hasPerm('edu:schedule') && { name: "Абонементы", path: `/workspace/${activeTenant.id}/edu/subscriptions`, icon: CreditCard },
-    (hasPerm('edu:payroll') || hasPerm('edu:schedule')) && { name: "Зарплаты", path: `/workspace/${activeTenant.id}/edu/payroll`, icon: DollarSign },
-    { name: "Chat", path: `/workspace/${activeTenant.id}/chat`, icon: MessageSquare },
-    { name: "Tasks", path: `/workspace/${activeTenant.id}/tasks`, icon: CheckSquare },
-    { name: "Проверка билетов", path: `/workspace/${activeTenant.id}/tickets`, icon: QrCode },
-    (hasPerm('crm:read') || hasPerm('crm:manage')) && { name: "CRM", path: `/workspace/${activeTenant.id}/crm/contacts`, icon: Briefcase },
-    (hasPerm('tests:read') || hasPerm('tests:manage')) && { name: "Тесты", path: `/workspace/${activeTenant.id}/tests`, icon: FileQuestion },
-    (hasPerm('tests:review') || hasPerm('tests:manage')) && { name: "Проверка & Прокторинг", path: `/workspace/${activeTenant.id}/tests/manage`, icon: ShieldCheck },
-    // Вступительный срез: администрация и роль «завуч». hasPerm already treats
-    // owner/admin/директор as full access, so the role check only has to add
-    // завуч on top.
-    (hasPerm('tests:manage') || hasPerm('tests:review') || /завуч/i.test(String(activeTenant.role || ''))) &&
-      { name: "Вступительный срез", path: `/workspace/${activeTenant.id}/placement`, icon: GraduationCap },
-    (hasPerm('team:manage') || hasPerm('certificates:issue') || hasPerm('crm:manage')) && { name: "Заявки & QR", path: `/workspace/${activeTenant.id}/builder/forms`, icon: FileCheck2 },
-    (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Function Studio", path: `/workspace/${activeTenant.id}/functions/studio`, icon: Settings2 },
-    (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Оргструктура & Отделы", path: `/workspace/${activeTenant.id}/settings/departments`, icon: FolderTree },
-    (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Матрица Доступов PBAC", path: `/workspace/${activeTenant.id}/settings/permission-matrix`, icon: Sliders },
-    (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Права & Сотрудники", path: `/workspace/${activeTenant.id}/settings/permissions`, icon: Shield },
-    (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Настройка воркспейса", path: `/workspace/${activeTenant.id}/settings/workspace`, icon: Sparkles },
-    { name: "Docs", path: `/workspace/${activeTenant.id}/docs`, icon: FileText },
-    { name: "Sheets", path: `/workspace/${activeTenant.id}/sheets`, icon: FileSpreadsheet },
-    (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Site Builder", path: `/workspace/${activeTenant.id}/sites`, icon: Globe },
-    (activeTenant.role === 'owner' || activeTenant.role === 'org:owner' || activeTenant.role === 'superadmin') && { name: "Тарифы и Биллинг", path: `/workspace/${activeTenant.id}/billing`, icon: CreditCard },
-    (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Automations", path: `/workspace/${activeTenant.id}/automations`, icon: Zap },
-  ].filter(Boolean) as Array<{ name: string, path: string, icon: any }> : [];
+  // Пункты меню и права на них — из общей карты NAV_PERMISSION, а не
+  // россыпью условий: одно место, где видно, что чем закрыто.
+  const navItems = activeTenant ? ([
+    ["dashboard", "Dashboard", "", LayoutDashboard],
+    ["schedule", "Расписание", "/edu/schedule", Calendar],
+    ["attendance", "Журнал", "/edu/attendance", UserCheck],
+    ["subscriptions", "Абонементы", "/edu/subscriptions", CreditCard],
+    ["payroll", "Зарплаты", "/edu/payroll", DollarSign],
+    ["chat", "Chat", "/chat", MessageSquare],
+    ["tasks", "Tasks", "/tasks", CheckSquare],
+    ["tickets", "Проверка билетов", "/tickets", QrCode],
+    ["crm", "CRM", "/crm/contacts", Briefcase],
+    ["tests", "Тесты", "/tests", FileQuestion],
+    ["testsManage", "Проверка & Прокторинг", "/tests/manage", ShieldCheck],
+    ["placement", "Вступительный срез", "/placement", GraduationCap],
+    ["forms", "Заявки & QR", "/builder/forms", FileCheck2],
+    ["functions", "Function Studio", "/functions/studio", Settings2],
+    ["departments", "Оргструктура & Отделы", "/settings/departments", FolderTree],
+    ["permissions", "Роли & Доступы", "/settings/roles", Shield],
+    ["permissions", "Права & Сотрудники", "/settings/permissions", Users],
+    ["workspaceSetup", "Настройка воркспейса", "/settings/workspace", Sparkles],
+    ["docs", "Docs", "/docs", FileText],
+    ["sheets", "Sheets", "/sheets", FileSpreadsheet],
+    ["sites", "Site Builder", "/sites", Globe],
+    ["automations", "Automations", "/automations", Zap],
+  ] as const)
+    .filter(([key]) => {
+      // Вступительный срез открыт ещё и роли «завуч» — школьная роль без
+      // общих прав на тесты.
+      if (key === "placement" && /завуч/i.test(String(activeTenant.role || ""))) return true;
+      return canSee(key);
+    })
+    .map(([, name, suffix, icon]) => ({
+      name: name as string, path: `/workspace/${activeTenant.id}${suffix}`, icon: icon as any,
+    }))
+    .concat(
+      // Биллинг — только владельцу организации, правами не выдаётся.
+      ["owner", "org:owner", "superadmin"].includes(String(activeTenant.role))
+        ? [{ name: "Тарифы и Биллинг", path: `/workspace/${activeTenant.id}/billing`, icon: CreditCard }]
+        : []
+    ) : [];
 
   if (loading) {
     return <div className="min-h-dvh bg-[var(--bg-app)] flex items-center justify-center text-[var(--text-muted)] font-mono text-sm">Loading Workspace...</div>;
@@ -221,10 +213,13 @@ export default function WorkspaceLayout() {
         <div className="hidden md:flex flex-1 max-w-2xl px-8 items-center gap-6">
           {/* Quick links */}
           <div className="flex gap-4 font-medium text-sm text-[var(--text-main)] overflow-x-auto whitespace-nowrap hide-scrollbar">
-            <Link to={`/workspace/${orgId}/chat`} className="hover:text-[var(--accent)] transition">Чаты</Link>
-            <Link to={`/workspace/${orgId}/tasks`} className="hover:text-[var(--accent)] transition">Задачи</Link>
-            <Link to={`/workspace/${orgId}/crm/deals`} className="hover:text-[var(--accent)] transition">CRM</Link>
-            <Link to={`/workspace/${orgId}/tests`} className="hover:text-[var(--accent)] transition">Тесты</Link>
+            {/* Быстрые ссылки в шапке подчиняются тем же правам, что и меню
+                слева: иначе сотрудник видел бы «CRM» в двух местах, где одно
+                ведёт на экран «нет доступа». */}
+            {canSee('chat') && <Link to={`/workspace/${orgId}/chat`} className="hover:text-[var(--accent)] transition">Чаты</Link>}
+            {canSee('tasks') && <Link to={`/workspace/${orgId}/tasks`} className="hover:text-[var(--accent)] transition">Задачи</Link>}
+            {canSee('crm') && <Link to={`/workspace/${orgId}/crm/deals`} className="hover:text-[var(--accent)] transition">CRM</Link>}
+            {canSee('tests') && <Link to={`/workspace/${orgId}/tests`} className="hover:text-[var(--accent)] transition">Тесты</Link>}
           </div>
 
           <div className="flex-1 relative cursor-pointer" onClick={() => setIsSearchOpen(true)}>

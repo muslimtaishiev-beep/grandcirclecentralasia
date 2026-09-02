@@ -118,6 +118,14 @@ service cloud.firestore {
       allow create: if isTenantAdmin(request.resource.data.tenantId);
     }
     // Org structure changes (who reports to whom) are admin-only; reads stay tenant-wide.
+    // Должности организации: читают все сотрудники (чтобы видеть названия
+    // в списках), пишет только сервер — там проверка на эскалацию прав,
+    // которую в правилах не выразить.
+    match /custom_roles/{docId} {
+      allow read: if hasTenantAccess();
+      allow write: if false;
+    }
+
     match /departments/{docId} {
       allow read: if hasTenantAccess();
       allow update, delete: if isTenantAdmin(resource.data.tenantId);

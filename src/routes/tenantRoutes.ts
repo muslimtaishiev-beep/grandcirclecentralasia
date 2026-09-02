@@ -1,5 +1,9 @@
 import { Router } from "express";
 import admin from "firebase-admin";
+import {
+  ALL_PERMISSION_KEYS, isPermissionKey, ROLE_PRESETS, ORG_MODULES,
+  hasFullAccess, migrateLegacyPermissions, resolvePermissions,
+} from "../shared/permissions.js";
 import { requireFirebaseAuth } from "./authRoutes.js";
 
 const router = Router();
@@ -61,6 +65,7 @@ router.get("/my", requireFirebaseAuth, async (req: any, res: any) => {
         tenants: all.docs.map(d => ({
           ...d.data(), id: d.id,
           role: "superadmin", permissions: [], customPermissions: [],
+          effectivePermissions: ALL_PERMISSION_KEYS,
         })),
       });
     }
@@ -83,14 +88,35 @@ router.get("/my", requireFirebaseAuth, async (req: any, res: any) => {
       .where("id", "in", tenantIds.slice(0, 10))
       .get();
 
+    // Должности сотрудника — одним запросом на все организации сразу.
+    const roleIds = [...new Set(membershipsSnapshot.docs
+      .map(d => d.data().customRoleId).filter(Boolean).map(String))].slice(0, 30);
+    const roleDocs = roleIds.length
+      ? await db.getAll(...roleIds.map(id => db.collection("custom_roles").doc(id)))
+      : [];
+    const roleById = new Map(roleDocs.filter(d => d.exists).map(d => [d.id, d.data()]));
+
     const tenants = tenantsSnapshot.docs.map(doc => {
       const data = doc.data();
       const membership = membershipsSnapshot.docs.find(m => m.data().tenantId === data.id)?.data() || {};
+      const customRole = membership.customRoleId ? roleById.get(String(membership.customRoleId)) : null;
+      // Права считаются на сервере: клиенту незачем джойнить должность с
+      // персональными правами и отключёнными модулями — и незачем знать
+      // правила, по которым это делается.
+      const effective = resolvePermissions({
+        role: membership.role,
+        permissions: membership.permissions,
+        customPermissions: membership.customPermissions,
+        rolePermissions: customRole?.permissions,
+        disabledModules: data.disabledModules,
+      });
       return {
         ...data,
         role: membership.role || 'user',
         permissions: membership.permissions || [],
         customPermissions: membership.customPermissions || [],
+        customRole: customRole ? { id: membership.customRoleId, name: customRole.name, permissions: customRole.permissions } : null,
+        effectivePermissions: [...effective],
         membershipId: membership.id
       };
     });
@@ -300,6 +326,195 @@ router.put("/:id/workspace-config", requireFirebaseAuth, requireTenantAdmin, asy
     return res.json({ success: true, config: clean });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ─────────────────────── Должности и права ───────────────────────
+
+const ROLES = "custom_roles";
+
+/** Права вызывающего в организации — для защиты от эскалации. */
+async function callerPermissions(db: any, uid: string, tenantId: string, user: any) {
+  if (user?.isSuperadmin) return new Set(ALL_PERMISSION_KEYS);
+  const ms = await db.collection("memberships")
+    .where("userId", "==", uid).where("tenantId", "==", tenantId)
+    .where("status", "==", "active").limit(1).get();
+  if (ms.empty) return new Set<string>();
+  const m = ms.docs[0].data();
+  if (hasFullAccess(m.role)) return new Set(ALL_PERMISSION_KEYS);
+  const own = new Set<string>(migrateLegacyPermissions(m));
+  if (m.customRoleId) {
+    const r = await db.collection(ROLES).doc(String(m.customRoleId)).get();
+    if (r.exists) for (const p of (r.data()?.permissions || [])) own.add(String(p));
+  }
+  return own;
+}
+
+/** GET /api/tenants/:id/roles — должности организации. */
+router.get("/:id/roles", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
+  try {
+    const db = admin.firestore();
+    const snap = await db.collection(ROLES).where("tenantId", "==", req.params.id).get();
+    const roles = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Сколько сотрудников на каждой должности — чтобы занятую не удалили молча.
+    const ms = await db.collection("memberships").where("tenantId", "==", req.params.id).get();
+    const counts: Record<string, number> = {};
+    ms.docs.forEach(d => {
+      const rid = d.data().customRoleId;
+      if (rid) counts[rid] = (counts[rid] || 0) + 1;
+    });
+    return res.json({
+      success: true,
+      roles: roles.map((r: any) => ({ ...r, memberCount: counts[r.id] || 0 })),
+      presets: ROLE_PRESETS,
+      catalog: ALL_PERMISSION_KEYS,
+      modules: ORG_MODULES,
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/** POST /api/tenants/:id/roles — создать или изменить должность. */
+router.post("/:id/roles", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
+  try {
+    const db = admin.firestore();
+    const tenantId = req.params.id;
+    const { roleId, name, description, permissions } = req.body || {};
+    const cleanName = String(name || "").trim().slice(0, 40);
+    if (!cleanName) return res.status(400).json({ success: false, error: "Укажите название должности" });
+
+    // Только права из каталога: иначе в документе копится мусор, который
+    // ничего не открывает, но выглядит как выданный доступ.
+    const wanted = (Array.isArray(permissions) ? permissions : []).filter(isPermissionKey);
+
+    // Защита от эскалации: нельзя выдать должности то, чего нет у самого.
+    const mine = await callerPermissions(db, req.user.uid, tenantId, req.user);
+    const excess = wanted.filter(p => !mine.has(p));
+    if (excess.length) {
+      return res.status(403).json({
+        success: false,
+        error: `Нельзя выдать права, которых нет у вас: ${excess.join(", ")}`,
+      });
+    }
+
+    const id = roleId ? String(roleId) : `role_${tenantId}_${Date.now().toString(36)}`;
+    if (roleId) {
+      const existing = await db.collection(ROLES).doc(id).get();
+      if (!existing.exists) return res.status(404).json({ success: false, error: "Должность не найдена" });
+      if (existing.data()?.tenantId !== tenantId) {
+        return res.status(403).json({ success: false, error: "Должность другой организации" });
+      }
+    }
+
+    const doc = {
+      id, tenantId, name: cleanName,
+      description: String(description || "").trim().slice(0, 200),
+      permissions: wanted,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedBy: req.user?.email || req.user?.uid || "",
+      ...(roleId ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),
+    };
+    await db.collection(ROLES).doc(id).set(doc, { merge: true });
+    return res.json({ success: true, role: { ...doc, memberCount: 0 } });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/** DELETE /api/tenants/:id/roles/:roleId — удалить незанятую должность. */
+router.delete("/:id/roles/:roleId", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
+  try {
+    const db = admin.firestore();
+    const { id: tenantId, roleId } = req.params;
+    const snap = await db.collection(ROLES).doc(roleId).get();
+    if (!snap.exists) return res.status(404).json({ success: false, error: "Должность не найдена" });
+    if (snap.data()?.tenantId !== tenantId) {
+      return res.status(403).json({ success: false, error: "Должность другой организации" });
+    }
+    // Занятую должность не удаляем: сотрудники остались бы без прав молча.
+    const used = await db.collection("memberships")
+      .where("tenantId", "==", tenantId).where("customRoleId", "==", roleId).limit(1).get();
+    if (!used.empty) {
+      return res.status(409).json({
+        success: false,
+        error: "На этой должности есть сотрудники — сначала переведите их",
+      });
+    }
+    await db.collection(ROLES).doc(roleId).delete();
+    return res.json({ success: true });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/** PUT /api/tenants/:id/modules — что скрыто для всей организации. */
+router.put("/:id/modules", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
+  try {
+    const db = admin.firestore();
+    const known = new Set(ORG_MODULES.map(m => m.key));
+    const disabled = (Array.isArray(req.body?.disabledModules) ? req.body.disabledModules : [])
+      .map(String).filter((k: string) => known.has(k));
+    await db.collection("tenants").doc(req.params.id).update({
+      disabledModules: disabled,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return res.json({ success: true, disabledModules: disabled });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/** POST /api/tenants/:id/members/:membershipId/role — назначить должность. */
+router.post("/:id/members/:membershipId/role", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
+  try {
+    const db = admin.firestore();
+    const { id: tenantId, membershipId } = req.params;
+    const { customRoleId, permissions } = req.body || {};
+
+    const memRef = db.collection("memberships").doc(membershipId);
+    const mem = await memRef.get();
+    if (!mem.exists) return res.status(404).json({ success: false, error: "Сотрудник не найден" });
+    if (mem.data()?.tenantId !== tenantId) {
+      return res.status(403).json({ success: false, error: "Сотрудник другой организации" });
+    }
+
+    const patch: any = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+
+    if (customRoleId !== undefined) {
+      if (customRoleId) {
+        const r = await db.collection(ROLES).doc(String(customRoleId)).get();
+        if (!r.exists || r.data()?.tenantId !== tenantId) {
+          return res.status(400).json({ success: false, error: "Должность не найдена" });
+        }
+        patch.customRoleId = String(customRoleId);
+        // role хранит человекочитаемое название должности — его показывают
+        // в списках; полный доступ по-прежнему только у системных ролей.
+        patch.role = r.data()?.name || "Сотрудник";
+      } else {
+        patch.customRoleId = admin.firestore.FieldValue.delete();
+      }
+    }
+
+    if (Array.isArray(permissions)) {
+      const wanted = permissions.filter(isPermissionKey);
+      const mine = await callerPermissions(db, req.user.uid, tenantId, req.user);
+      const excess = wanted.filter((p: string) => !mine.has(p));
+      if (excess.length) {
+        return res.status(403).json({
+          success: false, error: `Нельзя выдать права, которых нет у вас: ${excess.join(", ")}`,
+        });
+      }
+      patch.permissions = wanted;
+      // Матрица PBAC больше не используется: её значения перенесены, а
+      // хранить их дальше опасно — они складывались по ИЛИ и отменяли запреты.
+      patch.customPermissions = admin.firestore.FieldValue.delete();
+    }
+
+    await memRef.update(patch);
+    return res.json({ success: true });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
   }
 });
 
