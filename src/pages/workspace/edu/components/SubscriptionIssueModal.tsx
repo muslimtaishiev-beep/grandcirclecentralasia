@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useWorkspaceTerms } from '../../../../lib/useWorkspaceConfig';
 import { X, DollarSign, BookOpen, User, Check, Loader2 } from 'lucide-react';
 import { db } from '../../../../lib/firebase';
 import { collection, doc, setDoc, query, where, getDocs, onSnapshot } from 'firebase/firestore';
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export default function SubscriptionIssueModal({ isOpen, onClose, tenantId }: Props) {
+  const terms = useWorkspaceTerms();
   const [students, setStudents] = useState<any[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [customStudentName, setCustomStudentName] = useState('');
@@ -94,7 +96,7 @@ export default function SubscriptionIssueModal({ isOpen, onClose, tenantId }: Pr
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
       <div className="bg-[var(--bg-panel)] rounded-2xl max-w-md w-full shadow-2xl border border-[var(--border-color)]">
         <div className="flex justify-between items-center p-5 border-b border-[var(--border-color)]">
-          <h2 className="text-lg font-bold text-[var(--text-main)]">Выдать Абонемент Ученику</h2>
+          <h2 className="text-lg font-bold text-[var(--text-main)]">{`Выдать ${terms.subscription.toLowerCase()}: ${terms.student.toLowerCase()}`}</h2>
           <button onClick={onClose} className="p-1.5 hover:bg-black/10 rounded-xl transition text-slate-400">
             <X className="w-5 h-5" />
           </button>
@@ -102,10 +104,10 @@ export default function SubscriptionIssueModal({ isOpen, onClose, tenantId }: Pr
         
         <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs">
           <div>
-            <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Выбрать Студента из CRM *</label>
+            <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">{`Выбрать из CRM: ${terms.student.toLowerCase()} *`}</label>
             {loadingStudents ? (
               <div className="flex items-center gap-2 py-2 text-xs text-[var(--text-muted)]">
-                <Loader2 className="w-4 h-4 animate-spin text-emerald-500" /> Загрузка списка учеников...
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-500" /> {`Загрузка: ${terms.student.toLowerCase()}…`}
               </div>
             ) : students.length > 0 ? (
               <select 
@@ -124,7 +126,7 @@ export default function SubscriptionIssueModal({ isOpen, onClose, tenantId }: Pr
               <input 
                 type="text"
                 required
-                placeholder="ФИО Ученика"
+                placeholder={`ФИО: ${terms.student.toLowerCase()}`}
                 value={customStudentName}
                 onChange={e => setCustomStudentName(e.target.value)}
                 className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-main)] focus:outline-none focus:border-emerald-500"
@@ -133,7 +135,7 @@ export default function SubscriptionIssueModal({ isOpen, onClose, tenantId }: Pr
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Тип абонемента / Пакета</label>
+            <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">{`Тип: ${terms.subscription.toLowerCase()}`}</label>
             <select 
               value={type}
               onChange={e => setType(e.target.value as SubscriptionType)}
@@ -188,7 +190,7 @@ export default function SubscriptionIssueModal({ isOpen, onClose, tenantId }: Pr
               className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-md transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              <span>Выдать Абонемент</span>
+              <span>{`Выдать ${terms.subscription.toLowerCase()}`}</span>
             </button>
           </div>
         </form>

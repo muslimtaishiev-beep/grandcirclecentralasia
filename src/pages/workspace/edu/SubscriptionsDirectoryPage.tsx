@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useWorkspaceTerms } from '../../../lib/useWorkspaceConfig';
 import { Search, Plus, Filter, Snowflake } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
 import { db } from '../../../lib/firebase';
@@ -7,6 +8,7 @@ import { StudentSubscription } from '../../../types/edu';
 import SubscriptionIssueModal from './components/SubscriptionIssueModal';
 
 export default function SubscriptionsDirectoryPage() {
+  const terms = useWorkspaceTerms();
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [subscriptions, setSubscriptions] = useState<StudentSubscription[]>([]);
@@ -35,7 +37,7 @@ export default function SubscriptionsDirectoryPage() {
     <div className="h-[calc(100vh-4rem)] flex flex-col bg-[var(--bg-app)]">
       <div className="p-6 border-b border-[var(--border-color)] bg-[var(--bg-panel)] shrink-0 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-black text-[var(--text-main)]">Абонементы</h1>
+          <h1 className="text-2xl font-black text-[var(--text-main)]">{terms.subscription}</h1>
           <p className="text-[var(--text-muted)] mt-1 font-medium text-sm">Управление пакетами занятий и биллинг</p>
         </div>
         <div className="flex items-center gap-3">
@@ -46,7 +48,7 @@ export default function SubscriptionsDirectoryPage() {
             onClick={() => setIsModalOpen(true)}
             className="px-4 py-2 bg-[var(--accent)] text-white font-bold rounded-xl shadow-md hover:brightness-110 transition flex items-center gap-2"
           >
-            <Plus className="w-4 h-4" /> Выдать абонемент
+            <Plus className="w-4 h-4" /> {`Выдать: ${terms.subscription.toLowerCase()}`}
           </button>
         </div>
       </div>
@@ -56,7 +58,7 @@ export default function SubscriptionsDirectoryPage() {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
           <input 
             type="text" 
-            placeholder="Поиск по имени студента..." 
+            placeholder={`Поиск: ${terms.student.toLowerCase()}…`} 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl pl-12 pr-4 py-3 text-[var(--text-main)] focus:outline-none focus:border-[var(--accent)] shadow-sm"
@@ -109,7 +111,7 @@ export default function SubscriptionsDirectoryPage() {
           ))}
           {filtered.length === 0 && (
             <div className="col-span-full py-12 text-center text-[var(--text-muted)] font-medium">
-              Абонементы не найдены
+              {`Не найдено: ${terms.subscription.toLowerCase()}`}
             </div>
           )}
         </div>

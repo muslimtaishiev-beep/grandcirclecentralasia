@@ -1,3 +1,4 @@
+import { resolveWorkspaceConfig } from "../../shared/workspaceConfig";
 import React, { useEffect, useState } from "react";
 import { useOutletContext, Link, useParams } from "react-router-dom";
 import { Users, FileText, CheckSquare, Layers, TrendingUp, ArrowRight, ShieldCheck, Zap } from "lucide-react";
@@ -63,13 +64,15 @@ export default function WorkspaceDashboard() {
       <div className="bg-gradient-to-r from-[var(--bg-surface)] via-[var(--bg-app)] to-[var(--bg-surface)] border border-[var(--border-color)] p-8 rounded-2xl shadow-sm relative overflow-hidden">
         <div className="relative z-10">
           <div className="flex items-center gap-2 text-xs font-mono text-[var(--accent)] font-bold uppercase tracking-wider mb-2">
-            <Zap className="w-4 h-4" /> {activeTenant?.name && !activeTenant.name.startsWith("org_") ? activeTenant.name : "Grand Circle Central Asia"}
+            <Zap className="w-4 h-4" /> {activeTenant?.name && !activeTenant.name.startsWith("org_") ? activeTenant.name : "Ваша организация"}
           </div>
+          {/* Заголовок из настроек организации; по умолчанию — прежний
+              текст, поэтому у Академии ничего не меняется. */}
           <h1 className="text-3xl font-extrabold text-[var(--text-main)] tracking-tight">
-            Панель Управления Академией
+            {resolveWorkspaceConfig(activeTenant?.workspaceConfig).dashboardTitle}
           </h1>
           <p className="text-[var(--text-muted)] mt-2 max-w-2xl text-sm leading-relaxed">
-            Обзор показателей учебного процесса, результаты поступивших абитуриентов, CRM-сделки и аналитика в реальном времени.
+            {resolveWorkspaceConfig(activeTenant?.workspaceConfig).dashboardSubtitle}
           </p>
         </div>
       </div>

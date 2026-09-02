@@ -27,14 +27,17 @@ class ScheduleService {
       .map(d => ({ ...d.data(), id: d.id } as ScheduleLessonSlot))
       .filter(l => l.endTime > startTime && l.id !== ignoreLessonId);
 
-    const roomConflict = overlapping.find(l => l.roomId === roomId);
+    // Пустое поле — не измерение для конфликтов: у организаций, где кабинет
+    // или ведущий необязательны, все занятия имели бы roomId === '' и
+    // «конфликтовали» бы друг с другом поголовно.
+    const roomConflict = roomId ? overlapping.find(l => l.roomId === roomId) : undefined;
     if (roomConflict) {
-      throw new Error(`Конфликт кабинета: ${roomConflict.roomName} уже занят группой ${roomConflict.groupName}`);
+      throw new Error(`Конфликт кабинета: ${roomConflict.roomName || roomId} уже занят (${roomConflict.groupName || "другое занятие"})`);
     }
 
-    const teacherConflict = overlapping.find(l => l.teacherStaffId === teacherStaffId);
+    const teacherConflict = teacherStaffId ? overlapping.find(l => l.teacherStaffId === teacherStaffId) : undefined;
     if (teacherConflict) {
-      throw new Error(`Конфликт преподавателя: ${teacherConflict.teacherName} уже ведет урок у ${teacherConflict.groupName}`);
+      throw new Error(`Конфликт преподавателя: ${teacherConflict.teacherName || teacherStaffId} уже занят (${teacherConflict.groupName || "другое занятие"})`);
     }
   }
 

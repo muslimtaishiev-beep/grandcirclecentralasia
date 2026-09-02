@@ -47,6 +47,24 @@ router.get("/my", requireFirebaseAuth, async (req: any, res: any) => {
     const uid = req.user.uid;
     const db = admin.firestore();
 
+    // Суперадмин не состоит в организациях, но должен видеть их все: иначе
+    // воркспейс открывался с заглушкой вместо тенанта — вместо названия
+    // показывался org_..., права считались нулевыми, а настройки выглядели
+    // недоступными.
+    const isSuperadmin = req.user?.isSuperadmin === true
+      || (await db.collection("superadmins").doc(uid).get()).exists;
+
+    if (isSuperadmin) {
+      const all = await db.collection("tenants").limit(50).get();
+      return res.json({
+        success: true,
+        tenants: all.docs.map(d => ({
+          ...d.data(), id: d.id,
+          role: "superadmin", permissions: [], customPermissions: [],
+        })),
+      });
+    }
+
     const membershipsSnapshot = await db
       .collection("memberships")
       .where("userId", "==", uid)
@@ -235,6 +253,52 @@ router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: 
     });
   } catch (error: any) {
     console.error("[Tenants/Invite] Error:", error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * PUT /api/tenants/:id/workspace-config — быстрая настройка воркспейса.
+ *
+ * Владелец описывает вид деятельности компании, и экраны подстраиваются:
+ * заголовок дашборда, терминология («Тренер» вместо «Преподаватель»),
+ * обязательность полей расписания. Организации без конфига видят прежние
+ * тексты — существующих это не трогает.
+ */
+router.put("/:id/workspace-config", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
+  try {
+    const tenantId = req.params.id;
+    const db = admin.firestore();
+    const c = req.body?.config || {};
+    const str = (v: unknown, max = 120) => String(v ?? "").trim().slice(0, max);
+
+    const clean = {
+      setupCompleted: true,
+      activityType: str(c.activityType, 60),
+      dashboardTitle: str(c.dashboardTitle, 80),
+      dashboardSubtitle: str(c.dashboardSubtitle, 200),
+      terms: {
+        teacher: str(c.terms?.teacher, 40) || "Преподаватель",
+        room: str(c.terms?.room, 40) || "Кабинет",
+        student: str(c.terms?.student, 40) || "Ученик",
+        group: str(c.terms?.group, 40) || "Группа",
+        lesson: str(c.terms?.lesson, 40) || "Урок",
+        subscription: str(c.terms?.subscription, 40) || "Абонемент",
+      },
+      schedule: {
+        requireTeacher: c.schedule?.requireTeacher !== false,
+        requireRoom: c.schedule?.requireRoom !== false,
+      },
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedBy: req.user?.email || req.user?.uid || "",
+    };
+
+    await db.collection("tenants").doc(tenantId).update({
+      workspaceConfig: clean,
+      needsWorkspaceSetup: admin.firestore.FieldValue.delete(),
+    });
+    return res.json({ success: true, config: clean });
+  } catch (error: any) {
     return res.status(500).json({ success: false, error: error.message });
   }
 });

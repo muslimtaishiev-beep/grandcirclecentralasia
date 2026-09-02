@@ -28,7 +28,7 @@ export default function SiteBuilder() {
     {
       id: '1',
       type: 'hero',
-      title: 'Добро пожаловать в нашу академию',
+      title: 'Добро пожаловать',
       subtitle: 'Лучшие образовательные программы и курсы от ведущих экспертов',
       buttonText: 'Записаться на курс'
     },

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useWorkspaceTerms } from '../../../lib/useWorkspaceConfig';
 import { useOutletContext, Link, useParams } from 'react-router-dom';
 import { FileQuestion, ShieldCheck, Play, Plus, Loader2, Database } from 'lucide-react';
 import { CopyButton } from '../../../components/ui/CopyButton';
@@ -7,6 +8,7 @@ import { db } from '../../../lib/firebase';
 import { testsData } from '../../../data/testsData';
 
 export default function TestList() {
+  const terms = useWorkspaceTerms();
   const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
   const currentOrgId = activeTenant?.id || orgId || 'org_future_leaders';
@@ -98,7 +100,7 @@ export default function TestList() {
               <Database className="w-3 h-3" /> Firestore DB Sync
             </span>
           </h1>
-          <p className="text-xs text-[var(--text-muted)] mt-1">Официальные экзаменационные материалы, загружаемые из базы данных Firestore для {activeTenant?.name || "Grand Circle Central Asia"}</p>
+          <p className="text-xs text-[var(--text-muted)] mt-1">Официальные экзаменационные материалы, загружаемые из базы данных Firestore для {activeTenant?.name || "вашей организации"}</p>
         </div>
         
         <div className="flex items-center gap-3">
@@ -147,7 +149,7 @@ export default function TestList() {
           <table className="w-full text-left text-xs">
             <thead className="bg-[var(--bg-panel)] border-b border-[var(--border-color)] text-[var(--text-muted)] font-mono uppercase">
               <tr>
-                <th className="px-6 py-3.5 font-bold">Класс / Название Теста</th>
+                <th className="px-6 py-3.5 font-bold">{`${terms.group} / название теста`}</th>
                 <th className="px-6 py-3.5 font-bold">Предметы & Задания</th>
                 <th className="px-6 py-3.5 font-bold">Статус</th>
                 <th className="px-6 py-3.5 font-bold text-right">Действия & Ссылка</th>

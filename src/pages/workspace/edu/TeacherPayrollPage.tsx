@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useWorkspaceTerms } from '../../../lib/useWorkspaceConfig';
 import { useOutletContext } from 'react-router-dom';
 import { Calendar, DollarSign, Search, FileText } from 'lucide-react';
 import { useTeacherPayroll } from '../../../hooks/edu/useTeacherPayroll';
@@ -7,6 +8,7 @@ import { TeacherPayrollRecord } from '../../../types/edu';
 import { format } from 'date-fns';
 
 export default function TeacherPayrollPage() {
+  const terms = useWorkspaceTerms();
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [search, setSearch] = useState('');
@@ -35,7 +37,7 @@ export default function TeacherPayrollPage() {
         <div className="flex justify-between items-start mb-6">
           <div>
             <h1 className="text-2xl font-black text-[var(--text-main)]">Зарплаты</h1>
-            <p className="text-[var(--text-muted)] mt-1 font-medium text-sm">Расчеты и выплаты преподавателям</p>
+            <p className="text-[var(--text-muted)] mt-1 font-medium text-sm">{`Расчеты и выплаты: ${terms.teacher.toLowerCase()}`}</p>
           </div>
           <div className="flex items-center gap-3">
             <div className="relative">
@@ -74,7 +76,7 @@ export default function TeacherPayrollPage() {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
           <input 
             type="text" 
-            placeholder="Поиск преподавателя..." 
+            placeholder={`Поиск: ${terms.teacher.toLowerCase()}…`} 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl pl-12 pr-4 py-3 text-[var(--text-main)] focus:outline-none focus:border-[var(--accent)] shadow-sm"
@@ -85,8 +87,8 @@ export default function TeacherPayrollPage() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-[var(--bg-surface)] border-b border-[var(--border-color)] text-sm font-bold text-[var(--text-muted)]">
-                <th className="p-4">Преподаватель</th>
-                <th className="p-4 text-center">Уроков</th>
+                <th className="p-4">{terms.teacher}</th>
+                <th className="p-4 text-center">{terms.lesson}</th>
                 <th className="p-4 text-right">Начислено</th>
                 <th className="p-4 text-right">Бонусы</th>
                 <th className="p-4 text-right">Удержания</th>

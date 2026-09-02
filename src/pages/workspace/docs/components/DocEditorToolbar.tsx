@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { 
   ArrowLeft, FileText, Star, FolderUp, CheckCircle2, History, MessageSquare, Lock, Share2,
   Undo2, Redo2, Printer, Paintbrush, ChevronDown, Bold, Italic, Underline, Baseline, Highlighter, 
@@ -65,6 +66,11 @@ export default function DocEditorToolbar({
   onUpdateAccess,
   onLoadTemplate
 }: Props) {
+  // Имя организации в шаблонах документов: раньше во все справки и договоры
+  // любого тенанта подставлялась «Академия Будущих Лидеров» — чужое
+  // юридическое лицо в документе, который выдают живому человеку.
+  const wsCtx = useOutletContext<{ activeTenant?: any } | null>();
+  const orgName = wsCtx?.activeTenant?.name || 'вашей организации';
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [docTitle, setDocTitle] = useState(title);
   const [isStarred, setIsStarred] = useState(false);
@@ -259,10 +265,10 @@ export default function DocEditorToolbar({
         { id: '2', type: 'paragraph', content: '720005, г. Бишкек, ул. Жуная Мавлянова, 10 • Тел.: +996 558 398 360', align: 'center' },
         { id: '3', type: 'divider', content: '' },
         { id: '4', type: 'heading_2', content: 'СПРАВКА № ' + Math.floor(10 + Math.random() * 90), align: 'center', isBold: true },
-        { id: '5', type: 'paragraph', content: `Выдана <b>Иванову Александру Сергеевичу</b> в том, что он(а) действительно является учеником(цей) <b>7 класса</b> школы «Академия Будущих Лидеров».` },
+        { id: '5', type: 'paragraph', content: `Выдана <b>Иванову Александру Сергеевичу</b> в том, что он(а) действительно является учеником(цей) <b>7 класса</b> «${orgName}».` },
         { id: '6', type: 'paragraph', content: 'Справка выдана для предъявления по месту требования.' },
         { id: '7', type: 'paragraph', content: `<br><b>Дата выдачи:</b> ${nowStr} г.` },
-        { id: '8', type: 'paragraph', content: '<b>Директор Академии:</b> ___________________' },
+        { id: '8', type: 'paragraph', content: '<b>Директор:</b> ___________________' },
         { id: '9', type: 'image', imageUrl: '/stamp.png', content: '/stamp.png' }
       ]);
     } else if (type === 'contract') {
@@ -270,7 +276,7 @@ export default function DocEditorToolbar({
       onLoadTemplate([
         { id: '1', type: 'heading_1', content: 'ДОГОВОР ОКАЗАНИЯ ОБРАЗОВАТЕЛЬНЫХ УСЛУГ', align: 'center', isBold: true },
         { id: '2', type: 'paragraph', content: `<b>г. Бишкек</b> <span style="float:right;"><b>«${nowStr}» г.</b></span>` },
-        { id: '3', type: 'paragraph', content: 'Организация «Академия Будущих Лидеров», именуемая в дальнейшем «Исполнитель», с одной стороны, и Заказчик с другой стороны, заключили настоящий Договор:' },
+        { id: '3', type: 'paragraph', content: `Организация «${orgName}», именуемая в дальнейшем «Исполнитель», с одной стороны, и Заказчик с другой стороны, заключили настоящий Договор:` },
         { id: '4', type: 'heading_3', content: '1. ПРЕДМЕТ ДОГОВОРА' },
         { id: '5', type: 'paragraph', content: '1.1. Исполнитель обязуется предоставить образовательные услуги по обучению, а Заказчик обязуется оплатить оказанные услуги.' },
         { id: '6', type: 'heading_3', content: '2. РЕКВИЗИТЫ И ПОДПИСИ СТОРОН' },

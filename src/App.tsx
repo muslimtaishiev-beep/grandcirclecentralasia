@@ -48,6 +48,7 @@ const DocumentTemplates = lazy(() => import("./pages/workspace/settings/Document
 const WorkspaceBuilder = lazy(() => import("./pages/workspace/Builder"));
 const FormBuilder = lazy(() => import("./pages/workspace/builder/FormBuilder"));
 const TicketScanner = lazy(() => import("./pages/workspace/tickets/TicketScanner"));
+const WorkspaceSetupPage = lazy(() => import("./pages/workspace/settings/WorkspaceSetupPage"));
 const FunctionStudio = lazy(() => import("./pages/workspace/functions/FunctionStudio"));
 const QrTracker = lazy(() => import("./pages/public/QrTracker"));
 const PublicForm = lazy(() => import("./pages/public/PublicForm"));
@@ -282,6 +283,7 @@ export default function App() {
             <Route path=":orgId/dashboard" element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId/settings" element={<GracefulErrorBoundary fallbackTitle="Ошибка Настроек"><WorkspaceSettings /></GracefulErrorBoundary>} />
             <Route path=":orgId/settings/permissions" element={<GracefulErrorBoundary fallbackTitle="Ошибка Управления Правами"><TeamPermissions /></GracefulErrorBoundary>} />
+            <Route path=":orgId/settings/workspace" element={<GracefulErrorBoundary fallbackTitle="Ошибка Настроек Воркспейса"><WorkspaceSetupPage /></GracefulErrorBoundary>} />
             <Route path=":orgId/settings/permission-matrix" element={<GracefulErrorBoundary fallbackTitle="Ошибка Матрицы Доступов PBAC"><TeamPermissionMatrix /></GracefulErrorBoundary>} />
             <Route path=":orgId/settings/departments" element={<GracefulErrorBoundary fallbackTitle="Ошибка Оргструктуры"><OrgStructure /></GracefulErrorBoundary>} />
             <Route path=":orgId/settings/templates" element={<GracefulErrorBoundary fallbackTitle="Ошибка Шаблонов"><DocumentTemplates /></GracefulErrorBoundary>} />

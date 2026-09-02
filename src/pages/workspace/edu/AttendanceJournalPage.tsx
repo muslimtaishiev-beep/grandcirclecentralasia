@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useWorkspaceTerms } from '../../../lib/useWorkspaceConfig';
 import { Calendar, Users } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
 import { useAttendanceJournal } from '../../../hooks/edu/useAttendanceJournal';
@@ -12,6 +13,7 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
 
 export default function AttendanceJournalPage() {
+  const terms = useWorkspaceTerms();
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
   const [groupId, setGroupId] = useState('g1');
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
@@ -98,7 +100,7 @@ export default function AttendanceJournalPage() {
             <thead>
               <tr className="bg-[var(--bg-surface)] border-b border-[var(--border-color)]">
                 <th className="p-4 text-sm font-bold text-[var(--text-muted)] sticky left-0 z-10 bg-[var(--bg-surface)] w-64 border-r border-[var(--border-color)]">
-                  Студент
+                  {terms.student}
                 </th>
                 {lessonDates.map(date => (
                   <th key={date} className="p-3 text-center min-w-[80px] border-r border-[var(--border-color)]">

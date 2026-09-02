@@ -142,7 +142,7 @@ export default function TeamPermissions() {
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           fullName: fullName.trim(),
-          tenantName: activeTenant?.name || 'Академия Будущих Лидеров',
+          tenantName: activeTenant?.name || 'Организация',
           tenantId: currentOrgId,
           role,
           permissions: selectedPermissions

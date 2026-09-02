@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useWorkspaceTerms } from '../../../lib/useWorkspaceConfig';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Users, MapPin } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
 import { useScheduleCalendar } from '../../../hooks/edu/useScheduleCalendar';
@@ -7,6 +8,7 @@ import { format, startOfWeek, addDays, getHours } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
 export default function ScheduleCalendarPage() {
+  const terms = useWorkspaceTerms();
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<any>(null);
@@ -49,7 +51,7 @@ export default function ScheduleCalendarPage() {
               onClick={() => setView('rooms')}
               className={`px-3 py-1.5 text-sm font-bold rounded-lg transition ${view === 'rooms' ? 'bg-[var(--bg-panel)] shadow text-[var(--text-main)]' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
             >
-              Кабинеты
+              {terms.room}
             </button>
           </div>
 
@@ -77,14 +79,14 @@ export default function ScheduleCalendarPage() {
             onChange={(e) => setFilters(prev => ({ ...prev, teacherId: e.target.value || undefined }))}
             className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl px-3 py-2 text-sm font-medium focus:outline-none"
           >
-            <option value="">Все преподаватели</option>
+            <option value="">Все: {terms.teacher.toLowerCase()}</option>
             <option value="t1">Джон Доу</option>
           </select>
           <button 
             onClick={() => { setSelectedSlot(null); setIsModalOpen(true); }}
             className="px-4 py-2 bg-[var(--accent)] text-white text-sm font-bold rounded-xl shadow-md hover:brightness-110 transition flex items-center gap-2"
           >
-            <Plus className="w-4 h-4" /> Новый урок
+            <Plus className="w-4 h-4" /> {`Новое: ${terms.lesson.toLowerCase()}`}
           </button>
         </div>
       </div>

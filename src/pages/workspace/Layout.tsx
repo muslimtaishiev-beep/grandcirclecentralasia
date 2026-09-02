@@ -33,9 +33,11 @@ import {
   Sliders,
   Settings2,
   GraduationCap,
-  QrCode
+  QrCode,
+  Sparkles
 } from "lucide-react";
 import GlobalNotifications from "../../components/workspace/GlobalNotifications";
+import QuickSetupWizard from "../../components/workspace/QuickSetupWizard";
 import SpotlightCommandBar from "../../components/common/SpotlightCommandBar";
 import DemoSeedButton from "../../components/common/DemoSeedButton";
 
@@ -51,6 +53,9 @@ export default function WorkspaceLayout() {
   const [loading, setLoading] = useState(true);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  // Мастер настройки закрывается локально после сохранения, не дожидаясь
+  // повторной загрузки списка организаций.
+  const [setupDone, setSetupDone] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -169,6 +174,7 @@ export default function WorkspaceLayout() {
     (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Оргструктура & Отделы", path: `/workspace/${activeTenant.id}/settings/departments`, icon: FolderTree },
     (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Матрица Доступов PBAC", path: `/workspace/${activeTenant.id}/settings/permission-matrix`, icon: Sliders },
     (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Права & Сотрудники", path: `/workspace/${activeTenant.id}/settings/permissions`, icon: Shield },
+    (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Настройка воркспейса", path: `/workspace/${activeTenant.id}/settings/workspace`, icon: Sparkles },
     { name: "Docs", path: `/workspace/${activeTenant.id}/docs`, icon: FileText },
     { name: "Sheets", path: `/workspace/${activeTenant.id}/sheets`, icon: FileSpreadsheet },
     (hasPerm('team:manage') || hasPerm('settings:manage')) && { name: "Site Builder", path: `/workspace/${activeTenant.id}/sites`, icon: Globe },
@@ -206,7 +212,7 @@ export default function WorkspaceLayout() {
               <Building className="w-4 h-4 text-white" />
             </div>
             <span className="font-bold text-[var(--text-main)] hidden sm:block">
-              {activeTenant?.name && !activeTenant.name.startsWith("org_") ? activeTenant.name : "Grand Circle Central Asia"}
+              {activeTenant?.name && !activeTenant.name.startsWith("org_") ? activeTenant.name : "Воркспейс"}
             </span>
           </div>
         </div>
@@ -262,6 +268,15 @@ export default function WorkspaceLayout() {
         </div>
       </div>
 
+      {/* Быстрая настройка: только новые организации (флаг ставится при
+          одобрении заявки) и только владельцу/админу — сотрудник не должен
+          решать за компанию, как называются её экраны. */}
+      {activeTenant?.needsWorkspaceSetup && !setupDone &&
+        /owner|admin|Администратор|Владелец/i.test(String(activeTenant.role || "")) && (
+        <QuickSetupWizard tenant={activeTenant}
+          onDone={() => { setSetupDone(true); fetchTenants(); }} />
+      )}
+
       {/* Main Content Area */}
       <div className="flex flex-1 overflow-hidden z-10">
         
@@ -307,7 +322,7 @@ export default function WorkspaceLayout() {
             {/* Some pages (like Chat) have their own strict layouts, others have normal padding. 
                 For Chat specifically, we might want to override padding, but let's keep it clean for now. */}
             <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-[var(--bg-app)]">
-               <Outlet context={{ activeTenant: activeTenant || (orgId ? { id: orgId, name: orgId, slug: orgId } : null), tenants }} />
+               <Outlet context={{ activeTenant: activeTenant || (orgId ? { id: orgId, name: orgId, slug: orgId } : null), tenants, refreshTenants: fetchTenants }} />
             </main>
           </div>
         </div>

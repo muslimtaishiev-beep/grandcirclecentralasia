@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Calendar, Clock, MapPin, Users, User } from 'lucide-react';
 import { ScheduleLessonSlot } from '../../../../types/edu';
 import { scheduleService } from '../../../../services/edu/scheduleService';
+import { useWorkspaceConfig } from '../../../../lib/useWorkspaceConfig';
 
 interface Props {
   isOpen: boolean;
@@ -12,6 +13,12 @@ interface Props {
 }
 
 export default function ScheduleSlotModal({ isOpen, onClose, tenantId, selectedDate, slotToEdit }: Props) {
+  // Терминология и обязательность полей — из настроек организации: у школы
+  // урок без кабинета не бывает, у ивент-агентства «площадка» опциональна.
+  const wsConfig = useWorkspaceConfig();
+  const terms = wsConfig.terms;
+  const needTeacher = wsConfig.schedule.requireTeacher;
+  const needRoom = wsConfig.schedule.requireRoom;
   const [groupId, setGroupId] = useState(slotToEdit?.groupId || '');
   const [teacherStaffId, setTeacherStaffId] = useState(slotToEdit?.teacherStaffId || '');
   const [roomId, setRoomId] = useState(slotToEdit?.roomId || '');
@@ -27,8 +34,9 @@ export default function ScheduleSlotModal({ isOpen, onClose, tenantId, selectedD
     e.preventDefault();
     setError('');
     
-    // Validate inputs
-    if (!groupId || !teacherStaffId || !roomId || !date || !startTime || !endTime) {
+    // Обязательность преподавателя и кабинета настраивается организацией.
+    if (!groupId || !date || !startTime || !endTime
+        || (needTeacher && !teacherStaffId) || (needRoom && !roomId)) {
       setError('Заполните все обязательные поля');
       return;
     }
@@ -40,11 +48,13 @@ export default function ScheduleSlotModal({ isOpen, onClose, tenantId, selectedD
       setLoading(true);
       const data = {
         groupId,
-        groupName: 'Mock Group', // In real app, fetch from state
+        // Раньше здесь сохранялись 'Mock Group'/'Mock Teacher'/'Mock Room' —
+        // мусорные подписи навсегда оставались в каждом созданном занятии.
+        groupName: groupId,
         teacherStaffId,
-        teacherName: 'Mock Teacher', 
+        teacherName: teacherStaffId,
         roomId,
-        roomName: 'Mock Room',
+        roomName: roomId,
         startTime: startIso,
         endTime: endIso,
         status: 'scheduled' as const,
@@ -70,7 +80,7 @@ export default function ScheduleSlotModal({ isOpen, onClose, tenantId, selectedD
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
       <div className="bg-[var(--bg-panel)] rounded-2xl max-w-md w-full shadow-2xl border border-[var(--border-color)]">
         <div className="flex justify-between items-center p-6 border-b border-[var(--border-color)]">
-          <h2 className="text-xl font-bold">{slotToEdit ? 'Редактировать урок' : 'Новый урок'}</h2>
+          <h2 className="text-xl font-bold">{slotToEdit ? `Редактировать: ${terms.lesson.toLowerCase()}` : `Новое занятие: ${terms.lesson.toLowerCase()}`}</h2>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition">
             <X className="w-5 h-5" />
           </button>
@@ -119,12 +129,12 @@ export default function ScheduleSlotModal({ isOpen, onClose, tenantId, selectedD
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-[var(--text-muted)] mb-1">Группа</label>
+            <label className="block text-sm font-bold text-[var(--text-muted)] mb-1">{terms.group} <span className="text-red-500">*</span></label>
             <div className="relative">
               <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
               <input 
                 type="text" 
-                placeholder="ID Группы (для демо)"
+                placeholder={terms.group}
                 value={groupId}
                 onChange={e => setGroupId(e.target.value)}
                 className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl pl-10 pr-4 py-2 focus:outline-none focus:border-[var(--accent)]"
@@ -133,12 +143,16 @@ export default function ScheduleSlotModal({ isOpen, onClose, tenantId, selectedD
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-[var(--text-muted)] mb-1">Преподаватель</label>
+            <label className="block text-sm font-bold text-[var(--text-muted)] mb-1">
+              {terms.teacher} {needTeacher
+                ? <span className="text-red-500">*</span>
+                : <span className="font-normal text-[var(--text-muted)]">— необязательно</span>}
+            </label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
               <input 
                 type="text" 
-                placeholder="ID Преподавателя"
+                placeholder={terms.teacher}
                 value={teacherStaffId}
                 onChange={e => setTeacherStaffId(e.target.value)}
                 className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl pl-10 pr-4 py-2 focus:outline-none focus:border-[var(--accent)]"
@@ -147,12 +161,16 @@ export default function ScheduleSlotModal({ isOpen, onClose, tenantId, selectedD
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-[var(--text-muted)] mb-1">Кабинет</label>
+            <label className="block text-sm font-bold text-[var(--text-muted)] mb-1">
+              {terms.room} {needRoom
+                ? <span className="text-red-500">*</span>
+                : <span className="font-normal text-[var(--text-muted)]">— необязательно</span>}
+            </label>
             <div className="relative">
               <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
               <input 
                 type="text" 
-                placeholder="ID Кабинета"
+                placeholder={terms.room}
                 value={roomId}
                 onChange={e => setRoomId(e.target.value)}
                 className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl pl-10 pr-4 py-2 focus:outline-none focus:border-[var(--accent)]"

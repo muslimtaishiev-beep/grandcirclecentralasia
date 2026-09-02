@@ -190,6 +190,10 @@ router.post("/tenant-requests/:id", requireFirebaseAuth, requireSuperAdmin, asyn
           "MODULE_CRM_PIPELINES",
         ],
         ownerEmail: requestData.contactEmail || "",
+        // Новой организации при первом входе владельца показывается быстрая
+        // настройка: вид деятельности, терминология, поля расписания.
+        // Существующих организаций флаг не касается — у них его просто нет.
+        needsWorkspaceSetup: true,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         status: "active",

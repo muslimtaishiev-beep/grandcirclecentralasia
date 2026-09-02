@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useWorkspaceTerms } from '../../../lib/useWorkspaceConfig';
 import { useOutletContext } from 'react-router-dom';
 import { Search, Plus, Filter, MoreHorizontal, Mail, Phone, X, Check, Trash2 } from 'lucide-react';
 import { db } from '../../../lib/firebase';
@@ -8,6 +9,7 @@ import ContactProfileDrawer from './components/ContactProfileDrawer';
 import toast from 'react-hot-toast';
 
 export default function ContactsDirectoryPage() {
+  const terms = useWorkspaceTerms();
   const { activeTenant } = useOutletContext<any>();
   const [contacts, setContacts] = useState<CrmContact[]>([]);
   const [search, setSearch] = useState('');
@@ -238,7 +240,7 @@ export default function ContactsDirectoryPage() {
 
             <form onSubmit={handleCreateContact} className="space-y-4 text-xs">
               <div>
-                <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">ФИО Ученика / Клиента *</label>
+                <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">{`ФИО: ${terms.student.toLowerCase()} / клиент *`}</label>
                 <input 
                   type="text" 
                   required
@@ -278,7 +280,7 @@ export default function ContactsDirectoryPage() {
                   onChange={e => setType(e.target.value as any)}
                   className="w-full px-3.5 py-2.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-emerald-500"
                 >
-                  <option value="student">Ученик / Абитуриент</option>
+                  <option value="student">{terms.student}</option>
                   <option value="lead">Лид / Заявка</option>
                   <option value="partner">Партнер / Родитель</option>
                   <option value="employee">Сотрудник</option>
