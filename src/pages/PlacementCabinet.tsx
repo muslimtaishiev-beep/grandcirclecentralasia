@@ -6,6 +6,7 @@ import { exportStreamCSV, openStudentReport } from "../lib/placementExport";
 import { openCertificate } from "../lib/placementCertificate";
 import WorkReview from "../components/placement/WorkReview";
 import ClassDistribution from "../components/placement/ClassDistribution";
+import Analytics from "../components/placement/Analytics";
 
 /**
  * Кабинет завуча — вступительный срез 5-11.
@@ -24,7 +25,13 @@ const GRADES = [5, 6, 7, 8, 9, 10, 11];
 const DIFF_LABEL: Record<string, string> = { "1": "Лёгкие", "2": "Средние", "3": "Сложные" };
 
 type Section = { key: string; title: string; minutes: number; counts: Record<string, number>; minTopics: number };
-type Blueprint = { tenantId: string; grade: number; sections: Section[]; scale: { minPercent: number; label: string }[] };
+type Marks = { pass: number; good: number; excellent: number };
+type Blueprint = {
+  tenantId: string; grade: number; sections: Section[];
+  scale: { minPercent: number; label: string }[];
+  /** Пороги школьных оценок для аналитики; сервер подставит свои, если нет. */
+  marks?: Marks;
+};
 type Availability = Record<string, Record<string, number>>;
 
 async function authHeaders(): Promise<Record<string, string>> {
@@ -36,7 +43,7 @@ export default function PlacementCabinet() {
   const { orgId } = useParams<{ orgId: string }>();
   const tenantId = orgId || "";
 
-  const [tab, setTab] = useState<"results" | "classes" | "setup" | "bank">("results");
+  const [tab, setTab] = useState<"results" | "analytics" | "classes" | "setup" | "bank">("results");
   const [bank, setBank] = useState<any[]>([]);
   const [bankNeedsReview, setBankNeedsReview] = useState(0);
   const [editing, setEditing] = useState<any>(null);
@@ -145,7 +152,7 @@ export default function PlacementCabinet() {
     try {
       const res = await fetch("/api/placement/blueprint", {
         method: "PUT", headers: await authHeaders(),
-        body: JSON.stringify({ tenantId, grade, sections: blueprint.sections, scale: blueprint.scale }),
+        body: JSON.stringify({ tenantId, grade, sections: blueprint.sections, scale: blueprint.scale, marks: blueprint.marks }),
       });
       const data = await res.json();
       if (!data.success) { setError(data.error || "Не удалось сохранить."); return; }
@@ -297,6 +304,7 @@ export default function PlacementCabinet() {
 
         <div className="flex gap-2 mb-5">
           {([["results", `Результаты (${stats.done})`],
+             ["analytics", "Аналитика"],
              ["classes", "Распределение по классам"],
              ["setup", "Настройка экзамена"],
              ["bank", `Банк вопросов (${bank.length})${bankNeedsReview ? ` · ${bankNeedsReview} на проверку` : ""}`]] as const).map(([k, label]) => (
@@ -530,6 +538,33 @@ export default function PlacementCabinet() {
               ))}
             </div>
 
+            <h3 className="font-bold text-slate-900 mb-2 text-sm">Пороги оценок</h3>
+            <p className="text-xs text-slate-500 mb-3">
+              От этих границ считаются успеваемость и качество знаний во вкладке «Аналитика».
+              Успеваемость — доля сдавших на «3» и выше, качество — доля «4» и «5».
+              Границы должны возрастать.
+            </p>
+            <div className="grid gap-2 mb-5">
+              {([["pass", "Проходной балл («3»)"], ["good", "Оценка «4» от"], ["excellent", "Оценка «5» от"]] as const)
+                .map(([key, label]) => (
+                <div key={key} className="flex items-center gap-2">
+                  <span className="text-sm text-slate-600 w-48 shrink-0">{label}</span>
+                  <input
+                    value={blueprint.marks?.[key] ?? { pass: 50, good: 65, excellent: 85 }[key]}
+                    inputMode="numeric"
+                    onChange={e => {
+                      const v = Math.max(0, Math.min(100, Number(e.target.value.replace(/\D/g, "")) || 0));
+                      setBlueprint(bp => bp ? {
+                        ...bp,
+                        marks: { ...{ pass: 50, good: 65, excellent: 85 }, ...(bp.marks || {}), [key]: v },
+                      } : bp);
+                    }}
+                    className="w-16 border border-slate-300 rounded-lg px-2 py-1.5 text-center font-mono" />
+                  <span className="text-sm text-slate-500">%</span>
+                </div>
+              ))}
+            </div>
+
             <button onClick={saveBlueprint} disabled={saving}
               className={`px-6 py-3 rounded-xl font-bold text-white ${saving ? "bg-slate-400" : "bg-blue-600 hover:bg-blue-700"}`}>
               {saving ? "Сохраняем…" : `Сохранить настройки для ${grade} класса`}
@@ -539,6 +574,8 @@ export default function PlacementCabinet() {
             </p>
           </div>
         )}
+
+        {tab === "analytics" && <Analytics tenantId={tenantId} />}
 
         {tab === "classes" && (
           <ClassDistribution tenantId={tenantId} onChanged={() => void loadResults()} />

@@ -97,6 +97,24 @@ interface Blueprint {
   sections: BlueprintSection[];
   // Sorted by minPercent descending; first band the score reaches wins.
   scale: { minPercent: number; label: string }[];
+  /**
+   * Пороги школьных оценок, в процентах. Успеваемость и качество знаний —
+   * показатели из школьной отчётности, и считать их можно только от границ,
+   * которые школа признаёт своими: у одной «4» начинается с 65%, у другой с 70.
+   * Поэтому пороги живут в настройках экзамена, а не в коде.
+   */
+  marks?: { pass: number; good: number; excellent: number };
+}
+
+/** Границы по умолчанию — привычные школьные, школа меняет их в кабинете. */
+const DEFAULT_MARKS = { pass: 50, good: 65, excellent: 85 };
+
+/** Оценка по проценту: 2 — не сдал, дальше 3/4/5. */
+function markFor(percent: number, m = DEFAULT_MARKS): 2 | 3 | 4 | 5 {
+  if (percent >= m.excellent) return 5;
+  if (percent >= m.good) return 4;
+  if (percent >= m.pass) return 3;
+  return 2;
 }
 
 /**
@@ -191,6 +209,7 @@ const DEFAULT_BLUEPRINT = (tenantId: string, grade: number): Blueprint => ({
     { minPercent: 55, label: "Основной класс" },
     { minPercent: 0, label: "Подготовительный класс" },
   ],
+  marks: { ...DEFAULT_MARKS },
 });
 
 const bpId = (tenantId: string, grade: number) => `bp_${tenantId}_${grade}`;
@@ -249,7 +268,7 @@ router.get("/blueprint", requireFirebaseAuth, async (req: any, res: any) => {
 // PUT blueprint — завуч/администрация задают количество вопросов, время и шкалу.
 router.put("/blueprint", requireFirebaseAuth, async (req: any, res: any) => {
   try {
-    const { tenantId, grade, sections, scale } = req.body || {};
+    const { tenantId, grade, sections, scale, marks } = req.body || {};
     if (!tenantId || !grade || !Array.isArray(sections)) {
       return res.status(400).json({ success: false, error: "Нужны tenantId, grade и sections" });
     }
@@ -282,7 +301,29 @@ router.put("/blueprint", requireFirebaseAuth, async (req: any, res: any) => {
       .map((b: any) => ({ minPercent: Math.max(0, Math.min(100, Number(b.minPercent) || 0)), label: String(b.label || "").slice(0, 60) }))
       .sort((a: any, b: any) => b.minPercent - a.minPercent);
 
-    const bp: Blueprint = { tenantId, grade: Number(grade), sections: cleanSections, scale: cleanScale };
+    // Пороги оценок. Границы обязаны идти по возрастанию: «4» не может
+    // начинаться ниже тройки, иначе успеваемость и качество разойдутся с
+    // арифметикой и завуч получит качество выше успеваемости.
+    const num = (v: any, dflt: number) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 && n <= 100 ? n : dflt;
+    };
+    const cleanMarks = {
+      pass: num(marks?.pass, DEFAULT_MARKS.pass),
+      good: num(marks?.good, DEFAULT_MARKS.good),
+      excellent: num(marks?.excellent, DEFAULT_MARKS.excellent),
+    };
+    if (!(cleanMarks.pass <= cleanMarks.good && cleanMarks.good <= cleanMarks.excellent)) {
+      return res.status(400).json({
+        success: false,
+        error: "Пороги оценок должны возрастать: проходной ≤ «4» ≤ «5»",
+      });
+    }
+
+    const bp: Blueprint = {
+      tenantId, grade: Number(grade), sections: cleanSections,
+      scale: cleanScale, marks: cleanMarks,
+    };
     await db().collection("exam_blueprints").doc(bpId(tenantId, Number(grade))).set({
       ...bp,
       updatedAt: admin.firestore.Timestamp.now(),
@@ -751,6 +792,212 @@ router.get("/results", requireFirebaseAuth, async (req: any, res: any) => {
     const results = snap.docs.map(d => ({ id: d.id, ...d.data() }))
       .sort((a: any, b: any) => (b.finishedAt?.toMillis?.() || 0) - (a.finishedAt?.toMillis?.() || 0));
     return res.json({ success: true, results });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * GET /api/placement/analytics — аналитика по потоку для завуча.
+ *
+ * Считается на сервере целиком. Кабинет мог бы посчитать это сам из уже
+ * загруженных результатов, но каждая работа тянет за собой полный список
+ * заданий с текстами и вариантами: на потоке в 300 человек это мегабайты в
+ * браузере ради нескольких процентов. Здесь наружу уходят только агрегаты.
+ *
+ * Важно: правильные ответы НЕ покидают сервер даже здесь. В позадачном
+ * анализе видно, какой вариант выбирали ученики и сколько раз, но пометка
+ * «верный» проставлена уже посчитанной — восстановить по ней ключ ко всему
+ * банку нельзя, потому что вопросы у каждого свои.
+ */
+router.get("/analytics", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const tenantId = String(req.query.tenantId || "");
+    if (!tenantId) return res.status(400).json({ success: false, error: "Нужен tenantId" });
+    if (!(await canManagePlacement(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав на просмотр аналитики" });
+    }
+    const gradeFilter = req.query.grade ? Number(req.query.grade) : null;
+
+    const snap = await db().collection("placement_results").where("tenantId", "==", tenantId).get();
+    let rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
+      // Аннулированные и пересданные работы в статистику не входят: это не
+      // результаты, а следы. Иначе один пересдавший портит средний балл дважды.
+      .filter(r => !r.annulled && !r.superseded);
+    if (gradeFilter) rows = rows.filter(r => Number(r.grade) === gradeFilter);
+
+    // Пороги берём из настроек того класса, который смотрим; при разборе
+    // всех классов сразу — из общих значений, иначе оценки окажутся
+    // несопоставимыми между параллелями.
+    const bp = gradeFilter ? await loadBlueprint(tenantId, gradeFilter) : null;
+    const marks = bp?.marks || DEFAULT_MARKS;
+
+    const pct = (r: any) => Number(r.adjustedPercent ?? r.percent ?? 0);
+    const score = (r: any) => Number(r.adjustedCorrect ?? r.correct ?? 0);
+
+    const total = rows.length;
+    const empty = {
+      success: true, total: 0, marks,
+      summary: null, byGrade: [], byClass: [], distribution: [],
+      topics: [], thinTopics: [], difficulty: [], questions: [], risk: [], top: [],
+      minSamples: { topic: 5, question: 3 },
+    };
+    if (!total) return res.json(empty);
+
+    // ── Основные показатели ────────────────────────────────────────────────
+    const marksOf = rows.map(r => markFor(pct(r), marks));
+    const passed = marksOf.filter(m => m >= 3).length;
+    const quality = marksOf.filter(m => m >= 4).length;
+    const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+    const avg = (xs: number[]) => (xs.length ? sum(xs) / xs.length : 0);
+    const r1 = (n: number) => Math.round(n * 10) / 10;
+
+    const percents = rows.map(pct);
+    const sorted = [...percents].sort((a, b) => a - b);
+    const median = sorted.length % 2
+      ? sorted[(sorted.length - 1) / 2]
+      : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+
+    const summary = {
+      total,
+      performance: Math.round((passed / total) * 100),   // успеваемость
+      quality: Math.round((quality / total) * 100),      // качество знаний
+      avgPercent: r1(avg(percents)),
+      avgScore: r1(avg(rows.map(score))),
+      medianPercent: r1(median),
+      avgSat: (() => {
+        const sats = rows.map(r => Number(r.satMath)).filter(n => Number.isFinite(n) && n > 0);
+        return sats.length ? Math.round(avg(sats)) : null;
+      })(),
+      reviewed: rows.filter(r => r.reviewStatus === "reviewed").length,
+      published: rows.filter(r => r.published).length,
+    };
+
+    // Распределение оценок — основа для столбчатой диаграммы.
+    const distribution = [5, 4, 3, 2].map(m => ({
+      mark: m,
+      count: marksOf.filter(x => x === m).length,
+      percent: Math.round((marksOf.filter(x => x === m).length / total) * 100),
+    }));
+
+    // ── Разрезы: по параллелям и по назначенным классам ────────────────────
+    const groupBy = (key: (r: any) => string) => {
+      const map = new Map<string, any[]>();
+      for (const r of rows) {
+        const k = key(r);
+        if (!k) continue;
+        (map.get(k) || map.set(k, []).get(k)!).push(r);
+      }
+      return [...map.entries()].map(([name, items]) => {
+        const ms = items.map(r => markFor(pct(r), marks));
+        return {
+          name, total: items.length,
+          performance: Math.round((ms.filter(m => m >= 3).length / items.length) * 100),
+          quality: Math.round((ms.filter(m => m >= 4).length / items.length) * 100),
+          avgPercent: r1(avg(items.map(pct))),
+          avgScore: r1(avg(items.map(score))),
+        };
+      });
+    };
+    const byGrade = groupBy(r => (r.grade ? `${r.grade} класс` : ""))
+      .sort((a, b) => parseInt(a.name) - parseInt(b.name));
+    const byClass = groupBy(r => r.assignedClass || "")
+      .sort((a, b) => a.name.localeCompare(b.name, "ru"));
+
+    // ── Анализ по элементам содержания ─────────────────────────────────────
+    // Собираем все задания всех работ: по темам, по сложности и позадачно.
+    const topicAcc = new Map<string, { correct: number; total: number; subject: string }>();
+    const diffAcc = new Map<number, { correct: number; total: number }>();
+    const qAcc = new Map<string, any>();
+
+    for (const r of rows) {
+      for (const sec of r.sections || []) {
+        for (const it of sec.items || []) {
+          const mark = Number(it.mark ?? (it.autoCorrect ? 1 : 0));
+
+          const tKey = `${sec.title}|${it.topic || "Без темы"}`;
+          const t = topicAcc.get(tKey) || { correct: 0, total: 0, subject: sec.title };
+          t.correct += mark; t.total += 1; topicAcc.set(tKey, t);
+
+          const d = diffAcc.get(Number(it.difficulty) || 0) || { correct: 0, total: 0 };
+          d.correct += mark; d.total += 1; diffAcc.set(Number(it.difficulty) || 0, d);
+
+          const q = qAcc.get(it.id) || {
+            id: it.id, text: it.text, topic: it.topic || "Без темы",
+            difficulty: Number(it.difficulty) || 0, subject: sec.title,
+            correct: 0, total: 0,
+            // Что именно выбирали — для разбора типичных ошибок.
+            answers: {} as Record<string, { count: number; correct: boolean }>,
+          };
+          q.correct += mark; q.total += 1;
+          const given = String(it.given ?? "").trim() || "—";
+          const a = q.answers[given] || { count: 0, correct: false };
+          a.count += 1;
+          // Верным считаем ровно то, что уже зачтено проверкой.
+          if (mark >= 1) a.correct = true;
+          q.answers[given] = a;
+          qAcc.set(it.id, q);
+        }
+      }
+    }
+
+    const withRate = (o: any) => ({ ...o, rate: o.total ? Math.round((o.correct / o.total) * 100) : 0 });
+
+    // Темы. Тема, встретившаяся один-два раза на весь поток, статистикой не
+    // является: «0% усвоения» по одному ученику — это не проблемная тема, а
+    // один неудачный ответ. Такие уносим в отдельный список, чтобы завуч видел
+    // их отдельно и не принимал по ним решений как по достоверным.
+    const TOPIC_MIN = 5;
+    const allTopics = [...topicAcc.entries()]
+      .map(([k, v]) => withRate({ subject: v.subject, topic: k.split("|")[1], correct: r1(v.correct), total: v.total }))
+      .sort((a, b) => a.rate - b.rate);   // худшие первыми: это и есть проблемные темы
+    const topics = allTopics.filter(t => t.total >= TOPIC_MIN);
+    const thinTopics = allTopics.filter(t => t.total < TOPIC_MIN);
+
+    const difficulty = [1, 2, 3].map(d => {
+      const v = diffAcc.get(d) || { correct: 0, total: 0 };
+      return withRate({
+        difficulty: d,
+        label: d === 1 ? "Лёгкие" : d === 2 ? "Средние" : "Сложные",
+        correct: r1(v.correct), total: v.total,
+      });
+    }).filter(d => d.total > 0);
+
+    // Позадачный анализ. Задания, которые встретились единицам, статистикой не
+    // являются — порог в 3 работы отсекает шум случайной выборки.
+    const questions = [...qAcc.values()]
+      .filter(q => q.total >= 3)
+      .map(q => withRate({
+        ...q, correct: r1(q.correct),
+        // Самый частый неверный ответ — это и есть типичная ошибка.
+        topWrong: Object.entries(q.answers as Record<string, any>)
+          .filter(([, v]) => !v.correct)
+          .sort((a, b) => b[1].count - a[1].count)
+          .slice(0, 3)
+          .map(([opt, v]) => ({ option: opt, count: v.count })),
+      }))
+      .sort((a, b) => a.rate - b.rate);
+
+    // ── Списки для работы завуча ───────────────────────────────────────────
+    const brief = (r: any) => ({
+      id: r.id, shortId: r.shortId, studentName: r.studentName, grade: r.grade,
+      percent: pct(r), score: score(r), total: r.total,
+      mark: markFor(pct(r), marks), assignedClass: r.assignedClass || null,
+      satMath: r.satMath ?? null,
+    });
+    const risk = rows.filter(r => markFor(pct(r), marks) === 2)
+      .sort((a, b) => pct(a) - pct(b)).map(brief);
+    const top = rows.filter(r => pct(r) >= marks.excellent)
+      .sort((a, b) => pct(b) - pct(a)).slice(0, 50).map(brief);
+
+    return res.json({
+      success: true, total, marks,
+      summary, distribution, byGrade, byClass,
+      topics, thinTopics, difficulty, questions, risk, top,
+      // Пороги достоверности — кабинет показывает их пользователю, чтобы
+      // «мало данных» не выглядело как «нет проблем».
+      minSamples: { topic: TOPIC_MIN, question: 3 },
+    });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }
