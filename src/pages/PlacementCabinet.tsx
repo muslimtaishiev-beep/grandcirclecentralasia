@@ -67,6 +67,11 @@ export default function PlacementCabinet() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [openStudent, setOpenStudent] = useState<any>(null);
+  // Диалог очистки. Слово подтверждения набирается руками — промах по
+  // кнопке не должен стирать поток.
+  const [purge, setPurge] = useState<{ scope: "results" | "bank"; grade: number | 0 } | null>(null);
+  const [purgeWord, setPurgeWord] = useState("");
+  const [purging, setPurging] = useState(false);
   const [gradeFilter, setGradeFilter] = useState<number | 0>(0);
   const [publishing, setPublishing] = useState(false);
   const [reviewId, setReviewId] = useState<string | null>(null);
@@ -217,6 +222,39 @@ export default function PlacementCabinet() {
       setTimeout(() => setNotice(null), 4000);
       setOpenStudent(null); void loadResults();
     } catch (e) { setError("Нет связи с сервером."); }
+  };
+
+  /**
+   * Удаление одной работы.
+   *
+   * Аннулирование и удаление — разные вещи. Аннулированная работа остаётся:
+   * ученик видит, что она аннулирована, и идёт к завучу. Удалённая исчезает
+   * бесследно, и человек получает «работа не найдена». Поэтому здесь просят
+   * набрать фамилию: подтверждение должно требовать усилия.
+   */
+  const deleteResult = async (row: any) => {
+    const surname = (row.studentName || "").split(/\s+/)[0] || "";
+    const typed = prompt(
+      `Удалить работу «${row.studentName}» (№ ${row.shortId}) без возможности восстановления?\n\n` +
+      "Исчезнут балл, сертификат и распределение по классу. Ученик увидит «работа не найдена».\n" +
+      "Если нужно лишь пометить работу недействительной — используйте аннулирование.\n\n" +
+      `Для подтверждения введите фамилию ученика (${surname}):`);
+    if (typed === null) return;
+    if (typed.trim().toLowerCase() !== surname.toLowerCase()) {
+      setError("Фамилия не совпала — работа не удалена.");
+      return;
+    }
+    try {
+      const res = await fetch("/api/placement/delete-result", {
+        method: "POST", headers: await authHeaders(),
+        body: JSON.stringify({ tenantId, resultId: row.id }),
+      });
+      const data = await res.json();
+      if (!data.success) { setError(data.error || "Не удалось удалить."); return; }
+      setNotice(`Работа «${data.studentName}» удалена.`);
+      setTimeout(() => setNotice(null), 5000);
+      setOpenStudent(null); void loadResults();
+    } catch { setError("Нет связи с сервером."); }
   };
 
   const publish = async () => {
@@ -636,6 +674,27 @@ export default function PlacementCabinet() {
             <p className="text-xs text-slate-400 mt-3">
               Изменения действуют для экзаменов, начатых после сохранения. У тех, кто уже пишет, вариант не меняется.
             </p>
+
+            {/* Очистка. Отдельным блоком внизу и красным: это не настройка,
+                а необратимое действие, и оно не должно стоять рядом с полями,
+                которые правят каждый день. */}
+            <div className="mt-8 pt-6 border-t border-red-200">
+              <h3 className="font-bold text-red-700 mb-1 text-sm">Очистка данных</h3>
+              <p className="text-xs text-slate-500 mb-4">
+                Удаление необратимо. Настройки экзамена, структура классов и пороги оценок
+                сохраняются в любом случае — стираются только данные потока.
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={() => { setPurge({ scope: "results", grade: 0 }); setPurgeWord(""); }}
+                  className="px-4 py-2.5 rounded-xl font-semibold text-sm border border-red-300 text-red-700 hover:bg-red-50">
+                  Удалить работы учеников
+                </button>
+                <button onClick={() => { setPurge({ scope: "bank", grade: 0 }); setPurgeWord(""); }}
+                  className="px-4 py-2.5 rounded-xl font-semibold text-sm border border-red-300 text-red-700 hover:bg-red-50">
+                  Очистить банк вопросов
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -795,6 +854,103 @@ export default function PlacementCabinet() {
             onChanged={() => void loadResults()} />
         )}
 
+        {/* Подтверждение очистки. Показываем точное число того, что исчезнет,
+            и требуем набрать слово: диалог с одной кнопкой «ОК» здесь мало
+            чем отличается от отсутствия диалога. */}
+        {purge && (() => {
+          const isBank = purge.scope === "bank";
+          const scoped = purge.grade
+            ? (isBank ? bank.filter((q: any) => (q.grades || []).includes(purge.grade))
+                      : results.filter((r: any) => Number(r.grade) === purge.grade))
+            : (isBank ? bank : results);
+          const ready = purgeWord.trim().toUpperCase() === "УДАЛИТЬ" && !purging;
+
+          const run = async () => {
+            setPurging(true); setError(null);
+            try {
+              const res = await fetch("/api/placement/purge", {
+                method: "POST", headers: await authHeaders(),
+                body: JSON.stringify({
+                  tenantId, scope: purge.scope, confirm: purgeWord.trim(),
+                  grade: purge.grade || undefined,
+                }),
+              });
+              const data = await res.json();
+              if (!data.success) { setError(data.error || "Не удалось удалить."); return; }
+              const n = Object.values(data.counts || {}).reduce((a: any, b: any) => a + b, 0);
+              setNotice(`Удалено записей: ${n}.`);
+              setTimeout(() => setNotice(null), 6000);
+              setPurge(null); setPurgeWord("");
+              void loadBank(); void loadResults();
+            } catch {
+              setError("Нет связи с сервером.");
+            } finally { setPurging(false); }
+          };
+
+          return (
+            <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4"
+              onClick={() => !purging && setPurge(null)}>
+              <div onClick={e => e.stopPropagation()}
+                className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+                <h3 className="text-lg font-bold text-slate-900 mb-1">
+                  {isBank ? "Очистить банк вопросов?" : "Удалить работы учеников?"}
+                </h3>
+
+                <div className="rounded-xl bg-red-50 border border-red-200 p-3 my-4 text-sm text-red-900">
+                  Будет удалено безвозвратно:
+                  <div className="text-2xl font-bold tabular-nums mt-1">
+                    {scoped.length} {isBank ? "вопросов" : "работ"}
+                  </div>
+                  {!isBank && (
+                    <div className="text-xs mt-1.5 opacity-90">
+                      Вместе с работами исчезнут сертификаты, распределение по классам
+                      и доступ учеников к результатам по номеру работы.
+                    </div>
+                  )}
+                  {isBank && (
+                    <div className="text-xs mt-1.5 opacity-90">
+                      Пока банк пуст, экзамен сдать нельзя — ученикам покажется
+                      «экзамен недоступен».
+                    </div>
+                  )}
+                </div>
+
+                <label className="block text-sm text-slate-600 mb-1.5">
+                  Что удалять:
+                </label>
+                <select value={purge.grade}
+                  onChange={e => setPurge(p => p ? { ...p, grade: Number(e.target.value) } : p)}
+                  className="w-full border border-slate-300 rounded-xl p-2.5 mb-4 bg-white text-sm">
+                  <option value={0}>Все классы</option>
+                  {GRADES.map(g => <option key={g} value={g}>{g} класс</option>)}
+                </select>
+
+                <label className="block text-sm text-slate-600 mb-1.5">
+                  Введите слово <b className="font-mono">УДАЛИТЬ</b> для подтверждения:
+                </label>
+                <input value={purgeWord} onChange={e => setPurgeWord(e.target.value)}
+                  autoFocus placeholder="УДАЛИТЬ"
+                  className="w-full border border-slate-300 rounded-xl p-3 mb-4 font-mono tracking-wider" />
+
+                <div className="flex gap-2">
+                  <button onClick={() => { setPurge(null); setPurgeWord(""); }} disabled={purging}
+                    className="flex-1 py-3 rounded-xl font-semibold border border-slate-300 text-slate-700 hover:bg-slate-50">
+                    Отмена
+                  </button>
+                  <button onClick={run} disabled={!ready || scoped.length === 0}
+                    className={`flex-1 py-3 rounded-xl font-bold text-white ${
+                      ready && scoped.length > 0 ? "bg-red-600 hover:bg-red-700" : "bg-slate-300"}`}>
+                    {purging ? "Удаляем…" : "Удалить"}
+                  </button>
+                </div>
+                {scoped.length === 0 && (
+                  <p className="text-xs text-slate-400 mt-2 text-center">Удалять нечего — здесь пусто.</p>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {openStudent && (
           <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 overflow-y-auto"
             onClick={() => setOpenStudent(null)}>
@@ -939,6 +1095,13 @@ export default function PlacementCabinet() {
                   <button onClick={() => { setOpenStudent(null); setTab("classes"); }}
                     className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700">
                     {openStudent.assignedClass ? "Изменить класс" : "Назначить класс"}
+                  </button>
+                  {/* Удаление стоит последним и выглядит скромно: в обычной
+                      работе нужнее аннулирование, а не стирание. */}
+                  <button onClick={() => deleteResult(openStudent)}
+                    title="Удалить работу из базы без возможности восстановления"
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-400 font-semibold text-sm hover:border-red-300 hover:text-red-600">
+                    🗑 Удалить
                   </button>
                 </div>
               </div>

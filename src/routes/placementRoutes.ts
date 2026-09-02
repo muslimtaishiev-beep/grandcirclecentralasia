@@ -839,6 +839,147 @@ router.get("/results", requireFirebaseAuth, async (req: any, res: any) => {
 });
 
 /**
+ * Необратимые операции очистки.
+ *
+ * Отдельная проверка прав, строже обычной: удалять работы и вопросы может
+ * только владелец организации или суперадмин. Завуч, который может проверять
+ * работы и менять настройки, стереть поток целиком не должен — цена ошибки
+ * здесь не «поправим», а «эти дети сдавали зря».
+ */
+async function canPurge(user: any, tenantId: string): Promise<boolean> {
+  if (user?.isSuperadmin) return true;
+  if (Array.isArray(user?.tenantAdminIds) && user.tenantAdminIds.includes(tenantId)) return true;
+  const ms = await db().collection("memberships")
+    .where("userId", "==", user?.uid || "")
+    .where("tenantId", "==", tenantId)
+    .where("status", "==", "active")
+    .get();
+  return ms.docs.some(d => /owner|admin|директор/i.test(String(d.data().role || "")));
+}
+
+/** Удаляет документы пачками: Firestore не принимает батч больше 500. */
+async function deleteAll(query: FirebaseFirestore.Query): Promise<number> {
+  let total = 0;
+  while (true) {
+    const snap = await query.limit(400).get();
+    if (snap.empty) break;
+    const batch = db().batch();
+    snap.docs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+    total += snap.size;
+    if (snap.size < 400) break;
+  }
+  return total;
+}
+
+/**
+ * POST /api/placement/purge — очистка результатов или банка вопросов.
+ *
+ * Требует точного слова-подтверждения в теле запроса: случайный запрос,
+ * промах по кнопке или повтор из истории браузера ничего не удалят.
+ *
+ * Что удаляется, зависит от scope:
+ *   results   — работы, сессии, попытки, фото, снимки прокторинга
+ *   bank      — вопросы (настройки экзамена и классы остаются)
+ *
+ * Настройки экзамена, структура классов и пороги оценок не трогаются
+ * никогда: их восстанавливать дольше всего, а к «данным потока» они
+ * не относятся.
+ */
+router.post("/purge", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const { tenantId, scope, confirm, grade } = req.body || {};
+    if (!tenantId) return res.status(400).json({ success: false, error: "Нужен tenantId" });
+    if (!(await canPurge(req.user, tenantId))) {
+      return res.status(403).json({
+        success: false,
+        error: "Очистка доступна только администратору организации.",
+      });
+    }
+    if (!["results", "bank"].includes(String(scope))) {
+      return res.status(400).json({ success: false, error: "Неизвестная область очистки" });
+    }
+    // Слово набирается руками — защита от нажатия не туда.
+    if (String(confirm).trim().toUpperCase() !== "УДАЛИТЬ") {
+      return res.status(400).json({
+        success: false,
+        error: "Для подтверждения введите слово УДАЛИТЬ",
+      });
+    }
+
+    const g = grade ? Number(grade) : null;
+    const counts: Record<string, number> = {};
+
+    if (scope === "results") {
+      const scoped = (col: string) => {
+        let q: FirebaseFirestore.Query = db().collection(col).where("tenantId", "==", tenantId);
+        if (g) q = q.where("grade", "==", g);
+        return q;
+      };
+      counts.results = await deleteAll(scoped("placement_results"));
+      counts.sessions = await deleteAll(scoped("placement_sessions"));
+      // Попытки и фото класса не знают — при точечной чистке их не трогаем,
+      // иначе удалим чужое.
+      if (!g) {
+        counts.attempts = await deleteAll(db().collection("placement_attempts").where("tenantId", "==", tenantId));
+        counts.photos = await deleteAll(db().collection("placement_photos").where("tenantId", "==", tenantId));
+        counts.evidence = await deleteAll(
+          db().collection("proctoring_evidence")
+            .where("tenantId", "==", tenantId).where("source", "==", "placement"));
+      }
+    } else {
+      let q: FirebaseFirestore.Query = db().collection("exam_questions").where("tenantId", "==", tenantId);
+      if (g) q = q.where("grades", "array-contains", g);
+      counts.questions = await deleteAll(q);
+    }
+
+    audit("PLACEMENT_PURGE", tenantId, {
+      actorEmail: req.user?.email || "", scope: String(scope),
+      grade: g || "все", counts: JSON.stringify(counts),
+    });
+    return res.json({ success: true, scope, grade: g, counts });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * DELETE /api/placement/result/:resultId — удалить одну работу.
+ *
+ * Точечное удаление нужно чаще массового: ученик записался дважды, сдал
+ * тестовую работу, попал не в тот класс.
+ */
+router.post("/delete-result", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const { tenantId, resultId } = req.body || {};
+    if (!tenantId || !resultId) return res.status(400).json({ success: false, error: "Bad request" });
+    if (!(await canPurge(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Удаление доступно только администратору организации." });
+    }
+    const ref = db().collection("placement_results").doc(String(resultId));
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ success: false, error: "Работа не найдена" });
+    const data = snap.data()!;
+    if (data.tenantId !== tenantId) {
+      return res.status(403).json({ success: false, error: "Работа другой организации" });
+    }
+
+    const batch = db().batch();
+    batch.delete(ref);
+    batch.delete(db().collection("placement_sessions").doc(String(resultId)));
+    await batch.commit();
+
+    audit("PLACEMENT_RESULT_DELETED", tenantId, {
+      actorEmail: req.user?.email || "",
+      studentName: data.studentName || "", shortId: data.shortId || "",
+    });
+    return res.json({ success: true, studentName: data.studentName || "" });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
  * POST /api/placement/proctoring — отчёт прокторинга по сданной работе.
  *
  * Публичный, как и остальной путь ученика: он анонимен. Пишем только в свою
