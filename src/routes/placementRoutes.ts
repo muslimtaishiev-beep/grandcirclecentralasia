@@ -114,7 +114,8 @@ export interface ClassGroup {
   /** Ключ для распределения: класс + необязательная возрастная группа. */
   key: string;
   grade: number;
-  /** Подпись группы, если параллелей несколько («младшие» / «старшие»). */
+  /** Подпись группы, если параллелей несколько («младшие» / «старшие»).
+   *  Пустая строка означает «группы нет» — undefined Firestore не принимает. */
   stream?: string;
   /** Сколько классов в этой группе: 2 → А и Б. */
   count: number;
@@ -124,17 +125,17 @@ export interface ClassGroup {
 }
 
 const DEFAULT_CLASS_STRUCTURE: ClassGroup[] = [
-  { key: "5", grade: 5, count: 1, firstLetter: 0 },
-  { key: "6", grade: 6, count: 0, firstLetter: 0 },
+  { key: "5", grade: 5, stream: "", count: 1, firstLetter: 0 },
+  { key: "6", grade: 6, stream: "", count: 0, firstLetter: 0 },
   // Две возрастные группы седьмых делят один алфавит: младшие получают
   // 7А-7Б, старшие продолжают с 7В. Иначе в школе оказалось бы два разных
   // «7А», и списки, журналы и сертификаты перестали бы различать их.
   { key: "7-junior", grade: 7, stream: "младшие", count: 2, firstLetter: 0 },
   { key: "7-senior", grade: 7, stream: "старшие", count: 2, firstLetter: 2 },
-  { key: "8", grade: 8, count: 3, firstLetter: 0 },
-  { key: "9", grade: 9, count: 3, firstLetter: 0 },
-  { key: "10", grade: 10, count: 5, firstLetter: 0 },
-  { key: "11", grade: 11, count: 2, firstLetter: 0 },
+  { key: "8", grade: 8, stream: "", count: 3, firstLetter: 0 },
+  { key: "9", grade: 9, stream: "", count: 3, firstLetter: 0 },
+  { key: "10", grade: 10, stream: "", count: 5, firstLetter: 0 },
+  { key: "11", grade: 11, stream: "", count: 2, firstLetter: 0 },
 ];
 
 const CLASS_LETTERS = ["А", "Б", "В", "Г", "Д", "Е", "Ж", "З", "И", "К"];
@@ -163,7 +164,7 @@ export function proposeClassAssignment(
     if (group.count < 1) continue;
     const inGroup = students
       .filter(s => Number(s.grade) === group.grade &&
-        (!group.stream || String(s.stream || "") === group.stream))
+        (!group.stream || String(s.stream || "") === String(group.stream)))
       .sort((a, b) => b.percent - a.percent);
     if (!inGroup.length) continue;
 
@@ -943,13 +944,16 @@ router.put("/classes", requireFirebaseAuth, async (req: any, res: any) => {
     if (!Array.isArray(groups) || !groups.length) {
       return res.status(400).json({ success: false, error: "Опишите хотя бы одну параллель" });
     }
+    // Пустая строка, а не undefined: Firestore отказывается записывать
+    // документ с undefined в поле, и сохранение структуры падало для каждой
+    // параллели без возрастной группы — то есть для большинства.
     const clean = groups.map((g: any) => ({
       key: String(g.key || `${g.grade}${g.stream ? "-" + g.stream : ""}`).slice(0, 40),
       grade: Number(g.grade),
-      stream: g.stream ? String(g.stream).slice(0, 30) : undefined,
+      stream: g.stream ? String(g.stream).slice(0, 30) : "",
       count: Math.max(0, Math.min(10, Number(g.count) || 0)),
       firstLetter: Math.max(0, Math.min(9, Number(g.firstLetter) || 0)),
-    })).filter((g: any) => g.grade >= 5 && g.grade <= 11);
+    })).filter((g: any) => Number.isInteger(g.grade) && g.grade >= 5 && g.grade <= 11);
     if (!clean.length) return res.status(400).json({ success: false, error: "Классы должны быть с 5 по 11" });
 
     await db().collection("exam_blueprints").doc(`classes_${tenantId}`).set({
