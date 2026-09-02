@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { hasFullAccess, migrateLegacyPermissions } from "../shared/permissions.js";
 import admin from "firebase-admin";
 import { sendStaffInviteEmail } from "../../emailService.js";
 
@@ -191,13 +192,26 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
         .where("tenantId", "==", targetTenantId)
         .where("status", "==", "active")
         .get();
-      const ADMIN_ROLES = new Set(['org:owner', 'org:admin', 'owner', 'admin', 'Администратор']);
-      const isTenantAdmin = callerMemberships.docs.some(d => {
-        const role = d.data().role;
-        return ADMIN_ROLES.has(role) || String(role || '').includes('Руководитель');
-      });
-      if (!isTenantAdmin) {
-        return res.status(403).json({ success: false, error: "Access denied. Requires tenant admin/owner role." });
+      // Приглашать сотрудников может тот, кому выдано право «Управление
+      // сотрудниками», а не тот, чья должность называется определённым
+      // словом. Прежняя проверка искала подстроку «Руководитель» — и
+      // «Руководитель смены» мог заводить людей в организацию.
+      let canInvite = false;
+      for (const d of callerMemberships.docs) {
+        const m = d.data();
+        if (hasFullAccess(m.role)) { canInvite = true; break; }
+        const own = new Set<string>(migrateLegacyPermissions(m));
+        if (m.customRoleId) {
+          const r = await db.collection("custom_roles").doc(String(m.customRoleId)).get();
+          if (r.exists) for (const p of (r.data()?.permissions || [])) own.add(String(p));
+        }
+        if (own.has("team:manage")) { canInvite = true; break; }
+      }
+      if (!canInvite) {
+        return res.status(403).json({
+          success: false,
+          error: "Нужно право «Управление сотрудниками», чтобы приглашать людей в организацию.",
+        });
       }
     }
 

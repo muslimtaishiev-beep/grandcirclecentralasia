@@ -1791,7 +1791,10 @@ app.post("/api/admin/login", async (req, res) => {
         const decodedToken = await admin.auth().verifyIdToken(idToken);
         email = decodedToken.email || "";
         uid = decodedToken.uid;
-        isSuperAdmin = decodedToken.admin === true || Boolean(email.endsWith("@studyfreeforum.com"));
+        // Домен почты больше не даёт прав: сотрудник с рабочим адресом
+        // становился суперадминистратором платформы. Только явный claim или
+        // запись в users/superadmins ниже.
+        isSuperAdmin = decodedToken.admin === true;
         
         if (!isSuperAdmin) {
           const userDoc = await admin.firestore().collection("users").doc(uid).get();
@@ -1843,7 +1846,7 @@ app.get("/api/admin/check", async (req, res) => {
         const decoded = await admin.auth().verifyIdToken(token);
         email = decoded.email || "";
         uid = decoded.uid;
-        isSuperAdmin = decoded.admin === true || Boolean(email.endsWith("@studyfreeforum.com"));
+        isSuperAdmin = decoded.admin === true;
         
         if (!isSuperAdmin) {
           const userDoc = await admin.firestore().collection("users").doc(uid).get();

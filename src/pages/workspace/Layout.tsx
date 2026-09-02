@@ -267,7 +267,7 @@ export default function WorkspaceLayout() {
           одобрении заявки) и только владельцу/админу — сотрудник не должен
           решать за компанию, как называются её экраны. */}
       {activeTenant?.needsWorkspaceSetup && !setupDone &&
-        /owner|admin|Администратор|Владелец/i.test(String(activeTenant.role || "")) && (
+        (granted.has("settings:manage") || granted.has("team:manage")) && (
         <QuickSetupWizard tenant={activeTenant}
           onDone={() => { setSetupDone(true); fetchTenants(); }} />
       )}

@@ -131,10 +131,14 @@ router.get("/my", requireFirebaseAuth, async (req: any, res: any) => {
 // Middleware to check if user is an admin of the tenant
 const requireTenantAdmin = async (req: any, res: any, next: any) => {
   try {
-    const email = req.user?.email || "";
-    // SuperAdmin Universal Override
-    if (email.endsWith("@studyfreeforum.com") || req.user?.uid === "superadmin") {
-      req.membership = { role: "org:owner", permissions: { canManageOrganization: true, canManageUsers: true } };
+    // Суперадмин — только по документу в superadmins, не по домену почты.
+    //
+    // Раньше здесь стоял пропуск для ЛЮБОГО адреса @studyfreeforum.com: завёл
+    // сотрудника с рабочей почтой — и он администратор в каждой организации
+    // платформы, включая чужие. Плюс проверка uid === "superadmin" — такого
+    // пользователя не существует, это остаток отладки.
+    if (req.user?.isSuperadmin === true) {
+      req.membership = { role: "superadmin" };
       return next();
     }
 
@@ -154,8 +158,30 @@ const requireTenantAdmin = async (req: any, res: any, next: any) => {
     }
 
     const membership = membershipsSnapshot.docs[0].data();
-    if (membership.role !== "org:owner" && membership.role !== "org:admin" && !membership.role?.includes("Руководитель")) {
-      return res.status(403).json({ error: "Access denied. Requires org:admin role." });
+
+    // Доступ решают ПРАВА, а не название должности.
+    //
+    // Раньше здесь стояла проверка строки роли с подстрокой «Руководитель» —
+    // и выданная владельцем галочка «Управление сотрудниками» ничего не
+    // значила: сервер смотрел на название должности и отказывал. Заодно
+    // должность «Руководитель смены» получала право менять роли всей
+    // компании — из-за поиска подстроки.
+    //
+    // Системные роли (владелец, администратор) сохраняют полный доступ:
+    // иначе владелец мог бы снять галочку сам с себя и запереть организацию.
+    let allowed = hasFullAccess(membership.role);
+    if (!allowed) {
+      const own = new Set<string>(migrateLegacyPermissions(membership));
+      if (membership.customRoleId) {
+        const roleDoc = await db.collection("custom_roles").doc(String(membership.customRoleId)).get();
+        if (roleDoc.exists) for (const p of (roleDoc.data()?.permissions || [])) own.add(String(p));
+      }
+      allowed = own.has("team:manage") || own.has("settings:manage");
+    }
+    if (!allowed) {
+      return res.status(403).json({
+        error: "Нет прав на управление организацией. Нужно право «Управление сотрудниками» или «Настройки организации».",
+      });
     }
 
     req.membership = membership;

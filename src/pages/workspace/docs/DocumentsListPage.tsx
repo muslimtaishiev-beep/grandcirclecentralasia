@@ -12,7 +12,11 @@ export default function DocumentsListPage() {
   const [docs, setDocs] = useState<WorkspaceDocument[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const isFullAdmin = activeTenant?.role === 'owner' || activeTenant?.role === 'org:owner' || activeTenant?.role === 'superadmin' || activeTenant?.role === 'admin';
+  // Доступ ко всем документам — по праву «Управление сотрудниками»
+  // (кто ведёт команду, тот видит её бумаги), а не по названию роли.
+  const isFullAdmin = Array.isArray(activeTenant?.effectivePermissions)
+    ? activeTenant.effectivePermissions.includes('team:manage')
+    : ['owner', 'org:owner', 'superadmin', 'admin', 'org:admin'].includes(String(activeTenant?.role));
 
   useEffect(() => {
     if (!activeTenant?.id || !user?.uid) return;

@@ -6,6 +6,7 @@ import {
   ACTIVITY_PRESETS, DEFAULT_WORKSPACE_CONFIG, resolveWorkspaceConfig,
   type WorkspaceConfig,
 } from "../../../shared/workspaceConfig";
+import { resolvePermissions } from "../../../shared/permissions";
 
 /**
  * Настройки воркспейса — отдельный экран, полная версия быстрой настройки.
@@ -39,7 +40,19 @@ export default function WorkspaceSetupPage() {
     });
   }, [tenant?.id, tenant?.workspaceConfig]);
 
-  const canEdit = /owner|admin|Администратор|Владелец|Руководитель/i.test(String(tenant?.role || ""));
+  // Право, а не название должности: владелец может выдать настройку
+  // организации кому угодно, и это должно работать.
+  const canEdit = (() => {
+    const granted = Array.isArray(tenant?.effectivePermissions)
+      ? new Set(tenant.effectivePermissions)
+      : resolvePermissions({
+          role: tenant?.role, permissions: tenant?.permissions,
+          customPermissions: tenant?.customPermissions,
+          rolePermissions: tenant?.customRole?.permissions,
+          disabledModules: tenant?.disabledModules,
+        });
+    return granted.has("settings:manage" as any) || granted.has("team:manage" as any);
+  })();
   const resolved = resolveWorkspaceConfig(tenant?.workspaceConfig);
 
   const set = (patch: Partial<WorkspaceConfig>) => setCfg(p => ({ ...p, ...patch }));
