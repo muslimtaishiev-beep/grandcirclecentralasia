@@ -378,8 +378,6 @@ export interface CustomForm {
   active: boolean;
   /** Режим: приём заявок (по умолчанию) или билеты на событие. */
   mode?: "application" | "ticket";
-  /** Код проверяющего на входе (билетный режим). Наружу не отдаётся. */
-  scannerCode?: string;
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }

@@ -24,16 +24,6 @@ export default function QrTracker() {
   const [submission, setSubmission] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Режим проверки на входе (билеты) ────────────────────────────────────
-  // Волонтёр сканирует QR гостя — открывается эта же страница. Внизу есть
-  // незаметная ссылка «Режим проверки»: ввод кода сканера превращает трекер
-  // в панель контролёра. Отдельной страницы нет намеренно: один QR, один URL.
-  const [scanMode, setScanMode] = useState(false);
-  const [scanCode, setScanCode] = useState("");
-  const [guest, setGuest] = useState<any | null>(null);
-  const [scanError, setScanError] = useState<string | null>(null);
-  const [scanBusy, setScanBusy] = useState(false);
-  const [checkinResult, setCheckinResult] = useState<{ ok?: boolean; already?: boolean; at?: any } | null>(null);
 
   useEffect(() => {
     if (!qrToken) return;
@@ -62,58 +52,6 @@ export default function QrTracker() {
     fetchByQr();
   }, [qrToken]);
 
-  // Код сканера помнится на сессию: волонтёр вводит его один раз за смену,
-  // дальше каждый отсканированный билет сразу показывает гостя.
-  useEffect(() => {
-    if (!submission || submission.mode !== "ticket") return;
-    try {
-      const saved = sessionStorage.getItem(`scanner_${submission.formId}`);
-      if (saved) { setScanCode(saved); setScanMode(true); void verifyGuest(saved); }
-    } catch { /* приватный режим */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [submission?.formId]);
-
-  const verifyGuest = async (code: string) => {
-    if (!qrToken || !code.trim()) return;
-    setScanBusy(true); setScanError(null); setGuest(null); setCheckinResult(null);
-    try {
-      const res = await fetch("/api/forms/checkin", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: qrToken, scannerCode: code.trim() }),
-      });
-      const j = await res.json();
-      if (!j.success) {
-        setScanError(j.error || "Не удалось проверить билет");
-        // Неверный код не запоминаем — иначе волонтёр залипнет на ошибке.
-        try { sessionStorage.removeItem(`scanner_${submission?.formId}`); } catch {}
-        return;
-      }
-      setGuest(j.guest);
-      try { sessionStorage.setItem(`scanner_${submission?.formId}`, code.trim()); } catch {}
-    } catch {
-      setScanError("Нет связи с сервером");
-    } finally { setScanBusy(false); }
-  };
-
-  const confirmEntry = async () => {
-    if (!qrToken) return;
-    setScanBusy(true); setScanError(null);
-    try {
-      const res = await fetch("/api/forms/checkin", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: qrToken, scannerCode: scanCode.trim(), confirm: true }),
-      });
-      const j = await res.json();
-      if (res.status === 409 && j.already) {
-        setCheckinResult({ already: true, at: j.checkedInAt });
-        return;
-      }
-      if (!j.success) { setScanError(j.error || "Не удалось отметить вход"); return; }
-      setCheckinResult({ ok: true, at: j.checkedInAt });
-    } catch {
-      setScanError("Нет связи с сервером");
-    } finally { setScanBusy(false); }
-  };
 
   // Подпись берём из общего модуля статусов (сервер шлёт statusLabel) —
   // раньше здесь жила третья независимая копия подписей, и статус
@@ -241,83 +179,6 @@ export default function QrTracker() {
           </div>
         )}
 
-        {/* Режим проверки на входе — только для билетов. Настройка кода — в
-            конструкторе формы; отдельной страницы сканера нет намеренно. */}
-        {submission?.mode === "ticket" && (
-          <div className="pt-2 border-t border-slate-800">
-            {!scanMode ? (
-              <button onClick={() => setScanMode(true)}
-                className="w-full text-center text-[11px] text-slate-600 hover:text-slate-400 font-mono py-1">
-                Режим проверки
-              </button>
-            ) : (
-              <div className="space-y-3 pt-2">
-                <div className="text-[10px] uppercase font-mono font-bold text-slate-400 text-center">
-                  Проверка билета на входе
-                </div>
-
-                {!guest && (
-                  <div className="flex gap-2">
-                    <input value={scanCode} onChange={e => setScanCode(e.target.value.toUpperCase())}
-                      placeholder="Код проверяющего"
-                      className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm font-mono tracking-wider text-white" />
-                    <button onClick={() => void verifyGuest(scanCode)} disabled={scanBusy || !scanCode.trim()}
-                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-40">
-                      {scanBusy ? "…" : "Проверить"}
-                    </button>
-                  </div>
-                )}
-
-                {scanError && (
-                  <div className="text-xs text-red-400 text-center font-bold">{scanError}</div>
-                )}
-
-                {guest && !checkinResult && (
-                  <div className="bg-slate-950 border border-slate-700 rounded-2xl p-4 space-y-3">
-                    <div className="text-center">
-                      <div className="text-lg font-extrabold text-white">{guest.name}</div>
-                      <div className={`text-xs font-bold ${guest.canEnter ? "text-emerald-400" : "text-red-400"}`}>
-                        {guest.statusLabel}
-                      </div>
-                    </div>
-                    {guest.docPhoto && (
-                      <img src={guest.docPhoto} alt="Документ гостя"
-                        className="w-full max-h-48 object-contain rounded-xl bg-black/40" />
-                    )}
-                    {guest.alreadyIn ? (
-                      <div className="bg-red-500/15 border-2 border-red-500 rounded-xl p-3 text-center">
-                        <div className="text-red-400 font-extrabold text-base">УЖЕ ВХОДИЛ</div>
-                        <div className="text-red-300 text-xs font-mono">в {fmtTime(guest.checkedInAt)}</div>
-                      </div>
-                    ) : guest.canEnter ? (
-                      <button onClick={() => void confirmEntry()} disabled={scanBusy}
-                        className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-base disabled:opacity-40">
-                        {scanBusy ? "Отмечаем…" : "✓ Отметить вход"}
-                      </button>
-                    ) : (
-                      <div className="bg-red-500/15 border border-red-500/40 rounded-xl p-3 text-center text-red-400 text-sm font-bold">
-                        Билет не активен — не пускать
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {checkinResult?.ok && (
-                  <div className="bg-emerald-500/15 border-2 border-emerald-500 rounded-xl p-4 text-center">
-                    <div className="text-emerald-400 font-extrabold text-lg">✓ ВХОД ОТМЕЧЕН</div>
-                    <div className="text-emerald-300 text-xs font-mono">{fmtTime(checkinResult.at)}</div>
-                  </div>
-                )}
-                {checkinResult?.already && (
-                  <div className="bg-red-500/15 border-2 border-red-500 rounded-xl p-4 text-center">
-                    <div className="text-red-400 font-extrabold text-lg">✗ УЖЕ ВХОДИЛ</div>
-                    <div className="text-red-300 text-xs font-mono">в {fmtTime(checkinResult.at)} — второй раз не пускать</div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Footer */}
         <div className="pt-2 text-center text-[11px] text-slate-500 font-mono border-t border-slate-800">

@@ -46,7 +46,6 @@ export default function FormBuilder() {
   // Режим формы: обычная заявка или билет на событие. От него зависят набор
   // статусов и появление QR-билета у гостя после одобрения.
   const [formMode, setFormMode] = useState<FormMode>('application');
-  const [scannerCode, setScannerCode] = useState('');
   // Статистика по формам: сколько заявок пришло, в каких они статусах.
   const [stats, setStats] = useState<any | null>(null);
   const [qrTheme, setQrTheme] = useState<QrTheme>(QR_THEMES[0]);
@@ -155,9 +154,6 @@ export default function FormBuilder() {
         fields,
         qrTrackingEnabled,
         mode: formMode,
-        // Код сканера хранится на документе формы; наружу его не отдаёт ни
-        // один публичный эндпоинт — только сверка на сервере при чек-ине.
-        scannerCode: formMode === 'ticket' ? scannerCode.trim() : '',
         active: true,
         updatedAt: serverTimestamp(),
         ...(!editingFormId && { createdAt: serverTimestamp() })
@@ -232,7 +228,6 @@ export default function FormBuilder() {
               setFormTitle('');
               setFormDesc('');
               setFormMode('application');
-              setScannerCode('');
               setQrTrackingEnabled(true);
               setFields([
                 { id: `field_${Date.now()}`, label: 'Фамилия и имя', type: 'text', required: true, placeholder: '' },
@@ -356,7 +351,6 @@ export default function FormBuilder() {
                         setFormDesc(form.description || '');
                         setFields(Array.isArray(form.fields) && form.fields.length ? form.fields : []);
                         setFormMode(form.mode === 'ticket' ? 'ticket' : 'application');
-                        setScannerCode(form.scannerCode || '');
                         setQrTrackingEnabled(form.qrTrackingEnabled !== false);
                         setIsModalOpen(true);
                       }}
@@ -515,30 +509,13 @@ export default function FormBuilder() {
                     ))}
                   </div>
                   {formMode === 'ticket' && (
-                    <div className="space-y-1.5 pt-1">
-                      <p className="text-[11px] text-[var(--text-muted)]">
-                        QR-билет появится у гостя на странице отслеживания, как только заявку одобрят.
-                        На входе билет проверяют по коду ниже: волонтёр сканирует QR гостя, вводит код
-                        и отмечает вход. Повторный вход по тому же билету блокируется.
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={scannerCode}
-                          onChange={(e) => setScannerCode(e.target.value.toUpperCase())}
-                          placeholder="Код волонтёра для проверки на входе"
-                          className="flex-1 px-3 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg text-xs font-mono tracking-wider"
-                        />
-                        <button type="button"
-                          onClick={() => {
-                            const AB = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-                            setScannerCode(Array.from({ length: 6 }, () => AB[Math.floor(Math.random() * AB.length)]).join(''));
-                          }}
-                          className="px-3 py-1.5 rounded-lg border border-[var(--border-color)] text-xs font-bold text-emerald-500 hover:bg-emerald-500/10">
-                          Сгенерировать
-                        </button>
-                      </div>
-                    </div>
+                    <p className="text-[11px] text-[var(--text-muted)] pt-1">
+                      QR-билет появится у гостя на странице отслеживания, как только заявку
+                      одобрят. На входе билеты проверяют сотрудники через «Проверку билетов»
+                      в меню воркспейса: камера сканирует QR гостя, вход отмечается
+                      автоматически, повторный вход блокируется. Волонтёров добавьте как
+                      сотрудников организации.
+                    </p>
                   )}
                   <label className="flex items-center gap-2 text-[11px] text-[var(--text-muted)] cursor-pointer pt-1">
                     <input type="checkbox" checked={qrTrackingEnabled} onChange={(e) => setQrTrackingEnabled(e.target.checked)} />

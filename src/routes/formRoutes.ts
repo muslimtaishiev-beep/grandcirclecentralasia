@@ -243,74 +243,58 @@ router.get("/track/:token", async (req: any, res: any) => {
 });
 
 /**
- * POST /api/forms/checkin — проверка билета на входе.
+ * POST /api/forms/checkin — сканер билетов на входе.
  *
- * Публичный: волонтёры — временные люди без аккаунтов, их пропуск — код
- * сканера, заданный в настройках формы. Волонтёр сканирует QR гостя (это
- * обычная ссылка /track/:token), вводит код один раз за смену и дальше
- * только подтверждает вход.
+ * Волонтёр — сотрудник организации со своим аккаунтом: он входит в воркспейс,
+ * открывает «Проверку билетов», наводит камеру на QR гостя. Один скан — один
+ * запрос: сервер сам решает судьбу билета и сразу отмечает вход, чтобы у
+ * двери не было двух тапов на гостя.
  *
- * Два шага: без confirm — показать гостя (имя, статус, фото документа для
- * сверки), с confirm — отметить вход. Отметка в ТРАНЗАКЦИИ: два волонтёра,
- * отсканировавшие один билет одновременно, не должны оба увидеть «проходите» —
- * билет, переснятый скриншотом и посланный другу, обязан сгореть у второго.
+ * Отметка в ТРАНЗАКЦИИ: два волонтёра, отсканировавшие один билет
+ * одновременно, не должны оба увидеть зелёную рамку — билет, переснятый
+ * скриншотом и посланный другу, обязан сгореть у второго.
+ *
+ * Ответ всегда success:true с полем result — сканеру нужно РИСОВАТЬ исход
+ * (зелёная/красная рамка), а не разбирать HTTP-коды:
+ *   ok        — пропустить, вход отмечен только что
+ *   already   — УЖЕ ВХОДИЛ (checkedInAt), не пускать
+ *   inactive  — билет не активен (не одобрен/не оплачен/отклонён)
+ *   notticket — QR не от билетной формы
  */
-router.post("/checkin", async (req: any, res: any) => {
+router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
   try {
-    const { token, scannerCode, confirm } = req.body || {};
-    if (!token || !scannerCode) {
-      return res.status(400).json({ success: false, error: "Нужны код заявки и код проверяющего" });
-    }
+    const { token } = req.body || {};
+    if (!token) return res.status(400).json({ success: false, error: "Нужен код билета" });
 
-    const byToken = await db().collection(SUBS).where("qrToken", "==", String(token).trim()).limit(1).get();
+    const byToken = await db().collection(SUBS).where("qrToken", "==", String(token).trim().toUpperCase()).limit(1).get();
     if (byToken.empty) {
       return res.status(404).json({ success: false, error: "Билет не найден" });
     }
     const subRef = byToken.docs[0].ref;
     const sub = byToken.docs[0].data();
 
+    // Проверять билеты может любой действующий сотрудник ТОЙ ЖЕ организации:
+    // волонтёров заводят как членов, а чужой организации ничего не откроется.
+    if (!(await canManageForms(req.user, String(sub.tenantId || "")))) {
+      return res.status(403).json({ success: false, error: "Нет доступа к билетам этой организации" });
+    }
+
     const formSnap = await db().collection(FORMS).doc(String(sub.formId || "")).get();
     const form = formSnap.exists ? formSnap.data()! : null;
+    const guestName = sub.applicantName || "Без имени";
     if (!form || formMode(form) !== "ticket") {
-      return res.status(400).json({ success: false, error: "Эта заявка — не билет" });
-    }
-    // Код сравнивается без регистра и пробелов: его диктуют голосом в шумном
-    // холле. Пустой код в настройках = проверка выключена совсем.
-    const norm = (v: unknown) => String(v ?? "").replace(/\s+/g, "").toUpperCase();
-    if (!form.scannerCode || norm(scannerCode) !== norm(form.scannerCode)) {
-      return res.status(403).json({ success: false, error: "Неверный код проверяющего" });
+      return res.json({ success: true, result: "notticket", guest: { name: guestName } });
     }
 
-    const status: Status = isFormStatus(sub.status) ? sub.status : "new";
-
-    if (!confirm) {
-      // Шаг сверки: волонтёр видит, кого пускает. Фото документа — значение
-      // первого файлового поля; здесь оно уместно, потому что доступ уже
-      // подтверждён кодом проверяющего.
-      const fileField = (Array.isArray(form.fields) ? form.fields : []).find((f: any) => f.type === "file");
-      return res.json({
-        success: true,
-        guest: {
-          name: sub.applicantName || "Без имени",
-          status, statusLabel: STATUS_LABEL[status],
-          canEnter: TICKET_ACTIVE.includes(status) && status !== "checked_in",
-          alreadyIn: status === "checked_in",
-          checkedInAt: sub.checkedInAt || null,
-          docPhoto: fileField ? (sub.data?.[fileField.id] || null) : null,
-        },
-      });
-    }
-
-    // Подтверждение входа — атомарно.
-    const result = await db().runTransaction(async tx => {
+    const outcome = await db().runTransaction(async tx => {
       const fresh = await tx.get(subRef);
       const cur = fresh.data()!;
       const curStatus: Status = isFormStatus(cur.status) ? cur.status : "new";
       if (curStatus === "checked_in") {
-        return { already: true as const, checkedInAt: cur.checkedInAt || null };
+        return { result: "already" as const, status: curStatus, checkedInAt: cur.checkedInAt || null };
       }
       if (!TICKET_ACTIVE.includes(curStatus)) {
-        return { inactive: true as const, status: curStatus };
+        return { result: "inactive" as const, status: curStatus };
       }
       const now = admin.firestore.Timestamp.now();
       tx.update(subRef, {
@@ -318,27 +302,24 @@ router.post("/checkin", async (req: any, res: any) => {
         checkedInAt: now,
         updatedAt: now,
         history: admin.firestore.FieldValue.arrayUnion({
-          status: "checked_in", at: now, by: "scanner", note: "",
+          status: "checked_in", at: now,
+          by: req.user?.email || req.user?.uid || "scanner", note: "",
         }),
       });
-      return { ok: true as const, checkedInAt: now };
+      return { result: "ok" as const, status: "checked_in" as Status, checkedInAt: now };
     });
 
-    if ("already" in result) {
-      // 409 — сигнал волонтёру: билет уже использован, второй раз не пускать.
-      return res.status(409).json({
-        success: false, already: true,
-        checkedInAt: result.checkedInAt,
-        error: "По этому билету уже входили",
-      });
-    }
-    if ("inactive" in result) {
-      return res.status(403).json({
-        success: false,
-        error: `Билет не активен: ${STATUS_LABEL[result.status]}`,
-      });
-    }
-    return res.json({ success: true, checkedInAt: result.checkedInAt });
+    return res.json({
+      success: true,
+      result: outcome.result,
+      guest: {
+        name: guestName,
+        status: outcome.status,
+        statusLabel: STATUS_LABEL[outcome.status],
+        checkedInAt: "checkedInAt" in outcome ? outcome.checkedInAt : null,
+      },
+      formTitle: sub.formTitle || "",
+    });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }

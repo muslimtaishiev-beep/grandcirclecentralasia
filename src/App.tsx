@@ -47,6 +47,7 @@ const OrgStructure = lazy(() => import("./pages/workspace/settings/OrgStructure"
 const DocumentTemplates = lazy(() => import("./pages/workspace/settings/DocumentTemplates"));
 const WorkspaceBuilder = lazy(() => import("./pages/workspace/Builder"));
 const FormBuilder = lazy(() => import("./pages/workspace/builder/FormBuilder"));
+const TicketScanner = lazy(() => import("./pages/workspace/tickets/TicketScanner"));
 const FunctionStudio = lazy(() => import("./pages/workspace/functions/FunctionStudio"));
 const QrTracker = lazy(() => import("./pages/public/QrTracker"));
 const PublicForm = lazy(() => import("./pages/public/PublicForm"));
@@ -286,6 +287,7 @@ export default function App() {
             <Route path=":orgId/settings/templates" element={<GracefulErrorBoundary fallbackTitle="Ошибка Шаблонов"><DocumentTemplates /></GracefulErrorBoundary>} />
             <Route path=":orgId/builder" element={<GracefulErrorBoundary fallbackTitle="Ошибка Конструктора"><WorkspaceBuilder /></GracefulErrorBoundary>} />
             <Route path=":orgId/builder/forms" element={<GracefulErrorBoundary fallbackTitle="Ошибка Конструктора Заявок"><FormBuilder /></GracefulErrorBoundary>} />
+            <Route path=":orgId/tickets" element={<GracefulErrorBoundary fallbackTitle="Ошибка Сканера Билетов"><TicketScanner /></GracefulErrorBoundary>} />
             <Route path=":orgId/functions/studio" element={<GracefulErrorBoundary fallbackTitle="Ошибка Визуального Конструктора"><FunctionStudio /></GracefulErrorBoundary>} />
             <Route path=":orgId/sites" element={<GracefulErrorBoundary fallbackTitle="Ошибка Конструктора Сайтов"><SiteBuilder /></GracefulErrorBoundary>} />
             <Route path=":orgId/billing" element={<GracefulErrorBoundary fallbackTitle="Ошибка Биллинга"><SubscriptionBillingDashboard /></GracefulErrorBoundary>} />

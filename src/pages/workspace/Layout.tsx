@@ -32,7 +32,8 @@ import {
   FileCheck2,
   Sliders,
   Settings2,
-  GraduationCap
+  GraduationCap,
+  QrCode
 } from "lucide-react";
 import GlobalNotifications from "../../components/workspace/GlobalNotifications";
 import SpotlightCommandBar from "../../components/common/SpotlightCommandBar";
@@ -154,6 +155,7 @@ export default function WorkspaceLayout() {
     (hasPerm('edu:payroll') || hasPerm('edu:schedule')) && { name: "Зарплаты", path: `/workspace/${activeTenant.id}/edu/payroll`, icon: DollarSign },
     { name: "Chat", path: `/workspace/${activeTenant.id}/chat`, icon: MessageSquare },
     { name: "Tasks", path: `/workspace/${activeTenant.id}/tasks`, icon: CheckSquare },
+    { name: "Проверка билетов", path: `/workspace/${activeTenant.id}/tickets`, icon: QrCode },
     (hasPerm('crm:read') || hasPerm('crm:manage')) && { name: "CRM", path: `/workspace/${activeTenant.id}/crm/contacts`, icon: Briefcase },
     (hasPerm('tests:read') || hasPerm('tests:manage')) && { name: "Тесты", path: `/workspace/${activeTenant.id}/tests`, icon: FileQuestion },
     (hasPerm('tests:review') || hasPerm('tests:manage')) && { name: "Проверка & Прокторинг", path: `/workspace/${activeTenant.id}/tests/manage`, icon: ShieldCheck },
