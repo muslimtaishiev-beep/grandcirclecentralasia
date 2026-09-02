@@ -155,13 +155,14 @@ export default function PlacementExam() {
 
   const openPhotoStep = async () => {
     setPhotoError(null);
-    // PIN проверяется ДО съёмки: сфотографироваться, чтобы затем услышать
-    // «неверный код», — обидно и бессмысленно.
+    // PIN и наличие вопросов проверяются ДО съёмки: сфотографироваться,
+    // чтобы затем услышать «неверный код» или «экзамена нет», — обидно и
+    // бессмысленно.
     setBusy(true);
     try {
       const res = await fetch("/api/placement/check-pin", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId, enteredPin }),
+        body: JSON.stringify({ tenantId, enteredPin, grade: Number(grade) }),
       });
       const data = await res.json();
       if (!data.success) { setError(data.error || "Не удалось проверить PIN."); return; }

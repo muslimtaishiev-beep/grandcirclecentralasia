@@ -126,7 +126,7 @@ export interface ClassGroup {
 
 const DEFAULT_CLASS_STRUCTURE: ClassGroup[] = [
   { key: "5", grade: 5, stream: "", count: 1, firstLetter: 0 },
-  { key: "6", grade: 6, stream: "", count: 0, firstLetter: 0 },
+  { key: "6", grade: 6, stream: "", count: 1, firstLetter: 0 },
   // Две возрастные группы седьмых делят один алфавит: младшие получают
   // 7А-7Б, старшие продолжают с 7В. Иначе в школе оказалось бы два разных
   // «7А», и списки, журналы и сертификаты перестали бы различать их.
@@ -465,7 +465,14 @@ router.post("/start", async (req: any, res: any) => {
       const { ids, shortage } = assembleSection(subjectPool, s);
       if (shortage > 0) shortages.push(`${s.title}: не хватило ${shortage} вопр.`);
       if (ids.length === 0) {
-        return res.status(503).json({ success: false, error: `В банке нет вопросов для секции «${s.title}» (${g} класс). Обратитесь к завучу.` });
+        // Банк пуст или не покрывает этот класс. Ученик в этом не виноват и
+        // ничего сделать не может, поэтому не показываем ему внутреннюю
+        // причину — только что экзамен сейчас недоступен.
+        console.error(`[placement] пустая секция «${s.title}» для ${g} класса, тенант ${tenantId}`);
+        return res.status(503).json({
+          success: false, unavailable: true,
+          error: "К сожалению, экзамен сейчас недоступен. Обратитесь к организатору.",
+        });
       }
       sections.push({ key: s.key, title: s.title, minutes: s.minutes, questionIds: ids, deadline: null, finished: false });
     }
@@ -513,13 +520,33 @@ router.post("/start", async (req: any, res: any) => {
 // отказе только после съёмки. Ответ намеренно скупой — ни кода, ни подсказок.
 router.post("/check-pin", async (req: any, res: any) => {
   try {
-    const { tenantId, enteredPin } = req.body || {};
+    const { tenantId, enteredPin, grade } = req.body || {};
     if (!tenantId) return res.status(400).json({ success: false, error: "Bad request" });
     const tenantDoc = await db().collection("tenants").doc(String(tenantId)).get();
     if (!tenantDoc.exists) return res.status(404).json({ success: false, error: "Организация не найдена" });
     if (!pinAccepted(enteredPin, String(tenantId))) {
       return res.status(403).json({ success: false, error: "Неверный PIN-код. Узнайте актуальный PIN у завуча." });
     }
+
+    // Проверяем банк ЗДЕСЬ, до анкеты и фотографии. Ученик, который заполнил
+    // все поля и отснялся, чтобы упереться в «экзамена нет», уйдёт злым — а
+    // причина видна ещё на входе. Один count() стоит одно чтение.
+    const g = Number(grade);
+    if (g >= 5 && g <= 11) {
+      const bank = await db().collection("exam_questions")
+        .where("tenantId", "==", String(tenantId))
+        .where("active", "==", true)
+        .where("grades", "array-contains", g)
+        .count().get();
+      if (bank.data().count === 0) {
+        console.error(`[placement] пустой банк для ${g} класса, тенант ${tenantId}`);
+        return res.status(503).json({
+          success: false, unavailable: true,
+          error: "К сожалению, экзамен сейчас недоступен. Обратитесь к организатору.",
+        });
+      }
+    }
+
     return res.json({ success: true });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
