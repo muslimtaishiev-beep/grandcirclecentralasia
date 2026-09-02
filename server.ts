@@ -159,12 +159,14 @@ import authRoutes from "./src/routes/authRoutes.js";
 import tenantRoutes from "./src/routes/tenantRoutes.js";
 import superAdminRoutes from "./src/routes/superAdminRoutes.js";
 import placementRoutes from "./src/routes/placementRoutes.js";
+import formRoutes from "./src/routes/formRoutes.js";
 import { sendTestResultEmail } from "./emailService.js";
 
 app.use("/api/auth", authRoutes);
 app.use("/api/tenants", tenantRoutes);
 app.use("/api/superadmin", superAdminRoutes);
 app.use("/api/placement", placementRoutes);
+app.use("/api/forms", formRoutes);
 
 let memoryDbStore: any = null;
 

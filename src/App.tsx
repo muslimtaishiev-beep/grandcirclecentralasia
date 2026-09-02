@@ -49,6 +49,7 @@ const WorkspaceBuilder = lazy(() => import("./pages/workspace/Builder"));
 const FormBuilder = lazy(() => import("./pages/workspace/builder/FormBuilder"));
 const FunctionStudio = lazy(() => import("./pages/workspace/functions/FunctionStudio"));
 const QrTracker = lazy(() => import("./pages/public/QrTracker"));
+const PublicForm = lazy(() => import("./pages/public/PublicForm"));
 const DocumentsListPage = lazy(() => import("./pages/workspace/docs/DocumentsListPage"));
 const DocumentEditorPage = lazy(() => import("./pages/workspace/docs/DocumentEditorPage"));
 const SheetsListPage = lazy(() => import("./pages/workspace/sheets/SheetsListPage"));
@@ -192,7 +193,7 @@ export default function App() {
       <GlobalTooltip />
       
       {/* Header is global */}
-      {!isAdminPath && !currentPath.startsWith("/super-admin") && !currentPath.startsWith("/workspace") && !currentPath.match(/^\/[^\/]+\/(admission|test|placement|results)/) && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && !currentPath.startsWith("/sandbox") && (
+      {!isAdminPath && !currentPath.startsWith("/super-admin") && !currentPath.startsWith("/workspace") && !currentPath.match(/^\/[^\/]+\/(admission|test|placement|results)/) && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && !currentPath.startsWith("/sandbox") && !currentPath.startsWith("/form/") && !currentPath.startsWith("/track/") && (
         <Header 
           lang={lang} 
           setLang={setLang} 
@@ -272,6 +273,7 @@ export default function App() {
           <Route path="/site/:subdomain/:slug" element={<GracefulErrorBoundary fallbackTitle="Ошибка Сайта"><PublicPageEngine /></GracefulErrorBoundary>} />
           <Route path="/p/:slug" element={<GracefulErrorBoundary fallbackTitle="Ошибка Сайта"><PublicPageEngine /></GracefulErrorBoundary>} />
           <Route path="/track/:qrToken" element={<GracefulErrorBoundary fallbackTitle="Ошибка QR-Трекера"><QrTracker /></GracefulErrorBoundary>} />
+          <Route path="/form/:formId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Формы Заявки"><PublicForm /></GracefulErrorBoundary>} />
           
           <Route path="/workspace" element={<ProtectedRoute><WorkspaceLayout /></ProtectedRoute>}>
             <Route index element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />

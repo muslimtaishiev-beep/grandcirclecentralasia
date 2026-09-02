@@ -21,7 +21,8 @@ import {
 } from 'lucide-react';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
-import { QRCodeCanvas } from 'qrcode.react';
+import FancyQr, { QR_THEMES, QrThemePicker, downloadQr, type QrTheme } from '../../../components/forms/FancyQr';
+import { auth } from '../../../lib/firebase';
 
 export default function FormBuilder() {
   const { activeTenant } = useOutletContext<any>() || {};
@@ -39,6 +40,45 @@ export default function FormBuilder() {
   const [formTitle, setFormTitle] = useState('');
   const [formDesc, setFormDesc] = useState('');
   const [qrTrackingEnabled, setQrTrackingEnabled] = useState(true);
+  // Статистика по формам: сколько заявок пришло, в каких они статусах.
+  const [stats, setStats] = useState<any | null>(null);
+  const [qrTheme, setQrTheme] = useState<QrTheme>(QR_THEMES[0]);
+  // Какая форма показывает свой QR (QR на саму форму, не на заявку).
+  const [formQr, setFormQr] = useState<any | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const STATUS_LABEL: Record<string, string> = {
+    new: 'Новые', review: 'На рассмотрении', testing: 'Тестирование',
+    approved: 'Одобрено', rejected: 'Отклонено',
+  };
+  const STATUS_COLOR: Record<string, string> = {
+    new: 'bg-blue-500', review: 'bg-amber-500', testing: 'bg-violet-500',
+    approved: 'bg-emerald-500', rejected: 'bg-red-500',
+  };
+
+  /** Сводка по одной форме: сколько заявок и в каких они статусах. */
+  const statsFor = (formId: string) => {
+    const mine = submissions.filter((s: any) => s.formId === formId);
+    const byStatus: Record<string, number> = {};
+    for (const k of Object.keys(STATUS_LABEL)) byStatus[k] = mine.filter((s: any) => (s.status || 'new') === k).length;
+    const ms = (t: any) => t?.toMillis?.() ?? (t?.seconds ? t.seconds * 1000 : 0);
+    const week = Date.now() - 7 * 86400000;
+    const closed = byStatus.approved + byStatus.rejected;
+    return {
+      total: mine.length,
+      byStatus,
+      pending: byStatus.new + byStatus.review,
+      last7: mine.filter((s: any) => ms(s.createdAt) > week).length,
+      conversion: closed ? Math.round((byStatus.approved / closed) * 100) : null,
+    };
+  };
+
+  const formUrl = (id: string) => `${window.location.origin}/form/${id}`;
+  const copy = (text: string, key: string) => {
+    navigator.clipboard?.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(c => (c === key ? null : c)), 2000);
+  };
   const [fields, setFields] = useState<any[]>([
     { id: 'field_1', label: 'ФИО Заявителя', type: 'text', required: true, placeholder: 'Иванов Иван' },
     { id: 'field_2', label: 'Контактный Телефон / WhatsApp', type: 'text', required: true, placeholder: '+996 555 123456' },
@@ -221,16 +261,76 @@ export default function FormBuilder() {
                   </div>
                 </div>
 
+                {/* Отслеживание по этой форме: сколько заявок пришло и где
+                    они сейчас. Раньше в кабинете был только общий список всех
+                    заявок — понять, какая форма работает, а какая нет, было
+                    невозможно. */}
+                {(() => {
+                  const st = statsFor(form.id);
+                  return (
+                    <div className="bg-[var(--bg-panel)] p-3 rounded-xl border border-[var(--border-color)] space-y-2.5">
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase font-mono">Заявки</span>
+                        <span className="text-xs text-[var(--text-muted)]">
+                          {st.last7 > 0 && <span className="text-emerald-500 font-bold">+{st.last7} за неделю</span>}
+                        </span>
+                      </div>
+
+                      <div className="flex items-end gap-3">
+                        <span className="text-3xl font-bold text-[var(--text-main)] tabular-nums leading-none">{st.total}</span>
+                        {st.pending > 0 && (
+                          <span className="text-xs text-amber-500 font-bold pb-0.5">{st.pending} ждут ответа</span>
+                        )}
+                        {st.conversion !== null && (
+                          <span className="text-xs text-[var(--text-muted)] pb-0.5 ml-auto">
+                            одобрено {st.conversion}%
+                          </span>
+                        )}
+                      </div>
+
+                      {st.total > 0 && (
+                        <>
+                          <div className="flex h-2 rounded-full overflow-hidden bg-[var(--bg-surface)]">
+                            {Object.keys(STATUS_LABEL).map(k => st.byStatus[k] > 0 && (
+                              <div key={k} className={STATUS_COLOR[k]}
+                                style={{ width: `${(st.byStatus[k] / st.total) * 100}%` }}
+                                title={`${STATUS_LABEL[k]}: ${st.byStatus[k]}`} />
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+                            {Object.keys(STATUS_LABEL).map(k => st.byStatus[k] > 0 && (
+                              <span key={k} className="flex items-center gap-1.5 text-[var(--text-muted)]">
+                                <span className={`w-2 h-2 rounded-full ${STATUS_COLOR[k]}`} />
+                                {STATUS_LABEL[k]}: <b className="text-[var(--text-main)]">{st.byStatus[k]}</b>
+                              </span>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                      {st.total === 0 && (
+                        <p className="text-[11px] text-[var(--text-muted)]">
+                          Заявок ещё нет. Поделитесь ссылкой или QR-кодом ниже.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 <div className="flex items-center justify-between pt-2 text-xs border-t border-[var(--border-color)]">
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(`${window.location.origin}/form/${form.id}`);
-                      alert('Ссылка на форму скопирована в буфер обмена!');
-                    }}
-                    className="text-emerald-500 hover:text-emerald-400 font-bold flex items-center gap-1.5 transition cursor-pointer"
-                  >
-                    <Copy className="w-3.5 h-3.5" /> Скопировать ссылку
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <a href={`/form/${form.id}`} target="_blank" rel="noreferrer"
+                      className="text-[var(--text-muted)] hover:text-emerald-500 font-bold flex items-center gap-1.5 transition">
+                      <ExternalLink className="w-3.5 h-3.5" /> Открыть
+                    </a>
+                    <button onClick={() => copy(formUrl(form.id), form.id)}
+                      className="text-emerald-500 hover:text-emerald-400 font-bold flex items-center gap-1.5 transition cursor-pointer">
+                      <Copy className="w-3.5 h-3.5" /> {copied === form.id ? 'Скопировано' : 'Ссылка'}
+                    </button>
+                    <button onClick={() => setFormQr(form)}
+                      className="text-emerald-500 hover:text-emerald-400 font-bold flex items-center gap-1.5 transition cursor-pointer">
+                      <QrCode className="w-3.5 h-3.5" /> QR
+                    </button>
+                  </div>
                   <button 
                     onClick={async () => {
                       if (window.confirm('Удалить форму?')) await deleteDoc(doc(db, 'custom_forms', form.id));
@@ -389,6 +489,45 @@ export default function FormBuilder() {
         </div>
       )}
 
+      {/* QR на саму форму — его печатают и вешают на стенд, чтобы люди
+          сканировали и заполняли заявку с телефона. */}
+      {formQr && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setFormQr(null)}>
+          <div onClick={e => e.stopPropagation()}
+            className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-3xl max-w-sm w-full p-6 space-y-4 text-center shadow-2xl relative">
+            <button onClick={() => setFormQr(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+              <X className="w-5 h-5" />
+            </button>
+
+            <div>
+              <span className="text-[10px] font-mono uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-full font-bold">
+                QR на форму
+              </span>
+              <h3 className="text-lg font-bold text-[var(--text-main)] pt-2">{formQr.title}</h3>
+              <p className="text-xs text-[var(--text-muted)]">Отсканируйте — откроется форма заявки</p>
+            </div>
+
+            <div className="flex flex-col items-center gap-3">
+              <FancyQr value={formUrl(formQr.id)} theme={qrTheme} size={230} />
+              <QrThemePicker value={qrTheme.key} onChange={setQrTheme} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => downloadQr(formUrl(formQr.id), qrTheme, `QR-${formQr.title}.png`)}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2.5 rounded-xl transition">
+                Скачать
+              </button>
+              <button onClick={() => copy(formUrl(formQr.id), 'modal')}
+                className="border border-[var(--border-color)] text-[var(--text-main)] font-bold text-xs py-2.5 rounded-xl hover:bg-[var(--bg-panel)] transition">
+                {copied === 'modal' ? 'Скопировано' : 'Копировать ссылку'}
+              </button>
+            </div>
+            <p className="text-[11px] text-[var(--text-muted)] font-mono break-all">{formUrl(formQr.id)}</p>
+          </div>
+        </div>
+      )}
+
       {/* Modal: View QR Pass */}
       {selectedSubmissionForQr && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
@@ -405,11 +544,19 @@ export default function FormBuilder() {
               <p className="text-xs text-[var(--text-muted)] font-mono">ID: {selectedSubmissionForQr.qrToken || selectedSubmissionForQr.id}</p>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl inline-block shadow-inner">
-              <QRCodeCanvas 
+            <div className="flex flex-col items-center gap-3">
+              <FancyQr
                 value={`${window.location.origin}/track/${selectedSubmissionForQr.qrToken || selectedSubmissionForQr.id}`}
-                size={180}
-              />
+                theme={qrTheme} size={220} />
+              <QrThemePicker value={qrTheme.key} onChange={setQrTheme} />
+              <button
+                onClick={() => downloadQr(
+                  `${window.location.origin}/track/${selectedSubmissionForQr.qrToken || selectedSubmissionForQr.id}`,
+                  qrTheme,
+                  `Заявка-${selectedSubmissionForQr.qrToken || selectedSubmissionForQr.id}.png`)}
+                className="text-xs font-bold text-emerald-500 hover:text-emerald-400">
+                Скачать картинкой
+              </button>
             </div>
 
             <div className="bg-[var(--bg-panel)] p-3 rounded-xl border border-[var(--border-color)] text-xs space-y-1">

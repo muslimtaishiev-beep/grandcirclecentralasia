@@ -125,6 +125,11 @@ service cloud.firestore {
     }
 
     // Forms & Custom Data
+    // Формы заявок и сами заявки закрыты для клиентов намеренно. Заявитель
+    // анонимен: он открывает форму, отправляет её и смотрит статус по QR
+    // через /api/forms/*, где сервер отдаёт строго то, что можно показать
+    // постороннему. Не открывайте здесь публичный доступ — иначе чужие
+    // заявки с телефонами и адресами станут читаемы всему интернету.
     match /custom_forms/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
     match /form_submissions/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
     match /custom_business_functions/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }

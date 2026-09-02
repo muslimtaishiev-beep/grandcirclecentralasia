@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { QrCode, CheckCircle2, Clock, ShieldCheck, AlertCircle, Building2, ArrowLeft, Loader2, Award, Calendar, FileText } from 'lucide-react';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+
+
+/** Дата из Firestore Timestamp, который пришёл по сети как {_seconds}. */
+function fmtDate(t: any): string {
+  const ms = t?._seconds ? t._seconds * 1000 : t?.seconds ? t.seconds * 1000 : t ? Date.parse(t) : NaN;
+  return Number.isFinite(ms) ? new Date(ms).toLocaleDateString("ru-RU") : "—";
+}
 
 export default function QrTracker() {
   const { qrToken } = useParams<{ qrToken: string }>();
@@ -15,27 +20,21 @@ export default function QrTracker() {
     if (!qrToken) return;
 
     setLoading(true);
+    // Через сервер, а не напрямую в Firestore: правила требуют доступа к
+    // тенанту, а заявитель анонимен — с клиента этот запрос всегда падал с
+    // permission-denied. Сервер отдаёт только то, что можно показать
+    // постороннему: статус, даты и его собственное имя.
     const fetchByQr = async () => {
       try {
-        // First try by doc ID
-        const docRef = doc(db, 'form_submissions', qrToken);
-        const snap = await getDoc(docRef);
-
-        if (snap.exists()) {
-          setSubmission({ id: snap.id, ...snap.data() });
-        } else {
-          // Fallback query by qrToken field
-          const q = query(collection(db, 'form_submissions'), where('qrToken', '==', qrToken));
-          const querySnap = await getDocs(q);
-          if (!querySnap.empty) {
-            const firstDoc = querySnap.docs[0];
-            setSubmission({ id: firstDoc.id, ...firstDoc.data() });
-          } else {
-            setError('Заявка по данному QR-коду не найдена в системе');
-          }
+        const res = await fetch(`/api/forms/track/${encodeURIComponent(qrToken)}`);
+        const j = await res.json();
+        if (!j.success) {
+          setError(j.error || 'Заявка по данному QR-коду не найдена в системе');
+          return;
         }
+        setSubmission(j.submission);
       } catch (err: any) {
-        setError(`Ошибка получения данных: ${err.message}`);
+        setError('Нет связи с сервером. Проверьте интернет и попробуйте снова.');
       } finally {
         setLoading(false);
       }
@@ -116,21 +115,24 @@ export default function QrTracker() {
             {/* Timeline Details */}
             <div className="space-y-3 bg-slate-950 border border-slate-800 p-4 rounded-2xl text-xs">
               <div className="font-bold text-slate-300 font-mono uppercase text-[10px] border-b border-slate-800 pb-2 flex items-center justify-between">
-                <span>Детали Заявки</span>
-                <span className="font-mono text-slate-500">ID: {submission.qrToken || submission.id?.substring(0, 8)}</span>
+                <span>Ход рассмотрения</span>
+                <span className="font-mono text-slate-500">Код: {submission.code}</span>
               </div>
 
+              {/* История статусов вместо содержимого заявки: код короткий, и
+                  по нему не должны открываться данные, которые заявитель уже
+                  и так знает, а посторонний знать не должен. */}
               <div className="space-y-2 text-slate-300 pt-1">
-                {Object.entries(submission.data || {}).map(([key, val]: any) => (
-                  <div key={key} className="flex justify-between items-center py-1 border-b border-slate-900">
-                    <span className="text-slate-400 font-mono">{key}:</span>
-                    <span className="font-semibold text-white">{String(val)}</span>
+                {(submission.history || []).map((h: any, i: number) => (
+                  <div key={i} className="flex justify-between items-center py-1 border-b border-slate-900">
+                    <span className="font-semibold text-white">{h.label}</span>
+                    <span className="text-slate-400 font-mono text-[11px]">{fmtDate(h.at)}</span>
                   </div>
                 ))}
 
                 <div className="flex justify-between items-center py-1 text-slate-400 font-mono text-[11px]">
-                  <span>Дата регистрации:</span>
-                  <span>{submission.createdAt ? new Date(submission.createdAt.seconds ? submission.createdAt.seconds * 1000 : submission.createdAt).toLocaleDateString() : 'Сегодня'}</span>
+                  <span>Заявка подана:</span>
+                  <span>{fmtDate(submission.createdAt)}</span>
                 </div>
               </div>
             </div>
