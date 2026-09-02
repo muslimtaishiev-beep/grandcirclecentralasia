@@ -564,6 +564,12 @@ export function useProctoringEngine(
   const lastLightEvent = useRef<number>(0);
   const lastPhoneEvent = useRef<number>(0);
   const lastBookEvent = useRef<number>(0);
+  // Сколько кадров подряд детектор видит предмет. Одиночного срабатывания
+  // недостаточно: EfficientDet на 30% уверенности принимает за телефон
+  // тёмный прямоугольник — край монитора, чехол, тень на столе. Обвинить
+  // ученика в телефоне по одному такому кадру нельзя.
+  const phoneStreak = useRef<number>(0);
+  const bookStreak = useRef<number>(0);
   const lastSpeechEvent = useRef<number>(0);
   const lastGestureEvent = useRef<number>(0);
   const lastSilentLipEvent = useRef<number>(0);
@@ -1248,7 +1254,10 @@ export function useProctoringEngine(
 
             if (label.includes('phone') || label.includes('mobile') || label.includes('cell')) {
               hasPhone = true;
-              if (now - lastPhoneEvent.current > EVENT_COOLDOWN) {
+              // 55% уверенности и три кадра подряд: настоящий телефон в руке
+              // держится в кадре секундами, случайная тень — нет.
+              phoneStreak.current = cat.score >= 0.55 ? phoneStreak.current + 1 : 0;
+              if (phoneStreak.current >= 3 && now - lastPhoneEvent.current > EVENT_COOLDOWN) {
                 addEventRef.current({
                   type: 'PHONE_DETECTED',
                   severity: 'HIGH',
@@ -1259,7 +1268,10 @@ export function useProctoringEngine(
               isViolatingThisFrame = true;
             } else if (label.includes('book') || label.includes('binder') || label.includes('paper')) {
               hasBook = true;
-              if (now - lastBookEvent.current > EVENT_COOLDOWN) {
+              // То же для конспекта: на срезе перед человеком лежит черновик,
+              // и белый лист бумаги не должен становиться обвинением.
+              bookStreak.current = cat.score >= 0.55 ? bookStreak.current + 1 : 0;
+              if (bookStreak.current >= 3 && now - lastBookEvent.current > EVENT_COOLDOWN) {
                 addEventRef.current({
                   type: 'BOOK_DETECTED',
                   severity: 'MEDIUM',
@@ -1270,6 +1282,11 @@ export function useProctoringEngine(
             }
           }
         }
+
+        // Предмет ушёл из кадра — серия прерывается. Без этого счётчик копил
+        // бы разрозненные срабатывания за весь экзамен и однажды выстрелил.
+        if (!hasPhone) phoneStreak.current = 0;
+        if (!hasBook) bookStreak.current = 0;
 
         updates.phoneDetected = hasPhone;
         updates.bookDetected = hasBook;

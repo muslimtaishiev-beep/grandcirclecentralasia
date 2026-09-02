@@ -104,7 +104,30 @@ interface Blueprint {
    * Поэтому пороги живут в настройках экзамена, а не в коде.
    */
   marks?: { pass: number; good: number; excellent: number };
+  /**
+   * Прокторинг на срезе. Выключен по умолчанию: он требует камеры у каждого
+   * ученика, а срез пишут и те, кто пришёл с чужого телефона. Завуч включает
+   * его сам, когда уверен в аудитории.
+   *
+   * Отказ от камеры экзамен НЕ прерывает — работа просто помечается как
+   * несопровождённая, и завуч видит это в результатах.
+   */
+  proctoring?: {
+    enabled: boolean;
+    detectors?: {
+      gazeAway?: boolean; faceCount?: boolean; handTracking?: boolean;
+      audioAnalysis?: boolean; phoneDetection?: boolean;
+    };
+  };
 }
+
+const DEFAULT_PROCTORING = {
+  enabled: false,
+  detectors: {
+    gazeAway: true, faceCount: true, handTracking: true,
+    audioAnalysis: true, phoneDetection: true,
+  },
+};
 
 /** Границы по умолчанию — привычные школьные, школа меняет их в кабинете. */
 const DEFAULT_MARKS = { pass: 50, good: 65, excellent: 85 };
@@ -210,6 +233,7 @@ const DEFAULT_BLUEPRINT = (tenantId: string, grade: number): Blueprint => ({
     { minPercent: 0, label: "Подготовительный класс" },
   ],
   marks: { ...DEFAULT_MARKS },
+  proctoring: { enabled: false, detectors: { ...DEFAULT_PROCTORING.detectors } },
 });
 
 const bpId = (tenantId: string, grade: number) => `bp_${tenantId}_${grade}`;
@@ -268,7 +292,7 @@ router.get("/blueprint", requireFirebaseAuth, async (req: any, res: any) => {
 // PUT blueprint — завуч/администрация задают количество вопросов, время и шкалу.
 router.put("/blueprint", requireFirebaseAuth, async (req: any, res: any) => {
   try {
-    const { tenantId, grade, sections, scale, marks } = req.body || {};
+    const { tenantId, grade, sections, scale, marks, proctoring } = req.body || {};
     if (!tenantId || !grade || !Array.isArray(sections)) {
       return res.status(400).json({ success: false, error: "Нужны tenantId, grade и sections" });
     }
@@ -320,9 +344,21 @@ router.put("/blueprint", requireFirebaseAuth, async (req: any, res: any) => {
       });
     }
 
+    const bool = (v: any, dflt: boolean) => (typeof v === "boolean" ? v : dflt);
+    const cleanProctoring = {
+      enabled: bool(proctoring?.enabled, false),
+      detectors: {
+        gazeAway: bool(proctoring?.detectors?.gazeAway, true),
+        faceCount: bool(proctoring?.detectors?.faceCount, true),
+        handTracking: bool(proctoring?.detectors?.handTracking, true),
+        audioAnalysis: bool(proctoring?.detectors?.audioAnalysis, true),
+        phoneDetection: bool(proctoring?.detectors?.phoneDetection, true),
+      },
+    };
+
     const bp: Blueprint = {
       tenantId, grade: Number(grade), sections: cleanSections,
-      scale: cleanScale, marks: cleanMarks,
+      scale: cleanScale, marks: cleanMarks, proctoring: cleanProctoring,
     };
     await db().collection("exam_blueprints").doc(bpId(tenantId, Number(grade))).set({
       ...bp,
@@ -445,6 +481,11 @@ async function sessionPayload(sess: any, questionsById: Map<string, any>) {
     sessionId: sess.id, shortId: sess.shortId, grade: sess.grade,
     status: sess.status, currentSection: sess.currentSection,
     sections, answers: sess.answers || {},
+    // Настройка прокторинга едет вместе с сессией: ученик анонимен и прочитать
+    // её из Firestore не может. Берём из снимка правил, сделанного на старте,
+    // — если завуч включит прокторинг посреди экзамена, у тех, кто уже пишет,
+    // камера внезапно не запросится.
+    proctoring: sess.blueprintSnapshot?.proctoring || { enabled: false },
   };
 }
 
@@ -792,6 +833,70 @@ router.get("/results", requireFirebaseAuth, async (req: any, res: any) => {
     const results = snap.docs.map(d => ({ id: d.id, ...d.data() }))
       .sort((a: any, b: any) => (b.finishedAt?.toMillis?.() || 0) - (a.finishedAt?.toMillis?.() || 0));
     return res.json({ success: true, results });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * POST /api/placement/proctoring — отчёт прокторинга по сданной работе.
+ *
+ * Публичный, как и остальной путь ученика: он анонимен. Пишем только в свою
+ * же сессию по shortId, и только один раз — повторные отчёты игнорируем,
+ * иначе кто угодно перепишет чужой протокол, узнав номер работы.
+ *
+ * Нарушение прокторинга НЕ влияет на балл: оно ничего не отнимает
+ * автоматически. Это материал для завуча, а решение принимает человек.
+ */
+router.post("/proctoring", async (req: any, res: any) => {
+  try {
+    const { tenantId, shortId, unavailable, honestyIndex, violations, snapshots, startedAt, endedAt } = req.body || {};
+    if (!tenantId || !shortId) return res.status(400).json({ success: false, error: "Bad request" });
+
+    const ref = db().collection("placement_results").doc(sessionId(String(tenantId), String(shortId)));
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ success: false, error: "Работа не найдена" });
+    // Отчёт пишется один раз: перезапись открыла бы дорогу к подмене протокола.
+    if (snap.data()!.proctoring) return res.json({ success: true, alreadyReported: true });
+
+    const list = (Array.isArray(violations) ? violations : []).slice(0, 300).map((v: any) => ({
+      type: String(v.type || "").slice(0, 40),
+      severity: String(v.severity || "").slice(0, 20),
+      description: String(v.description || "").slice(0, 200),
+      timestamp: Number(v.timestamp) || 0,
+    }));
+
+    await ref.update({
+      proctoring: {
+        unavailable: Boolean(unavailable),
+        honestyIndex: Number.isFinite(Number(honestyIndex)) ? Number(honestyIndex) : null,
+        violations: list,
+        violationCount: list.length,
+        highSeverity: list.filter(v => v.severity === "high").length,
+        startedAt: Number(startedAt) || null,
+        endedAt: Number(endedAt) || null,
+        reportedAt: admin.firestore.Timestamp.now(),
+      },
+    });
+
+    // Снимки нарушений — отдельными документами: в работе они раздули бы
+    // каждый её чтение до мегабайтов, а смотрят их редко и по одному.
+    const shots = (Array.isArray(snapshots) ? snapshots : []).slice(0, 40);
+    if (shots.length) {
+      let batch = db().batch();
+      shots.forEach((sh: any, i: number) => {
+        batch.set(db().collection("proctoring_evidence").doc(`pl_${shortId}_${i}`), {
+          tenantId, shortId, source: "placement",
+          type: String(sh.type || "").slice(0, 40),
+          timestamp: Number(sh.timestamp) || 0,
+          image: String(sh.image || "").slice(0, 400000),
+          createdAt: admin.firestore.Timestamp.now(),
+        });
+      });
+      await batch.commit();
+    }
+
+    return res.json({ success: true });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }

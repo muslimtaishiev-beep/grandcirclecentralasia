@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
+import { useProctoringEngine } from "../lib/useProctoringEngine";
+import ProctoringWarningOverlay from "../components/ProctoringWarningOverlay";
 
 /**
  * Вступительный срез знаний 5-11 — экран ученика.
@@ -28,6 +30,8 @@ type Session = {
   sessionId: string; shortId: string; grade: number;
   status: string; currentSection: number;
   sections: Section[]; answers: Record<string, string>;
+  /** Настройка прокторинга на момент старта — см. proctorStartedAtRef. */
+  proctoring?: { enabled: boolean; detectors?: Record<string, boolean> };
 };
 
 const LETTERS = ["А", "Б", "В", "Г", "Д", "Е"];
@@ -73,11 +77,123 @@ export default function PlacementExam() {
   const [countdown, setCountdown] = useState<number | null>(null);
 
   const shortIdRef = useRef<string>("");
+
+  // ── Прокторинг ────────────────────────────────────────────────────────────
+  // Включается завучем в настройках экзамена и приезжает вместе с сессией:
+  // ученик анонимен и прочитать настройку из Firestore не может.
+  //
+  // Отказ от камеры экзамен НЕ прерывает. Срез пишут в том числе с чужих
+  // телефонов и старых ноутбуков; лишить человека поступления из-за сломанной
+  // камеры нельзя. Работа просто помечается как несопровождённая.
+  const proctorVideoRef = useRef<HTMLVideoElement | null>(null);
+  const proctorCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const proctorStreamRef = useRef<MediaStream | null>(null);
+  const proctorStartedAtRef = useRef<number>(0);
+  const [cameraGranted, setCameraGranted] = useState(false);
+  const [proctoringUnavailable, setProctoringUnavailable] = useState(false);
+  const proctoringReportedRef = useRef(false);
   const pendingRef = useRef<Record<string, string>>({});
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoFinishing = useRef(false);
 
   const storageKey = `placement_${tenantId}`;
+
+  // Прокторинг нужен, только пока человек действительно пишет работу.
+  const proctoringOn = Boolean(session?.proctoring?.enabled);
+  const proctoringWanted = proctoringOn && phase === "exam";
+
+  /**
+   * Камера для наблюдения.
+   *
+   * Запрашивается ПОСЛЕ фотографии на сертификат и отдельным потоком: фото
+   * снимается до начала экзамена и нарушением быть не может по определению.
+   */
+  const acquireProctorCamera = useCallback(async (): Promise<boolean> => {
+    if (proctorStreamRef.current) return true;
+    try {
+      // На http:// и в старых WebView mediaDevices нет вовсе, и обращение к
+      // getUserMedia бросает синхронно — .catch() такого не увидит.
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setProctoringUnavailable(true);
+        return false;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+        audio: session?.proctoring?.detectors?.audioAnalysis !== false,
+      });
+      proctorStreamRef.current = stream;
+      if (proctorVideoRef.current) {
+        proctorVideoRef.current.srcObject = stream;
+        try { await proctorVideoRef.current.play(); } catch {}
+      }
+      proctorStartedAtRef.current = Date.now();
+      setCameraGranted(true);
+      setProctoringUnavailable(false);
+      return true;
+    } catch {
+      // Отказ, занятая или сломанная камера не стоят человеку экзамена.
+      setProctoringUnavailable(true);
+      return false;
+    }
+  }, [session?.proctoring?.detectors?.audioAnalysis]);
+
+  useEffect(() => {
+    if (!proctoringWanted || proctorStreamRef.current || proctoringUnavailable) return;
+    void acquireProctorCamera();
+  }, [proctoringWanted, proctoringUnavailable, acquireProctorCamera]);
+
+  // Отпускаем камеру, когда экзамен действительно закончен, — но не на
+  // перерыве между секциями, куда человек вернётся.
+  useEffect(() => {
+    if (phase !== "final") return;
+    if (proctorStreamRef.current) {
+      proctorStreamRef.current.getTracks().forEach(t => t.stop());
+      proctorStreamRef.current = null;
+      setCameraGranted(false);
+    }
+  }, [phase]);
+
+  const proctoringActive = proctoringWanted && cameraGranted;
+  const proctor = useProctoringEngine(
+    proctorVideoRef, proctorCanvasRef, proctoringActive, undefined,
+    {
+      detectors: session?.proctoring?.detectors,
+      // Переключение вкладок у среза не карается: экзамен идёт не в
+      // полноэкранном режиме, и предупреждать за каждый уход фокуса —
+      // значит завалить человека шумом на ровном месте.
+      suppressEvents: ["TAB_SWITCH"],
+    },
+  );
+
+  /**
+   * Протокол наблюдения — завучу, при сдаче работы.
+   *
+   * Ошибки проглатываются намеренно: отчёт прокторинга не должен помешать
+   * человеку сдать экзамен. Балл он не меняет — это материал для завуча.
+   */
+  const sendProctoringReport = useCallback(async () => {
+    if (!proctoringOn || proctoringReportedRef.current) return;
+    if (!cameraGranted && !proctoringUnavailable) return;
+    proctoringReportedRef.current = true;
+    try {
+      await fetch("/api/placement/proctoring", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tenantId, shortId: shortIdRef.current,
+          unavailable: proctoringUnavailable,
+          honestyIndex: proctor.honestyIndex,
+          startedAt: proctorStartedAtRef.current, endedAt: Date.now(),
+          violations: proctor.events.map(e => ({
+            type: e.type, severity: e.severity,
+            description: e.description, timestamp: e.timestamp,
+          })),
+        }),
+        signal: AbortSignal.timeout(20000),
+      });
+    } catch {
+      // Молча: работа уже сдана, и это важнее протокола.
+    }
+  }, [proctoringOn, cameraGranted, proctoringUnavailable, tenantId, proctor]);
 
   // Restore an interrupted attempt on load: the id is what lets the server
   // hand back the same variant.
@@ -271,6 +387,7 @@ export default function PlacementExam() {
       const data = await res.json();
       if (!data.success) { setError(data.error || "Не удалось завершить секцию."); return; }
       if (data.final) {
+        void sendProctoringReport();
         setFinal(data.final);
         setPhase("final");
         try { localStorage.removeItem(storageKey); } catch (e) {}
@@ -529,6 +646,26 @@ export default function PlacementExam() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col select-none">
+      {/* Прокторинг. Видео и canvas скрыты — ученик не должен смотреть на себя
+          вместо задач, а движку нужен только кадр. Оверлей монтируется здесь,
+          внутри ветки экзамена: вынесенный наружу, он размонтировался бы на
+          каждом раннем return выше вместе со всем деревом. */}
+      {proctoringOn && (
+        <>
+          <video ref={proctorVideoRef} autoPlay playsInline muted
+            className="fixed opacity-0 pointer-events-none w-px h-px -z-10" />
+          <canvas ref={proctorCanvasRef} className="hidden" />
+          {proctoringActive && (
+            <ProctoringWarningOverlay events={proctor.events} isActive={proctoringActive} />
+          )}
+          {proctoringUnavailable && (
+            <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs text-amber-900 text-center">
+              Камера недоступна — экзамен продолжается, работа будет отмечена как написанная без наблюдения.
+            </div>
+          )}
+        </>
+      )}
+
       {/* Top bar: section, clock, position */}
       <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex items-center justify-between gap-3 sticky top-0 z-20">
         <div className="text-sm text-slate-600 min-w-0">

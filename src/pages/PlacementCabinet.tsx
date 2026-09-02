@@ -26,11 +26,20 @@ const DIFF_LABEL: Record<string, string> = { "1": "Лёгкие", "2": "Сред
 
 type Section = { key: string; title: string; minutes: number; counts: Record<string, number>; minTopics: number };
 type Marks = { pass: number; good: number; excellent: number };
+type ProctoringCfg = {
+  enabled: boolean;
+  detectors?: {
+    gazeAway?: boolean; faceCount?: boolean; handTracking?: boolean;
+    audioAnalysis?: boolean; phoneDetection?: boolean;
+  };
+};
 type Blueprint = {
   tenantId: string; grade: number; sections: Section[];
   scale: { minPercent: number; label: string }[];
   /** Пороги школьных оценок для аналитики; сервер подставит свои, если нет. */
   marks?: Marks;
+  /** Наблюдение за экзаменом; по умолчанию выключено. */
+  proctoring?: ProctoringCfg;
 };
 type Availability = Record<string, Record<string, number>>;
 
@@ -152,7 +161,7 @@ export default function PlacementCabinet() {
     try {
       const res = await fetch("/api/placement/blueprint", {
         method: "PUT", headers: await authHeaders(),
-        body: JSON.stringify({ tenantId, grade, sections: blueprint.sections, scale: blueprint.scale, marks: blueprint.marks }),
+        body: JSON.stringify({ tenantId, grade, sections: blueprint.sections, scale: blueprint.scale, marks: blueprint.marks, proctoring: blueprint.proctoring }),
       });
       const data = await res.json();
       if (!data.success) { setError(data.error || "Не удалось сохранить."); return; }
@@ -565,6 +574,61 @@ export default function PlacementCabinet() {
               ))}
             </div>
 
+            <h3 className="font-bold text-slate-900 mb-2 text-sm">Наблюдение за экзаменом</h3>
+            <p className="text-xs text-slate-500 mb-3">
+              Камера следит за ходом работы и отмечает нарушения: посторонние в кадре,
+              телефон, разговоры, взгляд в сторону. Ученик видит предупреждения на экране.
+            </p>
+
+            <label className="flex items-start gap-3 mb-3 cursor-pointer">
+              <input type="checkbox"
+                checked={Boolean(blueprint.proctoring?.enabled)}
+                onChange={e => setBlueprint(bp => bp ? {
+                  ...bp,
+                  proctoring: { ...(bp.proctoring || {}), enabled: e.target.checked },
+                } : bp)}
+                className="w-5 h-5 mt-0.5 rounded border-slate-300" />
+              <span>
+                <span className="text-sm font-semibold text-slate-800">
+                  Включить прокторинг для {grade} класса
+                </span>
+                <span className="block text-xs text-slate-500 mt-0.5">
+                  Балл прокторинг не меняет — нарушения видит только завуч и решает сам.
+                  Если камеры нет или ученик не дал доступ, экзамен всё равно продолжится,
+                  а работа будет помечена как написанная без наблюдения.
+                </span>
+              </span>
+            </label>
+
+            {blueprint.proctoring?.enabled && (
+              <div className="ml-8 mb-5 grid gap-1.5">
+                <div className="text-xs uppercase tracking-wide text-slate-400 mb-0.5">За чем следить</div>
+                {([["faceCount", "Посторонние в кадре и уход из кадра"],
+                   ["phoneDetection", "Телефон в руках"],
+                   ["gazeAway", "Взгляд в сторону"],
+                   ["audioAnalysis", "Разговоры и подсказки"],
+                   ["handTracking", "Жесты и руки под столом"]] as const).map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2.5 cursor-pointer">
+                    <input type="checkbox"
+                      checked={blueprint.proctoring?.detectors?.[key] !== false}
+                      onChange={e => setBlueprint(bp => bp ? {
+                        ...bp,
+                        proctoring: {
+                          enabled: Boolean(bp.proctoring?.enabled),
+                          detectors: { ...(bp.proctoring?.detectors || {}), [key]: e.target.checked },
+                        },
+                      } : bp)}
+                      className="w-4 h-4 rounded border-slate-300" />
+                    <span className="text-sm text-slate-600">{label}</span>
+                  </label>
+                ))}
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mt-2">
+                  Предупредите учеников заранее, что экзамен идёт с камерой, и попросите
+                  разрешить доступ. Иначе половина работ придёт без наблюдения.
+                </p>
+              </div>
+            )}
+
             <button onClick={saveBlueprint} disabled={saving}
               className={`px-6 py-3 rounded-xl font-bold text-white ${saving ? "bg-slate-400" : "bg-blue-600 hover:bg-blue-700"}`}>
               {saving ? "Сохраняем…" : `Сохранить настройки для ${grade} класса`}
@@ -770,6 +834,47 @@ export default function PlacementCabinet() {
               {openStudent.annulled && (
                 <div className="rounded-xl bg-red-50 border border-red-200 p-3 mb-4 text-sm text-red-900">
                   <b>Работа аннулирована.</b> {openStudent.annulReason}
+                </div>
+              )}
+
+              {/* Протокол наблюдения. Показывается как есть, без вердикта:
+                  система не решает, списывал человек или нет — она лишь
+                  фиксирует, что видела камера. Решение принимает завуч. */}
+              {openStudent.proctoring && (
+                <div className={`rounded-xl p-3 mb-4 border text-sm ${
+                  openStudent.proctoring.unavailable
+                    ? "bg-slate-50 border-slate-200 text-slate-700"
+                    : openStudent.proctoring.highSeverity > 0
+                      ? "bg-amber-50 border-amber-200 text-amber-900"
+                      : "bg-emerald-50 border-emerald-200 text-emerald-900"}`}>
+                  {openStudent.proctoring.unavailable ? (
+                    <><b>Работа написана без наблюдения.</b> Камера была недоступна или
+                    ученик не дал к ней доступ. Это не нарушение само по себе.</>
+                  ) : openStudent.proctoring.violationCount === 0 ? (
+                    <><b>Замечаний нет.</b> Наблюдение велось, нарушений не зафиксировано.</>
+                  ) : (
+                    <>
+                      <b>Зафиксировано замечаний: {openStudent.proctoring.violationCount}</b>
+                      {openStudent.proctoring.highSeverity > 0 &&
+                        <span> · серьёзных: {openStudent.proctoring.highSeverity}</span>}
+                      <div className="mt-2 grid gap-1 max-h-40 overflow-y-auto">
+                        {(openStudent.proctoring.violations || []).slice(0, 30).map((v: any, i: number) => (
+                          <div key={i} className="flex items-baseline gap-2 text-xs">
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${
+                              v.severity === "high" ? "bg-red-500" : "bg-amber-500"}`} />
+                            <span className="flex-1">{v.description || v.type}</span>
+                            <span className="text-slate-400 font-mono shrink-0">
+                              {v.timestamp ? new Date(v.timestamp).toLocaleTimeString("ru-RU") : ""}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs mt-2 opacity-80">
+                        Замечания не влияют на балл. Если считаете нарушение существенным —
+                        аннулируйте работу вручную.
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
 
