@@ -469,6 +469,24 @@ export default function Testing() {
     return () => clearTimeout(t);
   }, [answers, shortId, phase, grade, studentName, setBoth]);
 
+  // Страховка от непрерывного ввода: пока ученик отвечает без пауз, задержка
+  // выше не срабатывает вовсе — и вкладка, убитая системой в этот момент,
+  // теряла бы всё с последней паузы. Раз в 4 секунды копия пишется в любом
+  // случае; вместе с задержкой это даёт максимум 4 секунды потерь.
+  useEffect(() => {
+    if (!started || finished) return;
+    const t = setInterval(() => {
+      setBoth("answers", JSON.stringify(answersRef.current));
+      if (shortId) {
+        try {
+          localStorage.setItem(`backup_answers_${shortId}`,
+            JSON.stringify({ answers: answersRef.current, phase, grade, studentName }));
+        } catch { /* переполнено */ }
+      }
+    }, 4000);
+    return () => clearInterval(t);
+  }, [started, finished, shortId, phase, grade, studentName, setBoth]);
+
   // Start (or resume, on reload) the soft countdown whenever entering a timed phase.
   useEffect(() => {
     if (phase === "core" || phase === "english") {
