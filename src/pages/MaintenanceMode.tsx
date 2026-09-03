@@ -128,7 +128,7 @@ export default function MaintenanceMode({
       <footer className="relative z-10 max-w-7xl mx-auto px-6 py-6 w-full text-center text-xs text-slate-500 font-mono flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-slate-900">
         <div className="flex items-center gap-2">
           <Server className="w-3.5 h-3.5 text-slate-600" />
-          <span>SaaS Engine Maintenance Mode</span>
+          <span>Идут технические работы</span>
         </div>
         <div>
           Все данные учеников и прогресс тестов надежно сохранены в базе.

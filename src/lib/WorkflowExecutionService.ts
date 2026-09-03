@@ -207,7 +207,7 @@ export class WorkflowExecutionService {
     await setDoc(doc(db, 'crm_deals'), {
       id: dealId,
       tenantId: context.tenantId,
-      title: context.formValues.fullName ? `Заявка: ${context.formValues.fullName}` : 'Новая B2B Сделка',
+      title: context.formValues.fullName ? `Заявка: ${context.formValues.fullName}` : 'Новая сделка',
       value: Number(context.formValues.amount || context.formValues.value) || 0,
       column: action.initialStage || 'new',
       contactId: context.formValues.phone || context.user.email,

@@ -233,7 +233,7 @@ export default function SuperAdminDashboard() {
           id: d.id,
           name: data.name || "Организация",
           slug: data.slug || d.id,
-          framework: "SaaS Enterprise Engine",
+          framework: "Образовательная платформа",
           // Read the real status instead of hardcoding "READY" for every tenant —
           // a suspended organisation was rendered as active. Case-normalised
           // because seed data mixes "suspended" and "SUSPENDED".

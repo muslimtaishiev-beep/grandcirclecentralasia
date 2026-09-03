@@ -170,7 +170,7 @@ export default function SpotlightCommandBar({ isOpen, onClose }: SpotlightComman
             <span className="flex items-center gap-1">Навигация: <kbd className="px-1.5 py-0.5 bg-black/10 dark:bg-white/10 rounded">↑</kbd><kbd className="px-1.5 py-0.5 bg-black/10 dark:bg-white/10 rounded">↓</kbd></span>
             <span className="flex items-center gap-1">Выбор: <kbd className="px-1.5 py-0.5 bg-black/10 dark:bg-white/10 rounded">Enter</kbd></span>
           </div>
-          <span>Enterprise Spotlight Search</span>
+          <span>Поиск по разделам</span>
         </div>
 
       </div>

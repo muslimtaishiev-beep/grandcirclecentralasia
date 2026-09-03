@@ -168,7 +168,7 @@ export default function OrgStructure() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <FolderTree className="w-6 h-6 text-emerald-500" />
-            <span>Оргструктура Компании & Отделы (Bitrix24 Level)</span>
+            <span>Оргструктура и отделы</span>
           </h1>
           <p className="text-xs text-[var(--text-muted)] mt-1">
             Древовидное управление отделами, филиалами и назначение руководителей подразделений для {activeTenant?.name || "Вашей Организации"}

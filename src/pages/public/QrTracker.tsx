@@ -182,7 +182,7 @@ export default function QrTracker() {
 
         {/* Footer */}
         <div className="pt-2 text-center text-[11px] text-slate-500 font-mono border-t border-slate-800">
-          Платформа Цифрового Образования & Enterprise B2B SaaS
+          Образовательная платформа
         </div>
 
       </div>

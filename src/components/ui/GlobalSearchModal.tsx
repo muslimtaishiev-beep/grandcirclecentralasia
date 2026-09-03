@@ -93,7 +93,7 @@ export default function GlobalSearchModal({ isOpen, onClose }: GlobalSearchModal
         {/* Footer */}
         <div className="px-4 py-2 bg-[var(--bg-panel)] border-t border-[var(--border-color)] flex items-center justify-between text-[11px] text-[var(--text-muted)] font-mono">
           <span>Нажмите <kbd className="px-1.5 py-0.5 bg-black/10 dark:bg-white/10 rounded">ESC</kbd> для закрытия</span>
-          <span>Быстрый поиск B2B</span>
+          <span>Быстрый поиск</span>
         </div>
 
       </div>
