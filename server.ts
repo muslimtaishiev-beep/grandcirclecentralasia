@@ -1547,6 +1547,13 @@ app.post("/api/gas", async (req, res) => {
         sessionId: payload.testId || "",
         isTester: Boolean(payload.isTester),
       });
+      // Старт экзамена записан локально (аудит-лог). Ответ ученику — сразу,
+      // а зеркало в GAS уходит в фоне: раньше регистрация проваливалась в
+      // общий проксирующий вызов с таймаутом 50 секунд, и при холодном
+      // старте или тормозах Apps Script сервер держал запрос вхолостую, хотя
+      // GAS для старта ничего не решает.
+      mirrorToGas(payload);
+      return res.json({ success: true, registered: true });
     }
 
     if (payload.action === "suspendTest" && useFirebase && payload.shortId) {
@@ -1645,6 +1652,43 @@ app.post("/api/gas", async (req, res) => {
         return res.json({ success: true });
       } catch (e: any) {
         console.warn("[Suspend] Local unblock failed, falling back to GAS:", e.message);
+      }
+    }
+
+    // Данные ученика по номеру работы — из Firestore, не из GAS.
+    //
+    // Это дёргают при восстановлении прерванной сессии, при восстановлении
+    // после сбоя сабмита и в кабинете менеджера. Раньше каждый такой вызов
+    // ждал синхронного ответа Apps Script (таймаут 50с), хотя работа уже
+    // лежит в submissions. GAS остаётся фолбэком, если локально не нашлось.
+    if (payload.action === "getStudentByShortId" && useFirebase && payload.shortId) {
+      try {
+        const shortId = String(payload.shortId);
+        const tenantId = payload.tenantId || "org_future_leaders";
+        const docId = `sub_${shortId}`;
+        let snap = await admin.firestore().collection("submissions").doc(docId).get();
+        if (!snap.exists) {
+          const q = await admin.firestore().collection("submissions")
+            .where("tenantId", "==", tenantId)
+            .where("studentShortId", "==", shortId).limit(1).get();
+          if (!q.empty) snap = q.docs[0];
+        }
+        if (snap.exists) {
+          const d: any = snap.data();
+          return res.json({
+            success: true,
+            student: {
+              shortId, studentName: d.studentName || "", grade: d.grade,
+              studentPhone: d.studentPhone || "", studentEmail: d.studentEmail || "",
+              scores: d.scores || {}, status: d.status || "ЗАВЕРШЕН",
+              cheated: Boolean(d.cheated), maxScoreSnapshot: d.maxScoreSnapshot,
+              diagnosticsRaw: d.diagnosticsRaw, diagnosticSummary: d.diagnosticSummary,
+            },
+          });
+        }
+        // Не нашли локально — падаем в GAS ниже (там могут быть старые записи).
+      } catch (e: any) {
+        console.warn("[getStudentByShortId] local read failed, falling back to GAS:", e.message);
       }
     }
 
