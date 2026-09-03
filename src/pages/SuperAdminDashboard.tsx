@@ -905,7 +905,7 @@ export default function SuperAdminDashboard() {
                     liveSessions.map((s) => (
                       <tr key={s.id} className="hover:bg-[#111111]/50">
                         <td className="py-3 px-4 font-bold text-[#ffffff]">{s.shortId || s.studentName || s.id}</td>
-                        <td className="py-3 px-4 text-[#888888]">{s.tenantId || 'ОсОО «Академия Будущих Лидеров»'}</td>
+                        <td className="py-3 px-4 text-[#888888]">{s.tenantId || '—'}</td>
                         <td className="py-3 px-4 text-[#888888]">{s.examTitle || 'Вступительное тестирование'}</td>
                         <td className="py-3 px-4 text-right">
                           <span className="bg-[#112211] text-[#50e3c2] border border-[#224422] px-2 py-0.5 rounded text-[10px]">АКТИВНА</span>

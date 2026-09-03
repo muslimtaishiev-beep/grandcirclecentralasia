@@ -155,7 +155,7 @@ export async function sendStaffInviteEmail(params: StaffInviteEmailParams): Prom
 
   try {
     const result = await resend.emails.send({
-      from: `${tenantName || "Академия"} <${FROM_ADDRESS}>`,
+      from: `${tenantName || "Образовательная платформа"} <${FROM_ADDRESS}>`,
       to: params.to,
       subject: `Приглашение в «${tenantName}»`,
       html: emailShell(tenantName, body),

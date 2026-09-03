@@ -4,6 +4,7 @@ import { requireFirebaseAuth } from "./authRoutes.js";
 import { analyseFile } from "../lib/placementParser.js";
 import { hasAnyPermission } from "../server/access.js";
 import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
+import { resolveLegalProfile, publicLegal } from "../shared/legal.js";
 
 /**
  * Вступительный срез знаний (placement exam) для распределения по классам 5-11.
@@ -1697,6 +1698,8 @@ router.post("/my-result", async (req: any, res: any) => {
     const percent = r.adjustedPercent ?? r.percent;
     return res.json({
       success: true, published: true,
+      // Реквизиты — на сертификат ученика: название организации, подпись, печать.
+      school: publicLegal(resolveLegalProfile(gate.tenant)),
       studentName: r.studentName, shortId: r.shortId, grade: r.grade,
       correct, total: r.total, percent,
       satMath: r.satMath ?? null,

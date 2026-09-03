@@ -153,6 +153,11 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
 
     const db = admin.firestore();
     const targetTenantId = String(tenantId);
+    const targetTenantDoc = await db.collection("tenants").doc(targetTenantId).get();
+    if (!targetTenantDoc.exists) return res.status(404).json({ success: false, error: "Организация не найдена" });
+    // Название организации — из её документа, а не из тела запроса и не
+    // «Академия» по умолчанию: письмо приглашённому должно быть от его компании.
+    const orgName = String(targetTenantDoc.data()?.name || tenantName || "Организация").trim();
 
     // SECURITY: only a tenant admin/owner (or platform superadmin) may invite staff
     // into a tenant. Without this check, any authenticated member of ANY tenant
@@ -268,7 +273,7 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
       emailResult = await sendStaffInviteEmail({
         to: email,
         fullName: fullName || email.split("@")[0],
-        tenantName: tenantName || "Академия Будущих Лидеров",
+        tenantName: orgName,
         role: membershipDoc.role || resolvedRole,
         resetLink,
       });

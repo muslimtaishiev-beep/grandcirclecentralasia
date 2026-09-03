@@ -80,12 +80,6 @@ class ChatService {
         let email = data.userEmail || data.email || '';
         const uid = data.userId || d.id;
 
-        // Special handling for known emails or UIDs
-        if (email.includes('butyakaz24') || name.includes('Казиева') || name.includes('Алима')) {
-          name = 'Казиева Алима Канатовна';
-          email = 'butyakaz24@gmail.com';
-        }
-
         // If name or email missing, attempt to fetch user document
         if ((!name || !email) && uid) {
           try {
@@ -156,13 +150,8 @@ class ChatService {
 
     let finalStaff = Array.from(uniqueMap.values());
 
-    // 4. Default fallback list if no real staff found
-    if (finalStaff.length === 0) {
-      finalStaff = [
-        { id: 'staff_kazieva', name: 'Казиева Алима Канатовна', email: 'butyakaz24@gmail.com', role: 'Владелец' },
-        { id: 'staff_director', name: 'Директор Академии', email: 'director@academy.edu', role: 'Администратор' }
-      ];
-    }
+    // Нет сотрудников — пустой список. Раньше подставлялись выдуманные
+    // «владелец» и «директор» одной организации — в чат любой компании.
 
     return finalStaff;
   }

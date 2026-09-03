@@ -508,7 +508,10 @@ export default function Testing() {
       try {
         const params = new URLSearchParams();
         params.set("grade", String(grade || 0));
-        if (orgSlug) params.set("tenantId", orgSlug);
+        // Только резолвленный id. Слаг из адреса (например «leaders») сервер
+        // не знает, и раньше он молча уводил на непомеченный тест.
+        if (!resolvedTenantId) { setQuestionsLoading(false); return; }
+        params.set("tenantId", resolvedTenantId);
 
         const res = await fetch(`/api/exams/questions?${params}`);
         const data = await res.json();
@@ -529,7 +532,7 @@ export default function Testing() {
     };
 
     fetchQuestions();
-  }, [grade, testId, orgSlug]);
+  }, [grade, testId, resolvedTenantId]);
 
   // Prevent accidental F5/Closing
   useEffect(() => {

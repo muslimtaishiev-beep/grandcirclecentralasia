@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { resolveLegalProfile } from '../../../shared/legal';
 import { useOutletContext, useParams, useNavigate } from 'react-router-dom';
 import { useDocumentEditor } from '../../../hooks/collab/useDocumentEditor';
 import DocEditorToolbar from './components/DocEditorToolbar';
@@ -234,6 +235,7 @@ export default function DocumentEditorPage() {
   return (
     <div className="h-[calc(100vh-3.5rem)] flex flex-col bg-[#f8f9fa] overflow-hidden">
       <DocEditorToolbar 
+        legal={resolveLegalProfile(activeTenant)}
         doc={doc}
         title={doc.title}
         onUpdateTitle={updateTitle}

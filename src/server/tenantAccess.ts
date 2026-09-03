@@ -69,3 +69,25 @@ export const requireScreen = (navKey: string, pick?: (req: any) => unknown) =>
     req.tenant = gate.tenant;
     next();
   };
+
+/** Ошибка с HTTP-статусом — для строгой проверки организации в старых ручках. */
+export class TenantError extends Error {
+  constructor(public status: number, message: string) { super(message); }
+}
+
+/**
+ * Обязательный идентификатор организации. Раньше отсутствующий tenantId
+ * молча подменялся Академией — и данные чужой организации уезжали к ней.
+ */
+export function requireTenantId(v: unknown): string {
+  const id = String(v ?? "").trim();
+  if (!id) throw new TenantError(400, "Не указана организация");
+  return id;
+}
+
+export async function loadTenantOrThrow(v: unknown): Promise<any> {
+  const id = requireTenantId(v);
+  const t = await loadTenant(id);
+  if (!t) throw new TenantError(404, "Организация не найдена");
+  return t;
+}

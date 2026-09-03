@@ -7,6 +7,7 @@
  * только явный список полей.
  */
 import { normalizeTenantStatus } from "../shared/permissions.js";
+import { publicLegal } from "../shared/legal.js";
 export { normalizeTenantStatus };
 
 /** Публичное представление — для анонимных страниц (экзамен, лендинг, QR). */
@@ -26,7 +27,7 @@ export function publicTenantView(t: any) {
     },
     brandColor: t.brandColor ?? null,
     workspaceConfig: t.workspaceConfig ?? null,
-    legal: t.legal && typeof t.legal === "object" ? t.legal : null,
+    legal: publicLegal(t.legal),
   };
 }
 

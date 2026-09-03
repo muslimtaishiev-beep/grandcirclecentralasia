@@ -34,7 +34,7 @@ const DEFAULT_DEPARTMENTS = [
 export default function OrgStructure() {
   const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
-  const currentOrgId = activeTenant?.id || orgId || 'org_future_leaders';
+  const currentOrgId = activeTenant?.id || orgId || '';
 
   const [departments, setDepartments] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);

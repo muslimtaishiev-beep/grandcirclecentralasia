@@ -1,18 +1,36 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { useResolvedTenantId } from '../lib/resolveTenant';
 
 interface LandingProps {
   lang?: "ru" | "en" | "kg";
 }
 
 const Landing: React.FC<LandingProps> = ({ lang = "ru" }) => {
-  // orgSlug из адреса /:orgSlug/admission. Переменная использовалась в двух
-  // кнопках, но не была объявлена — клик по «Вход для участников» падал с
-  // ReferenceError с 24 августа. Vite не проверяет типы при сборке, поэтому
-  // ошибка дожила до продакшена.
-  const { orgSlug = "org_future_leaders" } = useParams<{ orgSlug?: string }>();
+  // Организация — только из адреса /:orgSlug/admission. Раньше без слага
+  // подставлялась Академия, и её лендинг открывался по любому чужому адресу.
+  const { orgSlug } = useParams<{ orgSlug?: string }>();
   const navigate = useNavigate();
+  const resolved = useResolvedTenantId(orgSlug);
+  const [org, setOrg] = useState<{ name: string; branding?: any } | null>(null);
+  useEffect(() => {
+    if (!resolved.tenantId) return;
+    fetch(`/api/tenant/public?id=${encodeURIComponent(resolved.tenantId)}`)
+      .then(r => r.json()).then(j => { if (j?.success) setOrg(j.tenant); }).catch(() => {});
+  }, [resolved.tenantId]);
+
+  if (resolved.notFound) {
+    return (
+      <div className="min-h-dvh bg-black text-white flex items-center justify-center p-6 text-center font-sans">
+        <div>
+          <h1 className="text-2xl font-bold mb-2">Организация не найдена</h1>
+          <p className="text-slate-400 text-sm">Проверьте адрес — такой организации на платформе нет.</p>
+        </div>
+      </div>
+    );
+  }
+  const orgTitle = (org?.name || resolved.name || "").trim();
 
   return (
     <div className="relative min-h-dvh bg-black text-white overflow-hidden font-sans">
@@ -90,12 +108,8 @@ const Landing: React.FC<LandingProps> = ({ lang = "ru" }) => {
             {lang === "ru" ? "Регистрация открыта" : lang === "kg" ? "Каттоо ачык" : "Registration Open"}
           </div>
 
-          <h1 className="text-4xl sm:text-6xl md:text-8xl font-black uppercase tracking-tighter mb-6 leading-none">
-            FUTURE LEADERS
-            <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-300 to-slate-500">
-              ACADEMY
-            </span>
+          <h1 className="text-4xl sm:text-6xl md:text-7xl font-black uppercase tracking-tighter mb-6 leading-none text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-500">
+            {orgTitle || "\u00a0"}
           </h1>
 
           <p className="text-lg sm:text-2xl text-slate-300 mb-12 max-w-2xl mx-auto font-light">

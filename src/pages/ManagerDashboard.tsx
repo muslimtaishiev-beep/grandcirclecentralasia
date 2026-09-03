@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { createPortal } from "react-dom";
 import toast, { Toaster } from "react-hot-toast";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useOutletContext } from "react-router-dom";
 import { getHourlyPIN, getCEFRLevel, fetchGasAPI, toGenitiveCase } from "../lib/utils";
 import { collection, getDocs, deleteDoc, doc, query, where, limit } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -15,6 +15,7 @@ const loadHtml2Pdf = async () => (await import("html2pdf.js")).default;
 import Papa from "papaparse";
 import { DiagnosticReportPdf } from "../components/DiagnosticReportPdf";
 import { SchoolCertificatePdf } from "../components/SchoolCertificatePdf";
+import { resolveLegalProfile } from "../shared/legal";
 import { useTenant } from "../context/TenantContext";
 import { DocumentIssuerModal } from "../components/DocumentIssuerModal";
 import ProctoringDossier from "../components/ProctoringDossier";
@@ -41,6 +42,9 @@ export default function ManagerDashboard() {
   const { user, loading: authLoading } = useAuth();
   const { orgId: routeOrgId } = useParams();
   const activeTenantId = routeOrgId || tenant?.id;
+  // Реквизиты организации для справок и отчётов — из воркспейса, а не из кода.
+  const outlet = useOutletContext<{ activeTenant?: any } | null>();
+  const school = resolveLegalProfile(outlet?.activeTenant || tenant);
 
   const [students, setStudents] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -81,13 +85,13 @@ export default function ManagerDashboard() {
   const [certTab, setCertTab] = useState<"GENERATE" | "HISTORY">("GENERATE");
   const [selectedStudentForCert, setSelectedStudentForCert] = useState<string>("MANUAL");
   const [certManagerName, setCertManagerName] = useState<string>(() => {
-    return firebaseAuth.currentUser?.displayName || firebaseAuth.currentUser?.email || "Сотрудник Академии";
+    return firebaseAuth.currentUser?.displayName || firebaseAuth.currentUser?.email || "Сотрудник";
   });
 
   useEffect(() => {
     const unsub = onAuthStateChanged(firebaseAuth, (user) => {
       if (user) {
-        setCertManagerName(user.displayName || user.email || "Сотрудник Академии");
+        setCertManagerName(user.displayName || user.email || "Сотрудник");
       }
     });
     return () => unsub();
@@ -537,7 +541,7 @@ export default function ManagerDashboard() {
       const res = await fetchGasAPI("/api/gas", {
         action: "unblockStudent",
         shortId: row.shortId,
-        tenantId: activeTenantId || 'org_future_leaders',
+        tenantId: activeTenantId || '',
         studentName: row.studentName || "",
         managerName: user?.displayName || user?.email || "",
       }, "");
@@ -558,7 +562,8 @@ export default function ManagerDashboard() {
     setLoading(true);
     setError("");
     try {
-      const targetTenantId = activeTenantId || 'org_future_leaders';
+      const targetTenantId = activeTenantId || '';
+      if (!targetTenantId) { setLoading(false); return; }
       const studentMap = new Map<string, any>();
       let firestoreFailed = false;
       let gasFailed = false;
@@ -652,7 +657,7 @@ export default function ManagerDashboard() {
         if (data && data.success) {
           const rawList = data.students || data.data || [];
           rawList.forEach((s: any) => {
-            const rowTenant = s.tenantId || 'org_future_leaders';
+            const rowTenant = s.tenantId || '';
             // Strict tenant match only — a missing tenantId or the default org must NOT
             // grant a blanket bypass, otherwise any manager can see every legacy/unscoped row.
             if (rowTenant === targetTenantId) {
@@ -1243,7 +1248,7 @@ export default function ManagerDashboard() {
 
         {studentForPdf && (
           <div style={{ width: 0, height: 0, overflow: "hidden" }}>
-            <DiagnosticReportPdf student={studentForPdf} />
+            <DiagnosticReportPdf student={studentForPdf} stampUrl={school.stampUrl} />
           </div>
         )}
 
@@ -1384,7 +1389,7 @@ export default function ManagerDashboard() {
         {/* Certificate Offscreen Container for PDF Export */}
         {certForExport && (
           <div style={{ width: 0, height: 0, overflow: 'hidden', position: 'absolute', top: -9999, left: -9999 }}>
-            <SchoolCertificatePdf data={certForExport} />
+            <SchoolCertificatePdf data={certForExport} legal={school} />
           </div>
         )}
 
@@ -1430,7 +1435,7 @@ export default function ManagerDashboard() {
                   <h3 className="text-2xl font-bold flex items-center gap-2">
                     <span>📜</span> История выдачи и генератор справок
                   </h3>
-                  <p className="text-xs text-blue-200 mt-1">ОсОО «Академия будущих лидеров» • ИНН 03004202510435 • Лицензия LM.-2025-0006</p>
+                  <p className="text-xs text-blue-200 mt-1">{school.legalName}{school.inn ? ` • ИНН ${school.inn}` : ""}{school.license ? ` • Лицензия ${school.license}` : ""}</p>
                 </div>
                 <button onClick={() => setIsCertModalOpen(false)} className="text-blue-200 hover:text-white text-2xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition">✕</button>
               </div>
@@ -1596,7 +1601,7 @@ export default function ManagerDashboard() {
                       </div>
                       <div className="bg-white p-6 rounded-xl shadow border border-slate-200 text-xs font-serif leading-relaxed text-slate-800 space-y-3">
                         <div className="text-center font-bold text-slate-900 border-b pb-2">
-                          Академия Будущих Лидеров
+                          {school.legalName || "Организация"}
                         </div>
                         <div className="flex justify-between font-sans text-[11px] text-slate-600">
                           <span>Исх. № <strong>{certRefNumber}</strong></span>
@@ -1606,7 +1611,7 @@ export default function ManagerDashboard() {
                         <div className="text-center font-bold text-sm tracking-widest my-2">СПРАВКА</div>
                         <p>
                           Выдана <strong>{certStudentNameGenitive || certStudentName || '[ФИО в родительном падеже]'}</strong>
-                          {certDob ? `, ${certDob} г.р.,` : ''} в том, что он(а) действительно является учеником(цей) <strong>{certGrade}</strong> класса в средней школе «Академия Будущих Лидеров» (Лицензия LM.-2025-0006 от 03.03.2026 г.).
+                          {certDob ? `, ${certDob} г.р.,` : ''} в том, что он(а) действительно является учеником(цей) <strong>{certGrade}</strong> класса в «{school.legalName}»{school.license ? ` (Лицензия ${school.license})` : ""}.
                         </p>
                         <p>Справка выдана для предъявления {certPurpose}.</p>
                         <div className="flex justify-between items-center pt-2 font-sans text-[11px]">

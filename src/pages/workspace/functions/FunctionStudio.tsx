@@ -16,7 +16,7 @@ import DynamicFormRunner from '../../../components/engine/DynamicFormRunner';
 export default function FunctionStudio() {
   const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
-  const currentOrgId = activeTenant?.id || orgId || 'org_future_leaders';
+  const currentOrgId = activeTenant?.id || orgId || '';
 
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'form' | 'pipeline' | 'access' | 'preview'>('form');

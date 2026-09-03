@@ -7,6 +7,8 @@ interface TopicStat {
 
 interface DiagnosticReportPdfProps {
   student: any;
+  /** Печать организации; без неё отчёт печатается без печати. */
+  stampUrl?: string | null;
 }
 
 const C = {
@@ -53,7 +55,7 @@ const C = {
   red600: '#dc2626',
 };
 
-export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ student }) => {
+export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ student, stampUrl }) => {
   const { childName, studentName, grade, date, diagnosticsRaw } = student;
   const displayName = childName || studentName;
 
@@ -319,12 +321,12 @@ export const DiagnosticReportPdf: React.FC<DiagnosticReportPdfProps> = ({ studen
             <div className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: C.gray500 }}>Подпись специалиста</div>
             <div className="w-48 border-b-2 border-dashed" style={{ borderColor: C.gray400 }}></div>
           </div>
-          <img 
-            src="/stamp.png" 
+          {stampUrl && <img 
+            src={stampUrl} 
             alt="Печать" 
             className="absolute -bottom-8 right-6 w-32 h-32 object-contain opacity-90 mix-blend-multiply" 
             onError={(e) => e.currentTarget.style.display = 'none'} 
-          />
+          />}
         </div>
       </div>
 

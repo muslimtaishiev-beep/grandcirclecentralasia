@@ -26,6 +26,8 @@ export interface CertificateData {
   }[];
   finishedAt?: any;
   schoolName?: string;
+  /** Реквизиты организации: название, подпись, печать. Без них — только название. */
+  school?: { legalName?: string; signatoryTitle?: string; stampUrl?: string | null } | null;
 }
 
 /**
@@ -56,6 +58,9 @@ export function certificateHTML(
   stampUrl = "/stamp.png",
   opts: { toolbar?: boolean } = {},
 ): string {
+  // Печать — из реквизитов организации; у кого её нет, на бланке пусто.
+  // Старые вызовы без school сохраняют прежнее поведение.
+  const stamp = data.school ? (data.school.stampUrl || "") : stampUrl;
   // Своя панель нужна только в отдельном окне. Во врезке на странице кнопки
   // уже есть снаружи, а window.close() из iframe ничего не закроет.
   const showToolbar = opts.toolbar !== false;
@@ -171,7 +176,7 @@ ${showToolbar ? `<div class="toolbar noprint">
 <div class="sheet">
   <div class="head">
     <div>
-      <div class="school">${esc(data.schoolName || "Академия Будущих Лидеров")}</div>
+      <div class="school">${esc(data.school?.legalName || data.schoolName || "")}</div>
       <div class="doctype">Вступительный срез знаний</div>
     </div>
     <div class="refno">
@@ -227,9 +232,11 @@ ${showToolbar ? `<div class="toolbar noprint">
   <div class="foot">
     <div class="sign">
       <div class="line"></div>
-      <div class="who">Заместитель директора по учебной работе</div>
+      <div class="who">${esc(data.school
+        ? (data.school.signatoryTitle || "Директор")
+        : "Заместитель директора по учебной работе")}</div>
     </div>
-    <img class="stamp" src="${stampUrl}" alt="">
+    ${stamp ? `<img class="stamp" src="${esc(stamp)}" alt="">` : ""}
     <div class="issued">
       Документ сформирован автоматически<br>
       ${esc(new Date().toLocaleDateString("ru-RU"))}

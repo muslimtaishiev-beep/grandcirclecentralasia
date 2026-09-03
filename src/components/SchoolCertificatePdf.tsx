@@ -1,4 +1,5 @@
 import React from 'react';
+import type { LegalProfile } from '../shared/legal';
 
 export interface CertificateData {
   refNumber: string;
@@ -12,9 +13,13 @@ export interface CertificateData {
 
 interface SchoolCertificatePdfProps {
   data: CertificateData;
+  /** Реквизиты организации: бланк, штамп, печать. Без них печатается только название. */
+  legal?: LegalProfile | null;
 }
 
-export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data }) => {
+export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data, legal }) => {
+  const L = legal || { legalName: "" };
+  const stampColor = L.stampColor || "var(--stamp)";
   const {
     refNumber = '26-08-001',
     issueDate = new Date().toLocaleDateString('ru-RU'),
@@ -49,26 +54,21 @@ export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data
         color: '#000000',
         fontFamily: "'Times New Roman', Times, Georgia, serif",
         lineHeight: '1.6',
-        fontSize: '16px'
+        fontSize: '16px',
+        ['--stamp' as any]: stampColor,
       }}
     >
       <div>
         {/* 1. Official Header Logo */}
         <div className="w-full text-center mb-3">
-          <img
-            src="/school_logo.png"
-            alt="Образовательное Учреждение"
-            className="h-28 object-contain mx-auto"
-            onError={(e) => {
-              // Fallback to /logo.png
-              const target = e.currentTarget as HTMLImageElement;
-              if (target.src.endsWith('/school_logo.png')) {
-                target.src = '/logo.png';
-              } else {
-                target.style.display = 'none';
-              }
-            }}
-          />
+          {L.logoUrl && (
+            <img
+              src={L.logoUrl}
+              alt={L.legalName}
+              className="h-28 object-contain mx-auto"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+            />
+          )}
         </div>
 
         {/* Thin Orange Separator Line */}
@@ -78,54 +78,56 @@ export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data
         <div className="flex justify-between items-start text-[13px] font-serif leading-snug mb-6 text-black">
           {/* Kyrgyz Side */}
           <div className="space-y-0.5 max-w-[280px]">
-            <div className="font-bold">Келечектеги лидерлердин академиясы</div>
-            <div className="font-bold">Лидеров</div>
-            <div>720005, Бишкек ш., Жунай Мавлянов кѳчѳсу, 10</div>
-            <div>Тел.: 996558398360</div>
+            <div className="font-bold">{L.nameKg || L.legalName}</div>
+            {(L.addressKg || L.address) && <div>{L.addressKg || L.address}</div>}
+            {L.phone && <div>Тел.: {L.phone}</div>}
           </div>
 
           {/* Russian Side */}
           <div className="text-right space-y-0.5 max-w-[280px]">
-            <div className="font-bold">Академия Будущих</div>
-            <div>720005, г. Бишкек, ул. Жуная Мавлянова, 10</div>
-            <div>Тел.: 996558398360</div>
+            <div className="font-bold">{L.legalName}</div>
+            {L.address && <div>{L.address}</div>}
+            {L.phone && <div>Тел.: {L.phone}</div>}
           </div>
         </div>
 
         {/* 3. City Title + Stamp Row & 'Справка' Header */}
         <div className="mt-4 mb-6">
-          <div className="text-base font-bold mb-2">г. Бишкек</div>
+          {L.city && <div className="text-base font-bold mb-2">г. {L.city}</div>}
           
           <div className="flex items-center gap-10">
-            {/* Ultra High-Resolution HD Vector Official Corner Stamp (All Stamp Blue #0C3674) */}
-            <div className="w-[330px] border-[2.5px] border-[#0C3674] p-2.5 text-[11px] font-serif leading-tight bg-[#f0f4ff]/20 text-[#0C3674] rounded-xs relative select-none">
-              <div className="text-[11.5px] font-bold tracking-tight text-center border-b border-[#0C3674]/50 pb-1 mb-1.5 font-serif uppercase">
-                Общество с ограниченной ответственностью<br />
-                «Образовательное Учреждение»
+            {/* Ultra High-Resolution HD Vector Official Corner Stamp (All Stamp Blue var(--stamp)) */}
+            <div className="w-[330px] border-[2.5px] border-[var(--stamp)] p-2.5 text-[11px] font-serif leading-tight bg-[#f0f4ff]/20 text-[var(--stamp)] rounded-xs relative select-none">
+              <div className="text-[11.5px] font-bold tracking-tight text-center border-b border-[var(--stamp)] pb-1 mb-1.5 font-serif uppercase">
+                {L.legalName}
               </div>
-              <div className="text-[10px] text-center font-mono text-[#0C3674] tracking-wider mb-2 font-bold">
-                ИНН 03004202510435
-              </div>
-              <div className="space-y-1.5 text-[11px] font-serif pl-1 text-[#0C3674]">
+              {L.inn && (
+                <div className="text-[10px] text-center font-mono text-[var(--stamp)] tracking-wider mb-2 font-bold">
+                  ИНН {L.inn}
+                </div>
+              )}
+              <div className="space-y-1.5 text-[11px] font-serif pl-1 text-[var(--stamp)]">
                 <div className="flex items-baseline">
                   <span className="font-bold">№</span>
-                  <span className="border-b border-[#0C3674] px-4 font-mono font-bold ml-2 text-xs text-[#0C3674]">
+                  <span className="border-b border-[var(--stamp)] px-4 font-mono font-bold ml-2 text-xs text-[var(--stamp)]">
                     {refNumber}
                   </span>
                 </div>
                 <div className="flex items-baseline gap-1">
                   <span className="font-bold">«</span>
-                  <span className="border-b border-[#0C3674] px-2 font-bold text-xs text-[#0C3674]">{dayStr}</span>
+                  <span className="border-b border-[var(--stamp)] px-2 font-bold text-xs text-[var(--stamp)]">{dayStr}</span>
                   <span className="font-bold">»</span>
-                  <span className="border-b border-[#0C3674] px-3 font-bold text-xs text-[#0C3674]">{monthStr}</span>
+                  <span className="border-b border-[var(--stamp)] px-3 font-bold text-xs text-[var(--stamp)]">{monthStr}</span>
                   <span className="font-bold">20</span>
-                  <span className="border-b border-[#0C3674] px-1 font-bold text-xs text-[#0C3674]">{yearStr}</span>
+                  <span className="border-b border-[var(--stamp)] px-1 font-bold text-xs text-[var(--stamp)]">{yearStr}</span>
                   <span className="font-bold">г.ж.</span>
                 </div>
               </div>
-              <div className="text-right text-[9.5px] text-[#0C3674] italic mt-1 pr-1 font-serif font-bold">
-                г. Бишкек ш.
-              </div>
+              {L.city && (
+                <div className="text-right text-[9.5px] text-[var(--stamp)] italic mt-1 pr-1 font-serif font-bold">
+                  г. {L.city}
+                </div>
+              )}
             </div>
 
             {/* Title 'Справка' placed right next to the corner stamp */}
@@ -154,7 +156,7 @@ export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data
           </div>
 
           <p className="text-justify font-normal text-[19px]">
-            «Образовательное Учреждение»
+            «{L.legalName}»
           </p>
 
           <p className="text-justify text-[19px] pt-2">
@@ -185,14 +187,14 @@ export const SchoolCertificatePdf: React.FC<SchoolCertificatePdfProps> = ({ data
 
           {/* Right: Round Seal Image */}
           <div className="relative w-48 h-24">
-            <img
-              src="/stamp.png"
+            {L.stampUrl && <img
+              src={L.stampUrl}
               alt="Круглая печать"
               className="absolute -top-16 -left-12 w-48 h-48 object-contain opacity-90 mix-blend-multiply pointer-events-none z-10"
               onError={(e) => {
                 (e.currentTarget as HTMLElement).style.display = 'none';
               }}
-            />
+            />}
           </div>
         </div>
       </div>

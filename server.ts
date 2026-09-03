@@ -10,7 +10,7 @@ import compression from "compression";
 import { calculateScoresTs } from "./src/lib/scoringEngine.js";
 import { publicTenantView } from "./src/server/tenantView.js";
 import { hasAnyPermission } from "./src/server/access.js";
-import { checkTenantOpen } from "./src/server/tenantAccess.js";
+import { checkTenantOpen, loadTenant, TenantError } from "./src/server/tenantAccess.js";
 import { requireFirebaseAuth } from "./src/routes/authRoutes.js";
 
 dotenv.config();
@@ -351,14 +351,17 @@ interface TenantContext {
   plan_tier: 'free' | 'pro' | 'enterprise';
 }
 
-function resolveTenantFromApiKey(apiKey: string | undefined): TenantContext {
-  // Default tenant mapping — fallback to Future Leaders Academy
-  const defaultTenant: TenantContext = {
-    org_id: process.env.DEFAULT_ORG_ID || 'org_future_leaders',
-    org_name: process.env.DEFAULT_ORG_NAME || 'ОсОО «Академия Будущих Лидеров»',
-    plan_tier: 'pro',
-  };
-  return defaultTenant; // TODO: lookup from KV store when multi-tenant
+/**
+ * Организация — из запроса, а не из ключа GAS. Раньше функция игнорировала
+ * аргумент и всегда возвращала Академию: улики прокторинга любой школы
+ * подписывались её названием.
+ */
+async function resolveTenantContext(tenantId: unknown): Promise<TenantContext> {
+  const id = String(tenantId ?? "").trim();
+  if (!id) throw new TenantError(400, "Не указана организация");
+  const t = await loadTenant(id);
+  if (!t) throw new TenantError(404, "Организация не найдена");
+  return { org_id: id, org_name: String(t.name || id), plan_tier: 'pro' };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -398,7 +401,9 @@ app.post("/api/proctoring/upload-evidence", authLimiter, async (req, res) => {
     }
 
     // ⚠️ SECURITY: org_id is injected HERE server-side, never from client body
-    const tenant = resolveTenantFromApiKey(gasApiKey);
+    let tenant: TenantContext;
+    try { tenant = await resolveTenantContext(req.body?.tenantId); }
+    catch (e: any) { return res.status(e.status || 400).json({ success: false, error: e.message }); }
 
     // Audit log: write directly to Firestore collection `audit_logs`
     const auditEntry = {
@@ -490,7 +495,8 @@ app.post("/api/proctoring/upload-evidence", authLimiter, async (req, res) => {
 // Database Optimization & Data Migration Endpoint
 app.post("/api/admin/db/optimize", requireSuperadmin, async (req: express.Request, res: express.Response) => {
   try {
-    const defaultTenantId = req.body?.tenantId || 'org_future_leaders';
+    const defaultTenantId = String(req.body?.tenantId || "").trim();
+    if (!defaultTenantId) return res.status(400).json({ success: false, error: "Не указана организация" });
     const db = admin.firestore();
     const results = { updatedSubmissions: 0, updatedDeals: 0, seededDepts: 0 };
 
@@ -568,6 +574,19 @@ app.get("/api/tenant/config", async (req, res) => {
  * анонимны и Firestore им закрыт, а печатать на афишах org_oxford_school
  * неудобно. Отдаём только id и название — ничего из настроек наружу.
  */
+/** GET /api/tenant/public?id=org_x — публичный срез организации (название, брендинг, реквизиты без почты). */
+app.get("/api/tenant/public", async (req, res) => {
+  try {
+    const id = String(req.query.id || "").trim();
+    if (!id || id.length > 80) return res.status(400).json({ success: false, error: "Не указана организация" });
+    const t = await loadTenant(id);
+    if (!t) return res.status(404).json({ success: false, error: "Организация не найдена" });
+    return res.json({ success: true, tenant: publicTenantView(t) });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 app.get("/api/tenant/resolve", async (req, res) => {
   try {
     const slug = String(req.query.slug || "").toLowerCase().trim();
@@ -636,6 +655,13 @@ app.post("/api/exams/start", async (req, res) => {
     if (!studentName || !grade) {
       return res.status(400).json({ success: false, error: "Missing studentName or grade" });
     }
+    // Организация обязательна и должна быть открыта — до проверки PIN, чтобы
+    // ответ не зависел от того, угадан ли код.
+    const resolvedTenantId = String(tenantId || "").trim();
+    {
+      const gate = await checkTenantOpen(resolvedTenantId, "tests");
+      if (!gate.ok) return res.status(gate.status).json({ success: false, error: gate.error });
+    }
 
     // Accept the neighbouring hours too: the PIN rotates on the hour, so one
     // read out at 10:59 was rejected at 11:00 even though the student typed it
@@ -659,12 +685,6 @@ app.post("/api/exams/start", async (req, res) => {
 
     const studentShortId = shortId || Math.floor(100000 + Math.random() * 900000).toString();
     const sessionId = testId || `test_${studentShortId}_${Date.now()}`;
-    const resolvedTenantId = tenantId || 'org_future_leaders';
-    {
-      // Приостановленная организация или закрытые платформой тесты — экзамен не стартует.
-      const gate = await checkTenantOpen(resolvedTenantId, "tests");
-      if (!gate.ok) return res.status(gate.status).json({ success: false, error: gate.error });
-    }
 
     // Save session in Firestore if available
     if (useFirebase) {
@@ -689,7 +709,9 @@ app.post("/api/exams/start", async (req, res) => {
     let testData: any = null;
     if (useFirebase) {
       try {
-        const testSlug = resolvedTenantId === 'org_future_leaders' ? `future_leaders_grade_${grade}` : `test_grade_${grade}`;
+        // Один формат для всех организаций. Раньше Академия шла по особому
+        // пути (future_leaders_grade_N), а остальные — по общему.
+        const testSlug = `test_grade_${grade}_${resolvedTenantId}`;
         const testRef = admin.firestore().collection("tests").doc(testSlug);
         const testSnap = await testRef.get();
         
@@ -746,7 +768,7 @@ app.get("/api/exams/questions", async (req, res) => {
       return res.status(400).json({ success: false, error: "Missing grade parameter" });
     }
 
-    const resolvedTenantId = (tenantId as string) || 'org_future_leaders';
+    const resolvedTenantId = String(tenantId || "").trim();
     {
       const gate = await checkTenantOpen(resolvedTenantId, "tests");
       if (!gate.ok) return res.status(gate.status).json({ success: false, error: gate.error });
@@ -759,12 +781,9 @@ app.get("/api/exams/questions", async (req, res) => {
 
     // Candidate doc IDs (tenant-specific first, then fallback)
     // IMPORTANT: Always verify tenantId matches to prevent cross-tenant leaks
-    const candidates = [
-      `test_grade_${g}_${resolvedTenantId}`,
-      `test_grade_${g}`,
-      `test_${g}`,
-      `${g}`
-    ];
+    // Только документ этой организации. Прежние запасные варианты без
+    // суффикса организации отдавали чужой (непомеченный) тест любой школе.
+    const candidates = [`test_grade_${g}_${resolvedTenantId}`];
 
     let testData: any = null;
     for (const docId of candidates) {
@@ -885,7 +904,7 @@ app.post("/api/exams/event", (req, res) => {
     if (!action) return res.status(400).json({ success: false, error: "Unknown event" });
     if (!shortId) return res.status(400).json({ success: false, error: "Missing shortId" });
 
-    writeAuditLog(action, tenantId || "org_future_leaders", {
+    writeAuditLog(action, tenantId || "unknown", {
       studentShortId: String(shortId),
       studentName: studentName || "",
       grade: Number(grade) || 0,
@@ -906,7 +925,8 @@ app.post("/api/exams/proctoring-report", async (req, res) => {
     if (!shortId) return res.status(400).json({ success: false, error: "Missing shortId" });
     if (!useFirebase) return res.status(503).json({ success: false, error: "Firestore not configured" });
 
-    const resolvedTenantId = tenantId || "org_future_leaders";
+    const resolvedTenantId = String(tenantId || "").trim();
+    if (!resolvedTenantId) return res.status(400).json({ success: false, error: "Не указана организация" });
     const subRef = admin.firestore().collection("submissions").doc(`sub_${shortId}`);
 
     // Only attach to a submission that belongs to the claimed tenant — the same
@@ -1000,7 +1020,7 @@ async function processExamSubmission(payload: any) {
   const { sessionId, shortId, studentName, grade, answers, cheated, isTester, isRetake, tenantId, action } = payload;
   const studentEmail = payload.studentEmail || payload.email || '';
   const studentPhone = payload.studentPhone || payload.phone || '';
-  const resolvedTenantId = tenantId || 'org_future_leaders';
+  const resolvedTenantId = String(tenantId || "").trim();
 
   if (!shortId || !studentName || !grade) {
     return { success: false, error: "Missing required submission fields" };
@@ -1019,12 +1039,7 @@ async function processExamSubmission(payload: any) {
   let realQuestions: { russian: any[]; math: any[]; logic: any[] } | null = null;
   if (useFirebase) {
     try {
-      const testCandidates = [
-        `test_grade_${grade}_${resolvedTenantId}`,
-        `test_grade_${grade}`,
-        `test_${grade}`,
-        `${grade}`
-      ];
+      const testCandidates = [`test_grade_${grade}_${resolvedTenantId}`];
       let testFound = false;
       // Все кандидаты одним запросом вместо очереди из четырёх, с кэшем:
       // документ теста один и тот же для каждого сдающего этот класс.
@@ -1425,7 +1440,8 @@ app.get("/api/public/check-retake/:shortId", async (req, res) => {
     // 1. Try Firebase if enabled
     if (useFirebase) {
       try {
-        const tenantId = req.query.tenantId || "org_future_leaders";
+        const tenantId = String(req.query.tenantId || "").trim();
+        if (!tenantId) return res.status(400).json({ success: false, error: "Не указана организация" });
         const doc = await admin.firestore().collection("retakes").doc(req.params.shortId).get();
         if (doc.exists && doc.data()?.allowed === true) {
           const docTenantId = doc.data()?.tenantId;
@@ -1485,6 +1501,18 @@ app.post("/api/gas", async (req, res) => {
     }
     
     const payload = { ...body, apiKey: gasApiKey };
+    
+    // Организация обязательна для всего, что сервер обрабатывает сам. Раньше
+    
+    // без неё подставлялась Академия — и записи чужой школы ложились к ней.
+    
+    const NEEDS_TENANT = new Set(["registerStudent", "suspendTest", "getStudentByShortId", "unblockStudent"]);
+    
+    if (NEEDS_TENANT.has(String(payload?.action || "")) && !String(payload?.tenantId || "").trim()) {
+    
+      return res.status(400).json({ success: false, error: "Не указана организация" });
+    
+    }
     
     // Check if tester
     const TESTER_PIN = process.env.VITE_TESTER_PIN;
@@ -1561,7 +1589,7 @@ app.post("/api/gas", async (req, res) => {
         const gate = await checkTenantOpen(payload.tenantId, "tests");
         if (!gate.ok) return res.status(gate.status).json({ success: false, error: gate.error });
       }
-      writeAuditLog("EXAM_STARTED", payload.tenantId || "org_future_leaders", {
+      writeAuditLog("EXAM_STARTED", (payload.tenantId || "unknown"), {
         studentShortId: String(payload.shortId),
         studentName: payload.studentName || "",
         studentPhone: payload.studentPhone || "",
@@ -1583,7 +1611,7 @@ app.post("/api/gas", async (req, res) => {
       try {
         await admin.firestore().collection("exam_suspensions").doc(String(payload.shortId)).set({
           shortId: String(payload.shortId),
-          tenantId: payload.tenantId || "org_future_leaders",
+          tenantId: (payload.tenantId || "unknown"),
           studentName: payload.studentName || "",
           grade: Number(payload.grade) || 0,
           phase: payload.phase || "core",
@@ -1591,7 +1619,7 @@ app.post("/api/gas", async (req, res) => {
           status: "ПРИОСТАНОВЛЕН",
           suspendedAt: admin.firestore.Timestamp.now(),
         }, { merge: true });
-        writeAuditLog("EXAM_SUSPENDED", payload.tenantId || "org_future_leaders", {
+        writeAuditLog("EXAM_SUSPENDED", (payload.tenantId || "unknown"), {
           studentShortId: String(payload.shortId),
           studentName: payload.studentName || "",
           grade: Number(payload.grade) || 0,
@@ -1627,7 +1655,7 @@ app.post("/api/gas", async (req, res) => {
     // exists yet (student registered but hasn't submitted).
     if (payload.action === "getStudentByShortId" && useFirebase && payload.shortId) {
       try {
-        const requestedTenantId = payload.tenantId || "org_future_leaders";
+        const requestedTenantId = (payload.tenantId || "unknown");
         const snap = await admin.firestore().collection("submissions").doc(`sub_${payload.shortId}`).get();
         const d = snap.data();
         if (d) {
@@ -1666,7 +1694,7 @@ app.post("/api/gas", async (req, res) => {
           unblockedAt: admin.firestore.Timestamp.now(),
           unblockedBy: payload.managerName || payload.actorEmail || "",
         }, { merge: true });
-        writeAuditLog("EXAM_RESUME_APPROVED", payload.tenantId || "org_future_leaders", {
+        writeAuditLog("EXAM_RESUME_APPROVED", (payload.tenantId || "unknown"), {
           studentShortId: String(payload.shortId),
           studentName: payload.studentName || "",
           actor: payload.managerName || payload.actorEmail || "",
@@ -1687,7 +1715,7 @@ app.post("/api/gas", async (req, res) => {
     if (payload.action === "getStudentByShortId" && useFirebase && payload.shortId) {
       try {
         const shortId = String(payload.shortId);
-        const tenantId = payload.tenantId || "org_future_leaders";
+        const tenantId = (payload.tenantId || "unknown");
         const docId = `sub_${shortId}`;
         let snap = await admin.firestore().collection("submissions").doc(docId).get();
         if (!snap.exists) {
@@ -1796,7 +1824,7 @@ app.post("/api/gas", async (req, res) => {
         
         // Find user by matching first/last name, scoped to tenant
         const snapshot = await admin.firestore().collection('users')
-          .where("tenantId", "==", payload.tenantId || "org_future_leaders")
+          .where("tenantId", "==", (payload.tenantId || "unknown"))
           .get();
         let matchedUserId = null;
         

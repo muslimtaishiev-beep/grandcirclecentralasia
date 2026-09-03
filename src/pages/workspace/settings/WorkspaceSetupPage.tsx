@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { sanitizeLegal, type LegalProfile } from "../../../shared/legal";
 import { useOutletContext } from "react-router-dom";
 import { Sparkles, Check, Loader2, RotateCcw } from "lucide-react";
 import { auth } from "../../../lib/firebase";
@@ -24,6 +25,10 @@ export default function WorkspaceSetupPage() {
   const tenant = ctx?.activeTenant;
 
   const [cfg, setCfg] = useState<WorkspaceConfig>({});
+  // Реквизиты для справок, сертификатов и шаблонов документов.
+  const [legal, setLegal] = useState<LegalProfile>({ legalName: "" });
+  const [legalSaving, setLegalSaving] = useState(false);
+  const [legalNotice, setLegalNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +44,29 @@ export default function WorkspaceSetupPage() {
       schedule: { ...(raw.schedule || {}) },
     });
   }, [tenant?.id, tenant?.workspaceConfig]);
+  useEffect(() => {
+    if (!tenant) return;
+    setLegal({ legalName: "", ...sanitizeLegal(tenant.legal) });
+  }, [tenant?.id, tenant?.legal]);
+
+  const saveLegal = async () => {
+    setLegalSaving(true); setError(null); setLegalNotice(null);
+    try {
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+      const res = await fetch(`/api/tenants/${tenant.id}/legal`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ legal }),
+      });
+      const j = await res.json();
+      if (!j.success) { setError(j.error || "Не удалось сохранить реквизиты."); return; }
+      setLegalNotice("Реквизиты сохранены — справки и сертификаты будут печататься с ними.");
+      setTimeout(() => setLegalNotice(null), 6000);
+      ctx?.refreshTenants?.();
+    } catch { setError("Нет связи с сервером"); }
+    finally { setLegalSaving(false); }
+  };
+  const setL = (k: keyof LegalProfile, v: string) => setLegal(p => ({ ...p, [k]: v }));
 
   // Право, а не название должности: владелец может выдать настройку
   // организации кому угодно, и это должно работать.
@@ -199,6 +227,47 @@ export default function WorkspaceSetupPage() {
             {label}
           </label>
         ))}
+      </section>
+
+      {/* Реквизиты */}
+      <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-5 space-y-3" data-testid="legal-section">
+        <h2 className="font-bold text-sm">Реквизиты для справок и сертификатов</h2>
+        <p className="text-xs text-[var(--text-muted)]">
+          Печатаются на справках, сертификатах среза и в шаблонах документов. Пока их нет,
+          документы выходят только с названием организации — без печати и адреса.
+        </p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          {([
+            ["legalName", "Официальное название", "ОсОО «Название»"],
+            ["nameKg", "Название на втором языке", ""],
+            ["city", "Город", "Бишкек"],
+            ["phone", "Телефон", "+996 …"],
+            ["address", "Адрес", "720000, г. …, ул. …"],
+            ["addressKg", "Адрес на втором языке", ""],
+            ["inn", "ИНН", ""],
+            ["license", "Лицензия", "№ … от …"],
+            ["signatoryTitle", "Должность подписанта", "Директор"],
+            ["signatoryName", "ФИО подписанта", ""],
+            ["stampUrl", "Печать (ссылка на изображение)", "https://… или /stamp.png"],
+            ["logoUrl", "Логотип (ссылка)", "https://…"],
+            ["signatureUrl", "Факсимиле подписи (ссылка)", "https://…"],
+            ["stampColor", "Цвет штампа", "#0C3674"],
+          ] as const).map(([key, label, ph]) => (
+            <label key={key} className="block">
+              <span className="block text-[11px] uppercase font-mono font-bold text-[var(--text-muted)] mb-1">{label}</span>
+              <input value={(legal as any)[key] || ""} onChange={e => setL(key, e.target.value)} disabled={!canEdit}
+                placeholder={ph} data-testid={`legal-${key}`}
+                className="w-full px-3 py-2 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl text-sm" />
+            </label>
+          ))}
+        </div>
+        {legalNotice && <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-3 text-sm text-emerald-600">{legalNotice}</div>}
+        {canEdit && (
+          <button onClick={() => void saveLegal()} disabled={legalSaving || !legal.legalName.trim()} data-testid="legal-save"
+            className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center gap-2 disabled:opacity-50">
+            {legalSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Сохранить реквизиты
+          </button>
+        )}
       </section>
 
       {error && <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-3 text-sm text-red-500">{error}</div>}

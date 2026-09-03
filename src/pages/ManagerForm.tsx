@@ -26,16 +26,23 @@ export default function ManagerForm() {
   const [gradeData, setGradeData] = useState<any>(null);
 
   const [managerName, setManagerName] = useState(() => {
-    return firebaseAuth.currentUser?.displayName || firebaseAuth.currentUser?.email || "Менеджер Академии";
+    return firebaseAuth.currentUser?.displayName || firebaseAuth.currentUser?.email || "Менеджер";
   });
 
   useEffect(() => {
     if (user) {
-      setManagerName(user.displayName || user.email || "Менеджер Академии");
+      setManagerName(user.displayName || user.email || "Менеджер");
     }
   }, [user]);
 
   const [analyzing, setAnalyzing] = useState(false);
+  // Печать организации — из её реквизитов (публичный срез), не из кода.
+  const [stampUrl, setStampUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!routeOrgId) return;
+    fetch(`/api/tenant/public?id=${encodeURIComponent(routeOrgId)}`)
+      .then(r => r.json()).then(j => setStampUrl(j?.tenant?.legal?.stampUrl || null)).catch(() => {});
+  }, [routeOrgId]);
 
   const generatePdf = () => {
     if (!student || !student.diagnosticsRaw || Object.keys(student.diagnosticsRaw).length === 0) {
@@ -160,7 +167,7 @@ export default function ManagerForm() {
     <div className="min-h-dvh bg-slate-50 py-12 px-4">
       {student && (
         <div style={{ width: 0, height: 0, overflow: "hidden" }}>
-          <DiagnosticReportPdf student={student} />
+          <DiagnosticReportPdf student={student} stampUrl={stampUrl} />
         </div>
       )}
       <div className="max-w-xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden">

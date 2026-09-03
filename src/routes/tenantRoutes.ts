@@ -10,6 +10,7 @@ import { requireFirebaseAuth } from "./authRoutes.js";
 import { callerPermissions, canAssignSystemRole } from "../server/access.js";
 import { syncClaims } from "../server/claims.js";
 import { stripTenantSecrets } from "../server/tenantView.js";
+import { sanitizeLegal } from "../shared/legal.js";
 
 const router = Router();
 
@@ -440,6 +441,29 @@ router.put("/:id/workspace-config", requireFirebaseAuth, requireTenantAdmin, asy
 // ─────────────────────── Должности и права ───────────────────────
 
 const ROLES = "custom_roles";
+
+/**
+ * PUT /api/tenants/:id/legal — реквизиты организации для справок,
+ * сертификатов и шаблонов документов. Раньше во всех документах платформы
+ * были зашиты реквизиты одной организации.
+ */
+router.put("/:id/legal", requireFirebaseAuth, requireTenantAdmin, requireScreen("workspaceSetup"), async (req: any, res: any) => {
+  try {
+    const db = admin.firestore();
+    const tenantId = req.params.id;
+    const mine = await callerPermissions(db, req.user.uid, tenantId, req.user);
+    if (!mine.has("settings:manage")) {
+      return res.status(403).json({ success: false, error: "Нужно право «Настройки организации»" });
+    }
+    const legal = sanitizeLegal(req.body?.legal);
+    if (!legal.legalName) return res.status(400).json({ success: false, error: "Укажите официальное название организации" });
+    await db.collection("tenants").doc(tenantId).update({ legal, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    invalidateTenant(tenantId);
+    return res.json({ success: true, legal });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
 
 /** GET /api/tenants/:id/roles — должности организации. */
 router.get("/:id/roles", requireFirebaseAuth, requireTenantAdmin, requireScreen("permissions"), async (req: any, res: any) => {
