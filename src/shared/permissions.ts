@@ -17,7 +17,7 @@
 
 export type PermissionKey =
   // Тесты и прокторинг
-  | "tests:read" | "tests:manage" | "tests:review" | "certificates:issue"
+  | "tests:read" | "tests:manage" | "tests:review" | "certificates:issue" | "placement:manage"
   // Обучение
   | "edu:schedule" | "edu:payroll"
   // CRM
@@ -40,6 +40,7 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: "tests:manage", label: "Создание и редактирование тестов", description: "Новые тесты, вопросы, время прохождения", category: "Тесты & Прокторинг" },
   { key: "tests:review", label: "Проверка и прокторинг", description: "Кабинет проверки, снимки нарушений, отчёты", category: "Тесты & Прокторинг" },
   { key: "certificates:issue", label: "Выдача сертификатов", description: "Регистрация и выгрузка PDF-сертификатов и справок", category: "Тесты & Прокторинг" },
+  { key: "placement:manage", label: "Вступительный срез", description: "Кабинет среза: варианты, результаты, распределение по классам", category: "Тесты & Прокторинг" },
 
   { key: "edu:schedule", label: "Расписание и посещаемость", description: "Сетка занятий, журнал, списание занятий", category: "Обучение & Журнал" },
   { key: "edu:payroll", label: "Расчёт зарплат", description: "Ставки и выплаты за проведённые занятия", category: "Обучение & Журнал" },
@@ -71,7 +72,7 @@ export const isPermissionKey = (v: unknown): v is PermissionKey =>
  * одному лишь членству.
  */
 export const PERMISSION_CODES: Record<PermissionKey, string> = {
-  "tests:read": "tr", "tests:manage": "tm", "tests:review": "tv", "certificates:issue": "ci",
+  "tests:read": "tr", "tests:manage": "tm", "tests:review": "tv", "certificates:issue": "ci", "placement:manage": "pm",
   "edu:schedule": "es", "edu:payroll": "ep",
   "crm:read": "cr", "crm:manage": "cm",
   "chat:use": "ch", "tasks:use": "ta", "docs:use": "dc", "sheets:use": "sh", "tickets:check": "tk",
@@ -192,7 +193,8 @@ export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | nu
   crm: ["crm:read", "crm:manage"],
   tests: ["tests:read", "tests:manage"],
   testsManage: ["tests:review", "tests:manage"],
-  placement: ["tests:manage", "tests:review"],
+  // Срез: своё право (раньше — роль с подстрокой «завуч» в названии).
+  placement: ["placement:manage", "tests:manage", "tests:review"],
   forms: ["team:manage", "certificates:issue", "crm:manage"],
   functions: ["team:manage", "settings:manage"],
   departments: ["team:manage", "settings:manage"],
@@ -206,12 +208,12 @@ export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | nu
  * Модули организации, которые владелец может выключить целиком.
  * Выключенный модуль отнимает свои права у ВСЕХ, включая роли.
  */
-export const ORG_MODULES: { key: string; label: string; description: string; permissions: PermissionKey[] }[] = [
-  { key: "mod_edu", label: "Обучение и расписание", description: "Занятия, журнал, абонементы, зарплаты", permissions: ["edu:schedule", "edu:payroll"] },
-  { key: "mod_tests", label: "Тесты и экзамены", description: "Тесты, прокторинг, вступительный срез", permissions: ["tests:read", "tests:manage", "tests:review", "certificates:issue"] },
-  { key: "mod_crm", label: "CRM и продажи", description: "Контакты, сделки, воронки", permissions: ["crm:read", "crm:manage"] },
-  { key: "mod_tickets", label: "Заявки и билеты", description: "Конструктор заявок, QR-билеты, проверка на входе", permissions: ["tickets:check"] },
-  { key: "mod_docs", label: "Документы и таблицы", description: "Совместные документы и таблицы", permissions: ["docs:use", "sheets:use"] },
+export const ORG_MODULES: { key: string; label: string; description: string; permissions: PermissionKey[]; screens: string[] }[] = [
+  { key: "mod_edu", label: "Обучение и расписание", description: "Занятия, журнал, абонементы, зарплаты", permissions: ["edu:schedule", "edu:payroll"], screens: ["schedule", "attendance", "subscriptions", "payroll"] },
+  { key: "mod_tests", label: "Тесты и экзамены", description: "Тесты, прокторинг, вступительный срез", permissions: ["tests:read", "tests:manage", "tests:review", "certificates:issue", "placement:manage"], screens: ["tests", "testsManage", "placement"] },
+  { key: "mod_crm", label: "CRM и продажи", description: "Контакты, сделки, воронки", permissions: ["crm:read", "crm:manage"], screens: ["crm"] },
+  { key: "mod_tickets", label: "Заявки и билеты", description: "Конструктор заявок, QR-билеты, проверка на входе", permissions: ["tickets:check"], screens: ["forms", "tickets"] },
+  { key: "mod_docs", label: "Документы и таблицы", description: "Совместные документы и таблицы", permissions: ["docs:use", "sheets:use"], screens: ["docs", "sheets"] },
 ];
 
 /**
@@ -320,3 +322,60 @@ export function navAllowed(
   if (need === null || need === undefined) return true;
   return Array.isArray(need) ? need.some(p => granted.has(p)) : granted.has(need);
 }
+
+// ── Три слоя видимости: платформа → организация → сотрудник ──────────────
+
+export const normalizeTenantStatus = (raw: unknown): "active" | "suspended" =>
+  /^suspended$/i.test(String(raw ?? "").trim()) ? "suspended" : "active";
+
+export interface TenantScreenFlags {
+  /** Закрыто платформой (суперадмин). Организация этого не видит нигде и включить не может. */
+  platformDisabledScreens?: unknown;
+  /** Скрыто самой организацией — из того, что платформа ей открыла. */
+  disabledScreens?: unknown;
+  /** Модули, скрытые организацией целиком (ключи ORG_MODULES). */
+  disabledModules?: unknown;
+}
+const asList = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
+
+/**
+ * Экраны, закрытые для организации: платформой ∪ организацией ∪ модулями.
+ * Раньше суперадмин и владелец писали ОДНО поле, и владелец мог отменить
+ * запрет платформы одной галочкой.
+ */
+export function effectiveDisabledScreens(t: TenantScreenFlags): Set<string> {
+  const out = new Set<string>([...asList(t.platformDisabledScreens), ...asList(t.disabledScreens)]);
+  const mods = asList(t.disabledModules);
+  for (const m of ORG_MODULES) if (mods.includes(m.key)) for (const sc of m.screens) out.add(sc);
+  for (const k of NON_HIDEABLE_SCREENS) out.delete(k);
+  return out;
+}
+
+export type ScreenHiddenBy = "platform" | "org" | "module" | "permission";
+
+/** Что сотрудник реально увидит в меню — и почему не видит остальное. */
+export function resolveScreens(i: TenantScreenFlags & { granted: Set<PermissionKey> }): {
+  visible: string[]; hiddenBy: Record<string, ScreenHiddenBy>;
+} {
+  const platform = new Set(asList(i.platformDisabledScreens));
+  const org = new Set(asList(i.disabledScreens));
+  const mods = asList(i.disabledModules);
+  const byModule = new Set<string>();
+  for (const m of ORG_MODULES) if (mods.includes(m.key)) for (const sc of m.screens) byModule.add(sc);
+
+  const visible: string[] = [];
+  const hiddenBy: Record<string, ScreenHiddenBy> = {};
+  for (const sc of WORKSPACE_SCREENS) {
+    const k = sc.key;
+    const locked = NON_HIDEABLE_SCREENS.has(k);
+    if (!locked && platform.has(k)) { hiddenBy[k] = "platform"; continue; }
+    if (!locked && org.has(k)) { hiddenBy[k] = "org"; continue; }
+    if (!locked && byModule.has(k)) { hiddenBy[k] = "module"; continue; }
+    if (!navAllowed(k, i.granted)) { hiddenBy[k] = "permission"; continue; }
+    visible.push(k);
+  }
+  return { visible, hiddenBy };
+}
+
+export const screenVisible = (navKey: string, t: TenantScreenFlags, granted: Set<PermissionKey>): boolean =>
+  !effectiveDisabledScreens(t).has(navKey) && navAllowed(navKey, granted);

@@ -1,6 +1,8 @@
 import { Router } from "express";
 import admin from "firebase-admin";
 import { requireFirebaseAuth } from "./authRoutes.js";
+import { WORKSPACE_SCREENS, NON_HIDEABLE_SCREENS, normalizeTenantStatus } from "../shared/permissions.js";
+import { invalidateTenant } from "../server/tenantAccess.js";
 
 const router = Router();
 
@@ -173,14 +175,10 @@ router.post("/tenant-requests/:id", requireFirebaseAuth, requireSuperAdmin, asyn
         subdomain: rawSub,
         name: requestData.organizationName,
         tierId: "starter",
-        // Базовый набор модулей. Без этого поля реестр возможностей считает,
-        // что у организации не включено НИЧЕГО, — воркспейс открывается пустым,
-        // и это выглядело как «директория не сгенерировалась».
-        enabledModules: [
-          "MODULE_STUDENT_QR_IDENTIFIERS",
-          "MODULE_EDU_CORE_JOURNAL",
-          "MODULE_CRM_PIPELINES",
-        ],
+        // Разделы регулируются platformDisabledScreens (суперадмин) и
+        // disabledScreens/disabledModules (организация); список enabledModules
+        // никто не читает и больше не пишется.
+        platformDisabledScreens: [],
         ownerEmail: requestData.contactEmail || "",
         // Новой организации при первом входе владельца показывается быстрая
         // настройка: вид деятельности, терминология, поля расписания.
@@ -320,6 +318,83 @@ router.post("/tenant-requests/:id", requireFirebaseAuth, requireSuperAdmin, asyn
   } catch (error: any) {
     console.error("[SuperAdmin/TenantRequests] Error:", error);
     return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ─────────────────── Что платформа закрыла организации ───────────────────
+
+const tenantRef = (id: string) => admin.firestore().collection("tenants").doc(String(id));
+
+/**
+ * PUT /api/superadmin/tenants/:id/platform-screens — разделы, закрытые
+ * платформой. Организация их не видит нигде и включить не может — в отличие
+ * от disabledScreens, которые она скрывает у себя сама.
+ */
+router.put("/tenants/:id/platform-screens", requireFirebaseAuth, requireSuperAdmin, async (req: any, res: any) => {
+  try {
+    const known = new Set(WORKSPACE_SCREENS.map(sx => sx.key));
+    const disabled = (Array.isArray(req.body?.platformDisabledScreens) ? req.body.platformDisabledScreens : [])
+      .map(String).filter((k: string) => known.has(k) && !NON_HIDEABLE_SCREENS.has(k));
+    const ref = tenantRef(req.params.id);
+    if (!(await ref.get()).exists) return res.status(404).json({ success: false, error: "Организация не найдена" });
+    await ref.update({ platformDisabledScreens: disabled, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    invalidateTenant(req.params.id);
+    await recordAuditLog(admin.firestore(), {
+      userId: req.user.uid, userEmail: req.user.email, action: "TENANT_PLATFORM_SCREENS",
+      target: req.params.id, details: disabled.length ? `Закрыто платформой: ${disabled.join(", ")}` : "Все разделы открыты", ip: req.ip,
+    });
+    return res.json({ success: true, platformDisabledScreens: disabled });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/** POST /api/superadmin/tenants/:id/status — приостановить или вернуть организацию. */
+router.post("/tenants/:id/status", requireFirebaseAuth, requireSuperAdmin, async (req: any, res: any) => {
+  try {
+    const status = normalizeTenantStatus(req.body?.status);
+    const reason = String(req.body?.reason || "").trim().slice(0, 300);
+    const ref = tenantRef(req.params.id);
+    if (!(await ref.get()).exists) return res.status(404).json({ success: false, error: "Организация не найдена" });
+    await ref.update({
+      status,
+      suspendedAt: status === "suspended" ? admin.firestore.FieldValue.serverTimestamp() : admin.firestore.FieldValue.delete(),
+      suspendReason: status === "suspended" ? reason : admin.firestore.FieldValue.delete(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    invalidateTenant(req.params.id);
+    await recordAuditLog(admin.firestore(), {
+      userId: req.user.uid, userEmail: req.user.email,
+      action: status === "suspended" ? "TENANT_SUSPEND" : "TENANT_RESUME",
+      target: req.params.id, details: reason || (status === "suspended" ? "Организация приостановлена" : "Организация возобновлена"), ip: req.ip,
+    });
+    return res.json({ success: true, status });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/** PUT /api/superadmin/tenants/:id/proctoring — главный тумблер и детекторы. */
+router.put("/tenants/:id/proctoring", requireFirebaseAuth, requireSuperAdmin, async (req: any, res: any) => {
+  try {
+    const patch: Record<string, any> = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+    if (typeof req.body?.proctoringEnabled === "boolean") patch.proctoringEnabled = req.body.proctoringEnabled;
+    if (req.body?.proctoringFlags && typeof req.body.proctoringFlags === "object") {
+      const flags: Record<string, boolean> = {};
+      for (const [k, v] of Object.entries(req.body.proctoringFlags)) if (/^[a-zA-Z]+$/.test(k)) flags[k] = Boolean(v);
+      patch.proctoringFlags = flags;
+    }
+    const ref = tenantRef(req.params.id);
+    if (!(await ref.get()).exists) return res.status(404).json({ success: false, error: "Организация не найдена" });
+    await ref.update(patch);
+    invalidateTenant(req.params.id);
+    await recordAuditLog(admin.firestore(), {
+      userId: req.user.uid, userEmail: req.user.email, action: "TENANT_PROCTORING",
+      target: req.params.id, details: JSON.stringify({ proctoringEnabled: patch.proctoringEnabled, proctoringFlags: patch.proctoringFlags }), ip: req.ip,
+    });
+    return res.json({ success: true, proctoringEnabled: patch.proctoringEnabled, proctoringFlags: patch.proctoringFlags });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
   }
 });
 

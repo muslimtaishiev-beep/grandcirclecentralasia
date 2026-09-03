@@ -1,6 +1,6 @@
 import { useOutletContext, Link, useParams } from "react-router-dom";
 import { Lock } from "lucide-react";
-import { resolvePermissions, navAllowed } from "../../shared/permissions";
+import { resolvePermissions, resolveScreens, type PermissionKey } from "../../shared/permissions";
 
 /**
  * Доступ к странице воркспейса по правам.
@@ -33,10 +33,16 @@ export default function RequirePermission({
         disabledModules: tenant.disabledModules,
       });
 
-  // «Завуч» — школьная роль без общих прав на тесты, но со своим разделом.
-  const zavuch = navKey === "placement" && /завуч/i.test(String(tenant.role || ""));
-  const disabledScreens: string[] = Array.isArray(tenant.disabledScreens) ? tenant.disabledScreens : [];
-  if (zavuch || navAllowed(navKey, granted as Set<any>, disabledScreens)) return <>{children}</>;
+  // Три слоя: закрыто платформой, скрыто организацией, не выдано сотруднику.
+  const visible = Array.isArray(tenant.visibleScreens)
+    ? new Set<string>(tenant.visibleScreens)
+    : new Set(resolveScreens({
+        platformDisabledScreens: tenant.platformDisabledScreens,
+        disabledScreens: tenant.disabledScreens,
+        disabledModules: tenant.disabledModules,
+        granted: granted as Set<PermissionKey>,
+      }).visible);
+  if (visible.has(navKey)) return <>{children}</>;
 
   return (
     <div className="max-w-lg mx-auto py-20 text-center">
@@ -48,7 +54,7 @@ export default function RequirePermission({
         Ваша должность — «{tenant.customRole?.name || tenant.role || "Сотрудник"}».
       </p>
       <p className="text-sm text-[var(--text-muted)] mb-6">
-        Доступ выдаёт руководитель организации в разделе «Роли &amp; Сотрудники».
+        Доступ выдаёт руководитель организации в разделе «Роли и доступы».
       </p>
       <Link to={`/workspace/${orgId || tenant.id}`}
         className="inline-block px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm">

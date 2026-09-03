@@ -2,6 +2,8 @@ import { Router } from "express";
 import admin from "firebase-admin";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { analyseFile } from "../lib/placementParser.js";
+import { hasAnyPermission } from "../server/access.js";
+import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
 
 /**
  * Вступительный срез знаний (placement exam) для распределения по классам 5-11.
@@ -243,21 +245,19 @@ async function loadBlueprint(tenantId: string, grade: number): Promise<Blueprint
   return snap.exists ? (snap.data() as Blueprint) : DEFAULT_BLUEPRINT(tenantId, grade);
 }
 
-/** Может ли пользователь управлять срезом: админ тенанта, суперадмин или роль «завуч». */
+/**
+ * Кто управляет срезом — решают ПРАВА: «Вступительный срез», управление или
+ * проверка тестов, полный доступ. Раньше проверялась подстрока «завуч» в
+ * названии роли — кабинет открывался по слову, а не по выданному доступу.
+ */
 async function canManagePlacement(user: any, tenantId: string): Promise<boolean> {
   if (user?.isSuperadmin) return true;
-  if (Array.isArray(user?.tenantAdminIds) && user.tenantAdminIds.includes(tenantId)) return true;
-  const ms = await db().collection("memberships")
-    .where("userId", "==", user?.uid || "")
-    .where("tenantId", "==", tenantId)
-    .where("status", "==", "active")
-    .get();
-  return ms.docs.some(d => /завуч/i.test(String(d.data().role || "")));
+  return hasAnyPermission(db(), user, tenantId, ["placement:manage", "tests:manage", "tests:review"]);
 }
 
 // GET blueprint + how many questions the bank can actually supply, so the
 // cabinet can warn when someone asks for more questions than exist.
-router.get("/blueprint", requireFirebaseAuth, async (req: any, res: any) => {
+router.get("/blueprint", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const tenantId = String(req.query.tenantId || "");
     const grade = Number(req.query.grade);
@@ -290,7 +290,7 @@ router.get("/blueprint", requireFirebaseAuth, async (req: any, res: any) => {
 });
 
 // PUT blueprint — завуч/администрация задают количество вопросов, время и шкалу.
-router.put("/blueprint", requireFirebaseAuth, async (req: any, res: any) => {
+router.put("/blueprint", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, grade, sections, scale, marks, proctoring } = req.body || {};
     if (!tenantId || !grade || !Array.isArray(sections)) {
@@ -509,8 +509,8 @@ router.post("/start", async (req: any, res: any) => {
     if (!(g >= 5 && g <= 11)) return res.status(400).json({ success: false, error: "Срез проводится для 5–11 классов" });
     // The tenant must exist before anything else: a mistyped or guessed id
     // must not mint sessions against an organisation that isn't there.
-    const tenantDoc = await db().collection("tenants").doc(String(tenantId)).get();
-    if (!tenantDoc.exists) return res.status(404).json({ success: false, error: "Организация не найдена" });
+    const gate = await checkTenantOpen(tenantId, "placement");
+    if (!gate.ok) return res.status(gate.status).json({ success: false, error: gate.error });
     if (!pinAccepted(enteredPin, String(tenantId))) return res.status(403).json({ success: false, error: "Неверный PIN-код. Узнайте актуальный PIN у завуча." });
 
     const sid = String(shortId || Math.floor(100000 + Math.random() * 900000));
@@ -604,8 +604,8 @@ router.post("/check-pin", async (req: any, res: any) => {
   try {
     const { tenantId, enteredPin, grade } = req.body || {};
     if (!tenantId) return res.status(400).json({ success: false, error: "Bad request" });
-    const tenantDoc = await db().collection("tenants").doc(String(tenantId)).get();
-    if (!tenantDoc.exists) return res.status(404).json({ success: false, error: "Организация не найдена" });
+    const gate = await checkTenantOpen(tenantId, "placement");
+    if (!gate.ok) return res.status(gate.status).json({ success: false, error: gate.error });
     if (!pinAccepted(enteredPin, String(tenantId))) {
       return res.status(403).json({ success: false, error: "Неверный PIN-код. Узнайте актуальный PIN у завуча." });
     }
@@ -822,7 +822,7 @@ router.post("/finish-section", async (req: any, res: any) => {
 });
 
 // GET /api/placement/results — список для кабинета завуча.
-router.get("/results", requireFirebaseAuth, async (req: any, res: any) => {
+router.get("/results", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const tenantId = String(req.query.tenantId || "");
     if (!tenantId) return res.status(400).json({ success: false, error: "Нужен tenantId" });
@@ -886,7 +886,7 @@ async function deleteAll(query: FirebaseFirestore.Query): Promise<number> {
  * никогда: их восстанавливать дольше всего, а к «данным потока» они
  * не относятся.
  */
-router.post("/purge", requireFirebaseAuth, async (req: any, res: any) => {
+router.post("/purge", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, scope, confirm, grade } = req.body || {};
     if (!tenantId) return res.status(400).json({ success: false, error: "Нужен tenantId" });
@@ -949,7 +949,7 @@ router.post("/purge", requireFirebaseAuth, async (req: any, res: any) => {
  * Точечное удаление нужно чаще массового: ученик записался дважды, сдал
  * тестовую работу, попал не в тот класс.
  */
-router.post("/delete-result", requireFirebaseAuth, async (req: any, res: any) => {
+router.post("/delete-result", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, resultId } = req.body || {};
     if (!tenantId || !resultId) return res.status(400).json({ success: false, error: "Bad request" });
@@ -1056,7 +1056,7 @@ router.post("/proctoring", async (req: any, res: any) => {
  * «верный» проставлена уже посчитанной — восстановить по ней ключ ко всему
  * банку нельзя, потому что вопросы у каждого свои.
  */
-router.get("/analytics", requireFirebaseAuth, async (req: any, res: any) => {
+router.get("/analytics", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const tenantId = String(req.query.tenantId || "");
     if (!tenantId) return res.status(400).json({ success: false, error: "Нужен tenantId" });
@@ -1250,7 +1250,7 @@ router.get("/analytics", requireFirebaseAuth, async (req: any, res: any) => {
 });
 
 // POST /api/placement/decide — завуч утверждает или меняет рекомендацию.
-router.post("/decide", requireFirebaseAuth, async (req: any, res: any) => {
+router.post("/decide", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, resultId, finalDecision } = req.body || {};
     if (!tenantId || !resultId) return res.status(400).json({ success: false, error: "Bad request" });
@@ -1278,7 +1278,7 @@ router.post("/decide", requireFirebaseAuth, async (req: any, res: any) => {
 
 // GET /api/placement/review — работа целиком для проверки с черновиком:
 // каждый вопрос, что ответил ученик, что говорит ключ, текущий балл.
-router.get("/review/:resultId", requireFirebaseAuth, async (req: any, res: any) => {
+router.get("/review/:resultId", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const tenantId = String(req.query.tenantId || "");
     if (!(await canManagePlacement(req.user, tenantId))) {
@@ -1330,7 +1330,7 @@ function recomputeFromItems(row: any) {
 // Half marks exist because a draft often shows correct working with a
 // mis-clicked answer; annulling the question (mark 0 for everyone would be
 // unfair to those who got it) is a different decision, made per question below.
-router.post("/review/mark", requireFirebaseAuth, async (req: any, res: any) => {
+router.post("/review/mark", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, resultId, sectionKey, questionId, mark, note } = req.body || {};
     if (!tenantId || !resultId || !sectionKey || !questionId) {
@@ -1384,7 +1384,7 @@ router.post("/review/mark", requireFirebaseAuth, async (req: any, res: any) => {
 });
 
 // POST /api/placement/review/complete — учитель закончил работу.
-router.post("/review/complete", requireFirebaseAuth, async (req: any, res: any) => {
+router.post("/review/complete", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, resultId } = req.body || {};
     if (!(await canManagePlacement(req.user, tenantId))) {
@@ -1409,7 +1409,7 @@ router.post("/review/complete", requireFirebaseAuth, async (req: any, res: any) 
 });
 
 // POST /api/placement/annul — аннулирование работы.
-router.post("/annul", requireFirebaseAuth, async (req: any, res: any) => {
+router.post("/annul", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, resultId, annulled, reason } = req.body || {};
     if (!tenantId || !resultId) return res.status(400).json({ success: false, error: "Bad request" });
@@ -1443,7 +1443,7 @@ router.post("/annul", requireFirebaseAuth, async (req: any, res: any) => {
 });
 
 // GET/PUT /api/placement/classes — структура классов школы.
-router.get("/classes", requireFirebaseAuth, async (req: any, res: any) => {
+router.get("/classes", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const tenantId = String(req.query.tenantId || "");
     if (!(await canManagePlacement(req.user, tenantId))) {
@@ -1455,7 +1455,7 @@ router.get("/classes", requireFirebaseAuth, async (req: any, res: any) => {
   }
 });
 
-router.put("/classes", requireFirebaseAuth, async (req: any, res: any) => {
+router.put("/classes", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, groups } = req.body || {};
     if (!(await canManagePlacement(req.user, tenantId))) {
@@ -1491,7 +1491,7 @@ router.put("/classes", requireFirebaseAuth, async (req: any, res: any) => {
 // Deliberately does not save: the школа looks at the proposal, moves whoever
 // they disagree with, and only publishing makes it real. A distribution that
 // wrote itself into the database would be a decision, not a suggestion.
-router.post("/propose-classes", requireFirebaseAuth, async (req: any, res: any) => {
+router.post("/propose-classes", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, grade } = req.body || {};
     if (!(await canManagePlacement(req.user, tenantId))) {
@@ -1529,7 +1529,7 @@ router.post("/propose-classes", requireFirebaseAuth, async (req: any, res: any) 
 });
 
 // POST /api/placement/assign-class — завуч правит предложение вручную.
-router.post("/assign-class", requireFirebaseAuth, async (req: any, res: any) => {
+router.post("/assign-class", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, resultId, assignedClass } = req.body || {};
     if (!(await canManagePlacement(req.user, tenantId))) {
@@ -1569,7 +1569,7 @@ router.post("/assign-class", requireFirebaseAuth, async (req: any, res: any) => 
 // Until this runs, the student portal returns "результаты ещё не опубликованы"
 // — the школа must be able to re-read drafts and adjust before anything is
 // visible, and a half-checked stream leaking out is exactly what that protects.
-router.post("/publish", requireFirebaseAuth, async (req: any, res: any) => {
+router.post("/publish", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, grade, resultIds, force } = req.body || {};
     if (!tenantId) return res.status(400).json({ success: false, error: "Нужен tenantId" });
@@ -1653,6 +1653,8 @@ router.post("/my-result", async (req: any, res: any) => {
     if (!tenantId || !shortId || !lastName) {
       return res.status(400).json({ success: false, error: "Укажите номер работы и имя или фамилию" });
     }
+    const gate = await checkTenantOpen(tenantId, "placement");
+    if (!gate.ok) return res.status(gate.status).json({ success: false, error: gate.error });
     const snap = await db().collection("placement_results").doc(sessionId(String(tenantId), String(shortId))).get();
 
     // Same answer whether the id is unknown or the surname is wrong: a
@@ -1722,7 +1724,7 @@ router.post("/my-result", async (req: any, res: any) => {
 // POST /api/placement/preview — разбор файла БЕЗ записи. The manager sees
 // exactly what would be imported, which rows are broken and why, and decides.
 // Nothing here touches the database: previewing a file is not importing it.
-router.post("/preview", requireFirebaseAuth, async (req: any, res: any) => {
+router.post("/preview", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, csv } = req.body || {};
     if (!tenantId || typeof csv !== "string") return res.status(400).json({ success: false, error: "Нужны tenantId и содержимое файла" });
@@ -1745,7 +1747,7 @@ router.post("/preview", requireFirebaseAuth, async (req: any, res: any) => {
 // POST /api/placement/import — записывает то, что менеджер подтвердил.
 // Re-analyses server-side rather than trusting the preview the browser sends
 // back: a client could otherwise post questions that never passed validation.
-router.post("/import", requireFirebaseAuth, async (req: any, res: any) => {
+router.post("/import", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, csv, includeWarnings } = req.body || {};
     if (!tenantId || typeof csv !== "string") return res.status(400).json({ success: false, error: "Нужны tenantId и содержимое файла" });
@@ -1795,7 +1797,7 @@ router.post("/import", requireFirebaseAuth, async (req: any, res: any) => {
 // connection died or who fell ill mid-exam is simply stuck, and nobody can
 // help them. The previous attempt is archived rather than deleted: the school
 // must be able to see that a retake happened and what the first result was.
-router.post("/allow-retake", requireFirebaseAuth, async (req: any, res: any) => {
+router.post("/allow-retake", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, shortId, reason } = req.body || {};
     if (!tenantId || !shortId) return res.status(400).json({ success: false, error: "Нужны tenantId и shortId" });
@@ -1843,7 +1845,7 @@ router.post("/allow-retake", requireFirebaseAuth, async (req: any, res: any) => 
 
 // GET /api/placement/questions — банк для кабинета (без правильных ответов
 // в списке: их видно только при открытии конкретного вопроса на правку).
-router.get("/questions", requireFirebaseAuth, async (req: any, res: any) => {
+router.get("/questions", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const tenantId = String(req.query.tenantId || "");
     if (!(await canManagePlacement(req.user, tenantId))) {
@@ -1860,7 +1862,7 @@ router.get("/questions", requireFirebaseAuth, async (req: any, res: any) => {
 });
 
 // PUT /api/placement/questions/:id — правка вопроса после импорта.
-router.put("/questions/:id", requireFirebaseAuth, async (req: any, res: any) => {
+router.put("/questions/:id", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, text, options, answer, topic, difficulty, grades, type, active } = req.body || {};
     if (!(await canManagePlacement(req.user, tenantId))) {

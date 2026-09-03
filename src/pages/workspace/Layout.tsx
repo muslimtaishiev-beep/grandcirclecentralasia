@@ -37,7 +37,7 @@ import {
 } from "lucide-react";
 import GlobalNotifications from "../../components/workspace/GlobalNotifications";
 import QuickSetupWizard from "../../components/workspace/QuickSetupWizard";
-import { resolvePermissions, navAllowed, type PermissionKey } from "../../shared/permissions";
+import { resolvePermissions, resolveScreens, normalizeTenantStatus, type PermissionKey } from "../../shared/permissions";
 import SpotlightCommandBar from "../../components/common/SpotlightCommandBar";
 import DemoSeedButton from "../../components/common/DemoSeedButton";
 
@@ -128,12 +128,25 @@ export default function WorkspaceLayout() {
     });
   }, [activeTenant]);
 
-  // Экраны, выключенные суперадмином для этой организации, — из документа
-  // тенанта. Отдельный слой поверх прав: право есть, а экран погашен сверху.
-  const disabledScreens: string[] = Array.isArray(activeTenant?.disabledScreens)
-    ? activeTenant.disabledScreens : [];
-  const canSee = (navKey: string) => navAllowed(navKey, granted, disabledScreens);
+  // Что видно в меню — три слоя: закрыто платформой, скрыто организацией,
+  // не выдано сотруднику. Сервер уже посчитал это в visibleScreens; локальный
+  // расчёт — запасной путь для ответа старого формата.
+  const visibleScreens = React.useMemo(() => {
+    if (!activeTenant) return new Set<string>();
+    if (Array.isArray(activeTenant.visibleScreens)) return new Set<string>(activeTenant.visibleScreens);
+    return new Set(resolveScreens({
+      platformDisabledScreens: activeTenant.platformDisabledScreens,
+      disabledScreens: activeTenant.disabledScreens,
+      disabledModules: activeTenant.disabledModules,
+      granted,
+    }).visible);
+  }, [activeTenant, granted]);
+  const canSee = (navKey: string) => visibleScreens.has(navKey);
   const hasPerm = (perm: string) => granted.has(perm as PermissionKey);
+  const isSuperadmin = String(activeTenant?.role || "") === "superadmin";
+  const suspended = activeTenant
+    ? (activeTenant.suspended === true || normalizeTenantStatus(activeTenant.status) === "suspended")
+    : false;
 
   // Пункты меню и права на них — из общей карты NAV_PERMISSION, а не
   // россыпью условий: одно место, где видно, что чем закрыто.
@@ -160,12 +173,7 @@ export default function WorkspaceLayout() {
     ["sites", "Site Builder", "/sites", Globe],
     ["automations", "Automations", "/automations", Zap],
   ] as const)
-    .filter(([key]) => {
-      // Вступительный срез открыт ещё и роли «завуч» — школьная роль без
-      // общих прав на тесты.
-      if (key === "placement" && /завуч/i.test(String(activeTenant.role || ""))) return true;
-      return canSee(key);
-    })
+    .filter(([key]) => canSee(key))
     .map(([, name, suffix, icon]) => ({
       name: name as string, path: `/workspace/${activeTenant.id}${suffix}`, icon: icon as any,
     }))
@@ -319,7 +327,22 @@ export default function WorkspaceLayout() {
             {/* Some pages (like Chat) have their own strict layouts, others have normal padding. 
                 For Chat specifically, we might want to override padding, but let's keep it clean for now. */}
             <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-[var(--bg-app)]">
-               <Outlet context={{ activeTenant: activeTenant || (orgId ? { id: orgId, name: orgId, slug: orgId } : null), tenants, refreshTenants: fetchTenants }} />
+               {suspended && isSuperadmin && (
+                 <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700" data-testid="suspended-banner">
+                   Организация приостановлена. Сотрудники не могут войти; вы видите её как суперадмин.
+                 </div>
+               )}
+               {suspended && !isSuperadmin ? (
+                 <div className="max-w-lg mx-auto py-20 text-center" data-testid="suspended-screen">
+                   <h1 className="text-xl font-bold text-[var(--text-main)] mb-2">Организация приостановлена</h1>
+                   <p className="text-sm text-[var(--text-muted)]">
+                     Доступ к рабочему пространству «{activeTenant?.name || ""}» временно закрыт администратором платформы.
+                     Обратитесь к руководителю организации.
+                   </p>
+                 </div>
+               ) : (
+                 <Outlet context={{ activeTenant: activeTenant || (orgId ? { id: orgId, name: orgId, slug: orgId } : null), tenants, refreshTenants: fetchTenants }} />
+               )}
             </main>
           </div>
         </div>

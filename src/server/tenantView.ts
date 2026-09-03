@@ -6,8 +6,8 @@
  * без входа — и через API, и через правила Firestore. Теперь наружу уходит
  * только явный список полей.
  */
-export const normalizeTenantStatus = (raw: unknown): "active" | "suspended" =>
-  /^suspended$/i.test(String(raw ?? "")) ? "suspended" : "active";
+import { normalizeTenantStatus } from "../shared/permissions.js";
+export { normalizeTenantStatus };
 
 /** Публичное представление — для анонимных страниц (экзамен, лендинг, QR). */
 export function publicTenantView(t: any) {

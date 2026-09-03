@@ -1,20 +1,17 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { OrganizationTenant } from '../types/capabilities';
 import { SubdomainHostResolver } from '../services/tenant/SubdomainHostResolver';
-import { TenantCapabilityRegistry } from '../services/tenant/TenantCapabilityRegistry';
 
 interface TenantContextProps {
   tenant: OrganizationTenant | null;
   loading: boolean;
   error: string | null;
-  hasModule: (module: import('../types/capabilities').SystemFeatureModule) => boolean;
 }
 
 const TenantContext = createContext<TenantContextProps>({
   tenant: null,
   loading: true,
   error: null,
-  hasModule: () => false,
 });
 
 export const useTenant = () => useContext(TenantContext);
@@ -38,12 +35,8 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     initTenant();
   }, []);
 
-  const hasModule = (module: import('../types/capabilities').SystemFeatureModule) => {
-    return TenantCapabilityRegistry.isFeatureEnabled(tenant, module);
-  };
-
   return (
-    <TenantContext.Provider value={{ tenant, loading, error, hasModule }}>
+    <TenantContext.Provider value={{ tenant, loading, error }}>
       {children}
     </TenantContext.Provider>
   );

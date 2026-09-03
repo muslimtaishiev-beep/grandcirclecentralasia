@@ -64,10 +64,12 @@ interface OrganizationProject {
     audioAnalysis: boolean;
     phoneDetection: boolean;
   };
-  /** Модули, выключенные для всей организации (ключи ORG_MODULES). */
+  /** Модули, скрытые САМОЙ организацией (ключи ORG_MODULES) — только для показа. */
   disabledModules: string[];
-  /** Отдельные экраны, выключенные для организации (navKey). */
+  /** Разделы, скрытые САМОЙ организацией (navKey) — только для показа. */
   disabledScreens: string[];
+  /** Разделы, закрытые ПЛАТФОРМОЙ — это и правит суперадмин. */
+  platformDisabledScreens: string[];
 }
 
 interface VercelSystemLog {
@@ -249,6 +251,7 @@ export default function SuperAdminDashboard() {
           proctoringEnabled: data.proctoringEnabled !== false,
           disabledModules: Array.isArray(data.disabledModules) ? data.disabledModules : [],
           disabledScreens: Array.isArray(data.disabledScreens) ? data.disabledScreens : [],
+          platformDisabledScreens: Array.isArray(data.platformDisabledScreens) ? data.platformDisabledScreens : [],
           proctoringFlags: data.proctoringFlags || {
             gazeAway: true,
             faceCount: true,
@@ -385,57 +388,40 @@ export default function SuperAdminDashboard() {
    * включая тех, кому право выдано должностью, — сотрудники видят изменения
    * после перезагрузки страницы.
    */
-  /** Сохранить набор выключенных экранов организации. */
+  const superHeaders = async () => ({
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${auth.currentUser ? await auth.currentUser.getIdToken() : ""}`,
+  });
+
+  /**
+   * Сохранить разделы, закрытые ПЛАТФОРМОЙ. Это отдельное поле от того, что
+   * организация скрывает у себя сама: раньше оба писали одно поле, и владелец
+   * одной галочкой отменял запрет суперадмина.
+   */
   const saveScreens = async (projectId: string, next: string[]) => {
     try {
-      const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-      const res = await fetch(`/api/tenants/${projectId}/screens`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ disabledScreens: next }),
+      const res = await fetch(`/api/superadmin/tenants/${projectId}/platform-screens`, {
+        method: "PUT", headers: await superHeaders(),
+        body: JSON.stringify({ platformDisabledScreens: next }),
       });
       const j = await res.json();
-      if (!j.success) { toast.error(j.error || "Не удалось сохранить экраны"); return; }
-      const saved = j.disabledScreens || next;
-      setProjects(projects.map(p => p.id === projectId ? { ...p, disabledScreens: saved } : p));
+      if (!j.success) { toast.error(j.error || "Не удалось сохранить разделы"); return; }
+      const saved = j.platformDisabledScreens || next;
+      setProjects(projects.map(p => p.id === projectId ? { ...p, platformDisabledScreens: saved } : p));
       if (selectedOrgModal && selectedOrgModal.id === projectId) {
-        setSelectedOrgModal({ ...selectedOrgModal, disabledScreens: saved });
+        setSelectedOrgModal({ ...selectedOrgModal, platformDisabledScreens: saved });
       }
     } catch (err: any) {
-      toast.error(`Не удалось сохранить экраны: ${err?.message || "нет связи"}`);
+      toast.error(`Не удалось сохранить разделы: ${err?.message || "нет связи"}`);
     }
   };
 
   const toggleScreen = (projectId: string, screenKey: string) => {
     const proj = projects.find(p => p.id === projectId);
     if (!proj) return;
-    const cur = proj.disabledScreens || [];
+    const cur = proj.platformDisabledScreens || [];
     const next = cur.includes(screenKey) ? cur.filter(k => k !== screenKey) : [...cur, screenKey];
     void saveScreens(projectId, next);
-  };
-
-  const toggleModule = async (projectId: string, moduleKey: string) => {
-    const proj = projects.find(p => p.id === projectId);
-    if (!proj) return;
-    const cur = proj.disabledModules || [];
-    const next = cur.includes(moduleKey) ? cur.filter(k => k !== moduleKey) : [...cur, moduleKey];
-    try {
-      const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-      const res = await fetch(`/api/tenants/${projectId}/modules`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ disabledModules: next }),
-      });
-      const j = await res.json();
-      if (!j.success) { toast.error(j.error || "Не удалось сохранить модули"); return; }
-      const saved = j.disabledModules || next;
-      setProjects(projects.map(p => p.id === projectId ? { ...p, disabledModules: saved } : p));
-      if (selectedOrgModal && selectedOrgModal.id === projectId) {
-        setSelectedOrgModal({ ...selectedOrgModal, disabledModules: saved });
-      }
-    } catch (err: any) {
-      toast.error(`Не удалось сохранить модули: ${err?.message || "нет связи"}`);
-    }
   };
 
   const toggleFlag = async (projectId: string, flagKey: keyof OrganizationProject["proctoringFlags"]) => {
@@ -450,7 +436,10 @@ export default function SuperAdminDashboard() {
     // State was previously updated only inside catch(), so a successful toggle
     // left the switch visually unchanged while a failed one looked applied.
     try {
-      await updateDoc(doc(db, "tenants", projectId), { proctoringFlags: updatedFlags });
+      const r = await (await fetch(`/api/superadmin/tenants/${projectId}/proctoring`, {
+        method: "PUT", headers: await superHeaders(), body: JSON.stringify({ proctoringFlags: updatedFlags }),
+      })).json();
+      if (!r.success) throw new Error(r.error || "ошибка записи");
       setProjects(projects.map(p => p.id === projectId ? { ...p, proctoringFlags: updatedFlags } : p));
       if (selectedOrgModal && selectedOrgModal.id === projectId) {
         setSelectedOrgModal({ ...selectedOrgModal, proctoringFlags: updatedFlags });
@@ -468,7 +457,10 @@ export default function SuperAdminDashboard() {
     if (!proj) return;
     const next = !proj.proctoringEnabled;
     try {
-      await updateDoc(doc(db, "tenants", projectId), { proctoringEnabled: next });
+      const r = await (await fetch(`/api/superadmin/tenants/${projectId}/proctoring`, {
+        method: "PUT", headers: await superHeaders(), body: JSON.stringify({ proctoringEnabled: next }),
+      })).json();
+      if (!r.success) throw new Error(r.error || "ошибка записи");
       setProjects(projects.map(p => p.id === projectId ? { ...p, proctoringEnabled: next } : p));
       if (selectedOrgModal && selectedOrgModal.id === projectId) {
         setSelectedOrgModal({ ...selectedOrgModal, proctoringEnabled: next });
@@ -492,7 +484,13 @@ export default function SuperAdminDashboard() {
     const uiStatus = suspending ? "SUSPENDED" : "READY font-mono";
 
     try {
-      await updateDoc(doc(db, "tenants", projectId), { status: persistedStatus });
+      // Через сервер: статус теперь реально закрывает организацию (воркспейс,
+      // API, публичные страницы), пишется в журнал и сбрасывает кэш.
+      const r = await (await fetch(`/api/superadmin/tenants/${projectId}/status`, {
+        method: "POST", headers: await superHeaders(),
+        body: JSON.stringify({ status: persistedStatus === "SUSPENDED" ? "suspended" : "active" }),
+      })).json();
+      if (!r.success) throw new Error(r.error || "ошибка записи");
       setProjects(projects.map(p => p.id === projectId ? { ...p, status: uiStatus as any } : p));
       if (selectedOrgModal && selectedOrgModal.id === projectId) {
         setSelectedOrgModal({ ...selectedOrgModal, status: uiStatus as any });
@@ -1192,47 +1190,44 @@ export default function SuperAdminDashboard() {
 
                 {/* Вкладка: какие экраны показываются у организации */}
                 {modalActiveTab === "modules" && (() => {
-                  const off = new Set(selectedOrgModal.disabledScreens || []);
+                  const off = new Set(selectedOrgModal.platformDisabledScreens || []);
+                  // Что организация скрыла у себя сама — показываем, но не правим.
+                  const orgOff = new Set<string>([
+                    ...(selectedOrgModal.disabledScreens || []),
+                    ...ORG_MODULES.filter(m => (selectedOrgModal.disabledModules || []).includes(m.key)).flatMap(m => m.screens),
+                  ]);
                   const groups = [...new Set(WORKSPACE_SCREENS.map(sx => sx.group))];
                   const shownCount = WORKSPACE_SCREENS.filter(sx => !off.has(sx.key)).length;
                   return (
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <h3 className="text-xs font-bold text-[#888888] uppercase tracking-wider font-mono">Экраны организации</h3>
-                        <span className="text-[11px] text-[#666666] font-mono">{shownCount} из {WORKSPACE_SCREENS.length} видно</span>
+                        <h3 className="text-xs font-bold text-[#888888] uppercase tracking-wider font-mono">Разделы, доступные организации</h3>
+                        <span className="text-[11px] text-[#666666] font-mono">{shownCount} из {WORKSPACE_SCREENS.length} открыто</span>
                       </div>
                       <p className="text-[11px] text-[#666666]">
-                        Каждый экран — отдельно. Выключенный исчезает из меню у ВСЕХ сотрудников
-                        организации, включая владельца, и его страница отдаёт «нет доступа». Ученики
-                        и публичные страницы (экзамены, билеты) не затрагиваются. Дашборд выключить
-                        нельзя. Кнопки-модули ниже гасят или включают сразу целую группу экранов.
+                        Закрытый платформой раздел организация не видит нигде — ни в меню, ни в своих
+                        настройках — и включить его сама не может; его API и публичные страницы
+                        (экзамены, заявки) тоже закрыты. Из открытого организация может дополнительно
+                        скрыть что-то у себя — такие разделы помечены «скрыто организацией».
+                        Дашборд закрыть нельзя.
                       </p>
 
-                      {/* Быстрые кнопки: включить/выключить целую группу-модуль */}
+                      {/* Быстрые кнопки: закрыть/открыть целый модуль */}
                       <div className="flex flex-wrap gap-2">
                         {ORG_MODULES.map((mod) => {
-                          // Экраны этого модуля — по совпадению названий групп с описанием
-                          // недостаточно, поэтому явная карта модуль → навключи.
-                          const MOD_SCREENS: Record<string, string[]> = {
-                            mod_edu: ["schedule", "attendance", "subscriptions", "payroll"],
-                            mod_tests: ["tests", "testsManage", "placement"],
-                            mod_crm: ["crm"],
-                            mod_tickets: ["forms", "tickets"],
-                            mod_docs: ["docs", "sheets"],
-                          };
-                          const keys = MOD_SCREENS[mod.key] || [];
+                          const keys = mod.screens;
                           const allOff = keys.length > 0 && keys.every(k => off.has(k));
                           return (
                             <button key={mod.key}
                               onClick={() => {
                                 const next = allOff
-                                  ? (selectedOrgModal.disabledScreens || []).filter((k: string) => !keys.includes(k))
-                                  : [...new Set([...(selectedOrgModal.disabledScreens || []), ...keys])];
+                                  ? (selectedOrgModal.platformDisabledScreens || []).filter((k: string) => !keys.includes(k))
+                                  : [...new Set([...(selectedOrgModal.platformDisabledScreens || []), ...keys])];
                                 void saveScreens(selectedOrgModal.id, next);
                               }}
                               className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition ${
                                 allOff ? "border-[#333] text-[#666]" : "border-[#50e3c2]/30 text-[#50e3c2]"}`}>
-                              {allOff ? "Включить" : "Скрыть"}: {mod.label}
+                              {allOff ? "Открыть" : "Закрыть"}: {mod.label}
                             </button>
                           );
                         })}
@@ -1245,18 +1240,20 @@ export default function SuperAdminDashboard() {
                           {WORKSPACE_SCREENS.filter(sx => sx.group === g).map((sx) => {
                             const hidden = off.has(sx.key);
                             const locked = NON_HIDEABLE_SCREENS.has(sx.key);
+                            const byOrg = !hidden && orgOff.has(sx.key);
                             return (
-                              <div key={sx.key} className="flex items-center justify-between px-3.5 py-2.5 bg-[#111111] border border-[#222222] rounded-xl">
+                              <div key={sx.key} data-testid={`platform-screen-${sx.key}`} className="flex items-center justify-between px-3.5 py-2.5 bg-[#111111] border border-[#222222] rounded-xl">
                                 <div className="font-bold text-white text-xs flex items-center gap-2">
                                   {sx.label}
-                                  {hidden && <span className="text-[9px] uppercase font-mono text-[#666666] border border-[#333] px-1.5 py-0.5 rounded">скрыт</span>}
+                                  {hidden && <span className="text-[9px] uppercase font-mono text-red-400 border border-red-900 px-1.5 py-0.5 rounded">закрыт платформой</span>}
+                                  {byOrg && <span className="text-[9px] uppercase font-mono text-[#888] border border-[#333] px-1.5 py-0.5 rounded">скрыт организацией</span>}
                                   {locked && <span className="text-[9px] uppercase font-mono text-[#555] border border-[#2a2a2a] px-1.5 py-0.5 rounded">всегда</span>}
                                 </div>
                                 <button
                                   disabled={locked}
                                   onClick={() => toggleScreen(selectedOrgModal.id, sx.key)}
                                   className={`w-11 h-6 rounded-full p-1 transition-colors duration-200 shrink-0 ${locked ? "opacity-30 cursor-not-allowed" : "cursor-pointer"} ${!hidden ? 'bg-[#50e3c2]' : 'bg-[#222222]'}`}
-                                  title={locked ? "Этот экран нельзя скрыть" : hidden ? "Показать экран" : "Скрыть экран"}
+                                  title={locked ? "Этот раздел нельзя закрыть" : hidden ? "Открыть раздел организации" : "Закрыть раздел для организации"}
                                 >
                                   <div className={`w-4 h-4 rounded-full bg-black transition-transform duration-200 ${!hidden ? 'translate-x-5' : 'translate-x-0'}`} />
                                 </button>

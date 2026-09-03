@@ -6,6 +6,8 @@ import {
   FORM_STATUSES, STATUS_LABEL, MODE_STATUSES, TICKET_ACTIVE,
   isFormStatus, type FormStatus, type FormMode,
 } from "../shared/formStatuses.js";
+import { hasAnyPermission } from "../server/access.js";
+import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
 
 
 /**
@@ -62,6 +64,12 @@ router.get("/public/:formId", async (req: any, res: any) => {
         error: "Приём заявок по этой форме закрыт.",
       });
     }
+    // Приостановленная организация или закрытый платформой раздел — форма
+    // для посетителя тоже закрыта.
+    const gate = await checkTenantOpen(f.tenantId, "forms");
+    if (!gate.ok) {
+      return res.status(410).json({ success: false, closed: true, error: "Приём заявок по этой форме закрыт." });
+    }
     return res.json({
       success: true,
       form: {
@@ -92,6 +100,8 @@ router.post("/submit", async (req: any, res: any) => {
     if (form.active === false) {
       return res.status(410).json({ success: false, error: "Приём заявок по этой форме закрыт." });
     }
+    const gate = await checkTenantOpen(form.tenantId, "forms");
+    if (!gate.ok) return res.status(410).json({ success: false, error: "Приём заявок по этой форме закрыт." });
 
     const fields: any[] = Array.isArray(form.fields) ? form.fields : [];
 
@@ -273,9 +283,10 @@ router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
     const subRef = byToken.docs[0].ref;
     const sub = byToken.docs[0].data();
 
-    // Проверять билеты может любой действующий сотрудник ТОЙ ЖЕ организации:
-    // волонтёров заводят как членов, а чужой организации ничего не откроется.
-    if (!(await canManageForms(req.user, String(sub.tenantId || "")))) {
+    // Организация должна быть активна, а раздел билетов — не закрыт платформой.
+    const gate = await checkTenantOpen(sub.tenantId, req.user?.isSuperadmin ? undefined : "tickets");
+    if (!gate.ok) return res.status(gate.status).json({ success: false, error: gate.error });
+    if (!(await canCheckTickets(req.user, String(sub.tenantId || "")))) {
       return res.status(403).json({ success: false, error: "Нет доступа к билетам этой организации" });
     }
 
@@ -327,19 +338,22 @@ router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
 
 // ─────────────────────────── Кабинет ───────────────────────────
 
+/**
+ * Кабинет заявок — по правам, а не по факту членства. Раньше любой активный
+ * сотрудник (даже без единой галочки) менял статусы заявок и видел статистику.
+ */
 async function canManageForms(user: any, tenantId: string): Promise<boolean> {
   if (user?.isSuperadmin) return true;
-  if (Array.isArray(user?.tenantAdminIds) && user.tenantAdminIds.includes(tenantId)) return true;
-  const ms = await db().collection("memberships")
-    .where("userId", "==", user?.uid || "")
-    .where("tenantId", "==", tenantId)
-    .where("status", "==", "active")
-    .get();
-  return !ms.empty;
+  return hasAnyPermission(db(), user, tenantId, ["team:manage", "certificates:issue", "crm:manage", "crm:read"]);
+}
+/** Проверка билетов на входе: волонтёр с «Проверка билетов» или кто ведёт заявки. */
+async function canCheckTickets(user: any, tenantId: string): Promise<boolean> {
+  if (user?.isSuperadmin) return true;
+  return hasAnyPermission(db(), user, tenantId, ["tickets:check", "team:manage", "certificates:issue", "crm:manage"]);
 }
 
 /** POST /api/forms/status — смена статуса заявки сотрудником. */
-router.post("/status", requireFirebaseAuth, async (req: any, res: any) => {
+router.post("/status", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
   try {
     const { tenantId, submissionId, status, note } = req.body || {};
     if (!tenantId || !submissionId) return res.status(400).json({ success: false, error: "Bad request" });
@@ -388,7 +402,7 @@ router.post("/status", requireFirebaseAuth, async (req: any, res: any) => {
  * Это то, ради чего конструктор и нужен: сколько заявок пришло по каждой
  * форме, в каких они статусах, сколько новых и как быстро их обрабатывают.
  */
-router.get("/stats", requireFirebaseAuth, async (req: any, res: any) => {
+router.get("/stats", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
   try {
     const tenantId = String(req.query.tenantId || "");
     if (!tenantId) return res.status(400).json({ success: false, error: "Нужен tenantId" });

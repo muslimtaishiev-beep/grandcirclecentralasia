@@ -10,6 +10,7 @@ import compression from "compression";
 import { calculateScoresTs } from "./src/lib/scoringEngine.js";
 import { publicTenantView } from "./src/server/tenantView.js";
 import { hasAnyPermission } from "./src/server/access.js";
+import { checkTenantOpen } from "./src/server/tenantAccess.js";
 import { requireFirebaseAuth } from "./src/routes/authRoutes.js";
 
 dotenv.config();
@@ -659,6 +660,11 @@ app.post("/api/exams/start", async (req, res) => {
     const studentShortId = shortId || Math.floor(100000 + Math.random() * 900000).toString();
     const sessionId = testId || `test_${studentShortId}_${Date.now()}`;
     const resolvedTenantId = tenantId || 'org_future_leaders';
+    {
+      // Приостановленная организация или закрытые платформой тесты — экзамен не стартует.
+      const gate = await checkTenantOpen(resolvedTenantId, "tests");
+      if (!gate.ok) return res.status(gate.status).json({ success: false, error: gate.error });
+    }
 
     // Save session in Firestore if available
     if (useFirebase) {
@@ -741,6 +747,10 @@ app.get("/api/exams/questions", async (req, res) => {
     }
 
     const resolvedTenantId = (tenantId as string) || 'org_future_leaders';
+    {
+      const gate = await checkTenantOpen(resolvedTenantId, "tests");
+      if (!gate.ok) return res.status(gate.status).json({ success: false, error: gate.error });
+    }
     const g = Number(grade);
 
     if (!useFirebase) {
@@ -809,11 +819,11 @@ app.get("/api/exams/questions", async (req, res) => {
       const tenantSnap = await admin.firestore().collection("tenants").doc(resolvedTenantId).get();
       const tenant = tenantSnap.data();
       if (tenant) {
-        const moduleOn = Array.isArray(tenant.enabledModules)
-          ? tenant.enabledModules.includes("MODULE_ANTI_CHEAT_PROCTORING")
-          : true; // tenants predating the module list are not silently disabled
+        // Единственный источник — тумблер суперадмина proctoringEnabled.
+        // Раньше учитывался ещё список enabledModules, который никто не
+        // редактировал: тумблер писал одно поле, сервер читал другое.
         proctoring = {
-          enabled: moduleOn && tenant.proctoringEnabled !== false,
+          enabled: tenant.proctoringEnabled !== false,
           detectors: tenant.proctoringFlags || {},
         };
       }
@@ -994,6 +1004,10 @@ async function processExamSubmission(payload: any) {
 
   if (!shortId || !studentName || !grade) {
     return { success: false, error: "Missing required submission fields" };
+  }
+  {
+    const gate = await checkTenantOpen(resolvedTenantId, "tests");
+    if (!gate.ok) return { success: false, error: gate.error };
   }
 
   // SECURITY: Verify that a test for this grade exists for this tenant
@@ -1543,6 +1557,10 @@ app.post("/api/gas", async (req, res) => {
     // the superadmin log showed nothing and the manager could not tell an
     // interrupted attempt from one that never happened.
     if (payload.action === "registerStudent" && payload.shortId) {
+      if (payload.tenantId) {
+        const gate = await checkTenantOpen(payload.tenantId, "tests");
+        if (!gate.ok) return res.status(gate.status).json({ success: false, error: gate.error });
+      }
       writeAuditLog("EXAM_STARTED", payload.tenantId || "org_future_leaders", {
         studentShortId: String(payload.shortId),
         studentName: payload.studentName || "",

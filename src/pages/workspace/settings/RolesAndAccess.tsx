@@ -4,7 +4,8 @@ import { Shield, Plus, Trash2, Check, Loader2, Users, EyeOff, X, UserPlus, Mail 
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { auth, db } from "../../../lib/firebase";
 import {
-  PERMISSIONS, ROLE_PRESETS, ORG_MODULES, migrateLegacyPermissions, resolvePermissions, hasFullAccess,
+  PERMISSIONS, ROLE_PRESETS, ORG_MODULES, WORKSPACE_SCREENS, NON_HIDEABLE_SCREENS,
+  migrateLegacyPermissions, resolvePermissions, hasFullAccess,
   type PermissionKey,
 } from "../../../shared/permissions";
 import EmployeeAccessModal from "./EmployeeAccessModal";
@@ -44,6 +45,9 @@ export default function RolesAndAccess() {
 
   const [editing, setEditing] = useState<Role | null>(null);
   const [disabled, setDisabled] = useState<string[]>([]);
+  /** Разделы, скрытые самой организацией (слой поверх того, что открыла платформа). */
+  const [orgScreens, setOrgScreens] = useState<string[]>([]);
+  const platformOff = new Set<string>(Array.isArray(tenant?.platformDisabledScreens) ? tenant.platformDisabledScreens : []);
   /** Сотрудник, чью карточку доступа открыли. */
   const [access, setAccess] = useState<any | null>(null);
 
@@ -68,6 +72,7 @@ export default function RolesAndAccess() {
 
   useEffect(() => { void loadRoles(); }, [loadRoles]);
   useEffect(() => { setDisabled(Array.isArray(tenant?.disabledModules) ? tenant.disabledModules : []); }, [tenant?.disabledModules]);
+  useEffect(() => { setOrgScreens(Array.isArray(tenant?.disabledScreens) ? tenant.disabledScreens : []); }, [tenant?.disabledScreens]);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -158,6 +163,22 @@ export default function RolesAndAccess() {
     finally { setBusy(false); }
   };
 
+  const saveScreens = async (next: string[]) => {
+    setBusy(true); setError(null);
+    try {
+      const res = await fetch(`/api/tenants/${tenantId}/screens`, {
+        method: "PUT", headers: await authHeaders(),
+        body: JSON.stringify({ disabledScreens: next }),
+      });
+      const j = await res.json();
+      if (!j.success) { setError(j.error || "Не удалось сохранить"); return; }
+      setOrgScreens(j.disabledScreens || next);
+      say("Сохранено. Разделы пропадут у всех после перезагрузки.");
+      ctx?.refreshTenants?.();
+    } catch { setError("Нет связи с сервером"); }
+    finally { setBusy(false); }
+  };
+
   const saveModules = async (next: string[]) => {
     setBusy(true); setError(null);
     try {
@@ -197,7 +218,7 @@ export default function RolesAndAccess() {
       </div>
 
       <div className="flex gap-1 bg-[var(--bg-app)] border border-[var(--border-color)] rounded-xl p-1 text-xs w-fit">
-        {([["roles", `Должности (${roles.length})`], ["staff", `Сотрудники (${members.length})`], ["modules", "Модули"]] as const).map(([k, label]) => (
+        {([["roles", `Должности (${roles.length})`], ["staff", `Сотрудники (${members.length})`], ["modules", "Разделы"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`px-4 py-2 rounded-lg font-bold transition ${
               tab === k ? "bg-[var(--bg-surface)] text-emerald-500 shadow-xs" : "text-[var(--text-muted)]"}`}>
@@ -307,13 +328,19 @@ export default function RolesAndAccess() {
                         <span className="text-xs text-emerald-500 font-bold">всё</span>
                       ) : (
                         <span className="text-xs" data-testid={`eff-${m.id}`}>
-                          <b>{eff.size}</b> <span className="text-[var(--text-muted)]">из {PERMISSIONS.length}</span>
-                          {eff.size === 0 && <span className="ml-2 text-[11px] text-amber-600">нет доступа</span>}
+                          {loading ? (
+                            <span className="text-[var(--text-muted)]">…</span>
+                          ) : (
+                            <>
+                              <b>{eff.size}</b> <span className="text-[var(--text-muted)]">из {PERMISSIONS.length}</span>
+                              {eff.size === 0 && <span className="ml-2 text-[11px] text-amber-600">нет доступа</span>}
+                            </>
+                          )}
                         </span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button onClick={() => setAccess(m)} disabled={busy}
+                      <button onClick={() => setAccess(m)} disabled={busy || loading}
                         data-testid={`access-${m.id}`}
                         className="text-xs font-bold text-emerald-500 hover:underline">
                         {systemRole ? "Посмотреть" : "Настроить"}
@@ -335,12 +362,47 @@ export default function RolesAndAccess() {
 
       {/* ── Модули организации ───────────────────────────────────────── */}
       {tab === "modules" && (
-        <div className="space-y-3">
-          <p className="text-xs text-[var(--text-muted)]">
-            Выключенный модуль исчезает из меню у ВСЕХ сотрудников, включая тех,
-            кому право выдано должностью. Так убирают разделы, которыми компания не пользуется.
-          </p>
-          {ORG_MODULES.map(mod => {
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <p className="text-xs text-[var(--text-muted)]">
+              Скрытый раздел исчезает из меню у ВСЕХ сотрудников, включая тех, кому
+              право выдано должностью. Так убирают то, чем компания не пользуется.
+              Разделы, закрытые платформой, здесь не показываются.
+            </p>
+            {[...new Set(WORKSPACE_SCREENS.map(sx => sx.group))].map(group => {
+              const items = WORKSPACE_SCREENS.filter(sx => sx.group === group && !platformOff.has(sx.key));
+              if (!items.length) return null;
+              return (
+                <div key={group} className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-3">
+                  <div className="text-[11px] uppercase font-mono font-bold text-[var(--text-muted)] mb-1.5">{group}</div>
+                  <div className="grid sm:grid-cols-2 gap-1">
+                    {items.map(sx => {
+                      const locked = NON_HIDEABLE_SCREENS.has(sx.key);
+                      const hidden = orgScreens.includes(sx.key);
+                      return (
+                        <label key={sx.key} data-testid={`screen-${sx.key}`}
+                          className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg ${locked ? "opacity-60" : "cursor-pointer hover:bg-black/5 dark:hover:bg-white/5"}`}
+                          title={locked ? "Этот раздел скрыть нельзя" : ""}>
+                          <input type="checkbox" checked={!hidden} disabled={busy || locked}
+                            onChange={e => void saveScreens(e.target.checked
+                              ? orgScreens.filter(k => k !== sx.key)
+                              : [...orgScreens, sx.key])}
+                            className="w-4 h-4" />
+                          <span className="text-sm">{sx.label}</span>
+                          {hidden && <span className="text-[10px] uppercase font-mono text-[var(--text-muted)] flex items-center gap-1"><EyeOff className="w-3 h-3" /> скрыт</span>}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-[11px] uppercase font-mono font-bold text-[var(--text-muted)]">Скрыть модуль целиком</div>
+            <p className="text-xs text-[var(--text-muted)]">Гасит все разделы модуля и отнимает его права у всех сотрудников.</p>
+          {ORG_MODULES.filter(mod => mod.screens.some(k => !platformOff.has(k))).map(mod => {
             const off = disabled.includes(mod.key);
             return (
               <label key={mod.key}
@@ -362,6 +424,7 @@ export default function RolesAndAccess() {
               </label>
             );
           })}
+          </div>
         </div>
       )}
 

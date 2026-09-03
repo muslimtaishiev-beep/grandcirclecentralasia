@@ -3,8 +3,9 @@ import admin from "firebase-admin";
 import {
   ALL_PERMISSION_KEYS, isPermissionKey, ROLE_PRESETS, ORG_MODULES,
   hasFullAccess, migrateLegacyPermissions, resolvePermissions, isSystemRoleName,
-  WORKSPACE_SCREENS, NON_HIDEABLE_SCREENS,
+  WORKSPACE_SCREENS, NON_HIDEABLE_SCREENS, resolveScreens, normalizeTenantStatus,
 } from "../shared/permissions.js";
+import { checkTenantOpen, invalidateTenant, requireScreen } from "../server/tenantAccess.js";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { callerPermissions, canAssignSystemRole } from "../server/access.js";
 import { syncClaims } from "../server/claims.js";
@@ -66,11 +67,21 @@ router.get("/my", requireFirebaseAuth, async (req: any, res: any) => {
       const all = await db.collection("tenants").limit(50).get();
       return res.json({
         success: true,
-        tenants: all.docs.map(d => ({
-          ...d.data(), id: d.id,
-          role: "superadmin", permissions: [], customPermissions: [],
-          effectivePermissions: ALL_PERMISSION_KEYS,
-        })),
+        tenants: all.docs.map(d => {
+          const data: any = d.data();
+          return {
+            ...data, id: d.id,
+            role: "superadmin", permissions: [], customPermissions: [],
+            effectivePermissions: ALL_PERMISSION_KEYS,
+            platformDisabledScreens: Array.isArray(data.platformDisabledScreens) ? data.platformDisabledScreens : [],
+            disabledScreens: Array.isArray(data.disabledScreens) ? data.disabledScreens : [],
+            disabledModules: Array.isArray(data.disabledModules) ? data.disabledModules : [],
+            // Суперадмину видно всё — и разделы, закрытые для организации.
+            visibleScreens: WORKSPACE_SCREENS.map(sx => sx.key),
+            status: normalizeTenantStatus(data.status),
+            suspended: normalizeTenantStatus(data.status) === "suspended",
+          };
+        }),
       });
     }
 
@@ -114,8 +125,22 @@ router.get("/my", requireFirebaseAuth, async (req: any, res: any) => {
         rolePermissions: customRole?.permissions,
         disabledModules: data.disabledModules,
       });
+      // Три слоя видимости считаются здесь же: что закрыла платформа, что
+      // скрыла организация, что не выдано сотруднику. Клиент получает готовый
+      // список и не гадает.
+      const flags = {
+        platformDisabledScreens: Array.isArray(data.platformDisabledScreens) ? data.platformDisabledScreens : [],
+        disabledScreens: Array.isArray(data.disabledScreens) ? data.disabledScreens : [],
+        disabledModules: Array.isArray(data.disabledModules) ? data.disabledModules : [],
+      };
+      const screens = resolveScreens({ ...flags, granted: effective });
       return {
         ...stripTenantSecrets(data),
+        ...flags,
+        status: normalizeTenantStatus(data.status),
+        suspended: normalizeTenantStatus(data.status) === "suspended",
+        visibleScreens: screens.visible,
+        hiddenScreens: screens.hiddenBy,
         role: membership.role || 'user',
         permissions: membership.permissions || [],
         customPermissions: membership.customPermissions || [],
@@ -187,6 +212,10 @@ const requireTenantAdmin = async (req: any, res: any, next: any) => {
         error: "Нет прав на управление организацией. Нужно право «Управление сотрудниками» или «Настройки организации».",
       });
     }
+
+    // Приостановленная организация закрыта и для её администраторов.
+    const gate = await checkTenantOpen(tenantId);
+    if (!gate.ok) return res.status(gate.status).json({ success: false, error: gate.error, reason: gate.reason });
 
     req.membership = membership;
     next();
@@ -413,7 +442,7 @@ router.put("/:id/workspace-config", requireFirebaseAuth, requireTenantAdmin, asy
 const ROLES = "custom_roles";
 
 /** GET /api/tenants/:id/roles — должности организации. */
-router.get("/:id/roles", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
+router.get("/:id/roles", requireFirebaseAuth, requireTenantAdmin, requireScreen("permissions"), async (req: any, res: any) => {
   try {
     const db = admin.firestore();
     const snap = await db.collection(ROLES).where("tenantId", "==", req.params.id).get();
@@ -438,7 +467,7 @@ router.get("/:id/roles", requireFirebaseAuth, requireTenantAdmin, async (req: an
 });
 
 /** POST /api/tenants/:id/roles — создать или изменить должность. */
-router.post("/:id/roles", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
+router.post("/:id/roles", requireFirebaseAuth, requireTenantAdmin, requireScreen("permissions"), async (req: any, res: any) => {
   try {
     const db = admin.firestore();
     const tenantId = req.params.id;
@@ -496,7 +525,7 @@ router.post("/:id/roles", requireFirebaseAuth, requireTenantAdmin, async (req: a
 });
 
 /** DELETE /api/tenants/:id/roles/:roleId — удалить незанятую должность. */
-router.delete("/:id/roles/:roleId", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
+router.delete("/:id/roles/:roleId", requireFirebaseAuth, requireTenantAdmin, requireScreen("permissions"), async (req: any, res: any) => {
   try {
     const db = admin.firestore();
     const { id: tenantId, roleId } = req.params;
@@ -522,7 +551,7 @@ router.delete("/:id/roles/:roleId", requireFirebaseAuth, requireTenantAdmin, asy
 });
 
 /** PUT /api/tenants/:id/modules — что скрыто для всей организации. */
-router.put("/:id/modules", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
+router.put("/:id/modules", requireFirebaseAuth, requireTenantAdmin, requireScreen("permissions"), async (req: any, res: any) => {
   try {
     const db = admin.firestore();
     const known = new Set(ORG_MODULES.map(m => m.key));
@@ -532,6 +561,7 @@ router.put("/:id/modules", requireFirebaseAuth, requireTenantAdmin, async (req: 
       disabledModules: disabled,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+    invalidateTenant(req.params.id);
     return res.json({ success: true, disabledModules: disabled });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
@@ -546,25 +576,30 @@ router.put("/:id/modules", requireFirebaseAuth, requireTenantAdmin, async (req: 
  * отдельно. Дашборд выключить нельзя — без него воркспейс становится тупиком
  * без единой ссылки.
  */
-router.put("/:id/screens", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
+router.put("/:id/screens", requireFirebaseAuth, requireTenantAdmin, requireScreen("permissions"), async (req: any, res: any) => {
   try {
     const db = admin.firestore();
     const known = new Set(WORKSPACE_SCREENS.map(sx => sx.key));
+    // Это слой ОРГАНИЗАЦИИ. Закрытое платформой сюда не попадает: его
+    // организация не видит и включить не может (см. platformDisabledScreens).
+    const snap = await db.collection("tenants").doc(req.params.id).get();
+    const platform = new Set<string>(Array.isArray(snap.data()?.platformDisabledScreens) ? snap.data()!.platformDisabledScreens.map(String) : []);
     const disabled = (Array.isArray(req.body?.disabledScreens) ? req.body.disabledScreens : [])
       .map(String)
-      .filter((k: string) => known.has(k) && !NON_HIDEABLE_SCREENS.has(k));
+      .filter((k: string) => known.has(k) && !NON_HIDEABLE_SCREENS.has(k) && !platform.has(k));
     await db.collection("tenants").doc(req.params.id).update({
       disabledScreens: disabled,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    return res.json({ success: true, disabledScreens: disabled });
+    invalidateTenant(req.params.id);
+    return res.json({ success: true, disabledScreens: disabled, platformDisabledScreens: [...platform] });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }
 });
 
 /** POST /api/tenants/:id/members/:membershipId/role — назначить должность. */
-router.post("/:id/members/:membershipId/role", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
+router.post("/:id/members/:membershipId/role", requireFirebaseAuth, requireTenantAdmin, requireScreen("permissions"), async (req: any, res: any) => {
   try {
     const db = admin.firestore();
     const { id: tenantId, membershipId } = req.params;
@@ -622,7 +657,7 @@ router.post("/:id/members/:membershipId/role", requireFirebaseAuth, requireTenan
 });
 
 // GET /api/tenants/:id/members - List members
-router.get("/:id/members", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
+router.get("/:id/members", requireFirebaseAuth, requireTenantAdmin, requireScreen("permissions"), async (req: any, res: any) => {
   try {
     const tenantId = req.params.id;
     const db = admin.firestore();
