@@ -447,6 +447,8 @@ router.put("/:id/workspace-config", requireFirebaseAuth, requireTenantAdmin, asy
         pinRequired: c.registration?.pinRequired !== false,
         consentText: str(c.registration?.consentText, 1200),
         startButtonLabel: str(c.registration?.startButtonLabel, 40),
+        finishTitle: str(c.registration?.finishTitle, 80),
+        finishText: str(c.registration?.finishText, 600),
       },
       // Публичные страницы заявок и билетов.
       tickets: {

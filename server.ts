@@ -1362,10 +1362,20 @@ async function processExamSubmission(payload: any) {
 }
 
 // 3. POST /api/exams/submit — High-speed TS scoring + Firestore + GAS Dual-Write
+/**
+ * Ученику после сдачи уходит только факт приёма: баллы, разбивка и
+ * аналитика — у организации в кабинете. Раньше ответ содержал всё, и
+ * результат был виден в браузере до решения комиссии.
+ */
+function studentSafeResult(r: any) {
+  if (!r || !r.success) return r;
+  return { success: true, cheated: Boolean(r.cheated), accepted: true };
+}
+
 app.post("/api/exams/submit", async (req, res) => {
   try {
     const subResult = await processExamSubmission(req.body);
-    return res.json(subResult);
+    return res.json(studentSafeResult(subResult));
   } catch (e: any) {
     console.error("[Exams/Submit] Endpoint error:", e);
     return res.status(500).json({ success: false, error: e.message });
@@ -1570,7 +1580,7 @@ app.post("/api/gas", async (req, res) => {
     if (payload.action === "submitTest" || payload.action === "submitEnglishTest") {
       try {
         const subResult = await processExamSubmission(payload);
-        return res.json(subResult);
+        return res.json(studentSafeResult(subResult));
       } catch (subErr: any) {
         console.error("[GAS Proxy] Local exam submission error:", subErr);
       }

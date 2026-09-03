@@ -286,6 +286,12 @@ export default function WorkspaceSetupPage() {
             </label>
           </div>
         </div>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <input value={cfg.registration?.finishTitle || ""} disabled={!canEdit} onChange={e => setReg({ finishTitle: e.target.value })}
+            placeholder={`Заголовок после сдачи: ${resolved.registration.finishTitle}`} className={input} data-testid="reg-finishTitle" />
+          <textarea value={cfg.registration?.finishText || ""} disabled={!canEdit} rows={2} onChange={e => setReg({ finishText: e.target.value })}
+            placeholder={`Текст после сдачи (баллы ученику не показываются): ${resolved.registration.finishText}`} className={input} />
+        </div>
         <textarea value={cfg.registration?.consentText || ""} disabled={!canEdit} rows={3}
           onChange={e => setReg({ consentText: e.target.value })}
           placeholder="Текст согласия на обработку данных (пусто — стандартный)" className={input} />

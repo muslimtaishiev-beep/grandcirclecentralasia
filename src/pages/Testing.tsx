@@ -1457,13 +1457,13 @@ export default function Testing() {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-center select-none">
         <div className="bg-white p-10 rounded-3xl shadow-2xl max-w-2xl w-full border border-slate-100">
-          <h1 className="text-4xl font-extrabold text-blue-900 mb-6">Отлично! Основной тест сдан 🎉</h1>
+          <h1 className="text-3xl font-extrabold text-blue-900 mb-6">Основная часть принята</h1>
           <p className="text-xl text-slate-600 mb-8">
-            Ваш уникальный номер (Test ID): <span className="font-mono font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded">{shortId}</span>
+            Номер работы: <span className="font-mono font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded">{shortId}</span>
           </p>
           <div className="bg-amber-50 p-6 rounded-xl border border-amber-200 mb-8 text-amber-800 text-left">
             <h3 className="font-bold text-lg mb-2">Что дальше?</h3>
-            <p>Остался тест по английскому языку. Вы можете немного отдохнуть и сдать его прямо сейчас, либо завершить сессию и сдать его позже, введя свой Test ID на главном экране.</p>
+            <p>Остался тест по английскому языку. Его можно сдать сейчас или позже, введя номер работы на главном экране.</p>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1506,95 +1506,18 @@ export default function Testing() {
             </>
           ) : (
             <>
-              <h1 className="text-4xl font-extrabold text-blue-900 mb-4">Тест завершен!</h1>
-              <p className="text-lg text-slate-600 mb-8 font-medium">Спасибо за участие. Ваши ответы сохранены.</p>
+              {/* Баллы ученику не показываются — результаты видит только
+                  организация. Раньше здесь выводилась полная разбивка по
+                  предметам, уровень CEFR и аналитика по темам. */}
+              <h1 className="text-3xl font-extrabold text-blue-900 mb-4">{regCfg?.finishTitle || "Работа принята"}</h1>
+              <p className="text-base text-slate-600 mb-8 font-medium leading-relaxed">
+                {regCfg?.finishText || "Ваши ответы сохранены и переданы на проверку. Результаты сообщит организация после рассмотрения всех работ. Сохраните номер работы — он понадобится при обращении."}
+              </p>
             </>
           )}
 
-          {resultData ? (
-            <div className="mb-6">
-              {(() => {
-                let maxRu = 0, maxMa = 0, maxLo = 0, maxEn = 0;
-                const activeResQuestions = (firestoreTestData && firestoreTestData.questions)
-                  ? firestoreTestData.questions
-                  : (grade && testsData[grade] ? testsData[grade] : null);
-
-                if (activeResQuestions) {
-                  maxRu = (activeResQuestions.russian || []).reduce((sum: number, q: any) => sum + (q.points || 1), 0);
-                  maxMa = (activeResQuestions.math || []).reduce((sum: number, q: any) => sum + (q.points || 1), 0);
-                  maxLo = (activeResQuestions.logic || []).reduce((sum: number, q: any) => sum + (q.points || 1), 0);
-                  maxEn = (activeResQuestions.english || []).reduce((sum: number, q: any) => sum + (q.points || 1), 0);
-                }
-                const totalMax = maxRu + maxMa + maxLo;
-                const percent = totalMax > 0 ? Math.round((resultData.totalScore / totalMax) * 100) : 0;
-                
-                return (
-                  <>
-                  {resultData && resultData.scores && (
-                  <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-left">
-                    <h3 className="font-bold text-green-800 text-lg mb-3 text-center">Основной тест:</h3>
-                    <div className="flex justify-between items-center mb-1 text-green-700">
-                      <span>Русский язык:</span><span className="font-bold">{resultData.scores.russian || 0}</span>
-                    </div>
-                    <div className="flex justify-between items-center mb-1 text-green-700">
-                      <span>Математика:</span><span className="font-bold">{resultData.scores.math || 0}</span>
-                    </div>
-                    <div className="flex justify-between items-center mb-1 text-green-700">
-                      <span>Логика:</span><span className="font-bold">{resultData.scores.logic || 0}</span>
-                    </div>
-                    <div className="mt-3 pt-3 border-t border-green-200 flex flex-col items-end font-bold text-green-900 text-lg">
-                      <div className="w-full flex justify-between"><span>Общий балл:</span><span>{resultData.totalScore || 0} из {totalMax}</span></div>
-                      <div className="text-sm text-green-700 font-medium">({isNaN(percent) ? 0 : percent}% верных)</div>
-                    </div>
-                  </div>
-                  )}
-                  
-                  {resultData && resultData.scores && resultData.scores.english !== undefined && resultData.scores.english !== "" && maxEn > 0 && (
-                    <div className="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded-xl text-left">
-                      <h3 className="font-bold text-indigo-800 text-lg mb-3 text-center">Английский язык:</h3>
-                      {(() => {
-                        const cefr = getCEFRLevel(grade!, maxEn, Number(resultData.scores?.english));
-                        if (!cefr) return null;
-                        return (
-                          <div className="flex flex-col items-center">
-                            <div className="text-3xl mb-2">{cefr.icon}</div>
-                            <div className="font-bold text-indigo-900 text-xl text-center">{cefr.actualLevel}</div>
-                            <div className="text-indigo-700 mt-1 font-medium">Усвоено: {cefr.percent}%</div>
-                            {cefr.icon !== "✅" && (
-                              <div className="text-xs text-indigo-500 mt-2 text-center">Ожидаемый уровень: {cefr.targetLevel}</div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-                  
-                  {resultData && resultData.diagnosticsReport && (
-                    <div className="mb-6 p-4 bg-white border border-slate-200 rounded-xl text-left shadow-sm">
-                      <h3 className="font-bold text-slate-800 text-lg mb-3 border-b pb-2 flex items-center">
-                        <span className="mr-2">📊</span> Аналитика знаний (Темы)
-                      </h3>
-                      <div className="text-sm text-slate-700 whitespace-pre-wrap font-medium leading-relaxed">
-                        {typeof resultData.diagnosticsReport === 'string' 
-                          ? resultData.diagnosticsReport 
-                          : typeof resultData.diagnosticsReport === 'object'
-                            ? Object.entries(resultData.diagnosticsReport).map(([topic, val]: any) => 
-                                `• ${topic}: ${typeof val === 'object' ? `${val.earned || 0} из ${val.possible || 0}` : val}`
-                              ).join('\n')
-                            : String(resultData.diagnosticsReport)}
-                      </div>
-                    </div>
-                  )}
-                  </>
-                );
-              })()}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-500 mb-6">Результаты обрабатываются. Ожидайте вердикт от менеджера.</p>
-          )}
-
           <div className="mb-8 p-4 bg-blue-50 border border-blue-100 rounded-xl">
-            <p className="text-sm font-medium text-blue-800 mb-2">ID Теста для менеджера:</p>
+            <p className="text-sm font-medium text-blue-800 mb-2">Номер работы:</p>
             <p className="text-3xl font-mono font-bold tracking-widest text-blue-600">{shortId}</p>
           </div>
           

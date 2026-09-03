@@ -56,6 +56,9 @@ export interface RegistrationConfig {
   consentText?: string;
   /** Кнопка старта. */
   startButtonLabel?: string;
+  /** Экран после сдачи: заголовок и официальный текст. Баллы ученику не показываются. */
+  finishTitle?: string;
+  finishText?: string;
 }
 
 export interface TicketsConfig {
@@ -157,6 +160,8 @@ export const DEFAULT_WORKSPACE_CONFIG: Required<Omit<WorkspaceConfig, "setupComp
     pinRequired: true,
     consentText: "",
     startButtonLabel: "Начать тест",
+    finishTitle: "Работа принята",
+    finishText: "Ваши ответы сохранены и переданы на проверку. Результаты сообщит организация после рассмотрения всех работ. Сохраните номер работы — он понадобится при обращении.",
   },
   tickets: {
     publicTitle: "",
