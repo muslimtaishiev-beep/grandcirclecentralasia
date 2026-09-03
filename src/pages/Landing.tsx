@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useResolvedTenantId } from '../lib/resolveTenant';
+import { resolveWorkspaceConfig } from '../shared/workspaceConfig';
 
 interface LandingProps {
   lang?: "ru" | "en" | "kg";
@@ -31,6 +32,7 @@ const Landing: React.FC<LandingProps> = ({ lang = "ru" }) => {
     );
   }
   const orgTitle = (org?.name || resolved.name || "").trim();
+  const L = resolveWorkspaceConfig((org as any)?.workspaceConfig).landing;
 
   return (
     <div className="relative min-h-dvh bg-black text-white overflow-hidden font-sans">
@@ -105,7 +107,7 @@ const Landing: React.FC<LandingProps> = ({ lang = "ru" }) => {
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-xs sm:text-sm font-medium mb-8 backdrop-blur-sm">
             <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
-            {lang === "ru" ? "Регистрация открыта" : lang === "kg" ? "Каттоо ачык" : "Registration Open"}
+            {lang === "ru" ? L.badge : lang === "kg" ? "Каттоо ачык" : "Registration Open"}
           </div>
 
           <h1 className="text-4xl sm:text-6xl md:text-7xl font-black uppercase tracking-tighter mb-6 leading-none text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-500">
@@ -114,23 +116,25 @@ const Landing: React.FC<LandingProps> = ({ lang = "ru" }) => {
 
           <p className="text-lg sm:text-2xl text-slate-300 mb-12 max-w-2xl mx-auto font-light">
             {lang === "ru" 
-              ? "Первый этап отбора — диагностический тест. Покажи свои знания и стань частью будущего."
+              ? L.subtitle
               : lang === "kg"
               ? "Тандоонун биринчи этапы - диагностикалык тест. Билимиңди көрсөт жана келечектин бир бөлүгү бол."
               : "First stage of selection — diagnostic test. Show your knowledge and become part of the future."}
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button 
-              onClick={() => navigate('/register')}
+              // Результаты — портал ЭТОЙ организации. Раньше кнопка вела на
+              // общую регистрацию платформы, не связанную с организацией.
+              onClick={() => navigate(`/${orgSlug}/results`)}
               className="w-full sm:w-auto px-8 py-4 bg-white text-black font-bold uppercase tracking-wider border-2 border-white hover:bg-transparent hover:text-white transition-colors"
             >
-              {lang === "ru" ? "Узнать результаты" : lang === "kg" ? "Жыйынтыкты көрүү" : "Check Results"}
+              {lang === "ru" ? L.primaryCtaLabel : lang === "kg" ? "Жыйынтыкты көрүү" : "Check Results"}
             </button>
             <button 
               onClick={() => navigate(`/${orgSlug}/test`)}
               className="w-full sm:w-auto px-8 py-4 bg-transparent text-white font-bold uppercase tracking-wider border-2 border-white hover:bg-white hover:text-black transition-colors"
             >
-              {lang === "ru" ? "Вход для участников" : lang === "kg" ? "Катышуучулар үчүн кирүү" : "Participant Login"}
+              {lang === "ru" ? L.secondaryCtaLabel : lang === "kg" ? "Катышуучулар үчүн кирүү" : "Participant Login"}
             </button>
           </div>
         </motion.div>

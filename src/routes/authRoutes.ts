@@ -4,6 +4,7 @@ import admin from "firebase-admin";
 import { sendStaffInviteEmail } from "../../emailService.js";
 import { callerPermissions } from "../server/access.js";
 import { syncClaims } from "../server/claims.js";
+import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
 
 const router = Router();
 
@@ -271,6 +272,7 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
     try {
       const resetLink = await admin.auth().generatePasswordResetLink(email);
       emailResult = await sendStaffInviteEmail({
+        email: resolveWorkspaceConfig(targetTenantDoc.data()?.workspaceConfig).email,
         to: email,
         fullName: fullName || email.split("@")[0],
         tenantName: orgName,

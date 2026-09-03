@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useOutletContext } from "react-router-dom";
+import { resolveWorkspaceConfig } from "../../../shared/workspaceConfig";
 
 import jsQR from "jsqr";
 import { QrCode, Camera, CameraOff, CheckCircle2, XCircle, Loader2 } from "lucide-react";
@@ -40,6 +42,9 @@ function extractToken(raw: string): string | null {
 }
 
 export default function TicketScanner() {
+  // Текст успешной проверки — из настроек организации («Проходит», «Добро пожаловать»…).
+  const outlet = useOutletContext<{ activeTenant?: any } | null>();
+  const okText = resolveWorkspaceConfig(outlet?.activeTenant?.workspaceConfig).tickets.checkinOkText || "Проходит";
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -204,7 +209,7 @@ export default function TicketScanner() {
                   <CheckCircle2 className="w-10 h-10 shrink-0" />
                   <div className="min-w-0">
                     <div className="font-extrabold text-lg truncate">{outcome.guest?.name}</div>
-                    <div className="text-sm opacity-90">Проходит ✓</div>
+                    <div className="text-sm opacity-90">{okText} ✓</div>
                   </div>
                 </div>
               )}

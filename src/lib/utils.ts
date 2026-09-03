@@ -1,3 +1,4 @@
+import { hourlyPin } from "../shared/pin";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -19,7 +20,7 @@ export function generateShortId(): string {
  * that is a few minutes off, which is common on phones and was indistinguishable
  * from the student mistyping.
  */
-export function isValidHourlyPIN(entered: string): boolean {
+export function isValidHourlyPIN(entered: string, tenantId = ""): boolean {
   // Keep only the digits. A student reported being refused while typing the
   // correct code: phone keyboards and paste routinely smuggle in characters
   // that look like nothing — a non-breaking space, a zero-width space, an RTL
@@ -28,7 +29,7 @@ export function isValidHourlyPIN(entered: string): boolean {
   // and they are visually identical to what the manager read out.
   const clean = normalizeDigits(entered);
   if (!clean) return false;
-  return [-1, 0, 1].some(offset => clean === getHourlyPIN(offset));
+  return [-1, 0, 1].some(offset => clean === getHourlyPIN(offset, tenantId));
 }
 
 /** Extracts the digits from user input, folding non-Latin numerals to ASCII. */
@@ -40,12 +41,9 @@ export function normalizeDigits(raw: string): string {
     .replace(/\D/g, "");
 }
 
-export function getHourlyPIN(hourOffset: number = 0): string {
-  const d = new Date();
-  d.setUTCHours(d.getUTCHours() + hourOffset);
-  const seed = d.getUTCFullYear() * 1000000 + (d.getUTCMonth() + 1) * 10000 + d.getUTCDate() * 100 + d.getUTCHours();
-  const pin = (seed * 1103515245 + 12345) % 9000 + 1000;
-  return Math.abs(pin).toString();
+/** Часовой PIN — общий расчёт с сервером (см. src/shared/pin.ts). */
+export function getHourlyPIN(hourOffset: number = 0, tenantId = ""): string {
+  return hourlyPin(tenantId, hourOffset);
 }
 // Converts numbers to superscripts
 function toSuperscript(numStr) {

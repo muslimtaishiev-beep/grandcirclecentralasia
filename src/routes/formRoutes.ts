@@ -7,7 +7,19 @@ import {
   isFormStatus, type FormStatus, type FormMode,
 } from "../shared/formStatuses.js";
 import { hasAnyPermission } from "../server/access.js";
-import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
+import { checkTenantOpen, requireScreen, loadTenant } from "../server/tenantAccess.js";
+import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
+
+/** Что о организации можно показать заявителю: название, брендинг, тексты билетов. */
+function publicOrg(t: any) {
+  if (!t) return null;
+  const b = t.branding && typeof t.branding === "object" ? t.branding : {};
+  return {
+    id: t.id, name: String(t.name || ""),
+    logoUrl: b.logoUrl || null, primaryColor: b.primaryColor || null,
+    tickets: resolveWorkspaceConfig(t.workspaceConfig).tickets,
+  };
+}
 
 
 /**
@@ -58,20 +70,20 @@ router.get("/public/:formId", async (req: any, res: any) => {
       return res.status(404).json({ success: false, error: "Форма не найдена. Проверьте ссылку." });
     }
     const f = snap.data()!;
-    if (f.active === false) {
-      return res.status(410).json({
-        success: false, closed: true,
-        error: "Приём заявок по этой форме закрыт.",
-      });
-    }
     // Приостановленная организация или закрытый платформой раздел — форма
     // для посетителя тоже закрыта.
     const gate = await checkTenantOpen(f.tenantId, "forms");
     if (!gate.ok) {
       return res.status(410).json({ success: false, closed: true, error: "Приём заявок по этой форме закрыт." });
     }
+    // Закрытую вручную форму показываем с текстами организации.
+    if (f.active === false) {
+      const org = publicOrg(gate.tenant);
+      return res.status(410).json({ success: false, closed: true, org, error: org?.tickets?.closedMessage || "Приём заявок по этой форме закрыт." });
+    }
     return res.json({
       success: true,
+      org: publicOrg(gate.tenant),
       form: {
         id: snap.id,
         title: f.title || "Заявка",
@@ -226,8 +238,10 @@ router.get("/track/:token", async (req: any, res: any) => {
     const formSnap = s.formId ? await db().collection(FORMS).doc(String(s.formId)).get() : null;
     const mode = formMode(formSnap?.exists ? formSnap.data() : null);
 
+    const org = publicOrg(await loadTenant(String(s.tenantId || "")));
     return res.json({
       success: true,
+      org,
       submission: {
         code: s.qrToken || doc0.id,
         formId: s.formId || "",

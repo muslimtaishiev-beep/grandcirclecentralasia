@@ -22,6 +22,8 @@ export default function QrTracker() {
 
   const [loading, setLoading] = useState(true);
   const [submission, setSubmission] = useState<any | null>(null);
+  const [org, setOrg] = useState<any | null>(null);
+  const ticketWord: string = org?.tickets?.ticketWord || "Билет";
   const [error, setError] = useState<string | null>(null);
 
 
@@ -42,6 +44,7 @@ export default function QrTracker() {
           return;
         }
         setSubmission(j.submission);
+        if (j.org) setOrg(j.org);
       } catch (err: any) {
         setError('Нет связи с сервером. Проверьте интернет и попробуйте снова.');
       } finally {
@@ -80,7 +83,7 @@ export default function QrTracker() {
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
           <div className="flex items-center gap-2">
             <Building2 className="w-5 h-5 text-emerald-500" />
-            <span className="font-bold text-sm tracking-wide text-slate-200">Официальный QR-Паспорт</span>
+            <span className="font-bold text-sm tracking-wide text-slate-200">{org?.tickets?.publicTitle || org?.name || "Проверка заявки"}</span>
           </div>
           <span className="text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full border border-emerald-500/30">
             VERIFIED
@@ -96,16 +99,18 @@ export default function QrTracker() {
           <div className="py-8 text-center space-y-3">
             <AlertCircle className="w-12 h-12 text-red-500 mx-auto" />
             <div className="font-bold text-sm text-red-400">{error}</div>
-            <p className="text-xs text-slate-400">Проверьте правильность ссылки или обратитесь в приемную комиссию</p>
+            <p className="text-xs text-slate-400">
+              Проверьте правильность ссылки{org?.tickets?.supportPhone ? ` или позвоните: ${org.tickets.supportPhone}` : " или обратитесь к организатору"}
+            </p>
           </div>
         ) : submission && (
           <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
             
             {/* Applicant Banner */}
             <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-2 text-center">
-              <div className="text-[10px] uppercase font-mono font-bold text-slate-400">Заявитель / Абитуриент</div>
-              <h2 className="text-xl font-extrabold text-white">{submission.applicantName || 'Ученик'}</h2>
-              <div className="text-xs font-mono text-emerald-400 font-bold">{submission.formTitle || 'Заявка на обучение'}</div>
+              <div className="text-[10px] uppercase font-mono font-bold text-slate-400">Заявитель</div>
+              <h2 className="text-xl font-extrabold text-white">{submission.applicantName || 'Без имени'}</h2>
+              <div className="text-xs font-mono text-emerald-400 font-bold">{submission.formTitle || 'Заявка'}</div>
             </div>
 
             {/* Live Status Pass Card */}
@@ -132,7 +137,7 @@ export default function QrTracker() {
               submission.ticketActive ? (
                 <div className="bg-white rounded-2xl p-5 space-y-3 text-center">
                   <div className="text-[10px] uppercase font-mono font-bold text-slate-500">
-                    {submission.status === "checked_in" ? "Билет использован" : "Ваш билет — покажите на входе"}
+                    {submission.status === "checked_in" ? `${ticketWord} использован` : `Ваш ${ticketWord.toLowerCase()} — покажите на входе`}
                   </div>
                   <div className={`flex justify-center ${submission.status === "checked_in" ? "opacity-30 grayscale" : ""}`}>
                     <FancyQr value={window.location.href} theme={QR_THEMES[0]} size={200} />
@@ -146,7 +151,7 @@ export default function QrTracker() {
                 </div>
               ) : (
                 <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 text-center text-xs text-slate-400">
-                  🎟 Заявка на рассмотрении. Билет появится на этой странице после одобрения.
+                  🎟 Заявка на рассмотрении. {ticketWord} появится на этой странице после одобрения.
                 </div>
               )
             )}
@@ -182,7 +187,7 @@ export default function QrTracker() {
 
         {/* Footer */}
         <div className="pt-2 text-center text-[11px] text-slate-500 font-mono border-t border-slate-800">
-          Образовательная платформа
+          {org?.name || ""}
         </div>
 
       </div>

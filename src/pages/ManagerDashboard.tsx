@@ -858,7 +858,7 @@ export default function ManagerDashboard() {
             <h1 className="text-3xl font-bold text-slate-800">CRM Учеников</h1>
             <div className="bg-white px-4 py-2 rounded-xl border border-blue-200 shadow-sm flex items-center gap-3">
               <span className="text-sm text-slate-500 font-medium">PIN-код для тестов:</span>
-              <span key={pinTick} className="text-xl font-mono font-bold text-blue-600 tracking-widest bg-blue-50 px-3 py-1 rounded">{getHourlyPIN()}</span>
+              <span key={pinTick} className="text-xl font-mono font-bold text-blue-600 tracking-widest bg-blue-50 px-3 py-1 rounded">{getHourlyPIN(0, activeTenantId || "")}</span>
               <span className={`text-xs font-medium ${pinMinutesLeft <= 5 ? "text-amber-600" : "text-slate-400"}`}>
                 {pinMinutesLeft <= 5
                   ? `сменится через ${pinMinutesLeft} мин`

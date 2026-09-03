@@ -16,7 +16,10 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function emailShell(tenantName: string, bodyHtml: string): string {
+/** Настройки писем организации: имя отправителя, адрес для ответов, подпись. */
+export interface TenantEmailSettings { fromName?: string; replyTo?: string; signature?: string }
+
+function emailShell(tenantName: string, bodyHtml: string, signature = ""): string {
   const safeName = escapeHtml(tenantName || "Образовательная платформа");
   return `<!DOCTYPE html>
 <html lang="ru">
@@ -34,6 +37,7 @@ function emailShell(tenantName: string, bodyHtml: string): string {
         <tr>
           <td style="padding:20px 32px;background-color:#f8fafc;border-top:1px solid #e2e8f0;">
             <p style="margin:0;font-size:12px;line-height:18px;color:#94a3b8;">
+${signature ? `<p style="margin:0 0 8px;font-size:13px;line-height:20px;color:#475569;white-space:pre-line;">${escapeHtml(signature)}</p>` : ""}
               Это автоматическое письмо, отвечать на него не нужно. Если вы считаете, что получили его по ошибке — просто проигнорируйте.
             </p>
           </td>
@@ -46,6 +50,7 @@ function emailShell(tenantName: string, bodyHtml: string): string {
 }
 
 interface TestResultEmailParams {
+  email?: TenantEmailSettings;
   to: string;
   studentName: string;
   tenantName: string;
@@ -102,10 +107,11 @@ export async function sendTestResultEmail(params: TestResultEmailParams): Promis
 
   try {
     const result = await resend.emails.send({
-      from: `${tenantName || "Приёмная комиссия"} <${FROM_ADDRESS}>`,
+      from: `${params.email?.fromName || tenantName || "Приёмная комиссия"} <${FROM_ADDRESS}>`,
+      ...(params.email?.replyTo ? { reply_to: params.email.replyTo } : {}),
       to: params.to,
       subject: `Результаты вступительного тестирования — ${studentName}`,
-      html: emailShell(tenantName, body),
+      html: emailShell(tenantName, body, params.email?.signature || ""),
     });
     if ((result as any)?.error) return { sent: false, reason: (result as any).error.message };
     return { sent: true };
@@ -115,6 +121,7 @@ export async function sendTestResultEmail(params: TestResultEmailParams): Promis
 }
 
 interface StaffInviteEmailParams {
+  email?: TenantEmailSettings;
   to: string;
   fullName: string;
   tenantName: string;
@@ -155,10 +162,11 @@ export async function sendStaffInviteEmail(params: StaffInviteEmailParams): Prom
 
   try {
     const result = await resend.emails.send({
-      from: `${tenantName || "Образовательная платформа"} <${FROM_ADDRESS}>`,
+      from: `${params.email?.fromName || tenantName || "Образовательная платформа"} <${FROM_ADDRESS}>`,
+      ...(params.email?.replyTo ? { reply_to: params.email.replyTo } : {}),
       to: params.to,
       subject: `Приглашение в «${tenantName}»`,
-      html: emailShell(tenantName, body),
+      html: emailShell(tenantName, body, params.email?.signature || ""),
     });
     if ((result as any)?.error) return { sent: false, reason: (result as any).error.message };
     return { sent: true };

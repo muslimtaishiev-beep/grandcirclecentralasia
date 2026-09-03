@@ -24,11 +24,21 @@ type Form = {
   fields: Field[]; qrTrackingEnabled: boolean;
   mode?: "application" | "ticket";
 };
+/** Организация и её тексты для публичных страниц — из настроек воркспейса. */
+type Org = {
+  id: string; name: string; logoUrl?: string | null; primaryColor?: string | null;
+  tickets?: {
+    publicTitle?: string; closedTitle?: string; closedMessage?: string;
+    submitButtonLabel?: string; successTitle?: string; successMessage?: string;
+    ticketWord?: string; supportPhone?: string;
+  };
+};
 
 export default function PublicForm() {
   const { formId } = useParams<{ formId: string }>();
 
   const [form, setForm] = useState<Form | null>(null);
+  const [org, setOrg] = useState<Org | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [closed, setClosed] = useState(false);
@@ -42,6 +52,7 @@ export default function PublicForm() {
     try {
       const res = await fetch(`/api/forms/public/${formId}`);
       const j = await res.json();
+      if (j.org) setOrg(j.org);
       if (!j.success) {
         if (j.closed) setClosed(true);
         setError(j.error || "Форма недоступна.");
@@ -81,9 +92,12 @@ export default function PublicForm() {
         <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
           <div className="text-4xl mb-3">{closed ? "🔒" : "🔍"}</div>
           <h1 className="text-xl font-bold text-slate-900 mb-2">
-            {closed ? "Приём заявок закрыт" : "Форма не найдена"}
+            {closed ? (org?.tickets?.closedTitle || "Приём заявок закрыт") : "Форма не найдена"}
           </h1>
           <p className="text-slate-500 text-sm">{error}</p>
+          {org?.tickets?.supportPhone && (
+            <p className="text-slate-500 text-sm mt-2">Вопросы: <a className="text-blue-600" href={`tel:${org.tickets.supportPhone}`}>{org.tickets.supportPhone}</a></p>
+          )}
         </div>
       </Shell>
     );
@@ -97,11 +111,11 @@ export default function PublicForm() {
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
           <div className="px-6 pt-7 pb-5 text-center border-b border-slate-100">
             <div className="text-4xl mb-2">🎉</div>
-            <h1 className="text-2xl font-bold text-slate-900 mb-1">Заявка принята!</h1>
+            <h1 className="text-2xl font-bold text-slate-900 mb-1">{org?.tickets?.successTitle || "Заявка принята!"}</h1>
             <p className="text-slate-500 text-sm">
-              {form.mode === "ticket"
-                ? "Сохраните этот код. Как только заявку одобрят, на странице отслеживания появится ваш билет с QR-кодом для входа."
-                : "Сохраните этот код — по нему вы в любой момент узнаете статус заявки."}
+              {org?.tickets?.successMessage || (form.mode === "ticket"
+                ? `Сохраните этот код. Как только заявку одобрят, на странице отслеживания появится ваш ${(org?.tickets?.ticketWord || "билет").toLowerCase()} с QR-кодом для входа.`
+                : "Сохраните этот код — по нему вы в любой момент узнаете статус заявки.")}
             </p>
           </div>
 
@@ -146,6 +160,12 @@ export default function PublicForm() {
     <Shell>
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
         <div className="px-6 pt-6 pb-4 border-b border-slate-100">
+          {(org?.name || org?.tickets?.publicTitle) && (
+            <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+              {org?.logoUrl && <img src={org.logoUrl} alt="" className="h-6 w-auto" />}
+              <span>{org?.tickets?.publicTitle || org?.name}</span>
+            </div>
+          )}
           <h1 className="text-2xl font-bold text-slate-900">{form.title}</h1>
           {form.description && <p className="text-slate-500 text-sm mt-1">{form.description}</p>}
         </div>
@@ -212,9 +232,10 @@ export default function PublicForm() {
           )}
 
           <button onClick={submit} disabled={busy}
+            style={!busy && org?.primaryColor ? { backgroundColor: org.primaryColor } : undefined}
             className={`w-full py-4 rounded-xl font-bold text-white text-lg ${
               busy ? "bg-slate-400" : "bg-blue-600 hover:bg-blue-700 shadow-lg"}`}>
-            {busy ? "Отправляем…" : "Отправить заявку"}
+            {busy ? "Отправляем…" : (org?.tickets?.submitButtonLabel || "Отправить заявку")}
           </button>
 
           {form.qrTrackingEnabled && (

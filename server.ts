@@ -11,6 +11,8 @@ import { calculateScoresTs } from "./src/lib/scoringEngine.js";
 import { publicTenantView } from "./src/server/tenantView.js";
 import { hasAnyPermission } from "./src/server/access.js";
 import { checkTenantOpen, loadTenant, TenantError } from "./src/server/tenantAccess.js";
+import { resolveWorkspaceConfig } from "./src/shared/workspaceConfig.js";
+import { hourlyPin } from "./src/shared/pin.js";
 import { requireFirebaseAuth } from "./src/routes/authRoutes.js";
 
 dotenv.config();
@@ -641,12 +643,9 @@ async function cachedRead<T>(key: string, loader: () => Promise<T>): Promise<T> 
   return value;
 }
 
-function getHourlyPIN(hourOffset = 0): string {
-  const d = new Date();
-  d.setUTCHours(d.getUTCHours() + hourOffset);
-  const seed = d.getUTCFullYear() * 1000000 + (d.getUTCMonth() + 1) * 10000 + d.getUTCDate() * 100 + d.getUTCHours();
-  const pin = (seed * 1103515245 + 12345) % 9000 + 1000;
-  return Math.abs(pin).toString();
+/** Часовой PIN — общий расчёт с клиентом и срезом (src/shared/pin.ts). */
+function getHourlyPIN(hourOffset = 0, tenantId = ""): string {
+  return hourlyPin(tenantId, hourOffset);
 }
 
 app.post("/api/exams/start", async (req, res) => {
@@ -675,7 +674,7 @@ app.post("/api/exams/start", async (req, res) => {
       .replace(/[\u06F0-\u06F9]/g, (c: string) => String(c.charCodeAt(0) - 0x06F0))
       .replace(/[\uFF10-\uFF19]/g, (c: string) => String(c.charCodeAt(0) - 0xFF10))
       .replace(/\D/g, "");
-    const pinOk = Boolean(cleanPin) && [-1, 0, 1].some(offset => cleanPin === getHourlyPIN(offset));
+    const pinOk = Boolean(cleanPin) && [-1, 0, 1].some(offset => cleanPin === getHourlyPIN(offset, resolvedTenantId));
     const TESTER_PIN = process.env.VITE_TESTER_PIN || process.env.TESTER_PIN;
     const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
 
@@ -850,11 +849,25 @@ app.get("/api/exams/questions", async (req, res) => {
       console.warn("[Exams/Questions] Could not read proctoring config:", e.message);
     }
 
+    // Анкета регистрации и название организации едут тем же ответом:
+    // страница экзамена анонимна и не может прочитать документ организации.
+    let registration: any = null;
+    let orgName = "";
+    try {
+      const t = await loadTenant(resolvedTenantId);
+      if (t) {
+        orgName = String(t.name || "");
+        registration = resolveWorkspaceConfig(t.workspaceConfig).registration;
+      }
+    } catch { /* анкета необязательна — страница покажет умолчания */ }
+
     return res.json({
       success: true,
       questions: sanitized,
       timeLimitMinutes: testData.timeLimitMinutes || 90,
       proctoring,
+      registration,
+      orgName,
     });
   } catch (e: any) {
     console.error("[Exams/Questions]", e);
@@ -1308,12 +1321,15 @@ async function processExamSubmission(payload: any) {
     (async () => {
       try {
         let tenantName = resolvedTenantId;
+        let emailSettings: any = undefined;
         try {
           const tenantSnap = await admin.firestore().collection("tenants").doc(resolvedTenantId).get();
           tenantName = tenantSnap.data()?.name || resolvedTenantId;
+          emailSettings = resolveWorkspaceConfig(tenantSnap.data()?.workspaceConfig).email;
         } catch (e) { /* fall back to raw tenantId */ }
 
         const result = await sendTestResultEmail({
+          email: emailSettings,
           to: studentEmail,
           studentName: studentName || 'Ученик',
           tenantName,
@@ -1585,9 +1601,27 @@ app.post("/api/gas", async (req, res) => {
     // the superadmin log showed nothing and the manager could not tell an
     // interrupted attempt from one that never happened.
     if (payload.action === "registerStudent" && payload.shortId) {
+      let regTenant: any = null;
       if (payload.tenantId) {
         const gate = await checkTenantOpen(payload.tenantId, "tests");
         if (!gate.ok) return res.status(gate.status).json({ success: false, error: gate.error });
+        regTenant = gate.tenant;
+      }
+      // PIN аудитории проверяется ЗДЕСЬ, а не только в браузере: раньше
+      // единственная серверная проверка стояла в /api/exams/start, который
+      // никто не вызывал, — и экзамен стартовал по любому коду. Организация
+      // может отключить PIN у себя в настройках (registration.pinRequired).
+      {
+        const reg = resolveWorkspaceConfig(regTenant?.workspaceConfig).registration;
+        const TESTER = process.env.VITE_TESTER_PIN || process.env.TESTER_PIN;
+        const isTester = Boolean(TESTER) && String(payload.enteredPin || "") === TESTER;
+        if (reg.pinRequired && !isTester) {
+          const clean = String(payload.enteredPin || "").replace(/\D/g, "");
+          const ok = Boolean(clean) && [-1, 0, 1].some(o => clean === getHourlyPIN(o, String(payload.tenantId || "")));
+          if (!ok) {
+            return res.status(403).json({ success: false, error: `Неверный PIN-код. Узнайте актуальный PIN у ${reg.pinAuthority || "менеджера"}.` });
+          }
+        }
       }
       writeAuditLog("EXAM_STARTED", (payload.tenantId || "unknown"), {
         studentShortId: String(payload.shortId),

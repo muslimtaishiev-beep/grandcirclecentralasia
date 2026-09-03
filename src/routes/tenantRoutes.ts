@@ -424,6 +424,54 @@ router.put("/:id/workspace-config", requireFirebaseAuth, requireTenantAdmin, asy
         requireTeacher: c.schedule?.requireTeacher !== false,
         requireRoom: c.schedule?.requireRoom !== false,
       },
+      // Анкета регистрации на экзамен: какие поля спрашивать, как их
+      // подписать, какие варианты класса/уровня предлагать.
+      registration: {
+        title: str(c.registration?.title, 80),
+        subtitle: str(c.registration?.subtitle, 200),
+        fields: (Array.isArray(c.registration?.fields) ? c.registration.fields : [])
+          .filter((f: any) => ["name", "phone", "email", "grade"].includes(String(f?.key)))
+          .slice(0, 8)
+          .map((f: any) => ({
+            key: String(f.key),
+            label: str(f.label, 60),
+            placeholder: str(f.placeholder, 80),
+            visible: f.visible !== false,
+            required: f.required !== false,
+          })),
+        gradeOptions: (Array.isArray(c.registration?.gradeOptions) ? c.registration.gradeOptions : [])
+          .map((v: unknown) => str(v, 30)).filter(Boolean).slice(0, 30),
+        gradeSuffix: str(c.registration?.gradeSuffix, 30),
+        requireFullName: c.registration?.requireFullName !== false,
+        pinAuthority: str(c.registration?.pinAuthority, 40),
+        pinRequired: c.registration?.pinRequired !== false,
+        consentText: str(c.registration?.consentText, 1200),
+        startButtonLabel: str(c.registration?.startButtonLabel, 40),
+      },
+      // Публичные страницы заявок и билетов.
+      tickets: {
+        publicTitle: str(c.tickets?.publicTitle, 80),
+        closedTitle: str(c.tickets?.closedTitle, 80),
+        closedMessage: str(c.tickets?.closedMessage, 300),
+        submitButtonLabel: str(c.tickets?.submitButtonLabel, 40),
+        successTitle: str(c.tickets?.successTitle, 80),
+        successMessage: str(c.tickets?.successMessage, 300),
+        ticketWord: str(c.tickets?.ticketWord, 30),
+        supportPhone: str(c.tickets?.supportPhone, 40),
+        checkinOkText: str(c.tickets?.checkinOkText, 40),
+      },
+      // Письма от имени организации: адрес для ответов — только похожий на почту.
+      email: {
+        fromName: str(c.email?.fromName, 60),
+        replyTo: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str(c.email?.replyTo, 120)) ? str(c.email?.replyTo, 120) : "",
+        signature: str(c.email?.signature, 300),
+      },
+      landing: {
+        badge: str(c.landing?.badge, 60),
+        subtitle: str(c.landing?.subtitle, 240),
+        primaryCtaLabel: str(c.landing?.primaryCtaLabel, 40),
+        secondaryCtaLabel: str(c.landing?.secondaryCtaLabel, 40),
+      },
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedBy: req.user?.email || req.user?.uid || "",
     };
@@ -432,6 +480,7 @@ router.put("/:id/workspace-config", requireFirebaseAuth, requireTenantAdmin, asy
       workspaceConfig: clean,
       needsWorkspaceSetup: admin.firestore.FieldValue.delete(),
     });
+    invalidateTenant(tenantId);
     return res.json({ success: true, config: clean });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error.message });

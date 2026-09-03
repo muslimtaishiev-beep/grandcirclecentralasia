@@ -5,6 +5,7 @@ import { analyseFile } from "../lib/placementParser.js";
 import { hasAnyPermission } from "../server/access.js";
 import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
 import { resolveLegalProfile, publicLegal } from "../shared/legal.js";
+import { hourlyPin } from "../shared/pin.js";
 
 /**
  * Вступительный срез знаний (placement exam) для распределения по классам 5-11.
@@ -29,16 +30,8 @@ const db = () => admin.firestore();
 
 // ── PIN (same hourly scheme as the entrance tests, same forgiving window) ──
 function getHourlyPIN(hourOffset = 0, tenantId = ""): string {
-  const d = new Date();
-  d.setUTCHours(d.getUTCHours() + hourOffset);
-  // Salted by tenant: the entrance tests use one global hourly PIN, but a
-  // placement PIN announced by one school's завуч must not open sessions in
-  // another school's tenant. The завуч cabinet reads the current value from
-  // GET /blueprint, so both sides always agree.
-  let salt = 0;
-  for (const ch of tenantId) salt = (salt * 31 + ch.charCodeAt(0)) % 100000;
-  const seed = d.getUTCFullYear() * 1000000 + (d.getUTCMonth() + 1) * 10000 + d.getUTCDate() * 100 + d.getUTCHours() + salt;
-  return Math.abs((seed * 1103515245 + 12345) % 9000 + 1000).toString();
+  // Общий расчёт с входным тестом и клиентом — см. src/shared/pin.ts.
+  return hourlyPin(tenantId, hourOffset);
 }
 function pinAccepted(entered: unknown, tenantId: string): boolean {
   const clean = String(entered ?? "")

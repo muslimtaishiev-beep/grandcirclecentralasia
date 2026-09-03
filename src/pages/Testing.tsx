@@ -95,6 +95,30 @@ export default function Testing() {
   const [isRetake, setIsRetake] = useState(false);
   const [questionsLoading, setQuestionsLoading] = useState(false);
   const [questionsError, setQuestionsError] = useState<string | null>(null);
+  // Анкета регистрации и название организации приходят вместе с вопросами:
+  // страница анонимна и документ организации прочитать не может.
+  const [regCfg, setRegCfg] = useState<any>(null);
+  const [orgName, setOrgName] = useState("");
+  /** Поле анкеты: подпись, подсказка, показывать ли, обязательно ли. */
+  const rf = (key: "name" | "phone" | "email" | "grade") => {
+    const DEF: Record<string, { label: string; placeholder: string }> = {
+      name: { label: "ФИО", placeholder: "Иванов Иван Иванович" },
+      phone: { label: "Номер телефона", placeholder: "+996 555 123 456" },
+      email: { label: "E-mail (для результатов)", placeholder: "student@example.com" },
+      grade: { label: "Выберите ваш класс", placeholder: "" },
+    };
+    const f = (regCfg?.fields || []).find((x: any) => x?.key === key) || {};
+    return {
+      label: f.label || DEF[key].label,
+      placeholder: f.placeholder ?? DEF[key].placeholder,
+      visible: f.visible !== false,
+      required: f.required !== false,
+    };
+  };
+  const gradeOptions: string[] = (regCfg?.gradeOptions?.length ? regCfg.gradeOptions : ["7", "8", "9", "10", "11"]).map(String);
+  const gradeSuffix: string = regCfg?.gradeSuffix ?? "класс";
+  const pinAuthority: string = regCfg?.pinAuthority || "менеджер";
+  const pinRequired: boolean = regCfg?.pinRequired !== false;
   const [timeLimitMinutes, setTimeLimitMinutes] = useState<number | null>(null);
   const [phaseStartedAt, setPhaseStartedAt] = useState<number | null>(() => {
     const saved = safeGetSession("phaseStartedAt", "");
@@ -515,6 +539,8 @@ export default function Testing() {
 
         const res = await fetch(`/api/exams/questions?${params}`);
         const data = await res.json();
+        if (data?.registration) setRegCfg(data.registration);
+        if (data?.orgName) setOrgName(data.orgName);
 
         if (!res.ok || !data.success) {
           setQuestionsError(data.error || "Failed to load test questions");
@@ -797,7 +823,7 @@ export default function Testing() {
          if (!enteredPin.trim()) return alert("Введите PIN");
          
          const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
-         if (!isValidHourlyPIN(enteredPin) && (!TESTER_PIN || enteredPin !== TESTER_PIN)) {
+         if (pinRequired && !isValidHourlyPIN(enteredPin, resolvedTenantId) && (!TESTER_PIN || enteredPin !== TESTER_PIN)) {
             return alert("Неверный PIN-код. Узнайте актуальный PIN у менеджера.");
          }
          
@@ -826,14 +852,26 @@ export default function Testing() {
          return;
       }
 
-      if (!grade) return alert("Выберите класс!");
-      if (!studentName.trim() || !/^[А-Яа-яЁёA-Za-z-]+\s+[А-Яа-яЁёA-Za-z-]+/u.test(studentName.trim())) {
-        return alert("Введите полное Фамилию и Имя через пробел.");
+      // Проверяем только то, что организация действительно спрашивает.
+      // Раньше все поля были обязательны всегда, а имя обязано было состоять
+      // ровно из двух слов латиницей или кириллицей — киргизские буквы «ө ү ң»
+      // и одиночные имена отклонялись.
+      if (rf("grade").visible && rf("grade").required && !grade) {
+        return alert(`Укажите: ${rf("grade").label.toLowerCase()}.`);
       }
-      if (!studentPhone.trim() || studentPhone.trim().length < 9) {
+      if (rf("name").visible && rf("name").required && !studentName.trim()) {
+        return alert(`Укажите: ${rf("name").label.toLowerCase()}.`);
+      }
+      if (regCfg?.requireFullName !== false && studentName.trim()
+          && !/^[\p{L}-]+\s+[\p{L}-]+/u.test(studentName.trim())) {
+        return alert("Введите фамилию и имя через пробел.");
+      }
+      if (rf("phone").visible && rf("phone").required
+          && (!studentPhone.trim() || studentPhone.trim().replace(/\D/g, "").length < 9)) {
         return alert("Введите корректный номер телефона.");
       }
-      if (!studentEmail.trim() || !studentEmail.includes("@")) {
+      if (rf("email").visible && rf("email").required
+          && (!studentEmail.trim() || !studentEmail.includes("@"))) {
         return alert("Введите корректный E-mail адрес.");
       }
       if (!consentGiven) {
@@ -844,7 +882,7 @@ export default function Testing() {
       }
       
       const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
-      if (!isValidHourlyPIN(enteredPin) && (!TESTER_PIN || enteredPin !== TESTER_PIN)) {
+      if (pinRequired && !isValidHourlyPIN(enteredPin, resolvedTenantId) && (!TESTER_PIN || enteredPin !== TESTER_PIN)) {
         // Say which case it is. A student typing the right code and being told
         // it is wrong has nothing to act on; a student whose device clock is
         // off needs to know that, not to go ask for the PIN again.
@@ -856,7 +894,7 @@ export default function Testing() {
           return alert(`PIN состоит из 4 цифр, а вы ввели ${digits.length}. Проверьте код.`);
         }
         // Correct for some other hour: their clock is wrong, not the code.
-        const clockOff = [-6,-5,-4,-3,-2,2,3,4,5,6].some(o => digits === getHourlyPIN(o));
+        const clockOff = [-6,-5,-4,-3,-2,2,3,4,5,6].some(o => digits === getHourlyPIN(o, resolvedTenantId));
         if (clockOff) {
           return alert(
             "PIN верный, но часы на вашем устройстве идут неточно, поэтому код не совпал.\n\n" +
@@ -893,6 +931,7 @@ export default function Testing() {
       fetchGasAPI("/api/gas", {
          action: "registerStudent",
          tenantId: resolvedTenantId,
+         enteredPin,
          testId: newTestId,
          shortId: shortId,
          studentName,
@@ -1572,20 +1611,23 @@ export default function Testing() {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full">
-          <h1 className="text-2xl font-bold mb-6 text-center">Входное тестирование</h1>
+          <h1 className="text-2xl font-bold mb-1 text-center">{regCfg?.title || "Входное тестирование"}</h1>
+          {(regCfg?.subtitle || orgName) && (
+            <p className="text-sm text-slate-500 text-center mb-5">{regCfg?.subtitle || orgName}</p>
+          )}
           
           <div className="space-y-4 mb-6">
             {!isResumingEnglish && (
               <>
-                <div>
-                  <label className="block text-sm font-medium mb-2">ФИО Ученика:</label>
+                <div style={{ display: rf("name").visible ? undefined : "none" }}>
+                  <label className="block text-sm font-medium mb-2">{rf("name").label}:</label>
                   <input
                           autoComplete="off"
                           autoCorrect="off"
                           autoCapitalize="off"
                           spellCheck={false}
                           type="text" 
-                    placeholder="Иванов Иван Иванович"
+                    placeholder={rf("name").placeholder}
                     value={studentName}
                     onChange={(e) => setStudentName(e.target.value)}
                     className="w-full border rounded-xl p-3 bg-slate-50"
@@ -1593,10 +1635,10 @@ export default function Testing() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Номер телефона:</label>
+                  <label className="block text-sm font-medium mb-2">{rf("phone").label}:</label>
                   <input
                     type="tel" 
-                    placeholder="+996 555 123 456"
+                    placeholder={rf("phone").placeholder}
                     value={studentPhone}
                     onChange={(e) => setStudentPhone(e.target.value)}
                     className="w-full border rounded-xl p-3 bg-slate-50"
@@ -1604,32 +1646,34 @@ export default function Testing() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">E-mail (для результатов):</label>
+                  <label className="block text-sm font-medium mb-2">{rf("email").label}:</label>
                   <input
                     type="email" 
-                    placeholder="student@example.com"
+                    placeholder={rf("email").placeholder}
                     value={studentEmail}
                     onChange={(e) => setStudentEmail(e.target.value)}
                     className="w-full border rounded-xl p-3 bg-slate-50"
                   />
                 </div>
                 
-                <div>
-                  <label className="block text-sm font-medium mb-2">Выберите ваш класс:</label>
+                <div style={{ display: rf("grade").visible ? undefined : "none" }}>
+                  <label className="block text-sm font-medium mb-2">{rf("grade").label}:</label>
                   <select 
                     className="w-full border rounded-xl p-3 bg-slate-50"
                     value={grade || ""}
                     onChange={(e) => setGrade(Number(e.target.value))}
                   >
                     <option value="">Не выбран</option>
-                    {[7,8,9,10,11].map(g => <option key={g} value={g}>{g} класс</option>)}
+                    {gradeOptions.map(g => (
+                      <option key={g} value={g}>{gradeSuffix ? `${g} ${gradeSuffix}` : g}</option>
+                    ))}
                   </select>
                 </div>
               </>
             )}
 
-            <div>
-              <label className="block text-sm font-medium mb-2">PIN-код аудитории (спросите у менеджера):</label>
+            <div style={{ display: pinRequired ? undefined : "none" }}>
+              <label className="block text-sm font-medium mb-2">PIN-код аудитории (спросите у {pinAuthority}а):</label>
               <input
                       autoComplete="off"
                       autoCorrect="off"
@@ -1664,7 +1708,12 @@ export default function Testing() {
             />
             <div className="text-sm text-slate-600 leading-relaxed">
               <label htmlFor="consent" className="cursor-pointer block mb-2 select-none">
-                Я, являясь родителем (законным представителем) несовершеннолетнего кандидата на обучение, даю <a href="/privacy" target="_blank" className="text-blue-600 hover:underline">согласие</a> выбранному Учебному заведению и ОсОО «ЛС Центр» на сбор, обработку и трансграничную передачу персональных данных (ФИО, телефон, класс, результаты тестирования и психологического анкетирования, данные античит-системы) в соответствии с Цифровым кодексом Кыргызской Республики для целей проведения вступительных испытаний, а также принимаю условия <a href="/terms" target="_blank" className="text-blue-600 hover:underline">Пользовательского соглашения</a>.
+                {regCfg?.consentText ? regCfg.consentText : (<>
+                  Я даю <a href="/privacy" target="_blank" className="text-blue-600 hover:underline">согласие</a> на
+                  сбор и обработку персональных данных (имя, телефон, результаты тестирования, данные системы
+                  наблюдения) для проведения испытания{orgName ? ` в «${orgName}»` : ""}, а также принимаю
+                  условия <a href="/terms" target="_blank" className="text-blue-600 hover:underline">пользовательского соглашения</a>.
+                </>)}
               </label>
               <p className="text-xs text-slate-400 mt-2 border-t pt-2">
                 Нажимая кнопку "Начать тест" и отмечая настоящее согласие, вы подтверждаете, что являетесь законным родителем или опекуном несовершеннолетнего кандидата и обладаете всеми законными правами на предоставление его персональных данных.
@@ -1677,10 +1726,17 @@ export default function Testing() {
             <>
               <button 
                 onClick={startTest}
-                disabled={!grade || !studentName.trim() || !studentPhone.trim() || !studentEmail.trim() || !enteredPin.trim() || !consentGiven}
+                disabled={
+                  (rf("grade").visible && rf("grade").required && !grade)
+                  || (rf("name").visible && rf("name").required && !studentName.trim())
+                  || (rf("phone").visible && rf("phone").required && !studentPhone.trim())
+                  || (rf("email").visible && rf("email").required && !studentEmail.trim())
+                  || (pinRequired && !enteredPin.trim())
+                  || !consentGiven
+                }
                 className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-lg disabled:opacity-50 hover:bg-blue-700 transition shadow-lg mb-3"
               >
-                Начать тест
+                {regCfg?.startButtonLabel || "Начать тест"}
               </button>
               <button 
                 onClick={() => setIsResumingEnglish(true)}
