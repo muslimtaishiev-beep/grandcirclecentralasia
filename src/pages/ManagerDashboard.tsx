@@ -692,7 +692,19 @@ export default function ManagerDashboard() {
       }
 
       const mergedList = Array.from(studentMap.values());
-      setStudents(mergedList);
+      // Если хоть один источник упал (обрыв сети у менеджера — обычное дело
+      // в школьном Wi-Fi), НЕ подменяем таблицу неполным результатом: строки,
+      // которые уже были на экране, остаются, свежие — добавляются. Раньше
+      // сбой перезагрузки в момент сдачи работы стирал весь список.
+      if (firestoreFailed || gasFailed) {
+        setStudents(prev => {
+          const byId = new Map<string, any>(prev.map((s: any) => [String(s.shortId), s]));
+          for (const s of mergedList) byId.set(String(s.shortId), { ...(byId.get(String(s.shortId)) || {}), ...s });
+          return Array.from(byId.values());
+        });
+      } else {
+        setStudents(mergedList);
+      }
 
       if (firestoreFailed && gasFailed) {
         setError("Не удалось загрузить данные ни из базы, ни из резервного источника. Проверьте подключение и попробуйте снова.");
