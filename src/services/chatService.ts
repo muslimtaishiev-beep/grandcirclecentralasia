@@ -1,5 +1,5 @@
 import { db } from '../lib/firebase';
-import { collection, doc, query, where, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, runTransaction, getDoc } from 'firebase/firestore';
+import { collection, doc, query, where, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, runTransaction, getDoc, limit } from 'firebase/firestore';
 import { ChatChannel, ChatMessage } from '../types/chat';
 
 function sanitizeData(obj: any): any {
@@ -115,7 +115,7 @@ class ChatService {
       }
 
       // 2. Also search root crm_contacts for employees/staff
-      const crmSnap = await getDocs(query(collection(db, 'crm_contacts'), where('tenantId', '==', tenantId)));
+      const crmSnap = await getDocs(query(collection(db, 'crm_contacts'), where('tenantId', '==', tenantId), limit(300)));
       crmSnap.forEach(d => {
         const data = d.data();
         if (data.type === 'employee' || data.type === 'staff') {

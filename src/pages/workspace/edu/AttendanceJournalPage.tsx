@@ -9,7 +9,7 @@ import { ru } from 'date-fns/locale';
 import { AttendanceStatus } from '../../../types/edu';
 
 import { useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
 
 export default function AttendanceJournalPage() {
@@ -34,7 +34,7 @@ export default function AttendanceJournalPage() {
         }
 
         // Fetch students
-        const studentsSnap = await getDocs(query(collection(db, 'crm_contacts'), where('tenantId', '==', activeTenant.id)));
+        const studentsSnap = await getDocs(query(collection(db, 'crm_contacts'), where('tenantId', '==', activeTenant.id), limit(1000)));
         const fetchedStudents = studentsSnap.docs.map(doc => ({ id: doc.id, name: doc.data().name || doc.data().fullName || 'Неизвестный' }));
         if (fetchedStudents.length > 0) {
           setStudents(fetchedStudents);

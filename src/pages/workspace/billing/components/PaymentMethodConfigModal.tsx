@@ -40,6 +40,9 @@ export default function PaymentMethodConfigModal({ isOpen, onClose, tenantId, ti
       }
     } catch (e: any) {
       setError(e.message);
+    } finally {
+      // Спиннер гаснет всегда: если шлюз не вернул ни ссылки, ни ошибки,
+      // кнопка раньше оставалась «крутиться» навечно.
       setLoading(false);
     }
   };

@@ -113,8 +113,16 @@ export default function ContactsDirectoryPage() {
 
       // 3. Delete memberships doc if employee
       if (contact.type === 'employee' || contact.type === 'partner') {
-        const memSnap = await getDocs(query(collection(db, 'memberships'), where('userEmail', '==', contact.email)));
-        memSnap.forEach(async (d) => { await deleteDoc(d.ref); });
+        // Только СВОЯ организация: раньше по совпадению почты удалялись
+        // членства этого человека во всех организациях платформы.
+        const memSnap = await getDocs(query(
+          collection(db, 'memberships'),
+          where('userEmail', '==', contact.email),
+          where('tenantId', '==', activeTenant.id),
+        ));
+        // await для каждого удаления: forEach с async молча терял ошибки, и
+        // «успешно удалён» показывался до фактического удаления.
+        await Promise.all(memSnap.docs.map(d => deleteDoc(d.ref)));
       }
 
       toast.success(`Контакт "${contact.fullName}" полностью удален`);

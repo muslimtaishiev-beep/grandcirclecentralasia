@@ -19,9 +19,16 @@ export default function DocumentTemplates() {
   const loadTemplates = async () => {
     if (!tenant) return;
     setLoading(true);
-    const data = await DocumentTemplateService.getTemplates(tenant.id);
-    setTemplates(data);
-    setLoading(false);
+    try {
+      const data = await DocumentTemplateService.getTemplates(tenant.id);
+      setTemplates(data);
+    } catch (e) {
+      // Без finally сбой запроса оставлял вечный спиннер: экран выглядел
+      // зависшим, хотя достаточно было показать пустой список.
+      console.warn('Не удалось загрузить шаблоны:', e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSave = async () => {

@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import toast, { Toaster } from "react-hot-toast";
 import { useNavigate, useParams } from "react-router-dom";
 import { getHourlyPIN, getCEFRLevel, fetchGasAPI, toGenitiveCase } from "../lib/utils";
-import { collection, getDocs, deleteDoc, doc, query, where } from "firebase/firestore";
+import { collection, getDocs, deleteDoc, doc, query, where, limit } from "firebase/firestore";
 import { db } from "../lib/firebase";
 // html2pdf весит 961 КБ и нужен только по нажатию «скачать PDF». Статический
 // импорт заставлял КАЖДОГО менеджера скачивать его при открытии экрана —
@@ -252,10 +252,13 @@ export default function ManagerDashboard() {
     const fetchDbTests = async () => {
       if (!activeTenantId) return;
       try {
-        const testsSnap = await getDocs(query(collection(db, 'tests'), where('tenantId', '==', activeTenantId)));
+        const testsSnap = await getDocs(query(collection(db, 'tests'), where('tenantId', '==', activeTenantId), limit(50)));
         const fetched: any[] = [];
         testsSnap.forEach(d => {
-          fetched.push({ id: d.id, ...d.data() });
+          // Банк вопросов (questions) в списке не нужен: документ теста с ним
+          // весит сотни килобайт, а здесь показываются только названия.
+          const { questions, ...meta } = d.data() as any;
+          fetched.push({ id: d.id, ...meta });
         });
         setDbTests(fetched);
       } catch (e) {

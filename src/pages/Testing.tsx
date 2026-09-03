@@ -15,6 +15,31 @@ import ProctoringWarningOverlay from "../components/ProctoringWarningOverlay";
 import { useResolvedTenantId } from "../lib/resolveTenant";
 import { useParams } from "react-router-dom";
 
+/**
+ * Часы экзамена — изолированный компонент.
+ *
+ * Тикают внутри себя: раньше setRemainingSeconds жил в состоянии всей
+ * страницы, и каждую секунду перерисовывался весь экзамен со списком
+ * вопросов. Теперь ежесекундно обновляются только эти несколько цифр.
+ * Таймер мягкий: ноль показывает «Время вышло», ничего не отправляя.
+ */
+const ExamClock = React.memo(function ExamClock({ phaseStartedAt, timeLimitMinutes }: {
+  phaseStartedAt: number; timeLimitMinutes: number;
+}) {
+  const calc = () => timeLimitMinutes * 60 - Math.floor((Date.now() - phaseStartedAt) / 1000);
+  const [left, setLeft] = useState(calc);
+  useEffect(() => {
+    const t = setInterval(() => setLeft(calc()), 1000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phaseStartedAt, timeLimitMinutes]);
+  return (
+    <div className={`font-mono font-bold text-lg ${left <= 0 ? "text-red-600" : left < 300 ? "text-amber-600" : "text-slate-600"}`}>
+      {left <= 0 ? "Время вышло" : `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`}
+    </div>
+  );
+});
+
 export default function Testing() {
   const { orgSlug, testId: urlTestId } = useParams<{ orgSlug: string, testId?: string }>();
   // Слаг из URL → id организации. Раньше при любом неизвестном имени здесь
@@ -75,7 +100,6 @@ export default function Testing() {
     const saved = safeGetSession("phaseStartedAt", "");
     return saved ? Number(saved) : null;
   });
-  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
 
   const [grade, setGrade] = useState<number | null>(() => {
     try {
@@ -454,21 +478,6 @@ export default function Testing() {
     }
   }, [phase]);
 
-  // Tick the countdown display every second. This is a SOFT timer — informational
-  // only, it never auto-submits — reaching 0 just shows "Время вышло" and keeps counting down.
-  useEffect(() => {
-    if (!phaseStartedAt || !timeLimitMinutes || (phase !== "core" && phase !== "english")) {
-      setRemainingSeconds(null);
-      return;
-    }
-    const tick = () => {
-      const elapsedSec = Math.floor((Date.now() - phaseStartedAt) / 1000);
-      setRemainingSeconds(timeLimitMinutes * 60 - elapsedSec);
-    };
-    tick();
-    const interval = setInterval(tick, 1000);
-    return () => clearInterval(interval);
-  }, [phaseStartedAt, timeLimitMinutes, phase]);
 
   // Load questions from /api/exams/questions (server-side read, no client Firestore)
   useEffect(() => {
@@ -1770,13 +1779,9 @@ export default function Testing() {
 
       <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center z-10 gap-4">
         <div className="font-bold text-lg">Тестирование: {grade} класс</div>
-        {remainingSeconds !== null && (
-          <div className={`font-mono font-bold text-lg ${remainingSeconds <= 0 ? "text-red-600" : remainingSeconds < 300 ? "text-amber-600" : "text-slate-600"}`}>
-            {remainingSeconds <= 0
-              ? "Время вышло"
-              : `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, "0")}`}
-          </div>
-        )}
+        {phaseStartedAt && timeLimitMinutes && (phase === "core" || phase === "english") ? (
+          <ExamClock phaseStartedAt={phaseStartedAt} timeLimitMinutes={timeLimitMinutes} />
+        ) : null}
         <button
           onClick={() => phase === "english" ? submitEnglishTest(false) : submitCoreTest(false)}
           disabled={isSubmitting}

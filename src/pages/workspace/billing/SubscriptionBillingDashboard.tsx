@@ -23,7 +23,7 @@ export default function SubscriptionBillingDashboard() {
     const fetchData = async () => {
       if (!orgId) return;
       setLoading(true);
-      
+      try {
       // MOCK FETCH - In real app, fetch from Firestore
       const tier = await tierLimitEnforcer.getTenantTier(orgId);
       const metrics = await usageMeteringService.calculateRealTimeUsage(orgId);
@@ -55,7 +55,12 @@ export default function SubscriptionBillingDashboard() {
           pdfInvoiceUrl: 'https://example.com/invoice.pdf'
         }
       ]);
-      setLoading(false);
+      } catch (e) {
+        // Сбой одного из расчётов не должен оставлять вечный спиннер.
+        console.warn('Не удалось загрузить биллинг:', e);
+      } finally {
+        setLoading(false);
+      }
     };
     
     fetchData();
