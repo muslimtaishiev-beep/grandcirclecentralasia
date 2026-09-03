@@ -76,9 +76,9 @@ export const CreateTenantModal: React.FC<CreateTenantModalProps> = ({ onClose, o
           <div>
             <label className="block text-sm font-medium mb-1">Тариф</label>
             <select className="w-full border p-2 rounded-lg" value={tier} onChange={e=>setTier(e.target.value as any)}>
-              <option value="starter">Starter</option>
-              <option value="business">Business</option>
-              <option value="enterprise">Enterprise</option>
+              <option value="starter">Стартовый</option>
+              <option value="business">Бизнес</option>
+              <option value="enterprise">Корпоративный</option>
             </select>
           </div>
 

@@ -39,7 +39,6 @@ import GlobalNotifications from "../../components/workspace/GlobalNotifications"
 import QuickSetupWizard from "../../components/workspace/QuickSetupWizard";
 import { resolvePermissions, resolveScreens, normalizeTenantStatus, type PermissionKey } from "../../shared/permissions";
 import SpotlightCommandBar from "../../components/common/SpotlightCommandBar";
-import DemoSeedButton from "../../components/common/DemoSeedButton";
 
 export default function WorkspaceLayout() {
   const { user, logout } = useAuth();
@@ -151,27 +150,27 @@ export default function WorkspaceLayout() {
   // Пункты меню и права на них — из общей карты NAV_PERMISSION, а не
   // россыпью условий: одно место, где видно, что чем закрыто.
   const navItems = activeTenant ? ([
-    ["dashboard", "Dashboard", "", LayoutDashboard],
+    ["dashboard", "Дашборд", "", LayoutDashboard],
     ["schedule", "Расписание", "/edu/schedule", Calendar],
     ["attendance", "Журнал", "/edu/attendance", UserCheck],
     ["subscriptions", "Абонементы", "/edu/subscriptions", CreditCard],
     ["payroll", "Зарплаты", "/edu/payroll", DollarSign],
-    ["chat", "Chat", "/chat", MessageSquare],
-    ["tasks", "Tasks", "/tasks", CheckSquare],
+    ["chat", "Чаты", "/chat", MessageSquare],
+    ["tasks", "Задачи", "/tasks", CheckSquare],
     ["tickets", "Проверка билетов", "/tickets", QrCode],
     ["crm", "CRM", "/crm/contacts", Briefcase],
     ["tests", "Тесты", "/tests", FileQuestion],
-    ["testsManage", "Проверка & Прокторинг", "/tests/manage", ShieldCheck],
+    ["testsManage", "Проверка и прокторинг", "/tests/manage", ShieldCheck],
     ["placement", "Вступительный срез", "/placement", GraduationCap],
-    ["forms", "Заявки & QR", "/builder/forms", FileCheck2],
-    ["functions", "Function Studio", "/functions/studio", Settings2],
-    ["departments", "Оргструктура & Отделы", "/settings/departments", FolderTree],
-    ["permissions", "Роли & Доступы", "/settings/roles", Shield],
+    ["forms", "Заявки и QR", "/builder/forms", FileCheck2],
+    ["functions", "Конструктор функций", "/functions/studio", Settings2],
+    ["departments", "Оргструктура и отделы", "/settings/departments", FolderTree],
+    ["permissions", "Роли и доступы", "/settings/roles", Shield],
     ["workspaceSetup", "Настройка воркспейса", "/settings/workspace", Sparkles],
-    ["docs", "Docs", "/docs", FileText],
-    ["sheets", "Sheets", "/sheets", FileSpreadsheet],
-    ["sites", "Site Builder", "/sites", Globe],
-    ["automations", "Automations", "/automations", Zap],
+    ["docs", "Документы", "/docs", FileText],
+    ["sheets", "Таблицы", "/sheets", FileSpreadsheet],
+    ["sites", "Конструктор сайта", "/sites", Globe],
+    ["automations", "Автоматизации", "/automations", Zap],
   ] as const)
     .filter(([key]) => canSee(key))
     .map(([, name, suffix, icon]) => ({
@@ -180,12 +179,12 @@ export default function WorkspaceLayout() {
     .concat(
       // Биллинг — только владельцу организации, правами не выдаётся.
       ["owner", "org:owner", "superadmin"].includes(String(activeTenant.role))
-        ? [{ name: "Тарифы и Биллинг", path: `/workspace/${activeTenant.id}/billing`, icon: CreditCard }]
+        ? [{ name: "Тарифы и оплата", path: `/workspace/${activeTenant.id}/billing`, icon: CreditCard }]
         : []
     ) : [];
 
   if (loading) {
-    return <div className="min-h-dvh bg-[var(--bg-app)] flex items-center justify-center text-[var(--text-muted)] font-mono text-sm">Loading Workspace...</div>;
+    return <div className="min-h-dvh bg-[var(--bg-app)] flex items-center justify-center text-[var(--text-muted)] font-mono text-sm">Загрузка…</div>;
   }
 
   return (
@@ -204,7 +203,7 @@ export default function WorkspaceLayout() {
           <button 
             onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
             className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg text-[var(--text-main)] transition cursor-pointer"
-            title="Toggle Sidebar Menu"
+            title="Показать или скрыть меню"
           >
             <Menu className="w-5 h-5" />
           </button>
@@ -236,7 +235,7 @@ export default function WorkspaceLayout() {
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
             <input 
               type="text" 
-              placeholder="Search people, documents, tasks (Cmd+K)..."
+              placeholder="Поиск: люди, документы, задачи (Cmd+K)"
               readOnly
               className="w-full bg-black/5 dark:bg-white/5 border border-[var(--border-color)] rounded-full pl-10 pr-4 py-1.5 text-sm focus:outline-none focus:border-[var(--accent)] text-[var(--text-main)] cursor-pointer"
             />
@@ -254,7 +253,6 @@ export default function WorkspaceLayout() {
           >
             <Search className="w-4 h-4" />
           </button>
-          <DemoSeedButton />
           <button onClick={toggleTheme} className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full text-[var(--text-main)] transition">
             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
           </button>
@@ -264,7 +262,7 @@ export default function WorkspaceLayout() {
           <button 
             onClick={() => navigate(`/workspace/${orgId}/settings/roles`)}
             className="flex items-center gap-2 pl-2 border-l border-[var(--border-color)] cursor-pointer hover:opacity-80 transition"
-            title="Settings Profile"
+            title="Роли и доступы"
           >
             <div className="w-8 h-8 rounded-full bg-[var(--accent)] flex items-center justify-center font-bold text-white text-xs">
               {user?.email?.[0]?.toUpperCase() || "M"}
@@ -314,7 +312,7 @@ export default function WorkspaceLayout() {
             <button 
               onClick={logout}
               className="w-12 h-12 rounded-xl flex items-center justify-center text-[var(--text-muted)] hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 transition-colors"
-              title="Logout"
+              title="Выйти"
             >
               <LogOut className="w-5 h-5" />
             </button>

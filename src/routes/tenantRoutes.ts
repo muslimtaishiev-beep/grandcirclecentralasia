@@ -702,7 +702,7 @@ router.get("/:id/members", requireFirebaseAuth, requireTenantAdmin, requireScree
 
     const membersWithData = memberships.map(m => ({
       ...m,
-      user: usersMap[m.userId] || { email: "Unknown", displayName: "Unknown" }
+      user: usersMap[m.userId] || { email: "", displayName: "Неизвестный сотрудник" }
     }));
 
     return res.json({ success: true, members: membersWithData });

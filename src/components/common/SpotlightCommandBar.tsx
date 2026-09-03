@@ -64,8 +64,8 @@ export default function SpotlightCommandBar({ isOpen, onClose }: SpotlightComman
   ];
 
   const quickNav = [
-    { title: 'Настройки PBAC & Доступы', path: `/workspace/${orgId}/settings/permission-matrix`, icon: Settings, category: 'Навигация' },
-    { title: 'Тарифы и Биллинг', path: `/workspace/${orgId}/billing`, icon: Zap, category: 'Навигация' },
+    { title: 'Роли и доступы', path: `/workspace/${orgId}/settings/roles`, icon: Settings, category: 'Навигация' },
+    { title: 'Тарифы и оплата', path: `/workspace/${orgId}/billing`, icon: Zap, category: 'Навигация' },
     { title: 'Конструктор сайтов', path: `/workspace/${orgId}/sites`, icon: LayoutTemplate, category: 'Навигация' },
   ];
 

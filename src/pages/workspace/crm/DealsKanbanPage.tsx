@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, {useState, useEffect} from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { DndContext, DragOverlay, closestCorners, DragStartEvent, DragEndEvent } from '@dnd-kit/core';
 import { useCrmPipeline } from '../../../hooks/useCrmPipeline';
@@ -16,6 +16,20 @@ export default function DealsKanbanPage() {
   const [activeDragDeal, setActiveDragDeal] = useState<CrmDeal | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedDeal, setSelectedDeal] = useState<CrmDeal | null>(null);
+  const [dealContact, setDealContact] = useState<any>(undefined);
+  useEffect(() => {
+    if (!selectedDeal?.contactId || !activeTenant?.id) { setDealContact(undefined); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { doc, getDoc } = await import('firebase/firestore');
+        const { db } = await import('../../../lib/firebase');
+        const snap = await getDoc(doc(db, 'tenants', activeTenant.id, 'crm_contacts', selectedDeal.contactId));
+        if (!cancelled) setDealContact(snap.exists() ? { id: snap.id, ...snap.data() } : undefined);
+      } catch { if (!cancelled) setDealContact(undefined); }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedDeal?.contactId, activeTenant?.id]);
 
   if (!activePipeline) return <div className="p-6">Загрузка воронок...</div>;
 
@@ -107,19 +121,9 @@ export default function DealsKanbanPage() {
       <ContactProfileDrawer 
         isOpen={!!selectedDeal} 
         onClose={() => setSelectedDeal(null)} 
-        contact={selectedDeal ? {
-          id: selectedDeal.contactId,
-          tenantId: activeTenant.id,
-          fullName: 'Client ' + selectedDeal.contactId.substring(0,4),
-          email: 'client@example.com',
-          phone: '+996 555 123456',
-          type: 'student',
-          tags: ['VIP'],
-          totalDealsCount: 1,
-          totalRevenueGenerated: selectedDeal.amount,
-          createdAt: Date.now(),
-          updatedAt: Date.now()
-        } : undefined}
+        // Контакт из базы, а не выдуманный: раньше в карточке сделки
+        // показывались «Client 1a2b», client@example.com и метка VIP.
+        contact={dealContact}
         deals={selectedDeal ? [selectedDeal] : []}
       />
     </div>

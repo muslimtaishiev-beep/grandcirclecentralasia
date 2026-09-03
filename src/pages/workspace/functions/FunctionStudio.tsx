@@ -126,10 +126,10 @@ export default function FunctionStudio() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Settings2 className="w-6 h-6 text-emerald-500" />
-            <span>Визуальный Конструктор Функций (Function Studio)</span>
+            <span>Конструктор функций</span>
           </h1>
           <p className="text-xs text-[var(--text-muted)] mt-1">
-            Сборка кастомных бизнес-процессов, логики и бланков (No-Code)
+            Свои формы, проверки и последовательности действий — без программирования
           </p>
         </div>
         <button 
@@ -271,7 +271,7 @@ export default function FunctionStudio() {
           </div>
 
           <div>
-            <h3 className="text-sm font-bold mb-3 flex items-center gap-2"><PlayCircle className="w-4 h-4 text-emerald-500" /> Цепочка Действий (Actions)</h3>
+            <h3 className="text-sm font-bold mb-3 flex items-center gap-2"><PlayCircle className="w-4 h-4 text-emerald-500" /> Цепочка действий</h3>
             <div className="flex flex-wrap gap-2 mb-4">
               <button onClick={() => addAction('GENERATE_PDF')} className="bg-[var(--bg-panel)] border border-[var(--border-color)] hover:border-emerald-500 px-3 py-1.5 rounded-lg text-[11px] font-bold">+ Сгенерировать PDF</button>
               <button onClick={() => addAction('SEND_EMAIL')} className="bg-[var(--bg-panel)] border border-[var(--border-color)] hover:border-emerald-500 px-3 py-1.5 rounded-lg text-[11px] font-bold">+ Отправить Email</button>
@@ -355,15 +355,15 @@ export default function FunctionStudio() {
               className="w-full bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl px-4 py-2.5 text-sm focus:border-emerald-500 focus:outline-none"
             >
               <option value="public_client">Публичный доступ (Клиенты, Абитуриенты)</option>
-              <option value="internal_staff">Только Сотрудники (PBAC Авторизация)</option>
+              <option value="internal_staff">Только сотрудники организации</option>
               <option value="hybrid">Гибридный (Оба варианта)</option>
             </select>
           </div>
           
           <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-            <h4 className="text-amber-500 font-bold text-sm mb-1">Детальная настройка прав PBAC</h4>
+            <h4 className="text-amber-500 font-bold text-sm mb-1">Кому доступен запуск</h4>
             <p className="text-xs text-amber-400/80">
-              Поскольку мы внедрили матрицу PBAC, гранулярные права на запуск (canExecute) настраиваются индивидуально для каждого сотрудника в модуле «Матрица Доступов PBAC».
+              Право на запуск выдаётся сотруднику в разделе «Роли и доступы».
             </p>
           </div>
         </div>
@@ -373,7 +373,7 @@ export default function FunctionStudio() {
       {activeTab === 'preview' && (
         <div className="pt-4">
           <div className="mb-4 text-center">
-            <h3 className="font-bold text-emerald-400">Превью Исполнения (Dynamic Runner)</h3>
+            <h3 className="font-bold text-emerald-400">Предпросмотр запуска</h3>
             <p className="text-xs text-[var(--text-muted)]">Так ваша бизнес-функция будет выглядеть для конечного пользователя</p>
           </div>
           

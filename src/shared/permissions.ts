@@ -36,17 +36,17 @@ export interface PermissionDef {
 
 /** Каталог: подписи взяты из прежнего экрана «Права & Сотрудники». */
 export const PERMISSIONS: PermissionDef[] = [
-  { key: "tests:read", label: "Просмотр тестов", description: "Доступ к списку тестов и экзаменов", category: "Тесты & Прокторинг" },
-  { key: "tests:manage", label: "Создание и редактирование тестов", description: "Новые тесты, вопросы, время прохождения", category: "Тесты & Прокторинг" },
-  { key: "tests:review", label: "Проверка и прокторинг", description: "Кабинет проверки, снимки нарушений, отчёты", category: "Тесты & Прокторинг" },
-  { key: "certificates:issue", label: "Выдача сертификатов", description: "Регистрация и выгрузка PDF-сертификатов и справок", category: "Тесты & Прокторинг" },
-  { key: "placement:manage", label: "Вступительный срез", description: "Кабинет среза: варианты, результаты, распределение по классам", category: "Тесты & Прокторинг" },
+  { key: "tests:read", label: "Просмотр тестов", description: "Доступ к списку тестов и экзаменов", category: "Тесты и прокторинг" },
+  { key: "tests:manage", label: "Создание и редактирование тестов", description: "Новые тесты, вопросы, время прохождения", category: "Тесты и прокторинг" },
+  { key: "tests:review", label: "Проверка и прокторинг", description: "Кабинет проверки, снимки нарушений, отчёты", category: "Тесты и прокторинг" },
+  { key: "certificates:issue", label: "Выдача сертификатов", description: "Регистрация и выгрузка PDF-сертификатов и справок", category: "Тесты и прокторинг" },
+  { key: "placement:manage", label: "Вступительный срез", description: "Кабинет среза: варианты, результаты, распределение по классам", category: "Тесты и прокторинг" },
 
-  { key: "edu:schedule", label: "Расписание и посещаемость", description: "Сетка занятий, журнал, списание занятий", category: "Обучение & Журнал" },
-  { key: "edu:payroll", label: "Расчёт зарплат", description: "Ставки и выплаты за проведённые занятия", category: "Обучение & Журнал" },
+  { key: "edu:schedule", label: "Расписание и посещаемость", description: "Сетка занятий, журнал, списание занятий", category: "Обучение и журнал" },
+  { key: "edu:payroll", label: "Расчёт зарплат", description: "Ставки и выплаты за проведённые занятия", category: "Обучение и журнал" },
 
-  { key: "crm:read", label: "Просмотр CRM", description: "Контакты, заявки, воронка — только чтение", category: "CRM & Продажи" },
-  { key: "crm:manage", label: "Управление сделками", description: "Перемещение по воронке, редактирование контактов", category: "CRM & Продажи" },
+  { key: "crm:read", label: "Просмотр CRM", description: "Контакты, заявки, воронка — только чтение", category: "CRM и продажи" },
+  { key: "crm:manage", label: "Управление сделками", description: "Перемещение по воронке, редактирование контактов", category: "CRM и продажи" },
 
   { key: "chat:use", label: "Чаты", description: "Внутренняя переписка организации", category: "Работа" },
   { key: "tasks:use", label: "Задачи", description: "Доска задач и поручения", category: "Работа" },

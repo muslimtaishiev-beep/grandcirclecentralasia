@@ -29,16 +29,9 @@ export default function TestimonialsManager({ tenantId }: { tenantId: string }) 
         const snap = await getDocs(q);
         const data = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Testimonial);
         
-        // Mock some data if empty for demo purposes
-        if (data.length === 0) {
-          const mockData: Testimonial[] = [
-            { id: 't1', tenantId, authorName: 'Иван И.', authorRole: 'Клиент', text: 'Отличный сервис!', rating: 5, status: 'pending', createdAt: Date.now() },
-            { id: 't2', tenantId, authorName: 'Анна М.', text: 'Все понравилось, форма заполнилась быстро.', rating: 4, status: 'approved', createdAt: Date.now() - 86400000 }
-          ];
-          setTestimonials(mockData);
-        } else {
-          setTestimonials(data.sort((a, b) => b.createdAt - a.createdAt));
-        }
+        // Пустой список — это пустой список. Раньше сюда подставлялись
+        // выдуманные отзывы, и владелец видел чужие слова как свои.
+        setTestimonials(data.sort((a, b) => b.createdAt - a.createdAt));
       } catch (err) {
         console.error(err);
       } finally {

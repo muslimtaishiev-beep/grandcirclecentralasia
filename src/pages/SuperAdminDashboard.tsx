@@ -561,7 +561,7 @@ export default function SuperAdminDashboard() {
             <div className="w-12 h-12 bg-[#1a1a1a] border border-[#333333] rounded-xl flex items-center justify-center text-[#9F7AEA] mb-4 shadow-inner">
               <ShieldCheck className="w-6 h-6" />
             </div>
-            <h2 className="text-xl font-bold text-[#ffffff] tracking-tight uppercase">Super Admin Portal</h2>
+            <h2 className="text-xl font-bold text-[#ffffff] tracking-tight uppercase">Вход для суперадмина</h2>
             <p className="text-xs text-[#888888] mt-1">Доступ верховного администратора платформы</p>
           </div>
 
@@ -581,7 +581,7 @@ export default function SuperAdminDashboard() {
                   type="email"
                   value={adminEmailInput}
                   onChange={(e) => setAdminEmailInput(e.target.value)}
-                  placeholder="admin@studyfreeforum.com"
+                  placeholder="owner@example.com"
                   required
                   className="w-full bg-[#000000] border border-[#333333] rounded-lg px-4 py-3 text-sm text-[#ffffff] focus:outline-none focus:border-[#9F7AEA] transition font-mono"
                 />
@@ -646,8 +646,8 @@ export default function SuperAdminDashboard() {
             </div>
             <span className="text-[#444444] font-light">/</span>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-[#ffffff]">Super Admin Console</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#111111] text-[#50e3c2] border border-[#333333]">LIVE FIRESTORE</span>
+              <span className="text-xs font-semibold text-[#ffffff]">Панель суперадмина</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#111111] text-[#50e3c2] border border-[#333333]">Онлайн</span>
             </div>
           </div>
 
@@ -805,7 +805,7 @@ export default function SuperAdminDashboard() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <div className={`w-2.5 h-2.5 rounded-full ${project.status === "SUSPENDED" ? "bg-red-500" : "bg-[#50e3c2]"}`} title={project.status === "SUSPENDED" ? "Заблокирована" : "Активна"} />
+                          <div className={`w-2.5 h-2.5 rounded-full ${project.status === "SUSPENDED" ? "bg-red-500" : "bg-[#50e3c2]"}`} title={project.status === "SUSPENDED" ? "Приостановлена" : "Активна"} />
                           <h3 className="font-semibold text-sm text-[#ffffff] group-hover:text-[#9F7AEA] transition">{project.name}</h3>
                         </div>
                         <span className="text-[10px] font-mono text-[#888888] bg-[#111111] px-1.5 py-0.5 rounded border border-[#222222]">
@@ -1079,7 +1079,7 @@ export default function SuperAdminDashboard() {
                     <h2 className="text-base font-bold text-white flex items-center gap-2">
                       <span>{selectedOrgModal.name}</span>
                       <span className={`text-[10px] px-2 py-0.5 rounded font-mono border ${selectedOrgModal.status === "SUSPENDED" ? "bg-red-950/50 text-red-400 border-red-800" : "bg-emerald-950/50 text-emerald-400 border-emerald-800"}`}>
-                        {selectedOrgModal.status === "SUSPENDED" ? "ЗАБЛОКИРОВАНА" : "АКТИВНА"}
+                        {selectedOrgModal.status === "SUSPENDED" ? "ПРИОСТАНОВЛЕНА" : "АКТИВНА"}
                       </span>
                     </h2>
                     <p className="text-xs text-[#888888] font-mono mt-0.5">ID: {selectedOrgModal.id} | Slug: {selectedOrgModal.slug}</p>
@@ -1097,8 +1097,8 @@ export default function SuperAdminDashboard() {
               <div className="flex border-b border-[#222222] bg-[#000000] px-5 gap-4">
                 {[
                   { id: "actions", label: "Быстрый доступ", icon: LayoutDashboard },
-                  { id: "modules", label: "Экраны & Модули", icon: Sliders },
-                  { id: "director", label: "Руководитель & Права", icon: UserCheck },
+                  { id: "modules", label: "Разделы", icon: Sliders },
+                  { id: "director", label: "Руководитель", icon: UserCheck },
                   { id: "proctoring", label: "Прокторинг и Флаги", icon: ShieldCheck },
                   { id: "apikeys", label: "API Ключ & Безопасность", icon: Key },
                   { id: "status", label: "Статус & Управление", icon: Sliders }
@@ -1180,7 +1180,7 @@ export default function SuperAdminDashboard() {
                           <Settings className="w-5 h-5" />
                         </div>
                         <div>
-                          <div className="font-bold text-white group-hover:text-amber-400">Штат и Настройки</div>
+                          <div className="font-bold text-white group-hover:text-amber-400">Сотрудники и настройки</div>
                           <div className="text-[11px] text-[#777777]">Управление сотрудниками и правами</div>
                         </div>
                       </a>
@@ -1304,7 +1304,7 @@ export default function SuperAdminDashboard() {
                     <h3 className="text-xs font-bold text-[#888888] uppercase tracking-wider font-mono">API Ключ и Вебхуки</h3>
                     <div className="p-4 bg-[#111111] border border-[#222222] rounded-xl space-y-3 font-mono">
                       <div>
-                        <div className="text-[#666666] text-[10px] uppercase">Secret API Key</div>
+                        <div className="text-[#666666] text-[10px] uppercase">Секретный ключ API</div>
                         <div className="flex items-center justify-between bg-[#000000] p-2.5 rounded border border-[#222222] mt-1">
                           <span className="text-[#50e3c2] text-xs">{selectedOrgModal.apiKey || "не выдан"}</span>
                           <button
@@ -1318,7 +1318,7 @@ export default function SuperAdminDashboard() {
                       </div>
 
                       <div>
-                        <div className="text-[#666666] text-[10px] uppercase">Webhook Endpoint</div>
+                        <div className="text-[#666666] text-[10px] uppercase">Адрес вебхука</div>
                         <div className="flex items-center justify-between bg-[#000000] p-2.5 rounded border border-[#222222] mt-1">
                           <span className="text-[#888888] text-xs">https://www.studyfreeforum.com/api/webhooks/{selectedOrgModal.slug}</span>
                           <button
@@ -1375,7 +1375,7 @@ export default function SuperAdminDashboard() {
                         <input
                           type="email"
                           required
-                          placeholder="director@school.com"
+                          placeholder="owner@example.com"
                           value={directorEmail}
                           onChange={(e) => setDirectorEmail(e.target.value)}
                           className="w-full bg-[#000000] border border-[#333333] rounded-lg px-3 py-2 text-xs text-white placeholder-[#555555] focus:outline-none focus:border-[#9F7AEA]"
@@ -1454,7 +1454,7 @@ export default function SuperAdminDashboard() {
                       <div>
                         <div className="font-bold text-white">Статус организации</div>
                         <div className="text-[11px] text-[#666666]">
-                          {selectedOrgModal.status === "SUSPENDED" ? "Организация заблокирована. Доступ к рабочим пространствам ограничен." : "Организация активно работает на платформе."}
+                          {selectedOrgModal.status === "SUSPENDED" ? "Организация приостановлена: сотрудники не могут войти в рабочее пространство." : "Организация активно работает на платформе."}
                         </div>
                       </div>
 
@@ -1463,7 +1463,7 @@ export default function SuperAdminDashboard() {
                         className={`px-4 py-2 rounded-lg font-bold text-xs transition cursor-pointer flex items-center gap-1.5 ${selectedOrgModal.status === "SUSPENDED" ? "bg-emerald-600 hover:bg-emerald-500 text-white" : "bg-red-600 hover:bg-red-500 text-white"}`}
                       >
                         {selectedOrgModal.status === "SUSPENDED" ? <Play className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
-                        <span>{selectedOrgModal.status === "SUSPENDED" ? "РАЗБЛОКИРОВАТЬ" : "ЗАБЛОКИРОВАТЬ"}</span>
+                        <span>{selectedOrgModal.status === "SUSPENDED" ? "ВОЗОБНОВИТЬ" : "ПРИОСТАНОВИТЬ"}</span>
                       </button>
                     </div>
                   </div>

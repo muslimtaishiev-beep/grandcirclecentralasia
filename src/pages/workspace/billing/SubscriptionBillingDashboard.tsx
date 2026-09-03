@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CreditCard, CheckCircle2 } from 'lucide-react';
 import { TenantSubscription, TenantUsageMetrics, BillingInvoice, SubscriptionTierId } from '../../../types/billing';
-import { PLAN_TIER_DEFINITIONS, tierLimitEnforcer } from '../../../services/billing/TierLimitEnforcer';
+import { PLAN_TIER_DEFINITIONS } from '../../../shared/plans';
+import { tierLimitEnforcer } from '../../../services/billing/TierLimitEnforcer';
 import { usageMeteringService } from '../../../services/billing/UsageMeteringService';
 import PlanComparisonTable from './components/PlanComparisonTable';
 import ResourceUsageMetrics from './components/ResourceUsageMetrics';
@@ -83,7 +84,7 @@ export default function SubscriptionBillingDashboard() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-extrabold flex items-center gap-3">
-            <CreditCard className="w-8 h-8 text-emerald-500" /> Тарифы и Биллинг
+            <CreditCard className="w-8 h-8 text-emerald-500" /> Тарифы и оплата
           </h1>
           <p className="text-[var(--text-muted)] mt-1 font-medium">
             Управляйте подпиской, контролируйте лимиты и скачивайте счета.

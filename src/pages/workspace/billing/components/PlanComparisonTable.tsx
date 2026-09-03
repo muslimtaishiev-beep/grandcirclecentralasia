@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { SubscriptionTierId } from '../../../../types/billing';
-import { PLAN_TIER_DEFINITIONS } from '../../../../services/billing/TierLimitEnforcer';
+import { PLAN_TIER_DEFINITIONS } from '../../../../shared/plans';
 import { Check, X } from 'lucide-react';
 
 interface Props {
@@ -18,9 +18,9 @@ export default function PlanComparisonTable({ currentTierId, onUpgrade }: Props)
   const [interval, setInterval] = useState<'month' | 'year'>('month');
 
   const plans = [
-    { id: 'starter' as const, name: 'Starter' },
-    { id: 'business' as const, name: 'Business' },
-    { id: 'enterprise' as const, name: 'Enterprise' }
+    { id: 'starter' as const, name: 'Стартовый' },
+    { id: 'business' as const, name: 'Бизнес' },
+    { id: 'enterprise' as const, name: 'Корпоративный' }
   ];
 
   return (
@@ -76,7 +76,7 @@ export default function PlanComparisonTable({ currentTierId, onUpgrade }: Props)
               <div className="space-y-4">
                 <FeatureItem label={`Сотрудников: ${limits.maxStaffMembers === Infinity ? 'Безлимит' : limits.maxStaffMembers}`} />
                 <FeatureItem label={`Студентов: ${limits.maxActiveStudents === Infinity ? 'Безлимит' : limits.maxActiveStudents}`} />
-                <FeatureItem label={`No-Code Функций: ${limits.maxCustomFunctions === Infinity ? 'Безлимит' : limits.maxCustomFunctions}`} />
+                <FeatureItem label={`Своих функций: ${limits.maxCustomFunctions === Infinity ? 'Безлимит' : limits.maxCustomFunctions}`} />
                 <FeatureItem label={`Сайтов: ${limits.maxLandingPages === Infinity ? 'Безлимит' : limits.maxLandingPages}`} />
                 <FeatureItem label={`Диск: ${limits.storageLimitMb >= 512000 ? '500 GB' : limits.storageLimitMb / 1024 + ' GB'}`} />
                 

@@ -59,7 +59,6 @@ const SheetSpreadsheetPage = lazy(() => import("./pages/workspace/sheets/SheetSp
 const CrmContacts = lazy(() => import("./pages/workspace/crm/ContactsDirectoryPage"));
 const CrmDeals = lazy(() => import("./pages/workspace/crm/DealsKanbanPage"));
 const TestList = lazy(() => import("./pages/workspace/tests/TestList"));
-const TestEditor = lazy(() => import("./pages/workspace/tests/TestEditor"));
 const TaskBoard = lazy(() => import("./pages/workspace/tasks/TasksBoardPage"));
 const TaskList = lazy(() => import("./pages/workspace/tasks/TasksListPage"));
 const ChatLayout = lazy(() => import("./pages/workspace/chat/ChatLayout"));
@@ -310,13 +309,11 @@ export default function App() {
             
             {/* Multi-Tenant Testing & Evaluation Routes */}
             <Route path=":orgId/tests" element={<RequirePermission navKey="tests"><GracefulErrorBoundary fallbackTitle="Ошибка Тестов"><TestList /></GracefulErrorBoundary></RequirePermission>} />
-            <Route path=":orgId/tests/new" element={<RequirePermission navKey="tests"><GracefulErrorBoundary fallbackTitle="Ошибка Редактора Тестов"><TestEditor /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/placement" element={<RequirePermission navKey="placement"><GracefulErrorBoundary fallbackTitle="Ошибка Кабинета Завуча"><PlacementCabinet /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/tests/manage" element={<RequirePermission navKey="testsManage"><GracefulErrorBoundary fallbackTitle="Ошибка Проверки Менеджера"><ManagerDashboard /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/tests/check" element={<RequirePermission navKey="testsManage"><GracefulErrorBoundary fallbackTitle="Ошибка Формы Оценки"><ManagerForm /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/tests/check/:shortId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Формы Оценки"><ManagerForm /></GracefulErrorBoundary>} />
             <Route path=":orgId/tests/psychology/:shortId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Формы Психолога"><PsychologistForm /></GracefulErrorBoundary>} />
-            <Route path=":orgId/tests/:id" element={<GracefulErrorBoundary fallbackTitle="Ошибка Редактора Тестов"><TestEditor /></GracefulErrorBoundary>} />
             <Route path=":orgId/take-test/:testId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Прохождения Теста"><Testing /></GracefulErrorBoundary>} />
 
             <Route path=":orgId/tasks" element={<GracefulErrorBoundary fallbackTitle="Ошибка Задач"><Suspense fallback={<TaskSkeleton />}><TaskList /></Suspense></GracefulErrorBoundary>} />
