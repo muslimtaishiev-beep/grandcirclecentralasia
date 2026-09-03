@@ -8,7 +8,10 @@ import SpreadsheetGrid from './components/SpreadsheetGrid';
 
 export default function SheetSpreadsheetPage() {
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
-  const { id: sheetId } = useParams();
+  // Маршрут объявлен как :orgId/sheets/:sheetId — параметр называется sheetId.
+  // Раньше здесь читался `id`, которого в маршруте нет: любая таблица
+  // открывалась как «не найдена».
+  const { sheetId } = useParams<{ sheetId: string }>();
   const navigate = useNavigate();
   
   const { 

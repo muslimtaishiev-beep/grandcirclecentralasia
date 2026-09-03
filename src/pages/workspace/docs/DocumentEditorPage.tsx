@@ -212,13 +212,12 @@ export default function DocumentEditorPage() {
           />
         )}
 
-        <div
+        <EditableBlock
           id={`block-${b.id}`}
-          contentEditable={userRole === 'editor'}
-          suppressContentEditableWarning
-          dangerouslySetInnerHTML={{ __html: b.content || '' }}
+          editable={userRole === 'editor'}
+          html={b.content || ''}
           onFocus={() => setActiveBlockId(b.id)}
-          onInput={(e) => userRole === 'editor' && updateBlock(b.id, e.currentTarget.innerHTML)}
+          onInput={(html) => userRole === 'editor' && updateBlock(b.id, html)}
           onKeyDown={(e) => handleKeyDown(e, b.id, index, b.type)}
           style={fontStyle}
           className={`w-full bg-transparent focus:outline-none min-h-[1.5em] text-slate-900 outline-none ${style} ${b.checked ? 'line-through opacity-50' : ''}`}
@@ -308,5 +307,41 @@ export default function DocumentEditorPage() {
         onExport={handleExport}
       />
     </div>
+  );
+}
+
+/**
+ * Редактируемый блок без «перерисовки под курсором».
+ *
+ * Раньше блок рендерился через dangerouslySetInnerHTML из состояния: каждое
+ * нажатие клавиши обновляло состояние, React переписывал innerHTML, и
+ * курсор прыгал в начало — текст набирался задом наперёд («абв» → «вба»).
+ * Здесь DOM принадлежит браузеру: содержимое подставляется из состояния
+ * только когда оно изменилось снаружи (другой участник, шаблон, отмена),
+ * а не после собственного ввода.
+ */
+function EditableBlock({ id, editable, html, onFocus, onInput, onKeyDown, style, className }: {
+  id: string; editable: boolean; html: string;
+  onFocus: () => void; onInput: (html: string) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
+  style?: React.CSSProperties; className?: string;
+}) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    const el = ref.current;
+    if (el && el.innerHTML !== html) el.innerHTML = html;
+  }, [html]);
+  return (
+    <div
+      id={id}
+      ref={ref}
+      contentEditable={editable}
+      suppressContentEditableWarning
+      onFocus={onFocus}
+      onInput={(e) => onInput(e.currentTarget.innerHTML)}
+      onKeyDown={onKeyDown}
+      style={style}
+      className={className}
+    />
   );
 }
