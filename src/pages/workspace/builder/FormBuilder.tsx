@@ -19,7 +19,7 @@ import {
   CheckCircle2,
   AlertCircle
 } from 'lucide-react';
-import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
 import FancyQr, { QR_THEMES, QrThemePicker, downloadQr, type QrTheme } from '../../../components/forms/FancyQr';
 import { STATUS_LABEL, STATUS_COLOR, MODE_STATUSES, type FormMode } from '../../../shared/formStatuses';
@@ -96,7 +96,15 @@ export default function FormBuilder() {
 
     setLoading(true);
     const qForms = query(collection(db, 'custom_forms'), where('tenantId', '==', currentOrgId));
-    const qSubs = query(collection(db, 'form_submissions'), where('tenantId', '==', currentOrgId));
+    // Свежие заявки, не больше 300: в data заявки лежит фото документа
+    // (base64 до 400КБ), и подписка без лимита тянула бы в браузер снимки
+    // всех гостей события разом.
+    const qSubs = query(
+      collection(db, 'form_submissions'),
+      where('tenantId', '==', currentOrgId),
+      orderBy('createdAt', 'desc'),
+      limit(300),
+    );
 
     const unsubForms = onSnapshot(qForms, (snap) => {
       const list: any[] = [];

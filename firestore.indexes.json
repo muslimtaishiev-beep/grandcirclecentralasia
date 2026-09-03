@@ -173,6 +173,76 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "exam_suspensions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tenantId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "crm_contacts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fullName",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tenantId",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "memberships",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userEmail",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tenantId",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "edu_subscriptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "studentContactId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "form_submissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tenantId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []
