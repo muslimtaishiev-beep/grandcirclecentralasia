@@ -175,7 +175,7 @@ router.get("/me", requireFirebaseAuth, async (req: any, res: any) => {
 // POST /api/auth/send-employee-invite - Create user and send invite email
 router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: any) => {
   try {
-    const { email, fullName, tenantName, tenantId, permissions, role } = req.body;
+    const { email, fullName, tenantName, tenantId, permissions, role, customRoleId } = req.body;
     if (!email) return res.status(400).json({ error: "Missing email" });
 
     const db = admin.firestore();
@@ -247,24 +247,42 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
     }, { merge: true });
 
     // 3. Create or Update active membership record linking user to tenant
+    //
+    // Единая модель доступа: если передана должность (customRoleId), доступ
+    // идёт от неё, а личные permissions не проставляются — иначе новичок
+    // получал легаси-набор булевых прав в обход должности, и два экрана
+    // показывали разное. Название роли берём из документа должности, чтобы в
+    // карточке сотрудника сразу читалось «Волонтёр», а не «Работник».
+    const resolvedRole = role || "Работник";
     const membershipId = `mem_${uid}_${targetTenantId}`;
-    await db.collection("memberships").doc(membershipId).set({
+    const membershipDoc: Record<string, any> = {
       id: membershipId,
       userId: uid,
       tenantId: targetTenantId,
       displayName: fullName || email.split("@")[0],
       email: email.trim().toLowerCase(),
-      role: role || "Работник",
-      permissions: permissions || {
-        canReviewSubmissions: true,
-        canManageSchedule: true,
-        canCreateTests: false,
-        canManageOrganization: false
-      },
       status: "active",
       invitedBy: req.user?.uid || "admin",
       joinedAt: admin.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
+    };
+    if (customRoleId) {
+      const roleDoc = await db.collection("custom_roles").doc(String(customRoleId)).get();
+      // Должность обязана принадлежать этой же организации — иначе через инвайт
+      // можно было бы прицепить чужую роль.
+      if (roleDoc.exists && roleDoc.data()?.tenantId === targetTenantId) {
+        membershipDoc.customRoleId = customRoleId;
+        membershipDoc.role = roleDoc.data()?.name || resolvedRole;
+        membershipDoc.permissions = [];
+      } else {
+        return res.status(400).json({ success: false, error: "Должность не найдена в этой организации" });
+      }
+    } else {
+      membershipDoc.role = resolvedRole;
+      // Права выдаём ровно те, что отметили галочками; без выбора — пусто,
+      // а не легаси-набор, который тихо открывал лишнее.
+      membershipDoc.permissions = Array.isArray(permissions) ? permissions : [];
+    }
+    await db.collection("memberships").doc(membershipId).set(membershipDoc, { merge: true });
 
     // Refresh custom claims (tenantIds + tenantAdminIds) so tenant-scoped Firestore
     // rules apply on next token refresh — mirrors the sync logic in GET /api/auth/me.
@@ -294,7 +312,7 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
         to: email,
         fullName: fullName || email.split("@")[0],
         tenantName: tenantName || "Академия Будущих Лидеров",
-        role: role || "Работник",
+        role: membershipDoc.role || resolvedRole,
         resetLink,
       });
       if (!emailResult.sent) {

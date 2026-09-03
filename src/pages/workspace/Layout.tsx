@@ -3,9 +3,8 @@ import { Outlet, useNavigate, useLocation, useParams, Link } from "react-router-
 import { useAuth } from "../../contexts/AuthContext";
 import { useTheme } from "../../contexts/ThemeContext";
 import { 
-  Building, 
-  Settings, 
-  Users, 
+  Building,
+  Settings,
   LayoutDashboard,
   LogOut,
   FileText,
@@ -155,7 +154,6 @@ export default function WorkspaceLayout() {
     ["functions", "Function Studio", "/functions/studio", Settings2],
     ["departments", "Оргструктура & Отделы", "/settings/departments", FolderTree],
     ["permissions", "Роли & Доступы", "/settings/roles", Shield],
-    ["permissions", "Права & Сотрудники", "/settings/permissions", Users],
     ["workspaceSetup", "Настройка воркспейса", "/settings/workspace", Sparkles],
     ["docs", "Docs", "/docs", FileText],
     ["sheets", "Sheets", "/sheets", FileSpreadsheet],
@@ -256,7 +254,7 @@ export default function WorkspaceLayout() {
           
           {/* Profile Button / Link to Settings */}
           <button 
-            onClick={() => navigate(`/workspace/${orgId}/settings/permissions`)}
+            onClick={() => navigate(`/workspace/${orgId}/settings/roles`)}
             className="flex items-center gap-2 pl-2 border-l border-[var(--border-color)] cursor-pointer hover:opacity-80 transition"
             title="Settings Profile"
           >

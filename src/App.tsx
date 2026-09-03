@@ -41,8 +41,6 @@ const MaintenanceMode = lazy(() => import("./pages/MaintenanceMode"));
 const WorkspaceLayout = lazy(() => import("./pages/workspace/Layout"));
 const WorkspaceDashboard = lazy(() => import("./pages/workspace/Dashboard"));
 const WorkspaceSettings = lazy(() => import("./pages/workspace/Settings"));
-const TeamPermissions = lazy(() => import("./pages/workspace/settings/TeamPermissions"));
-const TeamPermissionMatrix = lazy(() => import("./pages/workspace/settings/TeamPermissionMatrix"));
 const OrgStructure = lazy(() => import("./pages/workspace/settings/OrgStructure"));
 const DocumentTemplates = lazy(() => import("./pages/workspace/settings/DocumentTemplates"));
 const WorkspaceBuilder = lazy(() => import("./pages/workspace/Builder"));
@@ -284,10 +282,13 @@ export default function App() {
             <Route path=":orgId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId/dashboard" element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId/settings" element={<GracefulErrorBoundary fallbackTitle="Ошибка Настроек"><WorkspaceSettings /></GracefulErrorBoundary>} />
-            <Route path=":orgId/settings/permissions" element={<RequirePermission navKey="permissions"><GracefulErrorBoundary fallbackTitle="Ошибка Управления Правами"><TeamPermissions /></GracefulErrorBoundary></RequirePermission>} />
+            {/* Роли и права сведены в один экран /settings/roles. Старые
+                адреса (в закладках, в письмах-инвайтах) редиректим туда, чтобы
+                не появлялось два рассинхронизированных экрана про одно и то же. */}
+            <Route path=":orgId/settings/permissions" element={<Navigate to="../roles" relative="path" replace />} />
+            <Route path=":orgId/settings/permission-matrix" element={<Navigate to="../roles" relative="path" replace />} />
             <Route path=":orgId/settings/roles" element={<GracefulErrorBoundary fallbackTitle="Ошибка Ролей"><RequirePermission navKey="permissions"><RolesAndAccess /></RequirePermission></GracefulErrorBoundary>} />
             <Route path=":orgId/settings/workspace" element={<RequirePermission navKey="workspaceSetup"><GracefulErrorBoundary fallbackTitle="Ошибка Настроек Воркспейса"><WorkspaceSetupPage /></GracefulErrorBoundary></RequirePermission>} />
-            <Route path=":orgId/settings/permission-matrix" element={<RequirePermission navKey="permissions"><GracefulErrorBoundary fallbackTitle="Ошибка Матрицы Доступов PBAC"><TeamPermissionMatrix /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/settings/departments" element={<RequirePermission navKey="departments"><GracefulErrorBoundary fallbackTitle="Ошибка Оргструктуры"><OrgStructure /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/settings/templates" element={<GracefulErrorBoundary fallbackTitle="Ошибка Шаблонов"><DocumentTemplates /></GracefulErrorBoundary>} />
             <Route path=":orgId/builder" element={<GracefulErrorBoundary fallbackTitle="Ошибка Конструктора"><WorkspaceBuilder /></GracefulErrorBoundary>} />

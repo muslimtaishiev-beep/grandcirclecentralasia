@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Shield, Plus, Trash2, Check, Loader2, Users, EyeOff, X } from "lucide-react";
+import { Shield, Plus, Trash2, Check, Loader2, Users, EyeOff, X, UserPlus, Mail } from "lucide-react";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { auth, db } from "../../../lib/firebase";
 import {
@@ -43,6 +43,11 @@ export default function RolesAndAccess() {
 
   const [editing, setEditing] = useState<Role | null>(null);
   const [disabled, setDisabled] = useState<string[]>([]);
+
+  // Добавление сотрудника — приглашение по email с должностью.
+  const [inviting, setInviting] = useState(false);
+  const [invite, setInvite] = useState({ fullName: "", email: "", customRoleId: "" });
+  const [inviteMsg, setInviteMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const say = (msg: string) => { setNotice(msg); setTimeout(() => setNotice(null), 5000); };
 
@@ -112,6 +117,40 @@ export default function RolesAndAccess() {
       say("Должность назначена. Сотрудник увидит изменения после перезагрузки страницы.");
       void loadRoles();
     } catch { setError("Нет связи с сервером"); }
+    finally { setBusy(false); }
+  };
+
+  const sendInvite = async () => {
+    if (!invite.fullName.trim() || !invite.email.trim()) {
+      setInviteMsg({ ok: false, text: "Заполните ФИО и email сотрудника." });
+      return;
+    }
+    setBusy(true); setInviteMsg(null);
+    try {
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+      const res = await fetch("/api/auth/send-employee-invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          email: invite.email.trim().toLowerCase(),
+          fullName: invite.fullName.trim(),
+          tenantName: tenant?.name || "Организация",
+          tenantId,
+          customRoleId: invite.customRoleId || null,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j.success) { setInviteMsg({ ok: false, text: j.error || "Не удалось добавить сотрудника" }); return; }
+      setInviteMsg({
+        ok: true,
+        text: j.emailSent
+          ? `Сотрудник добавлен. Письмо со ссылкой для входа отправлено на ${invite.email}.`
+          : `Сотрудник добавлен. Письмо отправить не удалось — передайте ${invite.email} ссылку для входа вручную.`,
+      });
+      setInvite({ fullName: "", email: "", customRoleId: "" });
+      void loadRoles();
+      setTimeout(() => { setInviting(false); setInviteMsg(null); }, 2500);
+    } catch { setInviteMsg({ ok: false, text: "Нет связи с сервером" }); }
     finally { setBusy(false); }
   };
 
@@ -219,6 +258,16 @@ export default function RolesAndAccess() {
 
       {/* ── Сотрудники ───────────────────────────────────────────────── */}
       {tab === "staff" && (
+        <div className="space-y-3">
+        <div className="flex justify-between items-center">
+          <p className="text-xs text-[var(--text-muted)]">
+            Назначьте должность каждому сотруднику — от неё зависит, что он видит в меню.
+          </p>
+          <button onClick={() => { setInvite({ fullName: "", email: "", customRoleId: "" }); setInviteMsg(null); setInviting(true); }}
+            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shrink-0">
+            <UserPlus className="w-4 h-4" /> Добавить сотрудника
+          </button>
+        </div>
         <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-[var(--bg-panel)] text-[11px] uppercase font-mono text-[var(--text-muted)]">
@@ -258,11 +307,12 @@ export default function RolesAndAccess() {
               })}
               {members.length === 0 && (
                 <tr><td colSpan={3} className="px-4 py-10 text-center text-[var(--text-muted)] text-sm">
-                  Сотрудников пока нет. Добавьте их в разделе «Права &amp; Сотрудники».
+                  Сотрудников пока нет. Нажмите «Добавить сотрудника», чтобы пригласить первого.
                 </td></tr>
               )}
             </tbody>
           </table>
+        </div>
         </div>
       )}
 
@@ -295,6 +345,55 @@ export default function RolesAndAccess() {
               </label>
             );
           })}
+        </div>
+      )}
+
+      {/* ── Добавление сотрудника ────────────────────────────────────── */}
+      {inviting && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => !busy && setInviting(false)}>
+          <div onClick={e => e.stopPropagation()}
+            className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold flex items-center gap-2"><UserPlus className="w-5 h-5 text-emerald-500" /> Новый сотрудник</h2>
+              <button onClick={() => setInviting(false)} className="text-[var(--text-muted)] hover:text-[var(--text-main)]">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-xs text-[var(--text-muted)]">
+              На email придёт ссылка для входа. Доступ определяется выбранной должностью — поменять её можно в любой момент во вкладке «Сотрудники».
+            </p>
+
+            {inviteMsg && (
+              <div className={`rounded-xl p-3 text-sm border ${inviteMsg.ok
+                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600"
+                : "bg-red-500/10 border-red-500/30 text-red-500"}`}>{inviteMsg.text}</div>
+            )}
+
+            <input value={invite.fullName} onChange={e => setInvite({ ...invite, fullName: e.target.value })}
+              placeholder="ФИО — например, «Иванов Алексей»"
+              className="w-full px-3 py-2.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl text-sm" />
+            <input type="email" value={invite.email} onChange={e => setInvite({ ...invite, email: e.target.value })}
+              placeholder="Рабочий email"
+              className="w-full px-3 py-2.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl text-sm" />
+            <div>
+              <label className="block text-[11px] uppercase font-mono font-bold text-[var(--text-muted)] mb-1.5">Должность</label>
+              <select value={invite.customRoleId} onChange={e => setInvite({ ...invite, customRoleId: e.target.value })}
+                className="w-full px-3 py-2.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl text-sm">
+                <option value="">Без должности (доступ выдадите позже)</option>
+                {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t border-[var(--border-color)]">
+              <button onClick={() => setInviting(false)} disabled={busy}
+                className="flex-1 py-2.5 rounded-xl border border-[var(--border-color)] font-bold text-sm">Отмена</button>
+              <button onClick={() => void sendInvite()} disabled={busy || !invite.fullName.trim() || !invite.email.trim()}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />} Пригласить
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
