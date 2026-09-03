@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 
 interface LandingProps {
@@ -7,6 +7,11 @@ interface LandingProps {
 }
 
 const Landing: React.FC<LandingProps> = ({ lang = "ru" }) => {
+  // orgSlug из адреса /:orgSlug/admission. Переменная использовалась в двух
+  // кнопках, но не была объявлена — клик по «Вход для участников» падал с
+  // ReferenceError с 24 августа. Vite не проверяет типы при сборке, поэтому
+  // ошибка дожила до продакшена.
+  const { orgSlug = "org_future_leaders" } = useParams<{ orgSlug?: string }>();
   const navigate = useNavigate();
 
   return (

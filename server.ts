@@ -1834,12 +1834,19 @@ app.post("/api/admin/login", async (req, res) => {
         // Домен почты больше не даёт прав: сотрудник с рабочим адресом
         // становился суперадминистратором платформы. Только явный claim или
         // запись в users/superadmins ниже.
-        isSuperAdmin = decodedToken.admin === true;
-        
+        // Суперадминство живёт в claim isSuperadmin и в коллекции superadmins —
+        // их и проверяем. Убирая обход по домену почты, важно было не
+        // отрезать настоящего суперадмина, чей users.globalRole равен "user".
+        isSuperAdmin = decodedToken.admin === true || decodedToken.isSuperadmin === true;
+
         if (!isSuperAdmin) {
-          const userDoc = await admin.firestore().collection("users").doc(uid).get();
+          const [userDoc, saDoc] = await Promise.all([
+            admin.firestore().collection("users").doc(uid).get(),
+            admin.firestore().collection("superadmins").doc(uid).get(),
+          ]);
           const userData = userDoc.data();
-          isSuperAdmin = userData?.globalRole === "superadmin" || userData?.role === "superadmin";
+          isSuperAdmin = saDoc.exists
+            || userData?.globalRole === "superadmin" || userData?.role === "superadmin";
         }
       }
     } catch (sdkErr: any) {
@@ -1886,12 +1893,19 @@ app.get("/api/admin/check", async (req, res) => {
         const decoded = await admin.auth().verifyIdToken(token);
         email = decoded.email || "";
         uid = decoded.uid;
-        isSuperAdmin = decoded.admin === true;
-        
+        // Суперадминство живёт в claim isSuperadmin и в коллекции superadmins —
+        // их и проверяем. Убирая обход по домену почты, важно было не
+        // отрезать настоящего суперадмина, чей users.globalRole равен "user".
+        isSuperAdmin = decoded.admin === true || decoded.isSuperadmin === true;
+
         if (!isSuperAdmin) {
-          const userDoc = await admin.firestore().collection("users").doc(uid).get();
+          const [userDoc, saDoc] = await Promise.all([
+            admin.firestore().collection("users").doc(uid).get(),
+            admin.firestore().collection("superadmins").doc(uid).get(),
+          ]);
           const userData = userDoc.data();
-          isSuperAdmin = userData?.globalRole === "superadmin" || userData?.role === "superadmin";
+          isSuperAdmin = saDoc.exists
+            || userData?.globalRole === "superadmin" || userData?.role === "superadmin";
         }
       }
     } catch (sdkErr: any) {}
