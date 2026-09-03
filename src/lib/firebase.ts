@@ -16,12 +16,18 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Safari (and browsers behind certain corporate proxies/firewalls) can reject the
-// default fetch-based WebChannel stream Firestore uses for onSnapshot listeners with
-// a browser-level "access control checks" error — not a CORS misconfiguration on our
-// side, but the streaming transport itself being blocked. autoDetectLongPolling falls
-// back to classic long-polling (plain XHR, not the streaming fetch) transparently when
-// that happens, without forcing the slower transport for every client.
+// Принудительный long-polling вместо потокового канала.
+//
+// Автоопределение (experimentalAutoDetectLongPolling) здесь уже стояло — и не
+// спасло: оно проверяет сеть один раз при старте, а школьный/офисный Wi-Fi с
+// инспекцией трафика пропускает начало потока и убивает его ПОЗЖЕ. В консоли
+// это выглядело как «Fetch API cannot load .../Listen/channel ... due to
+// access control checks» после сотен успешно доставленных событий — и все
+// живые списки у менеджеров зависали в вечном переподключении.
+//
+// Long-polling — обычные короткие XHR-запросы, их такие сети не трогают.
+// Цена: чуть больше задержка у живых обновлений. Для наших экранов (списки
+// заявок, контактов, сотрудников) это незаметно, а «работает всегда» важнее.
 export const db = initializeFirestore(app, {
-  experimentalAutoDetectLongPolling: true,
+  experimentalForceLongPolling: true,
 });
