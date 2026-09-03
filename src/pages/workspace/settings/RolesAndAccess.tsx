@@ -4,9 +4,10 @@ import { Shield, Plus, Trash2, Check, Loader2, Users, EyeOff, X, UserPlus, Mail 
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { auth, db } from "../../../lib/firebase";
 import {
-  PERMISSIONS, ROLE_PRESETS, ORG_MODULES, migrateLegacyPermissions,
+  PERMISSIONS, ROLE_PRESETS, ORG_MODULES, migrateLegacyPermissions, resolvePermissions, hasFullAccess,
   type PermissionKey,
 } from "../../../shared/permissions";
+import EmployeeAccessModal from "./EmployeeAccessModal";
 
 /**
  * Должности, права и модули организации — один экран вместо трёх.
@@ -43,6 +44,8 @@ export default function RolesAndAccess() {
 
   const [editing, setEditing] = useState<Role | null>(null);
   const [disabled, setDisabled] = useState<string[]>([]);
+  /** Сотрудник, чью карточку доступа открыли. */
+  const [access, setAccess] = useState<any | null>(null);
 
   // Добавление сотрудника — приглашение по email с должностью.
   const [inviting, setInviting] = useState(false);
@@ -105,16 +108,17 @@ export default function RolesAndAccess() {
     finally { setBusy(false); }
   };
 
-  const assignRole = async (membershipId: string, customRoleId: string) => {
+  const saveAccess = async (membershipId: string, patch: { customRoleId: string | null; permissions: PermissionKey[] }) => {
     setBusy(true); setError(null);
     try {
       const res = await fetch(`/api/tenants/${tenantId}/members/${membershipId}/role`, {
         method: "POST", headers: await authHeaders(),
-        body: JSON.stringify({ customRoleId: customRoleId || null }),
+        body: JSON.stringify(patch),
       });
       const j = await res.json();
-      if (!j.success) { setError(j.error || "Не удалось назначить"); return; }
-      say("Должность назначена. Сотрудник увидит изменения после перезагрузки страницы.");
+      if (!j.success) { setError(j.error || "Не удалось сохранить"); return; }
+      setAccess(null);
+      say("Доступ сохранён. Сотрудник увидит изменения после перезагрузки страницы.");
       void loadRoles();
     } catch { setError("Нет связи с сервером"); }
     finally { setBusy(false); }
@@ -172,6 +176,12 @@ export default function RolesAndAccess() {
 
   const categories = [...new Set(PERMISSIONS.map(p => p.category))];
   const roleName = (m: any) => roles.find(r => r.id === m.customRoleId)?.name || m.role || "—";
+  /** Итоговый набор прав сотрудника — как его посчитает сервер. */
+  const effectiveOf = (m: any) => resolvePermissions({
+    role: m.role, permissions: m.permissions, customPermissions: m.customPermissions,
+    rolePermissions: roles.find(r => r.id === m.customRoleId)?.permissions,
+    disabledModules: disabled,
+  });
 
   if (!tenant) return <div className="py-16 text-center text-[var(--text-muted)] text-sm">Загрузка организации…</div>;
 
@@ -261,7 +271,7 @@ export default function RolesAndAccess() {
         <div className="space-y-3">
         <div className="flex justify-between items-center">
           <p className="text-xs text-[var(--text-muted)]">
-            Назначьте должность каждому сотруднику — от неё зависит, что он видит в меню.
+            Должность даёт базовый набор прав, личные галочки — сверху. Итог считается так же, как в меню сотрудника.
           </p>
           <button onClick={() => { setInvite({ fullName: "", email: "", customRoleId: "" }); setInviteMsg(null); setInviting(true); }}
             className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shrink-0">
@@ -274,12 +284,14 @@ export default function RolesAndAccess() {
               <tr>
                 <th className="px-4 py-3 text-left">Сотрудник</th>
                 <th className="px-4 py-3 text-left">Должность</th>
-                <th className="px-4 py-3 text-left w-56">Назначить</th>
+                <th className="px-4 py-3 text-left">Доступ</th>
+                <th className="px-4 py-3 text-right w-32"></th>
               </tr>
             </thead>
             <tbody>
               {members.map(m => {
-                const systemRole = ["owner", "org:owner", "admin", "org:admin"].includes(String(m.role));
+                const systemRole = hasFullAccess(m.role);
+                const eff = effectiveOf(m);
                 return (
                   <tr key={m.id} className="border-t border-[var(--border-color)]">
                     <td className="px-4 py-3">
@@ -292,21 +304,26 @@ export default function RolesAndAccess() {
                     </td>
                     <td className="px-4 py-3">
                       {systemRole ? (
-                        <span className="text-[11px] text-[var(--text-muted)]">владельца не меняем</span>
+                        <span className="text-xs text-emerald-500 font-bold">всё</span>
                       ) : (
-                        <select value={m.customRoleId || ""} disabled={busy}
-                          onChange={e => void assignRole(m.id, e.target.value)}
-                          className="w-full bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-lg px-2 py-1.5 text-xs">
-                          <option value="">Без должности</option>
-                          {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                        </select>
+                        <span className="text-xs" data-testid={`eff-${m.id}`}>
+                          <b>{eff.size}</b> <span className="text-[var(--text-muted)]">из {PERMISSIONS.length}</span>
+                          {eff.size === 0 && <span className="ml-2 text-[11px] text-amber-600">нет доступа</span>}
+                        </span>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button onClick={() => setAccess(m)} disabled={busy}
+                        data-testid={`access-${m.id}`}
+                        className="text-xs font-bold text-emerald-500 hover:underline">
+                        {systemRole ? "Посмотреть" : "Настроить"}
+                      </button>
                     </td>
                   </tr>
                 );
               })}
               {members.length === 0 && (
-                <tr><td colSpan={3} className="px-4 py-10 text-center text-[var(--text-muted)] text-sm">
+                <tr><td colSpan={4} className="px-4 py-10 text-center text-[var(--text-muted)] text-sm">
                   Сотрудников пока нет. Нажмите «Добавить сотрудника», чтобы пригласить первого.
                 </td></tr>
               )}
@@ -346,6 +363,14 @@ export default function RolesAndAccess() {
             );
           })}
         </div>
+      )}
+
+      {/* ── Карточка доступа сотрудника ──────────────────────────────── */}
+      {access && (
+        <EmployeeAccessModal
+          member={access} roles={roles} tenant={tenant} busy={busy}
+          onClose={() => !busy && setAccess(null)}
+          onSave={patch => saveAccess(access.id, patch)} />
       )}
 
       {/* ── Добавление сотрудника ────────────────────────────────────── */}
