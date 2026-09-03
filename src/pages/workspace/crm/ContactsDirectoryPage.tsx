@@ -3,7 +3,7 @@ import { useWorkspaceTerms } from '../../../lib/useWorkspaceConfig';
 import { useOutletContext } from 'react-router-dom';
 import { Search, Plus, Filter, MoreHorizontal, Mail, Phone, X, Check, Trash2 } from 'lucide-react';
 import { db } from '../../../lib/firebase';
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp, setDoc, doc, deleteDoc, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, setDoc, doc, deleteDoc, getDocs, limit } from 'firebase/firestore';
 import { CrmContact } from '../../../types/crm';
 import ContactProfileDrawer from './components/ContactProfileDrawer';
 import toast from 'react-hot-toast';
@@ -12,6 +12,7 @@ export default function ContactsDirectoryPage() {
   const terms = useWorkspaceTerms();
   const { activeTenant } = useOutletContext<any>();
   const [contacts, setContacts] = useState<CrmContact[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [selectedContact, setSelectedContact] = useState<CrmContact | null>(null);
 
@@ -26,8 +27,14 @@ export default function ContactsDirectoryPage() {
   useEffect(() => {
     if (!activeTenant?.id) return;
 
-    // Listen to root crm_contacts with tenantId filter
-    const q1 = query(collection(db, 'crm_contacts'), where('tenantId', '==', activeTenant.id));
+    // Живая подписка, но ограниченная: экран показывает список, а не всю
+    // базу контактов школы. Без limit браузер держал в памяти каждый контакт
+    // и перерисовывал таблицу на любое изменение любого из них.
+    const q1 = query(
+      collection(db, 'crm_contacts'),
+      where('tenantId', '==', activeTenant.id),
+      limit(500),
+    );
     const unsub = onSnapshot(q1, (snap) => {
       const list: CrmContact[] = [];
       snap.forEach(d => {
@@ -47,7 +54,10 @@ export default function ContactsDirectoryPage() {
       });
       setContacts(list);
     }, (err) => {
+      // Молчаливый console.warn превращал сбой запроса в пустой экран:
+      // менеджер видел «контактов нет» вместо «не удалось загрузить».
       console.warn("CRM contacts listener notice:", err);
+      setLoadError("Не удалось загрузить контакты. Обновите страницу.");
     });
 
     return () => unsub();

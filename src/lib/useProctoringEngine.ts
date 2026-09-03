@@ -488,9 +488,35 @@ export function useProctoringEngine(
     detectors?: ProctoringDetectorFlags;
     /** Event types to drop entirely (the exam suppresses TAB_SWITCH). */
     suppressEvents?: ProctoringEvent['type'][];
+    /**
+     * Обновлять ли телеметрию в состоянии React.
+     *
+     * По умолчанию НЕТ. Раньше setTelemetry вызывался на каждом кадре
+     * анимации — 60 раз в секунду перерисовывалась вся страница экзамена
+     * со всеми вопросами. Ученик физически не мог печатать: каретка прыгала,
+     * символы терялись. При этом экзамен телеметрию не читает вообще —
+     * она нужна только демо-странице /sandbox/proctor, которая и включает
+     * этот флаг.
+     */
+    liveTelemetry?: boolean;
   }
 ) {
-  const [telemetry, setTelemetry] = useState<ProctoringTelemetry>({
+  const liveTelemetry = options?.liveTelemetry === true;
+  // Актуальные значения живут в ref: детекторы читают их между кадрами без
+  // участия React. В состояние они попадают, только когда их показывают.
+  const liveTelemetryRef = useRef(false);
+  liveTelemetryRef.current = liveTelemetry;
+  const telemetryRef = useRef<ProctoringTelemetry | null>(null);
+  /**
+   * Обновление телеметрии. В ref — всегда (дёшево), в состояние React —
+   * только если её показывают на экране. На экзамене это убирает 60
+   * перерисовок страницы в секунду.
+   */
+  const setTelemetry = useCallback((updater: (prev: ProctoringTelemetry) => ProctoringTelemetry) => {
+    telemetryRef.current = updater(telemetryRef.current || ({} as ProctoringTelemetry));
+    if (liveTelemetryRef.current) setTelemetryState(telemetryRef.current);
+  }, []);
+  const [telemetry, setTelemetryState] = useState<ProctoringTelemetry>({
     headPose: { pitch: 0, yaw: 0, roll: 0 },
     gazeDirection: 'CENTER',
     gazeRatio: 0.5,
@@ -521,6 +547,7 @@ export function useProctoringEngine(
     speechProbability: 0,
     speechIntentCategory: 'BENIGN',
   });
+  if (telemetryRef.current === null) telemetryRef.current = telemetry;
 
   const [events, setEvents] = useState<ProctoringEvent[]>([]);
   const [isReady, setIsReady] = useState(false);

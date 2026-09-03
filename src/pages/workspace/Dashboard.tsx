@@ -21,40 +21,37 @@ export default function WorkspaceDashboard() {
 
   useEffect(() => {
     if (!orgId) return;
+    let cancelled = false;
 
-    // Subscriptions for real-time tenant stats
-    const qMembers = query(collection(db, "memberships"), where("tenantId", "==", orgId));
-    const qTests = query(collection(db, "tests"), where("tenantId", "==", orgId));
-    const qDeals = query(collection(db, "crm_deals"), where("tenantId", "==", orgId));
-    const qTasks = query(collection(db, "tasks"), where("tenantId", "==", orgId));
-    const qDocs = query(collection(db, "documents"), where("tenantId", "==", orgId));
-
-    const unsubMembers = onSnapshot(qMembers, snap => {
-      setStats(prev => ({ ...prev, membersCount: snap.size }));
-    }, () => {});
-    const unsubTests = onSnapshot(qTests, snap => {
-      setStats(prev => ({ ...prev, testsCount: snap.size }));
-    }, () => {});
-    const unsubDeals = onSnapshot(qDeals, snap => {
-      setStats(prev => ({ ...prev, dealsCount: snap.size }));
-    }, () => {});
-    const unsubTasks = onSnapshot(qTasks, snap => {
-      setStats(prev => ({ ...prev, tasksCount: snap.size }));
-    }, () => {});
-    const unsubDocs = onSnapshot(qDocs, snap => {
-      setStats(prev => ({ ...prev, docsCount: snap.size }));
+    /**
+     * Счётчики считаются НА СЕРВЕРЕ (getCountFromServer).
+     *
+     * Раньше здесь висели пять живых подписок на целые коллекции — и всё
+     * ради пяти чисел: браузер скачивал каждую сделку, каждую задачу и
+     * каждый тест (а тест хранит внутри весь банк вопросов), чтобы взять
+     * snap.size. Плюс любая правка в любой из коллекций перерисовывала
+     * дашборд. Счёт на сервере возвращает одно число на коллекцию.
+     */
+    (async () => {
+      const { getCountFromServer } = await import("firebase/firestore");
+      const countOf = async (col: string) => {
+        try {
+          const snap = await getCountFromServer(query(collection(db, col), where("tenantId", "==", orgId)));
+          return snap.data().count;
+        } catch {
+          return 0;   // коллекции может не быть — это не ошибка экрана
+        }
+      };
+      const [membersCount, testsCount, dealsCount, tasksCount, docsCount] = await Promise.all([
+        countOf("memberships"), countOf("tests"), countOf("crm_deals"),
+        countOf("tasks"), countOf("documents"),
+      ]);
+      if (cancelled) return;
+      setStats({ membersCount, testsCount, dealsCount, tasksCount, docsCount });
       setLoading(false);
-    }, () => {
-      setLoading(false);
-    });
+    })();
 
-    return () => {
-      unsubMembers();
-      unsubTests();
-      unsubDeals();
-      unsubTasks();
-      unsubDocs();
-    };
+    return () => { cancelled = true; };
   }, [orgId]);
 
   return (

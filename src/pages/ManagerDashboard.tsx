@@ -8,7 +8,10 @@ import { useNavigate, useParams } from "react-router-dom";
 import { getHourlyPIN, getCEFRLevel, fetchGasAPI, toGenitiveCase } from "../lib/utils";
 import { collection, getDocs, deleteDoc, doc, query, where } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import html2pdf from "html2pdf.js";
+// html2pdf весит 961 КБ и нужен только по нажатию «скачать PDF». Статический
+// импорт заставлял КАЖДОГО менеджера скачивать его при открытии экрана —
+// почти мегабайт до первой отрисовки. Теперь подгружается по требованию.
+const loadHtml2Pdf = async () => (await import("html2pdf.js")).default;
 import Papa from "papaparse";
 import { DiagnosticReportPdf } from "../components/DiagnosticReportPdf";
 import { SchoolCertificatePdf } from "../components/SchoolCertificatePdf";
@@ -436,7 +439,7 @@ export default function ManagerDashboard() {
     setAnalyzingId(student.shortId);
     
     // Give React time to render the DiagnosticReportPdf component with the student data
-    setTimeout(() => {
+    setTimeout(async () => {
       const element = document.getElementById('pdf-diagnostic-report');
       if (element) {
         const displayName = student.childName || student.studentName || student.shortId;
@@ -447,7 +450,7 @@ export default function ManagerDashboard() {
           html2canvas: { scale: 2, useCORS: true },
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
         };
-        const worker = html2pdf().set(opt).from(element);
+        const worker = (await loadHtml2Pdf())().set(opt).from(element);
         
         worker.output('datauristring').then(async (base64: string) => {
           try {
@@ -559,10 +562,18 @@ export default function ManagerDashboard() {
 
       // 1. Fetch from Firestore `submissions` & `crm_contacts`
       try {
-        const { query, where, getDocs, collection } = await import('firebase/firestore');
+        const { query, where, getDocs, collection, orderBy, limit } = await import('firebase/firestore');
         const { db } = await import('../lib/firebase');
 
-        const subSnap = await getDocs(query(collection(db, 'submissions'), where('tenantId', '==', targetTenantId)));
+        // Свежие работы сверху и не больше 500 за раз: экран показывает
+        // последние сдачи, а не всю историю школы за годы. Без ограничения
+        // менеджер ждал загрузки всей коллекции целиком.
+        const subSnap = await getDocs(query(
+          collection(db, 'submissions'),
+          where('tenantId', '==', targetTenantId),
+          orderBy('submittedAt', 'desc'),
+          limit(500),
+        ));
         subSnap.forEach(d => {
           const s = d.data();
           const sId = (s.studentShortId || s.shortId || d.id).toString();
@@ -581,7 +592,16 @@ export default function ManagerDashboard() {
             lo,
             en,
             cheated: Boolean(s.cheated),
-            proctoring: s.proctoring || null,
+            // Из отчёта прокторинга списку нужны ТРИ числа, а не весь отчёт
+            // со снимками нарушений: в работе он может весить мегабайты, а
+            // умножить это на все работы школы — и экран не открывается.
+            // Полный отчёт и снимки грузит досье по клику (ProctoringDossier).
+            proctoring: s.proctoring ? {
+              unavailable: s.proctoring.unavailable,
+              totalViolations: s.proctoring.totalViolations,
+              honestyIndex: s.proctoring.honestyIndex,
+              bySeverity: s.proctoring.bySeverity,
+            } : null,
             status: s.status || 'ЗАВЕРШЕН',
             finalDecision: s.finalDecision || 'НЕ ОБРАБОТАН',
             managerName: s.managerName || 'Не назначен',
@@ -592,7 +612,11 @@ export default function ManagerDashboard() {
           });
         });
 
-        const cntSnap = await getDocs(query(collection(db, 'crm_contacts'), where('tenantId', '==', targetTenantId)));
+        const cntSnap = await getDocs(query(
+          collection(db, 'crm_contacts'),
+          where('tenantId', '==', targetTenantId),
+          limit(1000),
+        ));
         cntSnap.forEach(d => {
           const c = d.data();
           const sId = (c.shortId || d.id).toString();

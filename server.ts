@@ -590,6 +590,32 @@ app.get("/api/tenant/resolve", async (req, res) => {
   }
 });
 
+/**
+ * Кэш вопросов и ключей ответов.
+ *
+ * Вопросы класса и ключи к ним одинаковы для КАЖДОГО ученика: при 500
+ * сдающих сервер делал ~4500 одинаковых чтений одних и тех же нескольких
+ * документов. Теперь читаем раз в минуту.
+ *
+ * Минута — компромисс: правку теста завуч увидит почти сразу, а нагрузка
+ * на базу падает в сотни раз.
+ */
+const examCache = new Map<string, { at: number; value: any }>();
+const EXAM_CACHE_MS = 60_000;
+
+async function cachedRead<T>(key: string, loader: () => Promise<T>): Promise<T> {
+  const hit = examCache.get(key);
+  if (hit && Date.now() - hit.at < EXAM_CACHE_MS) return hit.value as T;
+  const value = await loader();
+  examCache.set(key, { at: Date.now(), value });
+  // Кэш не должен расти бесконечно на долгоживущем процессе.
+  if (examCache.size > 200) {
+    const oldest = [...examCache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+    if (oldest) examCache.delete(oldest[0]);
+  }
+  return value;
+}
+
 function getHourlyPIN(hourOffset = 0): string {
   const d = new Date();
   d.setUTCHours(d.getUTCHours() + hourOffset);
@@ -981,22 +1007,25 @@ async function processExamSubmission(payload: any) {
         `${grade}`
       ];
       let testFound = false;
-      for (const docId of testCandidates) {
-        const snap = await admin.firestore().collection("tests").doc(docId).get();
-        const data = snap.data();
-        if (data && data.tenantId && data.tenantId !== resolvedTenantId) {
-          continue; // tenantId mismatch, try next
+      // Все кандидаты одним запросом вместо очереди из четырёх, с кэшем:
+      // документ теста один и тот же для каждого сдающего этот класс.
+      const found = await cachedRead(`test_${resolvedTenantId}_${grade}`, async () => {
+        const refs = testCandidates.map((id: string) => admin.firestore().collection("tests").doc(id));
+        const snaps = await admin.firestore().getAll(...refs);
+        for (const snap of snaps) {
+          const data = snap.data();
+          if (data && data.tenantId && data.tenantId !== resolvedTenantId) continue;
+          if (data && data.questions) {
+            return {
+              russian: Array.isArray(data.questions.russian) ? data.questions.russian : [],
+              math: Array.isArray(data.questions.math) ? data.questions.math : [],
+              logic: Array.isArray(data.questions.logic) ? data.questions.logic : [],
+            };
+          }
         }
-        if (data && data.questions) {
-          testFound = true;
-          realQuestions = {
-            russian: Array.isArray(data.questions.russian) ? data.questions.russian : [],
-            math: Array.isArray(data.questions.math) ? data.questions.math : [],
-            logic: Array.isArray(data.questions.logic) ? data.questions.logic : [],
-          };
-          break;
-        }
-      }
+        return null;
+      });
+      if (found) { testFound = true; realQuestions = found; }
       if (!testFound) {
         return { success: false, error: `No test found for grade ${grade} in tenant ${resolvedTenantId}` };
       }
@@ -1017,17 +1046,22 @@ async function processExamSubmission(payload: any) {
         `key_grade_${grade}_GLOBAL`,
         `${grade}`
       ];
-      keys = { russian: {}, math: {}, logic: {}, english: {} };
-      for (const candId of candidateIds) {
-        const docSnap = await admin.firestore().collection("test_answer_keys").doc(candId).get();
-        if (docSnap.exists) {
+      // Пять чтений ОДНИМ запросом вместо пяти по очереди, и результат
+      // кэшируется: ключи к работе одинаковы у всех учеников класса.
+      keys = await cachedRead(`keys_${resolvedTenantId}_${grade}`, async () => {
+        const acc: any = { russian: {}, math: {}, logic: {}, english: {} };
+        const refs = candidateIds.map(id => admin.firestore().collection("test_answer_keys").doc(id));
+        const snaps = await admin.firestore().getAll(...refs);
+        for (const docSnap of snaps) {
+          if (!docSnap.exists) continue;
           const docKeys = docSnap.data()?.keys || {};
-          if (docKeys.russian) keys.russian = { ...docKeys.russian, ...keys.russian };
-          if (docKeys.math) keys.math = { ...docKeys.math, ...keys.math };
-          if (docKeys.logic) keys.logic = { ...docKeys.logic, ...keys.logic };
-          if (docKeys.english) keys.english = { ...docKeys.english, ...keys.english };
+          if (docKeys.russian) acc.russian = { ...docKeys.russian, ...acc.russian };
+          if (docKeys.math) acc.math = { ...docKeys.math, ...acc.math };
+          if (docKeys.logic) acc.logic = { ...docKeys.logic, ...acc.logic };
+          if (docKeys.english) acc.english = { ...docKeys.english, ...acc.english };
         }
-      }
+        return acc;
+      });
     } catch (e) {
       console.warn("[Exams/Submit] Failed to fetch answer keys from Firestore:", e);
     }
@@ -1146,8 +1180,6 @@ async function processExamSubmission(payload: any) {
         status: "ЗАВЕРШЕН"
       };
 
-      await admin.firestore().collection("submissions").doc(submissionId).set(subDoc, { merge: true });
-
       // AUTOMATIC CRM SYNC: Save student to CRM Contacts & CRM Deals
       const contactId = `cnt_${resolvedTenantId}_${shortId}`;
       const contactDoc = {
@@ -1165,8 +1197,6 @@ async function processExamSubmission(payload: any) {
         status: 'test_completed',
         updatedAt: admin.firestore.Timestamp.now()
       };
-      await admin.firestore().collection("crm_contacts").doc(contactId).set(contactDoc, { merge: true });
-
       const dealId = `deal_${resolvedTenantId}_${shortId}`;
       const dealDoc = {
         id: dealId,
@@ -1183,7 +1213,17 @@ async function processExamSubmission(payload: any) {
         cheated: Boolean(cheated),
         updatedAt: admin.firestore.Timestamp.now()
       };
-      await admin.firestore().collection("crm_deals").doc(dealId).set(dealDoc, { merge: true });
+      // Работа, контакт и сделка — ОДНОЙ пачкой вместо трёх записей подряд.
+      //
+      // Раньше ответ ученику ждал, пока по очереди запишутся все три
+      // документа: при 500 сдающих это 1500 последовательных обращений к
+      // базе, выстроенных в очередь. Пачка — один сетевой обход, и она же
+      // атомарна: не бывает состояния «работа есть, сделки нет».
+      const batch = admin.firestore().batch();
+      batch.set(admin.firestore().collection("submissions").doc(submissionId), subDoc, { merge: true });
+      batch.set(admin.firestore().collection("crm_contacts").doc(contactId), contactDoc, { merge: true });
+      batch.set(admin.firestore().collection("crm_deals").doc(dealId), dealDoc, { merge: true });
+      await batch.commit();
 
       // Audit Log. The two submits are distinguished because a student can hand
       // in the core test and take English later — one row for both made an

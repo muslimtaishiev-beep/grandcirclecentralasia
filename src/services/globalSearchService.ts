@@ -1,4 +1,4 @@
-import { collection, query, getDocs, limit } from 'firebase/firestore';
+import { collection, query, getDocs, limit, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 export interface SearchResult {
@@ -10,6 +10,15 @@ export interface SearchResult {
   description?: string;
 }
 
+/**
+ * Глобальный поиск.
+ *
+ * Фильтр по организации теперь стоит В ЗАПРОСЕ, а не в JS после него.
+ * Раньше бралось по 100 документов КАЖДОЙ коллекции без фильтра, и только
+ * потом отсеивались чужие: 500 документов ради 15 результатов на каждое
+ * нажатие клавиши — и, что хуже, если первая сотня оказывалась чужой,
+ * поиск молча не находил ничего.
+ */
 export async function searchGlobal(tenantId: string, searchQuery: string): Promise<SearchResult[]> {
   const results: SearchResult[] = [];
   if (!searchQuery || searchQuery.trim().length < 1) return results;
@@ -26,7 +35,7 @@ export async function searchGlobal(tenantId: string, searchQuery: string): Promi
 
   try {
     // 1. Search CRM Contacts & Submissions (Students)
-    const contactsSnap = await getDocs(query(collection(db, 'crm_contacts'), limit(100)));
+    const contactsSnap = await getDocs(query(collection(db, 'crm_contacts'), where('tenantId', '==', activeOrgId), limit(25)));
     contactsSnap.forEach(doc => {
       const data = doc.data();
       if (!matchesTenant(data.tenantId)) return;
@@ -48,7 +57,7 @@ export async function searchGlobal(tenantId: string, searchQuery: string): Promi
     });
 
     // 2. Search Submissions
-    const subSnap = await getDocs(query(collection(db, 'submissions'), limit(100)));
+    const subSnap = await getDocs(query(collection(db, 'submissions'), where('tenantId', '==', activeOrgId), limit(25)));
     subSnap.forEach(doc => {
       const data = doc.data();
       if (!matchesTenant(data.tenantId)) return;
@@ -68,7 +77,7 @@ export async function searchGlobal(tenantId: string, searchQuery: string): Promi
     });
 
     // 3. Search CRM Deals
-    const dealsSnap = await getDocs(query(collection(db, 'crm_deals'), limit(100)));
+    const dealsSnap = await getDocs(query(collection(db, 'crm_deals'), where('tenantId', '==', activeOrgId), limit(25)));
     dealsSnap.forEach(doc => {
       const data = doc.data();
       if (!matchesTenant(data.tenantId)) return;
@@ -89,7 +98,7 @@ export async function searchGlobal(tenantId: string, searchQuery: string): Promi
     });
 
     // 4. Search Workspace Documents & Spreadsheets
-    const docsSnap = await getDocs(query(collection(db, 'workspace_documents'), limit(100)));
+    const docsSnap = await getDocs(query(collection(db, 'workspace_documents'), where('tenantId', '==', activeOrgId), limit(25)));
     docsSnap.forEach(doc => {
       const data = doc.data();
       if (!matchesTenant(data.tenantId)) return;
@@ -108,7 +117,7 @@ export async function searchGlobal(tenantId: string, searchQuery: string): Promi
     });
 
     // 5. Search Tasks
-    const tasksSnap = await getDocs(query(collection(db, 'tasks'), limit(100)));
+    const tasksSnap = await getDocs(query(collection(db, 'tasks'), where('tenantId', '==', activeOrgId), limit(25)));
     tasksSnap.forEach(doc => {
       const data = doc.data();
       if (!matchesTenant(data.tenantId)) return;

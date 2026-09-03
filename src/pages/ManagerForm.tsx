@@ -4,7 +4,10 @@ import { useSearchParams, useNavigate, useParams } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { fetchGasAPI } from "../lib/utils";
-import html2pdf from "html2pdf.js";
+// html2pdf весит 961 КБ и нужен только по нажатию «скачать PDF». Статический
+// импорт заставлял КАЖДОГО менеджера скачивать его при открытии экрана —
+// почти мегабайт до первой отрисовки. Теперь подгружается по требованию.
+const loadHtml2Pdf = async () => (await import("html2pdf.js")).default;
 import { DiagnosticReportPdf } from "../components/DiagnosticReportPdf";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -40,7 +43,7 @@ export default function ManagerForm() {
       return;
     }
     setAnalyzing(true);
-    setTimeout(() => {
+    setTimeout(async () => {
       const element = document.getElementById('pdf-diagnostic-report');
       if (element) {
         const displayName = student.childName || student.studentName || student.shortId;
@@ -51,7 +54,7 @@ export default function ManagerForm() {
           html2canvas: { scale: 2, useCORS: true },
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
         };
-        const worker = html2pdf().set(opt).from(element);
+        const worker = (await loadHtml2Pdf())().set(opt).from(element);
         worker.output('datauristring').then(async (base64: string) => {
           try {
             const displayName = student.childName || student.studentName || student.shortId;

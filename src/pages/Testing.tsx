@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import DOMPurify from "dompurify";
 import { QRCodeCanvas } from "qrcode.react";
 import { Reorder } from "framer-motion";
@@ -9,6 +9,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useTenant } from "../context/TenantContext";
 import QuestionFactory from "../components/tests/QuestionFactory";
+import ExamQuestion from "../components/tests/ExamQuestion";
 import { useProctoringEngine, ProctoringDetectorFlags } from "../lib/useProctoringEngine";
 import ProctoringWarningOverlay from "../components/ProctoringWarningOverlay";
 import { useResolvedTenantId } from "../lib/resolveTenant";
@@ -56,6 +57,16 @@ export default function Testing() {
   const [isResumingEnglish, setIsResumingEnglish] = useState(false);
   const [resumeShortId, setResumeShortId] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  /**
+   * То же значение, но доступное из «старых» замыканий.
+   *
+   * Таймер приостановки взводится в обработчике потери фокуса и живёт со
+   * своим снимком состояния. Он читал isSubmitting из замыкания, где оно
+   * было false, — и приостанавливал тест ПРЯМО ВО ВРЕМЯ сдачи работы. Так
+   * ученик, ждавший медленный ответ сервера, получал «тест приостановлен».
+   */
+  const isSubmittingRef = useRef(false);
+  const markSubmitting = (v: boolean) => { isSubmittingRef.current = v; setIsSubmitting(v); };
   const [isRetake, setIsRetake] = useState(false);
   const [questionsLoading, setQuestionsLoading] = useState(false);
   const [questionsError, setQuestionsError] = useState<string | null>(null);
@@ -317,39 +328,122 @@ export default function Testing() {
     }
   };
 
-  // Sync state to sessionStorage and localStorage for OS tab kill protection
-  useEffect(() => {
+  /**
+   * Ответ на вопрос. Ссылка на функцию стабильна, поэтому React.memo на
+   * карточке вопроса работает: раньше стрелка создавалась заново для каждого
+   * вопроса при каждой перерисовке, и memo не спасал.
+   *
+   * Функциональное обновление вместо {...answers}: замыкание больше не
+   * держит весь объект ответов, и обработчик не нужно пересоздавать.
+   */
+  const handleAnswer = useCallback((id: string, val: any) => {
+    const stringified = typeof val === 'object' ? JSON.stringify(val) : val;
+    setAnswers(prev => (prev[id] === stringified ? prev : { ...prev, [id]: stringified }));
+  }, []);
+
+  const setBoth = useCallback((k: string, v: string) => {
+    if (!v || v === "undefined" || v === "null") return;
     try {
-      const setBoth = (k: string, v: string) => { 
-        if (!v || v === "undefined" || v === "null") return;
-        sessionStorage.setItem(k, v); 
-        localStorage.setItem("persist_" + k, v); 
-      };
-      
-      setBoth("studentName", studentName);
-      setBoth("studentPhone", studentPhone);
-      setBoth("studentEmail", studentEmail);
-      if (grade) setBoth("grade", String(grade));
-      setBoth("started", String(started));
-      setBoth("finished", String(finished));
-      setBoth("disqualified", String(disqualified));
-      setBoth("consentGiven", String(consentGiven));
-      setBoth("answers", JSON.stringify(answers));
-      
+      sessionStorage.setItem(k, v);
+      localStorage.setItem("persist_" + k, v);
+    } catch { /* приватный режим или переполненное хранилище */ }
+  }, []);
+
+  /**
+   * Сохранение анкеты и состояния экзамена. Меняется редко — пишем сразу.
+   *
+   * `answers` из зависимостей УБРАН намеренно: он менялся на каждую букву и
+   * тянул за собой 34 синхронные записи в sessionStorage и localStorage.
+   * Это блокирующие обращения к диску на главном потоке — вместе с
+   * прокторингом они и съедали ввод ученика. Ответы сохраняются ниже, с
+   * задержкой.
+   */
+  const formRef = useRef({ studentName, studentPhone, studentEmail, enteredPin });
+  formRef.current = { studentName, studentPhone, studentEmail, enteredPin };
+
+  /**
+   * Состояние экзамена — сразу: оно меняется по событиям (старт, фаза,
+   * сдача), а не по нажатию клавиш.
+   */
+  useEffect(() => {
+    if (grade) setBoth("grade", String(grade));
+    setBoth("started", String(started));
+    setBoth("finished", String(finished));
+    setBoth("disqualified", String(disqualified));
+    setBoth("consentGiven", String(consentGiven));
+    setBoth("testId", testId);
+    setBoth("shortId", shortId);
+    setBoth("qrToken", qrToken);
+    setBoth("pendingSubmission", String(pendingSubmission));
+    if (resultData) setBoth("resultData", JSON.stringify(resultData));
+    setBoth("phase", phase);
+    if (phaseStartedAt) setBoth("phaseStartedAt", String(phaseStartedAt));
+  }, [setBoth, grade, started, finished, disqualified, consentGiven, testId, shortId,
+      qrToken, pendingSubmission, resultData, phase, phaseStartedAt]);
+
+  /**
+   * Поля анкеты — с задержкой, как и ответы.
+   *
+   * Имя, телефон, почта и PIN человек ВВОДИТ, то есть меняет по букве. Ради
+   * восстановления после перезагрузки хватает последнего значения; писать
+   * восемь ключей в два хранилища на каждый символ — незачем.
+   */
+  useEffect(() => {
+    const flush = () => {
+      const f = formRef.current;
+      setBoth("studentName", f.studentName);
+      setBoth("studentPhone", f.studentPhone);
+      setBoth("studentEmail", f.studentEmail);
+      setBoth("enteredPin", f.enteredPin);
+    };
+    const t = setTimeout(flush, 800);
+    // Внимание: flush() здесь НЕ вызывается. Эффект пересоздаётся на каждое
+    // нажатие клавиши, и запись в очистке означала бы ту же запись на каждый
+    // символ — задержка не работала бы вовсе. Уход со страницы страхует
+    // отдельный слушатель pagehide, живущий вне этого цикла.
+    return () => clearTimeout(t);
+  }, [studentName, studentPhone, studentEmail, enteredPin, setBoth]);
+
+  // Дозапись при уходе со страницы — один слушатель на всё время жизни.
+  useEffect(() => {
+    const onLeave = () => {
+      const f = formRef.current;
+      setBoth("studentName", f.studentName);
+      setBoth("studentPhone", f.studentPhone);
+      setBoth("studentEmail", f.studentEmail);
+      setBoth("enteredPin", f.enteredPin);
+      setBoth("answers", JSON.stringify(answersRef.current));
+    };
+    window.addEventListener("pagehide", onLeave);
+    return () => { window.removeEventListener("pagehide", onLeave); onLeave(); };
+  }, [setBoth]);
+
+  /**
+   * Ответы — отдельно и с задержкой в секунду.
+   *
+   * Ученик печатает быстрее, чем раз в секунду, и промежуточные варианты
+   * ответа сохранять незачем: важно последнее значение. Задержка обнуляется
+   * при каждой букве, поэтому запись происходит в паузе между словами, а не
+   * во время набора. При уходе со страницы дописываем немедленно — иначе
+   * последняя секунда работы потерялась бы.
+   */
+  const answersRef = useRef(answers);
+  answersRef.current = answers;
+  useEffect(() => {
+    const flush = () => {
+      setBoth("answers", JSON.stringify(answersRef.current));
       if (shortId) {
-        localStorage.setItem(`backup_answers_${shortId}`, JSON.stringify({ answers, phase, grade, studentName }));
+        try {
+          localStorage.setItem(`backup_answers_${shortId}`,
+            JSON.stringify({ answers: answersRef.current, phase, grade, studentName }));
+        } catch { /* переполнено */ }
       }
-      
-      setBoth("testId", testId);
-      setBoth("enteredPin", enteredPin);
-      setBoth("shortId", shortId);
-      setBoth("qrToken", qrToken);
-      setBoth("pendingSubmission", String(pendingSubmission));
-      if (resultData) setBoth("resultData", JSON.stringify(resultData));
-      setBoth("phase", phase);
-      if (phaseStartedAt) setBoth("phaseStartedAt", String(phaseStartedAt));
-    } catch(e) {}
-  }, [studentName, studentPhone, studentEmail, grade, started, finished, disqualified, consentGiven, answers, testId, shortId, qrToken, pendingSubmission, resultData, phase, phaseStartedAt]);
+    };
+    // Как и с анкетой: без flush() в очистке, иначе запись происходила бы
+    // на каждое нажатие. Сохранение при уходе — отдельным слушателем ниже.
+    const t = setTimeout(flush, 1000);
+    return () => clearTimeout(t);
+  }, [answers, shortId, phase, grade, studentName, setBoth]);
 
   // Start (or resume, on reload) the soft countdown whenever entering a timed phase.
   useEffect(() => {
@@ -458,6 +552,14 @@ export default function Testing() {
     if (!started || finished || disqualified) return;
 
     const handleCheating = () => {
+      // 0. Работа уже сдаётся — фокус не считаем вовсе.
+      //
+      // Пока ученик ждёт ответ сервера, страница может потерять фокус сама:
+      // от подвисшего кадра, от системного окна, от того что человек
+      // переключился проверить интернет. Раньше это взводило таймер, и
+      // сдающий получал «тест приостановлен» вместо результата.
+      if (isSubmittingRef.current) return;
+
       // 1. For mobile: ignore blur if document is still visible (avoids native dropdown/keyboard bugs)
       const isMobile = window.innerWidth < 768;
       if (isMobile && !document.hidden) return;
@@ -658,7 +760,7 @@ export default function Testing() {
 
   const startTest = async () => {
     if (isSubmitting) return; // Prevent double-tap
-    setIsSubmitting(true);
+    markSubmitting(true);
     try {
       if (isResumingEnglish) {
          if (!resumeShortId.trim()) return alert("Введите Test ID");
@@ -773,7 +875,7 @@ export default function Testing() {
       setStarted(true);
       setPhase("core");
     } finally {
-      setIsSubmitting(false);
+      markSubmitting(false);
     }
   };
 
@@ -782,7 +884,7 @@ export default function Testing() {
     // Immediately clear any pending anti-cheat timers when user clicks submit
     if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
     if (isSubmitting) return;
-    setIsSubmitting(true);
+    markSubmitting(true);
     if (isDisqualified) {
       setDisqualified(true);
     }
@@ -882,7 +984,7 @@ export default function Testing() {
       try { localStorage.setItem('offline_test_' + payloadTestId, JSON.stringify(payload)); } catch(storageErr) {}
       alert("Ошибка отправки теста: " + e.message + ". Ваши ответы сохранены, попробуйте еще раз.");
     } finally {
-      setIsSubmitting(false);
+      markSubmitting(false);
     }
   };
 
@@ -890,7 +992,7 @@ export default function Testing() {
     // Immediately clear any pending anti-cheat timers when user clicks submit
     if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
     if (isSubmitting) return;
-    setIsSubmitting(true);
+    markSubmitting(true);
     if (isDisqualified) setDisqualified(true);
 
     const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
@@ -964,14 +1066,14 @@ export default function Testing() {
       try { localStorage.setItem('offline_test_eng_' + shortId, JSON.stringify(payload)); } catch(storageErr) {}
       alert("Ошибка отправки английского: " + e.message + ". Ваши ответы сохранены, попробуйте еще раз.");
     } finally {
-      setIsSubmitting(false);
+      markSubmitting(false);
     }
   };
 
   const suspendTest = async (currentPhase: string) => {
     if (blurTimeout.current) { clearTimeout(blurTimeout.current); blurTimeout.current = null; }
-    if (isSubmitting || phaseRef.current === "suspended") return;
-    setIsSubmitting(true);
+    if (isSubmittingRef.current || phaseRef.current === "suspended") return;
+    markSubmitting(true);
 
     const TESTER_PIN = import.meta.env.VITE_TESTER_PIN;
     const isTester = TESTER_PIN && enteredPin === TESTER_PIN;
@@ -1029,13 +1131,13 @@ export default function Testing() {
       sessionStorage.setItem("phase", "suspended");
       localStorage.setItem("persist_phase", "suspended");
     } finally {
-      setIsSubmitting(false);
+      markSubmitting(false);
     }
   };
 
   const checkSuspendStatus = async (silent = false) => {
     if (isSubmitting) return;
-    if (!silent) setIsSubmitting(true);
+    if (!silent) markSubmitting(true);
     try {
       const data = await fetchGasAPI("/api/gas", { action: "checkSuspendStatus", shortId });
       if (data.success && data.status !== "ПРИОСТАНОВЛЕН") {
@@ -1083,7 +1185,7 @@ export default function Testing() {
         alert("Ошибка при проверке статуса: " + e.message);
       }
     } finally {
-      if (!silent) setIsSubmitting(false);
+      if (!silent) markSubmitting(false);
     }
   };
 
@@ -1699,18 +1801,11 @@ export default function Testing() {
             <h2 className="text-2xl font-bold mb-6 text-blue-600">{section.title}</h2>
             <div className="space-y-8">
               {section.q.map((q: any) => (
-                <QuestionFactory 
+                <ExamQuestion
                   key={q.id}
                   question={q}
-                  value={
-                    (q.type === 'MATRIX_GRID' || q.type === 'ORDERING') && typeof answers[q.id] === 'string'
-                      ? (() => { try { return JSON.parse(answers[q.id]); } catch { return answers[q.id]; } })()
-                      : answers[q.id]
-                  }
-                  onChange={(val: any) => {
-                    const stringified = typeof val === 'object' ? JSON.stringify(val) : val;
-                    setAnswers({...answers, [q.id]: stringified});
-                  }}
+                  rawValue={answers[q.id]}
+                  onAnswer={handleAnswer}
                 />
               ))}
             </div>

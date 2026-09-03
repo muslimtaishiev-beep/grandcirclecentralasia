@@ -125,8 +125,19 @@ export function getCEFRLevel(grade: number, maxPoints: number, score: number) {
 import { auth } from "./firebase";
 
 export async function fetchGasAPI(url: string, payload: any, token: string = ""): Promise<any> {
+  // Повторы и таймаут рассчитаны на 500 одновременных учеников.
+  //
+  // Было: 4 попытки по 50 секунд — до 3,5 минут ожидания, и, что хуже,
+  // таймаут считался поводом повторить. Когда в конце экзамена все сдают
+  // разом, сервер отвечает медленно, каждый клиент шлёт запрос ещё трижды,
+  // сервер отвечает ещё медленнее — лавина, из которой нет выхода.
+  //
+  // Стало: 2 попытки по 20 секунд; таймаут НЕ повторяем (сервер занят —
+  // добивать нельзя); задержка со случайным разбросом, чтобы клиенты не
+  // возвращались одной волной.
   let delay = 1500;
-  const MAX_RETRIES = 4;
+  const MAX_RETRIES = 2;
+  const TIMEOUT_MS = 20000;
   let attempt = 0;
 
   // ⚠️ SECURITY: API key is NEVER sent from the client.
@@ -153,7 +164,7 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
         method: "POST",
         headers,
         body: JSON.stringify(fullPayload),
-        signal: AbortSignal.timeout(50000)
+        signal: AbortSignal.timeout(TIMEOUT_MS)
       });
       
       const text = await res.text();
@@ -172,7 +183,10 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
       // For any other status (200, 400, 401, etc.) return immediately — don't retry
       return data;
     } catch (e: any) {
-      const isRetryable = e.name === 'AbortError' || e.name === 'TypeError' || String(e.message || "").includes("временно");
+      // AbortError (таймаут) больше НЕ повторяем: он означает, что сервер не
+      // успел ответить, и ещё три таких же запроса только усугубят затор.
+      // Повторяем лишь обрыв сети (TypeError) и явное «сервер временно занят».
+      const isRetryable = e.name === 'TypeError' || String(e.message || "").includes("временно");
       
       if (!isRetryable || attempt >= MAX_RETRIES) {
         console.error(`[GAS] fetch failed permanently (attempt ${attempt}/${MAX_RETRIES}):`, e.message);
@@ -180,7 +194,10 @@ export async function fetchGasAPI(url: string, payload: any, token: string = "")
       }
       
       console.warn(`[GAS] fetch failed (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delay}ms...`, e.message);
-      await new Promise(r => setTimeout(r, delay));
+      // Случайный разброс ±40%: без него все клиенты возвращаются
+      // одновременно и снова кладут сервер той же волной.
+      const jitter = delay * (0.6 + Math.random() * 0.8);
+      await new Promise(r => setTimeout(r, jitter));
       delay = Math.min(delay * 1.5, 5000);
     }
   }

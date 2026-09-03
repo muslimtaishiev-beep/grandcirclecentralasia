@@ -116,7 +116,11 @@ export default function ProctorSandbox() {
 
   // ML & Recording Hooks
   const currentQuestionText = mode === "student" && MOCK_QUESTIONS[currentQ] ? MOCK_QUESTIONS[currentQ].text : undefined;
-  const engine = useProctoringEngine(videoRef, canvasRef, isSessionActive, currentQuestionText);
+  // Демо-страница показывает живые приборы, поэтому телеметрия ей нужна в
+  // состоянии React. На экзамене этот флаг выключен — там она не читается,
+  // а её обновление перерисовывало страницу 60 раз в секунду.
+  const engine = useProctoringEngine(videoRef, canvasRef, isSessionActive, currentQuestionText,
+    { liveTelemetry: true });
   const recorder = useCompositeRecorder(canvasRef);
   const timing = useAnswerTiming();
 

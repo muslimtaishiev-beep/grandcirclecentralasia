@@ -48,7 +48,7 @@ function parseOrderingState(value: any, defaultItems: any[]): string[] {
   return (defaultItems || []).map(i => typeof i === 'string' ? i : (i.text || i.label));
 }
 
-export default function QuestionFactory({ question, value, onChange }: Props) {
+function QuestionFactoryInner({ question, value, onChange }: Props) {
   if (!question) return null;
 
   const rawType = (question.type || 'multiple_choice').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -450,3 +450,10 @@ export default function QuestionFactory({ question, value, onChange }: Props) {
     </div>
   );
 }
+
+/**
+ * DOMPurify.sanitize строит DOM-дерево на каждый вызов — для вопроса с
+ * четырьмя вариантами это пять построений на рендер. Мемоизация не даёт
+ * повторять эту работу, пока сам вопрос и ответ не изменились.
+ */
+export default React.memo(QuestionFactoryInner);
