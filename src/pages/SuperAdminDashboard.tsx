@@ -41,6 +41,7 @@ import { collection, onSnapshot, updateDoc, doc, query, orderBy, limit, where, g
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { db, auth } from "../lib/firebase";
 import { TenantRequestsTab } from "../components/superadmin/TenantRequestsTab";
+import { ORG_MODULES } from "../shared/permissions";
 import toast, { Toaster } from "react-hot-toast";
 
 interface OrganizationProject {
@@ -63,6 +64,8 @@ interface OrganizationProject {
     audioAnalysis: boolean;
     phoneDetection: boolean;
   };
+  /** Модули, выключенные для всей организации (ключи ORG_MODULES). */
+  disabledModules: string[];
 }
 
 interface VercelSystemLog {
@@ -181,7 +184,7 @@ export default function SuperAdminDashboard() {
 
   // Selected Organization Control Modal State
   const [selectedOrgModal, setSelectedOrgModal] = useState<OrganizationProject | null>(null);
-  const [modalActiveTab, setModalActiveTab] = useState<"actions" | "proctoring" | "apikeys" | "status" | "director">("actions");
+  const [modalActiveTab, setModalActiveTab] = useState<"actions" | "modules" | "proctoring" | "apikeys" | "status" | "director">("actions");
   const [directorEmail, setDirectorEmail] = useState("");
   const [directorName, setDirectorName] = useState("");
   const [directorPhone, setDirectorPhone] = useState("");
@@ -242,6 +245,7 @@ export default function SuperAdminDashboard() {
           // Default ON: tenants provisioned before this switch existed still
           // expect proctoring to run if they enabled the module.
           proctoringEnabled: data.proctoringEnabled !== false,
+          disabledModules: Array.isArray(data.disabledModules) ? data.disabledModules : [],
           proctoringFlags: data.proctoringFlags || {
             gazeAway: true,
             faceCount: true,
@@ -369,6 +373,39 @@ export default function SuperAdminDashboard() {
   };
 
   // Toggle Proctoring Feature Flags live in Firestore
+  /**
+   * Включить или выключить модуль организации.
+   *
+   * Пишется через серверную ручку, а не прямым updateDoc: на сервере
+   * проверяется, что ключ модуля настоящий, и мусор в документ не попадёт.
+   * Выключенный модуль исчезает из меню у ВСЕХ сотрудников организации,
+   * включая тех, кому право выдано должностью, — сотрудники видят изменения
+   * после перезагрузки страницы.
+   */
+  const toggleModule = async (projectId: string, moduleKey: string) => {
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return;
+    const cur = proj.disabledModules || [];
+    const next = cur.includes(moduleKey) ? cur.filter(k => k !== moduleKey) : [...cur, moduleKey];
+    try {
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+      const res = await fetch(`/api/tenants/${projectId}/modules`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ disabledModules: next }),
+      });
+      const j = await res.json();
+      if (!j.success) { toast.error(j.error || "Не удалось сохранить модули"); return; }
+      const saved = j.disabledModules || next;
+      setProjects(projects.map(p => p.id === projectId ? { ...p, disabledModules: saved } : p));
+      if (selectedOrgModal && selectedOrgModal.id === projectId) {
+        setSelectedOrgModal({ ...selectedOrgModal, disabledModules: saved });
+      }
+    } catch (err: any) {
+      toast.error(`Не удалось сохранить модули: ${err?.message || "нет связи"}`);
+    }
+  };
+
   const toggleFlag = async (projectId: string, flagKey: keyof OrganizationProject["proctoringFlags"]) => {
     const proj = projects.find(p => p.id === projectId);
     if (!proj) return;
@@ -1036,6 +1073,7 @@ export default function SuperAdminDashboard() {
               <div className="flex border-b border-[#222222] bg-[#000000] px-5 gap-4">
                 {[
                   { id: "actions", label: "Быстрый доступ", icon: LayoutDashboard },
+                  { id: "modules", label: "Экраны & Модули", icon: Sliders },
                   { id: "director", label: "Руководитель & Права", icon: UserCheck },
                   { id: "proctoring", label: "Прокторинг и Флаги", icon: ShieldCheck },
                   { id: "apikeys", label: "API Ключ & Безопасность", icon: Key },
@@ -1122,6 +1160,41 @@ export default function SuperAdminDashboard() {
                           <div className="text-[11px] text-[#777777]">Управление сотрудниками и правами</div>
                         </div>
                       </a>
+                    </div>
+                  </div>
+                )}
+
+                {/* Вкладка: какие экраны показываются у организации */}
+                {modalActiveTab === "modules" && (
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-bold text-[#888888] uppercase tracking-wider font-mono">Экраны организации</h3>
+                    <p className="text-[11px] text-[#666666]">
+                      Выключенный модуль исчезает из меню у ВСЕХ сотрудников организации, включая
+                      владельца. Так убирают разделы, которыми организация не пользуется. Ученики и
+                      публичные страницы (экзамены, билеты) этим не затрагиваются.
+                    </p>
+                    <div className="space-y-2">
+                      {ORG_MODULES.map((mod) => {
+                        const off = (selectedOrgModal.disabledModules || []).includes(mod.key);
+                        return (
+                          <div key={mod.key} className="flex items-center justify-between p-3.5 bg-[#111111] border border-[#222222] rounded-xl">
+                            <div className="min-w-0 pr-3">
+                              <div className="font-bold text-white flex items-center gap-2">
+                                {mod.label}
+                                {off && <span className="text-[9px] uppercase font-mono text-[#666666] border border-[#333] px-1.5 py-0.5 rounded">скрыт</span>}
+                              </div>
+                              <div className="text-[11px] text-[#666666]">{mod.description}</div>
+                            </div>
+                            <button
+                              onClick={() => toggleModule(selectedOrgModal.id, mod.key)}
+                              className={`w-12 h-6 rounded-full p-1 transition-colors duration-200 shrink-0 cursor-pointer ${!off ? 'bg-[#50e3c2]' : 'bg-[#222222]'}`}
+                              title={off ? "Включить раздел" : "Скрыть раздел"}
+                            >
+                              <div className={`w-4 h-4 rounded-full bg-black transition-transform duration-200 ${!off ? 'translate-x-6' : 'translate-x-0'}`} />
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
