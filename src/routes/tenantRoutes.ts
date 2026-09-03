@@ -3,6 +3,7 @@ import admin from "firebase-admin";
 import {
   ALL_PERMISSION_KEYS, isPermissionKey, ROLE_PRESETS, ORG_MODULES,
   hasFullAccess, migrateLegacyPermissions, resolvePermissions,
+  WORKSPACE_SCREENS, NON_HIDEABLE_SCREENS,
 } from "../shared/permissions.js";
 import { requireFirebaseAuth } from "./authRoutes.js";
 
@@ -486,6 +487,31 @@ router.put("/:id/modules", requireFirebaseAuth, requireTenantAdmin, async (req: 
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     return res.json({ success: true, disabledModules: disabled });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+
+/**
+ * PUT /api/tenants/:id/screens — какие ЭКРАНЫ показываются у организации.
+ *
+ * В отличие от модулей (грубая группа), это управление каждым пунктом меню
+ * отдельно. Дашборд выключить нельзя — без него воркспейс становится тупиком
+ * без единой ссылки.
+ */
+router.put("/:id/screens", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
+  try {
+    const db = admin.firestore();
+    const known = new Set(WORKSPACE_SCREENS.map(sx => sx.key));
+    const disabled = (Array.isArray(req.body?.disabledScreens) ? req.body.disabledScreens : [])
+      .map(String)
+      .filter((k: string) => known.has(k) && !NON_HIDEABLE_SCREENS.has(k));
+    await db.collection("tenants").doc(req.params.id).update({
+      disabledScreens: disabled,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return res.json({ success: true, disabledScreens: disabled });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }

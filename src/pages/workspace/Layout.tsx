@@ -129,7 +129,11 @@ export default function WorkspaceLayout() {
     });
   }, [activeTenant]);
 
-  const canSee = (navKey: string) => navAllowed(navKey, granted);
+  // Экраны, выключенные суперадмином для этой организации, — из документа
+  // тенанта. Отдельный слой поверх прав: право есть, а экран погашен сверху.
+  const disabledScreens: string[] = Array.isArray(activeTenant?.disabledScreens)
+    ? activeTenant.disabledScreens : [];
+  const canSee = (navKey: string) => navAllowed(navKey, granted, disabledScreens);
   const hasPerm = (perm: string) => granted.has(perm as PermissionKey);
 
   // Пункты меню и права на них — из общей карты NAV_PERMISSION, а не

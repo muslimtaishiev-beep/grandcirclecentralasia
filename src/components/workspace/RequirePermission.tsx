@@ -35,7 +35,8 @@ export default function RequirePermission({
 
   // «Завуч» — школьная роль без общих прав на тесты, но со своим разделом.
   const zavuch = navKey === "placement" && /завуч/i.test(String(tenant.role || ""));
-  if (zavuch || navAllowed(navKey, granted as Set<any>)) return <>{children}</>;
+  const disabledScreens: string[] = Array.isArray(tenant.disabledScreens) ? tenant.disabledScreens : [];
+  if (zavuch || navAllowed(navKey, granted as Set<any>, disabledScreens)) return <>{children}</>;
 
   return (
     <div className="max-w-lg mx-auto py-20 text-center">

@@ -41,7 +41,7 @@ import { collection, onSnapshot, updateDoc, doc, query, orderBy, limit, where, g
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { db, auth } from "../lib/firebase";
 import { TenantRequestsTab } from "../components/superadmin/TenantRequestsTab";
-import { ORG_MODULES } from "../shared/permissions";
+import { ORG_MODULES, WORKSPACE_SCREENS, NON_HIDEABLE_SCREENS } from "../shared/permissions";
 import toast, { Toaster } from "react-hot-toast";
 
 interface OrganizationProject {
@@ -66,6 +66,8 @@ interface OrganizationProject {
   };
   /** Модули, выключенные для всей организации (ключи ORG_MODULES). */
   disabledModules: string[];
+  /** Отдельные экраны, выключенные для организации (navKey). */
+  disabledScreens: string[];
 }
 
 interface VercelSystemLog {
@@ -246,6 +248,7 @@ export default function SuperAdminDashboard() {
           // expect proctoring to run if they enabled the module.
           proctoringEnabled: data.proctoringEnabled !== false,
           disabledModules: Array.isArray(data.disabledModules) ? data.disabledModules : [],
+          disabledScreens: Array.isArray(data.disabledScreens) ? data.disabledScreens : [],
           proctoringFlags: data.proctoringFlags || {
             gazeAway: true,
             faceCount: true,
@@ -382,6 +385,35 @@ export default function SuperAdminDashboard() {
    * включая тех, кому право выдано должностью, — сотрудники видят изменения
    * после перезагрузки страницы.
    */
+  /** Сохранить набор выключенных экранов организации. */
+  const saveScreens = async (projectId: string, next: string[]) => {
+    try {
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+      const res = await fetch(`/api/tenants/${projectId}/screens`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ disabledScreens: next }),
+      });
+      const j = await res.json();
+      if (!j.success) { toast.error(j.error || "Не удалось сохранить экраны"); return; }
+      const saved = j.disabledScreens || next;
+      setProjects(projects.map(p => p.id === projectId ? { ...p, disabledScreens: saved } : p));
+      if (selectedOrgModal && selectedOrgModal.id === projectId) {
+        setSelectedOrgModal({ ...selectedOrgModal, disabledScreens: saved });
+      }
+    } catch (err: any) {
+      toast.error(`Не удалось сохранить экраны: ${err?.message || "нет связи"}`);
+    }
+  };
+
+  const toggleScreen = (projectId: string, screenKey: string) => {
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return;
+    const cur = proj.disabledScreens || [];
+    const next = cur.includes(screenKey) ? cur.filter(k => k !== screenKey) : [...cur, screenKey];
+    void saveScreens(projectId, next);
+  };
+
   const toggleModule = async (projectId: string, moduleKey: string) => {
     const proj = projects.find(p => p.id === projectId);
     if (!proj) return;
@@ -1165,39 +1197,83 @@ export default function SuperAdminDashboard() {
                 )}
 
                 {/* Вкладка: какие экраны показываются у организации */}
-                {modalActiveTab === "modules" && (
-                  <div className="space-y-4">
-                    <h3 className="text-xs font-bold text-[#888888] uppercase tracking-wider font-mono">Экраны организации</h3>
-                    <p className="text-[11px] text-[#666666]">
-                      Выключенный модуль исчезает из меню у ВСЕХ сотрудников организации, включая
-                      владельца. Так убирают разделы, которыми организация не пользуется. Ученики и
-                      публичные страницы (экзамены, билеты) этим не затрагиваются.
-                    </p>
-                    <div className="space-y-2">
-                      {ORG_MODULES.map((mod) => {
-                        const off = (selectedOrgModal.disabledModules || []).includes(mod.key);
-                        return (
-                          <div key={mod.key} className="flex items-center justify-between p-3.5 bg-[#111111] border border-[#222222] rounded-xl">
-                            <div className="min-w-0 pr-3">
-                              <div className="font-bold text-white flex items-center gap-2">
-                                {mod.label}
-                                {off && <span className="text-[9px] uppercase font-mono text-[#666666] border border-[#333] px-1.5 py-0.5 rounded">скрыт</span>}
-                              </div>
-                              <div className="text-[11px] text-[#666666]">{mod.description}</div>
-                            </div>
-                            <button
-                              onClick={() => toggleModule(selectedOrgModal.id, mod.key)}
-                              className={`w-12 h-6 rounded-full p-1 transition-colors duration-200 shrink-0 cursor-pointer ${!off ? 'bg-[#50e3c2]' : 'bg-[#222222]'}`}
-                              title={off ? "Включить раздел" : "Скрыть раздел"}
-                            >
-                              <div className={`w-4 h-4 rounded-full bg-black transition-transform duration-200 ${!off ? 'translate-x-6' : 'translate-x-0'}`} />
+                {modalActiveTab === "modules" && (() => {
+                  const off = new Set(selectedOrgModal.disabledScreens || []);
+                  const groups = [...new Set(WORKSPACE_SCREENS.map(sx => sx.group))];
+                  const shownCount = WORKSPACE_SCREENS.filter(sx => !off.has(sx.key)).length;
+                  return (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-bold text-[#888888] uppercase tracking-wider font-mono">Экраны организации</h3>
+                        <span className="text-[11px] text-[#666666] font-mono">{shownCount} из {WORKSPACE_SCREENS.length} видно</span>
+                      </div>
+                      <p className="text-[11px] text-[#666666]">
+                        Каждый экран — отдельно. Выключенный исчезает из меню у ВСЕХ сотрудников
+                        организации, включая владельца, и его страница отдаёт «нет доступа». Ученики
+                        и публичные страницы (экзамены, билеты) не затрагиваются. Дашборд выключить
+                        нельзя. Кнопки-модули ниже гасят или включают сразу целую группу экранов.
+                      </p>
+
+                      {/* Быстрые кнопки: включить/выключить целую группу-модуль */}
+                      <div className="flex flex-wrap gap-2">
+                        {ORG_MODULES.map((mod) => {
+                          // Экраны этого модуля — по совпадению названий групп с описанием
+                          // недостаточно, поэтому явная карта модуль → навключи.
+                          const MOD_SCREENS: Record<string, string[]> = {
+                            mod_edu: ["schedule", "attendance", "subscriptions", "payroll"],
+                            mod_tests: ["tests", "testsManage", "placement"],
+                            mod_crm: ["crm"],
+                            mod_tickets: ["forms", "tickets"],
+                            mod_docs: ["docs", "sheets"],
+                          };
+                          const keys = MOD_SCREENS[mod.key] || [];
+                          const allOff = keys.length > 0 && keys.every(k => off.has(k));
+                          return (
+                            <button key={mod.key}
+                              onClick={() => {
+                                const next = allOff
+                                  ? (selectedOrgModal.disabledScreens || []).filter((k: string) => !keys.includes(k))
+                                  : [...new Set([...(selectedOrgModal.disabledScreens || []), ...keys])];
+                                void saveScreens(selectedOrgModal.id, next);
+                              }}
+                              className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition ${
+                                allOff ? "border-[#333] text-[#666]" : "border-[#50e3c2]/30 text-[#50e3c2]"}`}>
+                              {allOff ? "Включить" : "Скрыть"}: {mod.label}
                             </button>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
+
+                      {/* Поэкранные тумблеры, сгруппированные */}
+                      {groups.map((g) => (
+                        <div key={g} className="space-y-1.5">
+                          <div className="text-[10px] uppercase font-mono text-[#555]">{g}</div>
+                          {WORKSPACE_SCREENS.filter(sx => sx.group === g).map((sx) => {
+                            const hidden = off.has(sx.key);
+                            const locked = NON_HIDEABLE_SCREENS.has(sx.key);
+                            return (
+                              <div key={sx.key} className="flex items-center justify-between px-3.5 py-2.5 bg-[#111111] border border-[#222222] rounded-xl">
+                                <div className="font-bold text-white text-xs flex items-center gap-2">
+                                  {sx.label}
+                                  {hidden && <span className="text-[9px] uppercase font-mono text-[#666666] border border-[#333] px-1.5 py-0.5 rounded">скрыт</span>}
+                                  {locked && <span className="text-[9px] uppercase font-mono text-[#555] border border-[#2a2a2a] px-1.5 py-0.5 rounded">всегда</span>}
+                                </div>
+                                <button
+                                  disabled={locked}
+                                  onClick={() => toggleScreen(selectedOrgModal.id, sx.key)}
+                                  className={`w-11 h-6 rounded-full p-1 transition-colors duration-200 shrink-0 ${locked ? "opacity-30 cursor-not-allowed" : "cursor-pointer"} ${!hidden ? 'bg-[#50e3c2]' : 'bg-[#222222]'}`}
+                                  title={locked ? "Этот экран нельзя скрыть" : hidden ? "Показать экран" : "Скрыть экран"}
+                                >
+                                  <div className={`w-4 h-4 rounded-full bg-black transition-transform duration-200 ${!hidden ? 'translate-x-5' : 'translate-x-0'}`} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Tab 2: Proctoring Flags */}
                 {modalActiveTab === "proctoring" && (

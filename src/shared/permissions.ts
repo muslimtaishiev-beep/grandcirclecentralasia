@@ -112,6 +112,46 @@ export const ROLE_PRESETS: { name: string; description: string; permissions: Per
  * Дашборд и чат оставлены открытыми намеренно: новый сотрудник без единого
  * права не должен упираться в пустой экран без единой ссылки.
  */
+/**
+ * Полный список экранов воркспейса — для суперадмина, который выключает их
+ * поштучно. Группировка по модулям (ORG_MODULES) грубее: она гасит раздел
+ * целиком, а суперадмину нужен каждый экран отдельно.
+ *
+ * navKey совпадает с ключом NAV_PERMISSION — выключение здесь убирает и пункт
+ * меню, и доступ к странице (RequirePermission смотрит сюда же).
+ */
+export const WORKSPACE_SCREENS: { key: string; label: string; group: string }[] = [
+  { key: "dashboard", label: "Дашборд", group: "Основное" },
+  { key: "chat", label: "Чаты", group: "Основное" },
+  { key: "tasks", label: "Задачи", group: "Основное" },
+  { key: "docs", label: "Документы", group: "Основное" },
+  { key: "sheets", label: "Таблицы", group: "Основное" },
+
+  { key: "schedule", label: "Расписание", group: "Обучение" },
+  { key: "attendance", label: "Журнал", group: "Обучение" },
+  { key: "subscriptions", label: "Абонементы", group: "Обучение" },
+  { key: "payroll", label: "Зарплаты", group: "Обучение" },
+
+  { key: "tests", label: "Тесты", group: "Тесты и приём" },
+  { key: "testsManage", label: "Проверка и прокторинг", group: "Тесты и приём" },
+  { key: "placement", label: "Вступительный срез", group: "Тесты и приём" },
+
+  { key: "crm", label: "CRM", group: "Продажи и заявки" },
+  { key: "forms", label: "Заявки и QR", group: "Продажи и заявки" },
+  { key: "tickets", label: "Проверка билетов", group: "Продажи и заявки" },
+
+  { key: "sites", label: "Site Builder", group: "Инструменты" },
+  { key: "functions", label: "Function Studio", group: "Инструменты" },
+  { key: "automations", label: "Автоматизации", group: "Инструменты" },
+
+  { key: "departments", label: "Оргструктура и отделы", group: "Администрирование" },
+  { key: "permissions", label: "Роли, доступы и сотрудники", group: "Администрирование" },
+  { key: "workspaceSetup", label: "Настройка воркспейса", group: "Администрирование" },
+];
+
+/** Экраны, которые нельзя выключать: без них воркспейс становится тупиком. */
+export const NON_HIDEABLE_SCREENS = new Set(["dashboard"]);
+
 export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | null> = {
   dashboard: null,
   chat: "chat:use",
@@ -239,7 +279,17 @@ export function resolvePermissions(input: {
 }
 
 /** Проверка одного пункта меню против набора прав. */
-export function navAllowed(navKey: string, granted: Set<PermissionKey>): boolean {
+export function navAllowed(
+  navKey: string,
+  granted: Set<PermissionKey>,
+  disabledScreens?: string[] | null,
+): boolean {
+  // Экран, выключенный суперадмином, недоступен независимо от прав — кроме
+  // тех, что выключать нельзя (дашборд: иначе воркспейс без единой ссылки).
+  if (Array.isArray(disabledScreens) && disabledScreens.includes(navKey)
+      && !NON_HIDEABLE_SCREENS.has(navKey)) {
+    return false;
+  }
   const need = NAV_PERMISSION[navKey];
   if (need === null || need === undefined) return true;
   return Array.isArray(need) ? need.some(p => granted.has(p)) : granted.has(need);
