@@ -62,6 +62,26 @@ export const isPermissionKey = (v: unknown): v is PermissionKey =>
   ALL_PERMISSION_KEYS.includes(v as PermissionKey);
 
 /**
+ * Короткие коды прав для custom claims Firebase.
+ *
+ * На все claims пользователя Firebase даёт 1000 байт, а сотрудник может
+ * состоять в нескольких организациях. Поэтому в токен кладутся не ключи, а
+ * двухбуквенные коды: правила Firestore проверяют их через hasPerm(tenantId, код)
+ * и закрывают чувствительные записи (зарплаты, CRM) по правам, а не по
+ * одному лишь членству.
+ */
+export const PERMISSION_CODES: Record<PermissionKey, string> = {
+  "tests:read": "tr", "tests:manage": "tm", "tests:review": "tv", "certificates:issue": "ci",
+  "edu:schedule": "es", "edu:payroll": "ep",
+  "crm:read": "cr", "crm:manage": "cm",
+  "chat:use": "ch", "tasks:use": "ta", "docs:use": "dc", "sheets:use": "sh", "tickets:check": "tk",
+  "team:manage": "tg", "settings:manage": "sg",
+};
+
+export const encodePermissionCodes = (granted: Set<PermissionKey>): string =>
+  ALL_PERMISSION_KEYS.filter(k => granted.has(k)).map(k => PERMISSION_CODES[k]).join(",");
+
+/**
  * Системные роли с безусловным полным доступом.
  *
  * ТОЧНОЕ совпадение, а не поиск подстроки. Прежняя проверка искала подстроки
@@ -71,11 +91,17 @@ export const isPermissionKey = (v: unknown): v is PermissionKey =>
  */
 export const FULL_ACCESS_ROLES = new Set([
   "owner", "org:owner", "admin", "org:admin", "superadmin",
-  "Владелец", "Администратор",
 ]);
+// «Владелец» и «Администратор» из списка убраны: это ЧЕЛОВЕЧЕСКИЕ названия,
+// и владелец мог завести должность «Администратор» с тремя галочками, а
+// получить полный доступ. Системная роль — только служебный ключ.
 
 export const hasFullAccess = (role: unknown): boolean =>
   FULL_ACCESS_ROLES.has(String(role ?? "").trim());
+
+/** Имя, которое нельзя дать должности или метке: совпадает с системной ролью. */
+export const isSystemRoleName = (name: unknown): boolean =>
+  FULL_ACCESS_ROLES.has(String(name ?? "").trim().toLowerCase());
 
 /** Пресеты должностей — стартовая точка, владелец правит галочки. */
 export const ROLE_PRESETS: { name: string; description: string; permissions: PermissionKey[] }[] = [

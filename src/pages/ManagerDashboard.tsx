@@ -719,10 +719,14 @@ export default function ManagerDashboard() {
             toast.dismiss(t.id);
             toast.loading("Отправка...", { id: "retake" });
             try {
+              // Раньше запрос уходил без токена и молча падал в 401.
               fetch("/api/manager/allow-retake", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ shortId })
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${await firebaseAuth.currentUser?.getIdToken()}`,
+                },
+                body: JSON.stringify({ shortId, tenantId: activeTenantId })
               }).catch(() => {});
               const data = await fetchGasAPI("/api/gas", { action: "unblockStudent", shortId }, "");
               if (data && data.success) {

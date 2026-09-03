@@ -69,9 +69,7 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
       });
       const data = await res.json();
 
-      if (data.user?.globalRole === "superadmin") {
-        navigate("/superadmin");
-      } else if (data.memberships && data.memberships.length > 0 && data.memberships[0].tenantId) {
+      if (data.memberships && data.memberships.length > 0 && data.memberships[0].tenantId) {
         const firstOrgSlug = data.memberships[0].tenantId;
         navigate(`/workspace/${firstOrgSlug}`);
       } else if (data.user?.defaultTenantId) {

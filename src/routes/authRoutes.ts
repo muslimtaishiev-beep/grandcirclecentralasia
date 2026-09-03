@@ -1,7 +1,9 @@
 import { Router } from "express";
-import { hasFullAccess, migrateLegacyPermissions } from "../shared/permissions.js";
+import { hasFullAccess, isPermissionKey } from "../shared/permissions.js";
 import admin from "firebase-admin";
 import { sendStaffInviteEmail } from "../../emailService.js";
+import { callerPermissions } from "../server/access.js";
+import { syncClaims } from "../server/claims.js";
 
 const router = Router();
 
@@ -87,26 +89,25 @@ router.get("/me", requireFirebaseAuth, async (req: any, res: any) => {
       .where("userId", "==", uid)
       .get();
 
-    let memberships = membershipsSnapshot.docs.map((doc) => {
-      const data = doc.data();
-      // Auto-activate pending invite membership on login
-      if (data.status === 'pending_invite') {
-        db.collection("memberships").doc(doc.id).update({ status: 'active' }).catch(() => {});
-        data.status = 'active';
-      }
-      return data;
-    });
+    let memberships = membershipsSnapshot.docs.map((doc) => doc.data());
 
     // Link orphaned memberships: TenantProvisioningService.provisionNewTenant creates
     // the owner's membership by email BEFORE that person necessarily has a Firebase
     // Auth account, so it's written with no userId. Without this, that membership is
     // permanently invisible to the userId-keyed query above even after the owner signs
     // up/logs in with the matching email — they'd never see their own organization.
-    if (req.user.email) {
-      const orphanedByEmail = await db.collection("memberships")
-        .where("email", "==", req.user.email)
-        .get();
-      const linkable = orphanedByEmail.docs.filter(d => !d.data().userId);
+    //
+    // Только при ПОДТВЕРЖДЁННОЙ почте: иначе достаточно зарегистрироваться с
+    // чужим адресом, чтобы забрать чужое членство владельца.
+    if (req.user.email && req.user.email_verified === true) {
+      const emailRaw = String(req.user.email);
+      const emailLc = emailRaw.toLowerCase();
+      const seen = new Set<string>();
+      const snaps = await Promise.all(
+        [...new Set([emailRaw, emailLc])].map(e => db.collection("memberships").where("email", "==", e).get())
+      );
+      const orphanedDocs = snaps.flatMap(sn => sn.docs).filter(d => (seen.has(d.id) ? false : (seen.add(d.id), true)));
+      const linkable = orphanedDocs.filter(d => !d.data().userId);
       if (linkable.length > 0) {
         await Promise.all(linkable.map(d => d.ref.update({ userId: uid, status: d.data().status || 'active' })));
         const relinked = linkable.map(d => ({ ...d.data(), userId: uid, status: d.data().status || 'active' }));
@@ -114,21 +115,9 @@ router.get("/me", requireFirebaseAuth, async (req: any, res: any) => {
       }
     }
 
-    // If user has no membership yet but has a defaultTenantId, auto-create membership
-    if (memberships.length === 0 && userData?.defaultTenantId) {
-      const memId = `mem_${uid}_${userData.defaultTenantId}`;
-      const defaultMem = {
-        id: memId,
-        userId: uid,
-        tenantId: userData.defaultTenantId,
-        displayName: userData.displayName || req.user.email?.split("@")[0] || "Сотрудник",
-        role: "Работник",
-        status: "active",
-        joinedAt: admin.firestore.FieldValue.serverTimestamp()
-      };
-      await db.collection("memberships").doc(memId).set(defaultMem, { merge: true });
-      memberships.push(defaultMem);
-    }
+    // Членство по users.defaultTenantId здесь больше НЕ создаётся: это поле
+    // пользователь мог записать себе сам и войти в любую организацию.
+    // Членства заводят только приглашение и провижининг — на сервере.
 
     // Sync Firebase Auth custom claims with active tenant memberships so that
     // firestore.rules can enforce real tenant isolation (resource.data.tenantId
@@ -137,27 +126,8 @@ router.get("/me", requireFirebaseAuth, async (req: any, res: any) => {
     // able to rewrite roles/permissions in their own tenant.
     const activeMemberships = memberships.filter((m: any) => m.status === 'active');
     const activeTenantIds = Array.from(new Set(activeMemberships.map((m: any) => m.tenantId).filter(Boolean)));
-    const ADMIN_ROLES = new Set(['org:owner', 'org:admin', 'owner', 'admin', 'Администратор']);
-    const tenantAdminIds = Array.from(new Set(
-      activeMemberships
-        .filter((m: any) => ADMIN_ROLES.has(m.role) || String(m.role || '').includes('Руководитель'))
-        .map((m: any) => m.tenantId)
-        .filter(Boolean)
-    ));
-    const isSuperadminDoc = await db.collection("superadmins").doc(uid).get();
-    const existingClaims = (req.user as any) || {};
-    const claimsChanged =
-      isSuperadminDoc.exists !== Boolean(existingClaims.isSuperadmin) ||
-      JSON.stringify([...activeTenantIds].sort()) !== JSON.stringify([...(existingClaims.tenantIds || [])].sort()) ||
-      JSON.stringify([...tenantAdminIds].sort()) !== JSON.stringify([...(existingClaims.tenantAdminIds || [])].sort());
-
-    if (claimsChanged) {
-      await admin.auth().setCustomUserClaims(uid, {
-        tenantIds: activeTenantIds,
-        tenantAdminIds,
-        isSuperadmin: isSuperadminDoc.exists,
-      });
-    }
+    // Claims считаются из прав (должность + личные), а не из названия роли.
+    const claimsChanged = await syncClaims(db, uid, req.user);
 
     return res.json({
       success: true,
@@ -177,42 +147,31 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
   try {
     const { email, fullName, tenantName, tenantId, permissions, role, customRoleId } = req.body;
     if (!email) return res.status(400).json({ error: "Missing email" });
+    // Организация обязательна. Раньше без неё подставлялась Академия — и
+    // приглашение из любой другой компании уходило туда.
+    if (!tenantId) return res.status(400).json({ success: false, error: "Не указана организация" });
 
     const db = admin.firestore();
-    const targetTenantId = tenantId || "org_future_leaders";
+    const targetTenantId = String(tenantId);
 
     // SECURITY: only a tenant admin/owner (or platform superadmin) may invite staff
     // into a tenant. Without this check, any authenticated member of ANY tenant
     // could grant arbitrary permissions (including canManageOrganization) to a
     // brand new membership in a tenant they merely belong to.
+    // Приглашать может тот, у кого есть право «Управление сотрудниками»
+    // (или суперадмин) — считается из должности и личных прав.
     const isSuperadminDoc = await db.collection("superadmins").doc(req.user.uid).get();
-    if (!isSuperadminDoc.exists) {
-      const callerMemberships = await db.collection("memberships")
-        .where("userId", "==", req.user.uid)
-        .where("tenantId", "==", targetTenantId)
-        .where("status", "==", "active")
-        .get();
-      // Приглашать сотрудников может тот, кому выдано право «Управление
-      // сотрудниками», а не тот, чья должность называется определённым
-      // словом. Прежняя проверка искала подстроку «Руководитель» — и
-      // «Руководитель смены» мог заводить людей в организацию.
-      let canInvite = false;
-      for (const d of callerMemberships.docs) {
-        const m = d.data();
-        if (hasFullAccess(m.role)) { canInvite = true; break; }
-        const own = new Set<string>(migrateLegacyPermissions(m));
-        if (m.customRoleId) {
-          const r = await db.collection("custom_roles").doc(String(m.customRoleId)).get();
-          if (r.exists) for (const p of (r.data()?.permissions || [])) own.add(String(p));
-        }
-        if (own.has("team:manage")) { canInvite = true; break; }
-      }
-      if (!canInvite) {
-        return res.status(403).json({
-          success: false,
-          error: "Нужно право «Управление сотрудниками», чтобы приглашать людей в организацию.",
-        });
-      }
+    const callerIsSA = req.user?.isSuperadmin === true || isSuperadminDoc.exists;
+    const mine = await callerPermissions(db, req.user.uid, targetTenantId, { ...req.user, isSuperadmin: callerIsSA });
+    if (!callerIsSA && !mine.has("team:manage")) {
+      return res.status(403).json({
+        success: false,
+        error: "Нужно право «Управление сотрудниками», чтобы приглашать людей в организацию.",
+      });
+    }
+    // Системные роли (владелец, администратор) этим путём не выдаются.
+    if (hasFullAccess(role)) {
+      return res.status(400).json({ success: false, error: "Системную роль назначает владелец в разделе «Роли и доступы»" });
     }
 
     // 1. Create or get user in Firebase Auth
@@ -253,8 +212,13 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
     // получал легаси-набор булевых прав в обход должности, и два экрана
     // показывали разное. Название роли берём из документа должности, чтобы в
     // карточке сотрудника сразу читалось «Волонтёр», а не «Работник».
-    const resolvedRole = role || "Работник";
+    const resolvedRole = String(role || "Работник").trim().slice(0, 40);
     const membershipId = `mem_${uid}_${targetTenantId}`;
+    // Повторное приглашение не должно понижать владельца до «Работника».
+    const existingMem = await db.collection("memberships").doc(membershipId).get();
+    if (existingMem.exists && hasFullAccess(existingMem.data()?.role) && !callerIsSA) {
+      return res.status(403).json({ success: false, error: "Этот сотрудник — владелец или администратор организации" });
+    }
     const membershipDoc: Record<string, any> = {
       id: membershipId,
       userId: uid,
@@ -278,28 +242,21 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
       }
     } else {
       membershipDoc.role = resolvedRole;
-      // Права выдаём ровно те, что отметили галочками; без выбора — пусто,
-      // а не легаси-набор, который тихо открывал лишнее.
-      membershipDoc.permissions = Array.isArray(permissions) ? permissions : [];
+      // Права выдаём ровно те, что отметили галочками (и только из каталога);
+      // без выбора — пусто, а не легаси-набор, который тихо открывал лишнее.
+      const wanted = (Array.isArray(permissions) ? permissions : []).filter(isPermissionKey);
+      // Нельзя выдать то, чего нет у самого.
+      const excess = wanted.filter((p: string) => !mine.has(p as any));
+      if (excess.length && !callerIsSA) {
+        return res.status(403).json({ success: false, error: `Нельзя выдать права, которых нет у вас: ${excess.join(", ")}` });
+      }
+      membershipDoc.permissions = wanted;
     }
     await db.collection("memberships").doc(membershipId).set(membershipDoc, { merge: true });
 
-    // Refresh custom claims (tenantIds + tenantAdminIds) so tenant-scoped Firestore
-    // rules apply on next token refresh — mirrors the sync logic in GET /api/auth/me.
-    const allMemberships = await db.collection("memberships")
-      .where("userId", "==", uid)
-      .where("status", "==", "active")
-      .get();
-    const tenantIds = Array.from(new Set(allMemberships.docs.map(d => d.data().tenantId).filter(Boolean)));
-    const ADMIN_ROLES = new Set(['org:owner', 'org:admin', 'owner', 'admin', 'Администратор']);
-    const tenantAdminIds = Array.from(new Set(
-      allMemberships.docs
-        .filter(d => { const r = d.data().role; return ADMIN_ROLES.has(r) || String(r || '').includes('Руководитель'); })
-        .map(d => d.data().tenantId)
-        .filter(Boolean)
-    ));
-    const targetIsSuperadminDoc = await db.collection("superadmins").doc(uid).get();
-    await admin.auth().setCustomUserClaims(uid, { tenantIds, tenantAdminIds, isSuperadmin: targetIsSuperadminDoc.exists });
+    // Claims приглашённого — из его прав, чтобы правила Firestore применились
+    // после первого обновления токена.
+    await syncClaims(db, uid);
 
     // 4. Send a branded Russian invite email (via Resend) carrying a real Firebase
     // password-reset link — replaces the old sendOobCode call, which only fires

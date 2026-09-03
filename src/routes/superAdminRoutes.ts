@@ -36,20 +36,12 @@ export const requireSuperAdmin = async (req: any, res: any, next: any) => {
     const uid = req.user.uid;
     const db = admin.firestore();
 
-    // Суперадминство в системе живёт в двух местах: коллекция superadmins
-    // (из неё же собираются custom claims — по ним работают срез и формы) и
-    // поле users.globalRole. Раньше этот роут требовал только globalRole, и
-    // человек, признанный суперадмином всем остальным кодом, получал здесь
-    // 403. Принимаем любой из трёх источников.
+    // Суперадминство живёт ТОЛЬКО в claim isSuperadmin и коллекции superadmins.
+    // Поле users.globalRole больше не учитывается: документ users/{uid} пишет
+    // сам пользователь, и любой мог записать себе "superadmin".
     if (req.user?.isSuperadmin === true) return next();
-
-    const [saDoc, userDoc] = await Promise.all([
-      db.collection("superadmins").doc(uid).get(),
-      db.collection("users").doc(uid).get(),
-    ]);
-    if (saDoc.exists || userDoc.data()?.globalRole === "superadmin") {
-      return next();
-    }
+    const saDoc = await db.collection("superadmins").doc(uid).get();
+    if (saDoc.exists) return next();
     return res.status(403).json({ error: "Access denied. Requires superadmin role." });
   } catch (error: any) {
     return res.status(500).json({ error: error.message });

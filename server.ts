@@ -8,6 +8,9 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import compression from "compression";
 import { calculateScoresTs } from "./src/lib/scoringEngine.js";
+import { publicTenantView } from "./src/server/tenantView.js";
+import { hasAnyPermission } from "./src/server/access.js";
+import { requireFirebaseAuth } from "./src/routes/authRoutes.js";
 
 dotenv.config();
 
@@ -543,7 +546,9 @@ app.get("/api/tenant/config", async (req, res) => {
         .get();
 
       if (!snap.empty) {
-        return res.json({ success: true, tenant: snap.docs[0].data() });
+        // Только публичный срез: раньше уходил весь документ вместе с ключами
+        // интеграций и настройками почты — любому, кто угадал поддомен.
+        return res.json({ success: true, tenant: publicTenantView(snap.docs[0].data()) });
       }
     }
     
@@ -1884,13 +1889,10 @@ app.post("/api/admin/login", async (req, res) => {
         isSuperAdmin = decodedToken.admin === true || decodedToken.isSuperadmin === true;
 
         if (!isSuperAdmin) {
-          const [userDoc, saDoc] = await Promise.all([
-            admin.firestore().collection("users").doc(uid).get(),
-            admin.firestore().collection("superadmins").doc(uid).get(),
-          ]);
-          const userData = userDoc.data();
-          isSuperAdmin = saDoc.exists
-            || userData?.globalRole === "superadmin" || userData?.role === "superadmin";
+          // users.globalRole больше не учитывается: этот документ пишет сам
+          // пользователь, и любой мог записать себе "superadmin".
+          const saDoc = await admin.firestore().collection("superadmins").doc(uid).get();
+          isSuperAdmin = saDoc.exists;
         }
       }
     } catch (sdkErr: any) {
@@ -1943,13 +1945,10 @@ app.get("/api/admin/check", async (req, res) => {
         isSuperAdmin = decoded.admin === true || decoded.isSuperadmin === true;
 
         if (!isSuperAdmin) {
-          const [userDoc, saDoc] = await Promise.all([
-            admin.firestore().collection("users").doc(uid).get(),
-            admin.firestore().collection("superadmins").doc(uid).get(),
-          ]);
-          const userData = userDoc.data();
-          isSuperAdmin = saDoc.exists
-            || userData?.globalRole === "superadmin" || userData?.role === "superadmin";
+          // users.globalRole больше не учитывается: этот документ пишет сам
+          // пользователь, и любой мог записать себе "superadmin".
+          const saDoc = await admin.firestore().collection("superadmins").doc(uid).get();
+          isSuperAdmin = saDoc.exists;
         }
       }
     } catch (sdkErr: any) {}
@@ -1979,16 +1978,25 @@ app.post("/api/admin/logout", (req, res) => {
 });
 
 // 4. Manager Allow Retake
-app.post("/api/manager/allow-retake", requireAuth, async (req, res) => {
-  const { shortId } = req.body;
+app.post("/api/manager/allow-retake", requireFirebaseAuth, async (req: any, res) => {
+  const { shortId, tenantId } = req.body || {};
   if (!shortId) return res.status(400).json({ error: "shortId is required" });
+  if (!tenantId) return res.status(400).json({ error: "Не указана организация" });
   if (!useFirebase) return res.status(500).json({ error: "Firebase not configured" });
-  
+
   try {
-    await admin.firestore().collection("retakes").doc(shortId).set({
-      shortId,
-      tenantId: req.body.tenantId || "org_future_leaders",
+    // Раньше хватало любого входа, а организация бралась из тела запроса:
+    // сотрудник одной школы мог разрешать пересдачи в другой.
+    const db = admin.firestore();
+    const allowed = await hasAnyPermission(db, req.user, String(tenantId), ["tests:review", "tests:manage"]);
+    if (!allowed) {
+      return res.status(403).json({ error: "Нужно право «Проверка и прокторинг» в этой организации" });
+    }
+    await db.collection("retakes").doc(String(shortId)).set({
+      shortId: String(shortId),
+      tenantId: String(tenantId),
       allowed: true,
+      allowedBy: req.user.uid,
       timestamp: new Date().toISOString()
     }, { merge: true });
     res.json({ success: true });

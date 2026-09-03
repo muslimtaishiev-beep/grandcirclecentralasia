@@ -45,6 +45,18 @@ service cloud.firestore {
       return isSuperadmin() || isTenantUser(request.resource.data.tenantId);
     }
 
+    // Права по организациям приходят в токене короткими кодами (см.
+    // PERMISSION_CODES в src/shared/permissions.ts): "*" — полный доступ,
+    // иначе "tr,cm,…". Сервер пересчитывает их из должности и личных прав.
+    function permCodes(tenantId) {
+      return ('pc' in request.auth.token && tenantId in request.auth.token.pc)
+        ? request.auth.token.pc[tenantId] : '';
+    }
+    function hasPerm(tenantId, code) {
+      return isSuperadmin() || (isAuthenticated()
+        && (permCodes(tenantId) == '*' || code in permCodes(tenantId).split(',')));
+    }
+
     // -------------------------------------------------------------
     // 1. TENANTS & SUBCOLLECTIONS
     // -------------------------------------------------------------
@@ -54,13 +66,39 @@ service cloud.firestore {
       allow read: if request.auth.uid == uid;
     }
 
+    // Документ организации хранит ключи интеграций и почтовые настройки —
+    // читать его могут только сотрудники и суперадмин. Анонимным страницам
+    // сервер отдаёт публичный срез (GET /api/tenant/config).
     match /tenants/{tenantId} {
-      allow read: if true;
+      allow read: if isTenantUser(tenantId) || isSuperadmin();
       allow write: if isSuperadmin();
 
-      match /{allSubcollections=**} {
-        allow read, write: if isTenantUser(tenantId) || isSuperadmin();
-      }
+      function member() { return isTenantUser(tenantId) || isSuperadmin(); }
+
+      // Подколлекции перечислены явно. Прежний шаблон {allSubcollections=**}
+      // открывал запись в ЛЮБУЮ подколлекцию любому сотруднику — включая
+      // зарплаты: преподаватель мог сам перевести свою выплату в «оплачено».
+      match /edu_payroll/{d}       { allow read: if member(); allow write: if hasPerm(tenantId, 'ep'); }
+      match /edu_payroll_rates/{d} { allow read: if member(); allow write: if hasPerm(tenantId, 'ep'); }
+      match /billing/{d}           { allow read: if member(); allow write: if isSuperadmin(); }
+      match /edu_schedule/{d}      { allow read: if member(); allow write: if hasPerm(tenantId, 'es'); }
+      match /edu_attendance/{d}    { allow read: if member(); allow write: if hasPerm(tenantId, 'es'); }
+      match /edu_subscriptions/{d} { allow read: if member(); allow write: if hasPerm(tenantId, 'es'); }
+      match /students/{d}          { allow read: if member(); allow write: if hasPerm(tenantId, 'es'); }
+      match /crm_contacts/{d}      { allow read: if member(); allow write: if hasPerm(tenantId, 'cm'); }
+      match /crm_deals/{d}         { allow read: if member(); allow write: if hasPerm(tenantId, 'cm'); }
+      match /crm_pipelines/{d}     { allow read: if member(); allow write: if hasPerm(tenantId, 'cm'); }
+      match /crm_logs/{d}          { allow read, write: if member(); }
+      match /automation_rules/{d}  { allow read: if member(); allow write: if hasPerm(tenantId, 'sg'); }
+      match /automation_logs/{d}   { allow read, write: if member(); }
+      match /submissions/{d}       { allow read: if member(); allow write: if hasPerm(tenantId, 'tv'); }
+      match /members/{d}           { allow read: if member(); allow write: if isTenantAdmin(tenantId); }
+      match /chat_channels/{d=**}      { allow read, write: if member(); }
+      match /chat_messages/{d=**}      { allow read, write: if member(); }
+      match /workspace_tasks/{d=**}    { allow read, write: if member(); }
+      match /workspace_documents/{d=**} { allow read, write: if member(); }
+      match /workspace_sheets/{d=**}   { allow read, write: if member(); }
+      match /rooms/{d=**}              { allow read, write: if member(); }
     }
 
     // -------------------------------------------------------------
@@ -88,14 +126,6 @@ service cloud.firestore {
     match /attendance_logs/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
     match /subscriptions/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
     match /edu_subscriptions/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    // Payroll is sensitive financial data — a teacher must not be able to edit their
-    // own (or anyone's) rate/payout, so writes are admin-only; reads stay tenant-wide.
-    match /teacher_payrolls/{docId} {
-      allow read: if hasTenantAccess();
-      allow update, delete: if isTenantAdmin(resource.data.tenantId);
-      allow create: if isTenantAdmin(request.resource.data.tenantId);
-    }
-
     // Chat & Automations
     match /chat_channels/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
     match /chat_messages/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
@@ -152,9 +182,19 @@ service cloud.firestore {
     // Read stays open to any authenticated user (chat participant lookups, legacy Admin.tsx
     // roster) since these are profile-only docs with no sensitive tenant data; writes are
     // owner-scoped so one user cannot tamper with another's profile.
+    // Записывать можно только поля профиля. Раньше пользователь мог записать
+    // себе globalRole: "superadmin" (сервер этому верил) или defaultTenantId
+    // чужой организации (сервер сам создавал по нему членство).
     match /users/{uid} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && request.auth.uid == uid;
+      allow create: if isAuthenticated() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(
+          ['id','email','firstName','lastName','displayName','phone','avatarUrl',
+           'decisionStatus','createdAt','updatedAt','lastLoginAt']);
+      allow update: if isAuthenticated() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+          ['firstName','lastName','displayName','phone','avatarUrl','updatedAt','lastLoginAt']);
+      allow delete: if false;
     }
     match /crm_pipelines/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
     
@@ -164,13 +204,17 @@ service cloud.firestore {
     
     // Public landing pages
     match /landing_pages/{pageId} {
-      allow read: if resource.data.status == 'published';
-      allow write: if isAuthenticated();
+      allow read: if resource.data.status == 'published' || hasTenantAccess();
+      // Раньше — isAuthenticated(): сотрудник любой организации мог переписать
+      // чужой опубликованный сайт.
+      allow create: if hasTenantAccessOnCreate();
+      allow update, delete: if hasTenantAccess();
     }
-    
+
+    // Коллекцию sites использовал только неподключённый старый конструктор.
     match /sites/{siteId} {
       allow read: if true;
-      allow write: if hasTenantAccess();
+      allow write: if false;
     }
     
     // Tests (published tests are readable by public for execution)
@@ -182,9 +226,11 @@ service cloud.firestore {
       allow read, write: if hasTenantAccess();
     }
     
+    // Сессии экзамена пишет сервер (Admin SDK). Раньше read,create были
+    // открыты всем: аноним мог перечислить сессии всех организаций.
     match /exam_sessions/{sessionId} {
-      allow read, create: if true;
-      allow update, delete: if hasTenantAccess();
+      allow read: if hasTenantAccess();
+      allow write: if false;
     }
     
     // Placement exam (вступительный срез 5-11). The question bank holds the
@@ -240,7 +286,7 @@ service cloud.firestore {
 
     match /audit_logs/{logId} {
       allow read: if hasTenantAccess();
-      allow create: if true;
+      allow create: if hasTenantAccessOnCreate();
     }
     
   }

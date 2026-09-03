@@ -2,10 +2,13 @@ import { Router } from "express";
 import admin from "firebase-admin";
 import {
   ALL_PERMISSION_KEYS, isPermissionKey, ROLE_PRESETS, ORG_MODULES,
-  hasFullAccess, migrateLegacyPermissions, resolvePermissions,
+  hasFullAccess, migrateLegacyPermissions, resolvePermissions, isSystemRoleName,
   WORKSPACE_SCREENS, NON_HIDEABLE_SCREENS,
 } from "../shared/permissions.js";
 import { requireFirebaseAuth } from "./authRoutes.js";
+import { callerPermissions, canAssignSystemRole } from "../server/access.js";
+import { syncClaims } from "../server/claims.js";
+import { stripTenantSecrets } from "../server/tenantView.js";
 
 const router = Router();
 
@@ -112,7 +115,7 @@ router.get("/my", requireFirebaseAuth, async (req: any, res: any) => {
         disabledModules: data.disabledModules,
       });
       return {
-        ...data,
+        ...stripTenantSecrets(data),
         role: membership.role || 'user',
         permissions: membership.permissions || [],
         customPermissions: membership.customPermissions || [],
@@ -204,8 +207,49 @@ router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: 
       return res.status(400).json({ success: false, error: "Missing email address" });
     }
 
-    const assignedRole = roleName || role || "Работник";
     const staffName = displayName || name || email.split("@")[0];
+    const callerRole = req.membership?.role;
+    const callerIsSA = req.user?.isSuperadmin === true;
+
+    // Кем станет приглашённый. Раньше роль бралась из тела запроса как есть:
+    // сотрудник с правом «Управление сотрудниками» мог выставить СЕБЕ org:owner.
+    //  — customRoleId: должность этой организации (название — из документа);
+    //  — org:owner / org:admin: только владелец или суперадмин (org:admin —
+    //    любой с полным доступом);
+    //  — иначе свободная метка, не совпадающая с системной ролью.
+    const SYSTEM: Record<string, string> = { "org:owner": "org:owner", owner: "org:owner", "org:admin": "org:admin", admin: "org:admin" };
+    let assignedRole = "";
+    let assignedCustomRoleId: string | undefined;
+    const bodyCustomRoleId = req.body?.customRoleId ? String(req.body.customRoleId) : "";
+    if (bodyCustomRoleId) {
+      const r = await db.collection("custom_roles").doc(bodyCustomRoleId).get();
+      if (!r.exists || r.data()?.tenantId !== tenantId) {
+        return res.status(400).json({ success: false, error: "Должность не найдена в этой организации" });
+      }
+      assignedCustomRoleId = bodyCustomRoleId;
+      assignedRole = String(r.data()?.name || "Сотрудник");
+    } else if (SYSTEM[String(role || "")]) {
+      const sys = SYSTEM[String(role)];
+      if (!canAssignSystemRole(callerRole, callerIsSA, sys)) {
+        return res.status(403).json({ success: false, error: "Только владелец или суперадмин может назначить эту роль" });
+      }
+      assignedRole = sys;
+    } else {
+      assignedRole = String(roleName || role || "Сотрудник").trim().slice(0, 40) || "Сотрудник";
+      if (isSystemRoleName(assignedRole)) {
+        return res.status(400).json({ success: false, error: "Это название зарезервировано за системной ролью" });
+      }
+    }
+
+    // Личные права: только из каталога и не больше, чем есть у вызывающего.
+    const mine = await callerPermissions(db, uid, tenantId, req.user);
+    const rawPerms = Array.isArray(permissions) ? permissions
+      : (permissions && typeof permissions === "object") ? migrateLegacyPermissions({ permissions }) : [];
+    const wantedPerms = (rawPerms as unknown[]).filter(isPermissionKey);
+    const excess = wantedPerms.filter(p => !mine.has(p));
+    if (excess.length) {
+      return res.status(403).json({ success: false, error: `Нельзя выдать права, которых нет у вас: ${excess.join(", ")}` });
+    }
 
     // Check if target user exists in Auth, if not create automatically
     let targetUserId = "";
@@ -245,15 +289,26 @@ router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: 
       .where("tenantId", "==", tenantId)
       .get();
 
+    const rolePatch: Record<string, any> = assignedCustomRoleId
+      ? { customRoleId: assignedCustomRoleId }
+      : { customRoleId: admin.firestore.FieldValue.delete() };
+
     if (!existingSnapshot.empty) {
-      // Update existing membership role, name & permissions
+      // Понизить владельца/администратора может только владелец или суперадмин.
+      const existing = existingSnapshot.docs[0].data();
+      if (hasFullAccess(existing.role) && !canAssignSystemRole(callerRole, callerIsSA, "org:owner")) {
+        return res.status(403).json({ success: false, error: "Этот сотрудник — владелец или администратор организации" });
+      }
       const docId = existingSnapshot.docs[0].id;
       await db.collection("memberships").doc(docId).update({
         displayName: staffName,
         role: assignedRole,
-        permissions: permissions || {},
+        permissions: wantedPerms,
+        customPermissions: admin.firestore.FieldValue.delete(),
+        ...rolePatch,
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
+      await syncClaims(db, targetUserId).catch(() => false);
       return res.json({ success: true, message: "Имя, роль и разрешения сотрудника обновлены" });
     }
 
@@ -264,16 +319,13 @@ router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: 
       tenantId: tenantId,
       displayName: staffName,
       role: assignedRole,
-      permissions: permissions || {
-        canReviewSubmissions: true,
-        canManageSchedule: true,
-        canCreateTests: false,
-        canManageOrganization: false
-      },
+      permissions: wantedPerms,
+      ...(assignedCustomRoleId ? { customRoleId: assignedCustomRoleId } : {}),
       status: "active",
       invitedBy: uid,
       joinedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+    await syncClaims(db, targetUserId).catch(() => false);
 
     // Письмо сотруднику. Firebase сам ничего не шлёт: аккаунт создавался с
     // временным паролем, который видел только админ на экране, — сотрудник
@@ -360,23 +412,6 @@ router.put("/:id/workspace-config", requireFirebaseAuth, requireTenantAdmin, asy
 
 const ROLES = "custom_roles";
 
-/** Права вызывающего в организации — для защиты от эскалации. */
-async function callerPermissions(db: any, uid: string, tenantId: string, user: any) {
-  if (user?.isSuperadmin) return new Set(ALL_PERMISSION_KEYS);
-  const ms = await db.collection("memberships")
-    .where("userId", "==", uid).where("tenantId", "==", tenantId)
-    .where("status", "==", "active").limit(1).get();
-  if (ms.empty) return new Set<string>();
-  const m = ms.docs[0].data();
-  if (hasFullAccess(m.role)) return new Set(ALL_PERMISSION_KEYS);
-  const own = new Set<string>(migrateLegacyPermissions(m));
-  if (m.customRoleId) {
-    const r = await db.collection(ROLES).doc(String(m.customRoleId)).get();
-    if (r.exists) for (const p of (r.data()?.permissions || [])) own.add(String(p));
-  }
-  return own;
-}
-
 /** GET /api/tenants/:id/roles — должности организации. */
 router.get("/:id/roles", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
   try {
@@ -410,6 +445,11 @@ router.post("/:id/roles", requireFirebaseAuth, requireTenantAdmin, async (req: a
     const { roleId, name, description, permissions } = req.body || {};
     const cleanName = String(name || "").trim().slice(0, 40);
     if (!cleanName) return res.status(400).json({ success: false, error: "Укажите название должности" });
+    // Название должности не может совпадать с системной ролью: иначе строка
+    // role сотрудника стала бы «admin» и дала полный доступ мимо галочек.
+    if (isSystemRoleName(cleanName)) {
+      return res.status(400).json({ success: false, error: "Это название зарезервировано за системной ролью" });
+    }
 
     // Только права из каталога: иначе в документе копится мусор, который
     // ничего не открывает, но выглядит как выданный доступ.
@@ -443,6 +483,12 @@ router.post("/:id/roles", requireFirebaseAuth, requireTenantAdmin, async (req: a
       ...(roleId ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),
     };
     await db.collection(ROLES).doc(id).set(doc, { merge: true });
+    // Права должности изменились — обновить claims всех, кто на ней (в фоне).
+    if (roleId) {
+      db.collection("memberships").where("tenantId", "==", tenantId).where("customRoleId", "==", id).get()
+        .then(ms => Promise.all(ms.docs.map(d => syncClaims(db, String(d.data().userId || "")).catch(() => false))))
+        .catch(() => {});
+    }
     return res.json({ success: true, role: { ...doc, memberCount: 0 } });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
@@ -549,9 +595,13 @@ router.post("/:id/members/:membershipId/role", requireFirebaseAuth, requireTenan
     }
 
     if (Array.isArray(permissions)) {
-      const wanted = permissions.filter(isPermissionKey);
+      const wanted = (permissions as unknown[]).filter(isPermissionKey);
       const mine = await callerPermissions(db, req.user.uid, tenantId, req.user);
-      const excess = wanted.filter((p: string) => !mine.has(p));
+      // Нельзя ВЫДАТЬ то, чего нет у самого. То, что у сотрудника уже было,
+      // остаётся: иначе менеджер не мог бы сохранить карточку коллеги с
+      // правами выше своих, не отняв их.
+      const had = new Set(migrateLegacyPermissions(mem.data() || {}));
+      const excess = wanted.filter(p => !mine.has(p) && !had.has(p));
       if (excess.length) {
         return res.status(403).json({
           success: false, error: `Нельзя выдать права, которых нет у вас: ${excess.join(", ")}`,
@@ -564,6 +614,7 @@ router.post("/:id/members/:membershipId/role", requireFirebaseAuth, requireTenan
     }
 
     await memRef.update(patch);
+    await syncClaims(db, String(mem.data()?.userId || "")).catch(() => false);
     return res.json({ success: true });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });

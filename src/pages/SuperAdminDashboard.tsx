@@ -520,21 +520,15 @@ export default function SuperAdminDashboard() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         },
+        // Владелец — системная роль org:owner, и только она. Раньше сюда
+        // уходила метка «Руководитель / Директор»: она сохранялась вместо
+        // системного ключа, и директор получал права Firestore по подстроке
+        // «Руководитель», но не полный доступ в интерфейсе.
         body: JSON.stringify({
           email: directorEmail,
           password: customPassword || undefined,
           displayName: directorName || directorEmail.split("@")[0],
-          roleName: "Руководитель / Директор",
           role: "org:owner",
-          permissions: {
-            canManageOrganization: true,
-            canManageUsers: true,
-            canCreateTests: true,
-            canReviewSubmissions: true,
-            canViewAnalytics: true,
-            canManageSchedule: true,
-            canViewFinancials: true
-          }
         })
       });
       const data = await res.json();
