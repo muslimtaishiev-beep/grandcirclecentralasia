@@ -248,27 +248,6 @@ export function migrateLegacyPermissions(raw: {
  * Выключенный модуль сильнее любой роли — иначе тумблер «скрыть CRM для всех»
  * не работал бы для администратора отдела.
  */
-/**
- * Права по имени старой роли-строки.
- *
- * До системы должностей роль была свободной строкой («manager», «teacher»,
- * «Работник»), и права определялись ею. После перехода такие роли давали НОЛЬ
- * прав — сотрудник со старой ролью видел пустое меню, пока владелец не заведёт
- * ему должность. Пока должности нет, восстанавливаем разумный набор по
- * привычному названию роли. Как только назначена должность (customRoleId),
- * этот запасной путь не участвует — решают права должности.
- */
-const LEGACY_ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
-  manager: ["crm:read", "crm:manage", "chat:use", "tasks:use", "docs:use", "sheets:use", "tickets:check"],
-  "Управляющий": ["crm:read", "crm:manage", "chat:use", "tasks:use", "docs:use", "sheets:use", "tickets:check"],
-  teacher: ["edu:schedule", "tests:read", "tests:review", "chat:use", "tasks:use", "docs:use"],
-  "Преподаватель": ["edu:schedule", "tests:read", "tests:review", "chat:use", "tasks:use", "docs:use"],
-  proctor: ["tests:read", "tests:review", "chat:use", "tasks:use"],
-  "Проктор": ["tests:read", "tests:review", "chat:use", "tasks:use"],
-  "Работник": ["chat:use", "tasks:use", "docs:use"],
-  "Волонтёр": ["tickets:check", "chat:use"],
-};
-
 export function resolvePermissions(input: {
   role?: unknown;
   permissions?: unknown;
@@ -285,13 +264,7 @@ export function resolvePermissions(input: {
   } else {
     for (const p of migrateLegacyPermissions(input)) granted.add(p);
     if (Array.isArray(input.rolePermissions)) {
-      // Должность назначена — её права главные.
       for (const p of input.rolePermissions) if (isPermissionKey(p)) granted.add(p);
-    } else {
-      // Должности нет: восстанавливаем права по имени старой роли-строки,
-      // иначе сотрудник видит пустое меню.
-      const byName = LEGACY_ROLE_PERMISSIONS[String(input.role ?? "").trim()];
-      if (byName) for (const p of byName) granted.add(p);
     }
   }
 
