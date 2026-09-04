@@ -120,7 +120,7 @@ export default function App() {
   useEffect(() => {
     const fetchPublicData = async () => {
       try {
-        const response = await fetch((import.meta.env.VITE_API_URL || "") + "/api/public/data");
+        const response = await fetch("/api/public/data");
         if (response.ok) {
           const resJson = await response.json();
           setPublicData(resJson);
@@ -134,7 +134,7 @@ export default function App() {
 
     const fetchMaintenance = async () => {
       try {
-        const res = await fetch((import.meta.env.VITE_API_URL || "") + "/api/public/maintenance");
+        const res = await fetch("/api/public/maintenance");
         if (res.ok) {
           const data = await res.json();
           if (data) setMaintenanceInfo(data);

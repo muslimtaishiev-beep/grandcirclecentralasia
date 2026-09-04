@@ -27,7 +27,8 @@ export default function Newsletter({ lang }: NewsletterProps) {
     }
     setStatus("loading");
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || "";
+      // API — на том же домене, что и сайт. Отдельный хост (Render) больше не используется.
+      const apiUrl = "";
       const response = await fetch(`${apiUrl}/api/public/subscribe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
