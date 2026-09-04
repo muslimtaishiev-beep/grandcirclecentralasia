@@ -38,16 +38,9 @@ const Landing: React.FC<LandingProps> = ({ lang = "ru" }) => {
     <div className="relative min-h-dvh bg-black text-white overflow-hidden font-sans">
       {/* Background Video placeholder */}
       <div className="absolute inset-0 z-0 opacity-50 bg-slate-900">
-        <video 
-          autoPlay 
-          loop 
-          muted 
-          playsInline 
-          className="w-full h-full object-cover"
-        >
-          <source src="/bg-video.mp4" type="video/mp4" />
-        </video>
-      </div>
+        {/* Фонового видео в проекте нет — раньше здесь стоял <video src="/bg-video.mp4">,
+            который на каждом открытии лендинга давал 404. */}
+</div>
 
       {/* Squiggly Lines Background */}
       <div className="absolute inset-0 z-0 opacity-40 pointer-events-none flex items-end justify-center">
