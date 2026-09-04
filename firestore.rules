@@ -78,6 +78,10 @@ service cloud.firestore {
       // Подколлекции перечислены явно. Прежний шаблон {allSubcollections=**}
       // открывал запись в ЛЮБУЮ подколлекцию любому сотруднику — включая
       // зарплаты: преподаватель мог сам перевести свою выплату в «оплачено».
+      // Зарплаты: считает и пишет только сервер; читать может держатель права.
+      match /payroll_settings/{d}  { allow read: if hasPerm(tenantId, 'ep'); allow write: if false; }
+      match /payroll_employees/{d} { allow read: if hasPerm(tenantId, 'ep'); allow write: if false; }
+      match /payroll_records/{d}   { allow read: if hasPerm(tenantId, 'ep'); allow write: if false; }
       match /edu_payroll/{d}       { allow read: if member(); allow write: if hasPerm(tenantId, 'ep'); }
       match /edu_payroll_rates/{d} { allow read: if member(); allow write: if hasPerm(tenantId, 'ep'); }
       match /billing/{d}           { allow read: if member(); allow write: if isSuperadmin(); }

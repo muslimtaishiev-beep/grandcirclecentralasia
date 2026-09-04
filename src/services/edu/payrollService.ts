@@ -61,21 +61,6 @@ class PayrollService {
       }
     }
   }
-
-  async approvePayroll(tenantId: string, recordId: string) {
-    const ref = doc(db, 'tenants', tenantId, 'edu_payroll', recordId);
-    await updateDoc(ref, {
-      status: 'approved'
-    });
-  }
-
-  async markAsPaid(tenantId: string, recordId: string) {
-    const ref = doc(db, 'tenants', tenantId, 'edu_payroll', recordId);
-    await updateDoc(ref, {
-      status: 'paid',
-      paidAt: Date.now()
-    });
-  }
 }
 
 export const payrollService = new PayrollService();

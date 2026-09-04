@@ -180,6 +180,7 @@ import tenantRoutes from "./src/routes/tenantRoutes.js";
 import superAdminRoutes from "./src/routes/superAdminRoutes.js";
 import placementRoutes from "./src/routes/placementRoutes.js";
 import formRoutes from "./src/routes/formRoutes.js";
+import payrollRoutes from "./src/routes/payrollRoutes.js";
 import { sendTestResultEmail } from "./emailService.js";
 
 app.use("/api/auth", authRoutes);
@@ -187,6 +188,7 @@ app.use("/api/tenants", tenantRoutes);
 app.use("/api/superadmin", superAdminRoutes);
 app.use("/api/placement", placementRoutes);
 app.use("/api/forms", formRoutes);
+app.use("/api/payroll", payrollRoutes);
 
 let memoryDbStore: any = null;
 
