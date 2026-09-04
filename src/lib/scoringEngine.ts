@@ -131,6 +131,9 @@ export function isAnswerCorrect(userAnsRaw: any, targetAnsRaw: any): boolean {
   const userStr = String(userAnsRaw).trim();
   const targetStr = typeof targetAnsRaw === 'object' && targetAnsRaw?.ans !== undefined ? String(targetAnsRaw.ans).trim() : String(targetAnsRaw).trim();
   if (!userStr || !targetStr) return false;
+  // Несколько допустимых ответов в ключе через «||» (например, два верных
+  // порядка слов в задании на сборку предложения).
+  if (targetStr.includes("||")) return targetStr.split("||").some(alt => alt.trim() && isAnswerCorrect(userStr, alt.trim()));
 
   const normUser = normalizeString(userStr);
   const normTarget = normalizeString(targetStr);
@@ -157,8 +160,17 @@ export function isAnswerCorrect(userAnsRaw: any, targetAnsRaw: any): boolean {
     if (normTarget.length <= 2 && foldLookalikes(prefixNorm) === foldLookalikes(normTarget)) return true;
   }
 
-  // 3. Substring match for list answers like "нн, н", inline inputs, drag-and-drop, dropdowns
-  if (normUser.includes(normTarget) || normTarget.includes(normUser)) {
+  // 3. Substring match — ТОЛЬКО для списковых ответов ("нн, н", матрицы,
+  // перетаскивание, несколько списков) и числовых (ученик дописал единицы:
+  // «60 мин»). Для одиночного выбора это давало ложные зачёты: ключ «lived»
+  // засчитывал «have lived», «who» — «whose», «worked» — все четыре варианта.
+  const listLike = /[,;]/.test(targetStr) || /[,;]/.test(userStr);
+  const numericTarget = /^-?\d+(?:[.,]\d+)?$/.test(targetStr);
+  if (numericTarget && !listLike) {
+    const lead = normUser.match(/^-?\d+(?:\.\d+)?/);
+    return Boolean(lead) && lead![0] === normTarget.replace(/,/g, ".");
+  }
+  if (listLike && (normUser.includes(normTarget) || normTarget.includes(normUser))) {
     // If target is just a single character prefix like "1", "2", "a", "b",
     // only match via prefix to avoid false positives on words containing 'a'
     if (/^[a-z0-9а-я]$/i.test(normTarget)) {
