@@ -566,7 +566,6 @@ export default function ManagerDashboard() {
       if (!targetTenantId) { setLoading(false); return; }
       const studentMap = new Map<string, any>();
       let firestoreFailed = false;
-      let gasFailed = false;
 
       // 1. Fetch from Firestore `submissions` & `crm_contacts`
       try {
@@ -651,57 +650,17 @@ export default function ManagerDashboard() {
         firestoreFailed = true;
       }
 
-      // 2. Fetch from Google Apps Script endpoint
-      try {
-        const data = await fetchGasAPI("/api/gas", { action: "getAllStudents", tenantId: targetTenantId }, "");
-        if (data && data.success) {
-          const rawList = data.students || data.data || [];
-          rawList.forEach((s: any) => {
-            const rowTenant = s.tenantId || '';
-            // Strict tenant match only — a missing tenantId or the default org must NOT
-            // grant a blanket bypass, otherwise any manager can see every legacy/unscoped row.
-            if (rowTenant === targetTenantId) {
-              const sId = (s.shortId || s.studentShortId).toString();
-              const existing = studentMap.get(sId);
-
-              if (existing) {
-                // Firestore is AUTHORITATIVE. Keep Firestore scores, diagnostics, and status!
-                studentMap.set(sId, {
-                  ...s,
-                  ...existing,
-                  parentName: existing.parentName || s.parentName || '—',
-                  phone: existing.phone || s.phone || '—'
-                });
-              } else {
-                studentMap.set(sId, {
-                  shortId: sId,
-                  childName: s.childName || s.studentName || `Ученик ${sId}`,
-                  studentName: s.studentName || s.childName,
-                  grade: String(s.grade || 7),
-                  ru: Number(s.ru || 0),
-                  ma: Number(s.ma || 0),
-                  lo: Number(s.lo || 0),
-                  en: Number(s.en || 0),
-                  status: s.status || 'В РАБОТЕ',
-                  finalDecision: s.finalDecision || 'НЕ ОБРАБОТАН',
-                  managerName: s.managerName || 'Не назначен',
-                  tenantId: rowTenant
-                });
-              }
-            }
-          });
-        }
-      } catch (gasErr) {
-        console.warn("[ManagerDashboard] GAS fetch notice:", gasErr);
-        gasFailed = true;
-      }
+      // Список — только из базы. Раньше после Firestore дашборд безусловно
+      // ждал ещё и Google Apps Script (getAllStudents): тот отвечает 30+ секунд
+      // и 503, а экран не показывал ни одной строки, пока не истечёт
+      // 20-секундный таймаут и повтор. Firestore — единственный источник.
 
       const mergedList = Array.from(studentMap.values());
       // Если хоть один источник упал (обрыв сети у менеджера — обычное дело
       // в школьном Wi-Fi), НЕ подменяем таблицу неполным результатом: строки,
       // которые уже были на экране, остаются, свежие — добавляются. Раньше
       // сбой перезагрузки в момент сдачи работы стирал весь список.
-      if (firestoreFailed || gasFailed) {
+      if (firestoreFailed) {
         setStudents(prev => {
           const byId = new Map<string, any>(prev.map((s: any) => [String(s.shortId), s]));
           for (const s of mergedList) byId.set(String(s.shortId), { ...(byId.get(String(s.shortId)) || {}), ...s });
@@ -711,12 +670,8 @@ export default function ManagerDashboard() {
         setStudents(mergedList);
       }
 
-      if (firestoreFailed && gasFailed) {
-        setError("Не удалось загрузить данные ни из базы, ни из резервного источника. Проверьте подключение и попробуйте снова.");
-      } else if (firestoreFailed) {
-        setError("Часть данных (Firestore) не загрузилась — список может быть неполным.");
-      } else if (gasFailed) {
-        setError("Часть данных (резервный источник) не загрузилась — список может быть неполным.");
+      if (firestoreFailed) {
+        setError("Не удалось загрузить список из базы. Проверьте подключение и обновите страницу.");
       }
     } catch (err: any) {
       console.error("fetchStudents error:", err);
