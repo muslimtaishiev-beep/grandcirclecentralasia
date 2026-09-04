@@ -575,12 +575,21 @@ export default function ManagerDashboard() {
         // Свежие работы сверху и не больше 500 за раз: экран показывает
         // последние сдачи, а не всю историю школы за годы. Без ограничения
         // менеджер ждал загрузки всей коллекции целиком.
-        const subSnap = await getDocs(query(
-          collection(db, 'submissions'),
-          where('tenantId', '==', targetTenantId),
-          orderBy('submittedAt', 'desc'),
-          limit(500),
-        ));
+        // Оба запроса — параллельно: раньше контакты ждали, пока придут
+        // работы, и загрузка складывалась из двух задержек подряд.
+        const [subSnap, cntSnap] = await Promise.all([
+          getDocs(query(
+            collection(db, 'submissions'),
+            where('tenantId', '==', targetTenantId),
+            orderBy('submittedAt', 'desc'),
+            limit(500),
+          )),
+          getDocs(query(
+            collection(db, 'crm_contacts'),
+            where('tenantId', '==', targetTenantId),
+            limit(1000),
+          )),
+        ]);
         subSnap.forEach(d => {
           const s = d.data();
           const sId = (s.studentShortId || s.shortId || d.id).toString();
@@ -619,11 +628,6 @@ export default function ManagerDashboard() {
           });
         });
 
-        const cntSnap = await getDocs(query(
-          collection(db, 'crm_contacts'),
-          where('tenantId', '==', targetTenantId),
-          limit(1000),
-        ));
         cntSnap.forEach(d => {
           const c = d.data();
           const sId = (c.shortId || d.id).toString();
