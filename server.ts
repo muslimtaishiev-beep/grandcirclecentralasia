@@ -1272,6 +1272,12 @@ async function processExamSubmission(payload: any) {
       batch.set(admin.firestore().collection("submissions").doc(submissionId), subDoc, { merge: true });
       batch.set(admin.firestore().collection("crm_contacts").doc(contactId), contactDoc, { merge: true });
       batch.set(admin.firestore().collection("crm_deals").doc(dealId), dealDoc, { merge: true });
+      // Запись о начатом тесте закрывается: в кабинете менеджера она больше
+      // не должна выглядеть как «пишет тест».
+      batch.set(admin.firestore().collection("exam_suspensions").doc(String(shortId)), {
+        status: action === "submitEnglishTest" ? "ЗАВЕРШЕН" : "СДАН ОСНОВНОЙ",
+        finishedAt: admin.firestore.Timestamp.now(),
+      }, { merge: true });
       await batch.commit();
 
       // Audit Log. The two submits are distinguished because a student can hand
@@ -1635,6 +1641,27 @@ app.post("/api/gas", async (req, res) => {
           }
         }
       }
+      // Старт — в базу, а не только в аудит-лог. Список менеджера читает
+      // только Firestore, и ученик, который начал, но ещё не сдал, исчезал
+      // из кабинета: некому было выдать разрешение продолжить. Документ
+      // тот же, что и у приостановки, — по нему же ученик опрашивает статус.
+      if (useFirebase) {
+        try {
+          await admin.firestore().collection("exam_suspensions").doc(String(payload.shortId)).set({
+            shortId: String(payload.shortId),
+            tenantId: (payload.tenantId || "unknown"),
+            studentName: payload.studentName || "",
+            studentPhone: payload.studentPhone || "",
+            studentEmail: payload.studentEmail || "",
+            grade: Number(payload.grade) || 0,
+            status: "В ПРОЦЕССЕ",
+            registeredAt: admin.firestore.Timestamp.now(),
+            isTester: Boolean(payload.isTester),
+          }, { merge: true });
+        } catch (e: any) {
+          console.warn("[Register] Local Firestore write failed:", e.message);
+        }
+      }
       writeAuditLog("EXAM_STARTED", (payload.tenantId || "unknown"), {
         studentShortId: String(payload.shortId),
         studentName: payload.studentName || "",
@@ -1658,8 +1685,10 @@ app.post("/api/gas", async (req, res) => {
         await admin.firestore().collection("exam_suspensions").doc(String(payload.shortId)).set({
           shortId: String(payload.shortId),
           tenantId: (payload.tenantId || "unknown"),
-          studentName: payload.studentName || "",
-          grade: Number(payload.grade) || 0,
+          // Имя и класс уже записаны при старте — пустые значения из
+          // запроса приостановки не должны их стирать.
+          ...(payload.studentName ? { studentName: String(payload.studentName) } : {}),
+          ...(Number(payload.grade) ? { grade: Number(payload.grade) } : {}),
           phase: payload.phase || "core",
           answersJson: typeof payload.answers === "string" ? payload.answers : JSON.stringify(payload.answers || {}),
           status: "ПРИОСТАНОВЛЕН",

@@ -577,7 +577,11 @@ export default function ManagerDashboard() {
         // менеджер ждал загрузки всей коллекции целиком.
         // Оба запроса — параллельно: раньше контакты ждали, пока придут
         // работы, и загрузка складывалась из двух задержек подряд.
-        const [subSnap, cntSnap] = await Promise.all([
+        // Третий источник — ученики, которые начали тест, но ещё не сдали
+        // (и приостановленные). Раньше их привозил Google Apps Script; без
+        // него начавший тест ученик не появлялся в списке, и менеджеру
+        // некому было разрешить продолжение.
+        const [subSnap, cntSnap, regSnap] = await Promise.all([
           getDocs(query(
             collection(db, 'submissions'),
             where('tenantId', '==', targetTenantId),
@@ -589,6 +593,11 @@ export default function ManagerDashboard() {
             where('tenantId', '==', targetTenantId),
             limit(1000),
           )),
+          getDocs(query(
+            collection(db, 'exam_suspensions'),
+            where('tenantId', '==', targetTenantId),
+            limit(1000),
+          )).catch((e) => { console.warn('[ManagerDashboard] registrations notice:', e); return null; }),
         ]);
         subSnap.forEach(d => {
           const s = d.data();
@@ -648,6 +657,30 @@ export default function ManagerDashboard() {
               tenantId: c.tenantId || targetTenantId
             });
           }
+        });
+        // Начатые и приостановленные тесты: только те, у кого ещё нет сданной
+        // работы. Пробники и старые записи (старше 3 суток) не показываем.
+        const freshSince = Date.now() - 3 * 24 * 3600 * 1000;
+        regSnap?.forEach(d => {
+          const r = d.data();
+          const sId = String(r.shortId || d.id);
+          if (studentMap.has(sId) || r.isTester) return;
+          const at = r.suspendedAt?.toDate?.() || r.registeredAt?.toDate?.() || r.unblockedAt?.toDate?.();
+          if (!at || at.getTime() < freshSince) return;
+          studentMap.set(sId, {
+            shortId: sId,
+            childName: r.studentName || `Ученик ${sId}`,
+            studentName: r.studentName || '',
+            phone: r.studentPhone || '—',
+            grade: String(r.grade || 7),
+            ru: 0, ma: 0, lo: 0, en: 0,
+            status: r.status || 'В ПРОЦЕССЕ',
+            finalDecision: 'В ПРОЦЕССЕ',
+            managerName: 'Не назначен',
+            date: at.toISOString(),
+            tenantId: r.tenantId || targetTenantId,
+            inProgress: true,
+          });
         });
       } catch (fsErr) {
         console.warn("[ManagerDashboard] Firestore fetch notice:", fsErr);
@@ -940,6 +973,7 @@ export default function ManagerDashboard() {
                         {s.childName || "Без имени"}
                         {s.cheated && <span className="bg-red-600 text-white text-[10px] uppercase px-2 py-0.5 rounded font-bold animate-pulse">Читерил</span>}
                         {s.status === "ПРИОСТАНОВЛЕН" && <span className="bg-amber-500 text-white text-[10px] uppercase px-2 py-0.5 rounded font-bold animate-pulse">ПРИОСТАНОВЛЕН</span>}
+                        {s.status === "В ПРОЦЕССЕ" && <span className="bg-sky-500 text-white text-[10px] uppercase px-2 py-0.5 rounded font-bold">ПИШЕТ ТЕСТ</span>}
                         {/* Proctoring outcome. "Без камеры" is deliberately neutral —
                             a student whose webcam failed is not a suspect. */}
                         {s.proctoring?.unavailable && (
@@ -1155,13 +1189,16 @@ export default function ManagerDashboard() {
                       </button>
                       
                       {/* Unblock button */}
-                      {s.status === "ПРИОСТАНОВЛЕН" && (
+                      {(s.status === "ПРИОСТАНОВЛЕН" || s.status === "В ПРОЦЕССЕ") && (
                         <button
                           onClick={async () => {
                             if (!confirm(`Разрешить ученику ${s.childName || s.shortId} продолжить тест?`)) return;
                             setUnblockingId(s.shortId);
                             try {
-                              const data = await fetchGasAPI("/api/gas", { action: "unblockStudent", shortId: s.shortId }, "");
+                              const data = await fetchGasAPI("/api/gas", {
+                                action: "unblockStudent", shortId: s.shortId, tenantId: activeTenantId || '',
+                                studentName: s.childName || "", managerName: user?.displayName || user?.email || "",
+                              }, "");
                               if (data.success) {
                                 setStudents(prev => prev.map(st => st.shortId === s.shortId ? { ...st, status: "В ПРОЦЕССЕ" } : st));
                                 toast.success("Разрешение предоставлено! Ученик может продолжить тест.");
