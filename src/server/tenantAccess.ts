@@ -59,7 +59,11 @@ export async function checkTenantOpen(tenantId: unknown, navKey?: string): Promi
  */
 export const requireScreen = (navKey: string, pick?: (req: any) => unknown) =>
   async (req: any, res: any, next: any) => {
-    const id = String((pick ? pick(req) : (req.params?.id || req.body?.tenantId || req.query?.tenantId)) || "");
+    // Организация — из тела или запроса, и только потом из параметра пути.
+    // Раньше параметр шёл первым, и на маршрутах вида /questions/:id за
+    // организацию принимался номер вопроса: сохранение вопроса банка
+    // вступительного среза отвечало «Организация не найдена».
+    const id = String((pick ? pick(req) : (req.body?.tenantId || req.query?.tenantId || req.params?.id)) || "");
     if (req.user?.isSuperadmin === true) {
       req.tenant = await loadTenant(id);
       return next();
