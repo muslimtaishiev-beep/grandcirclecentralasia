@@ -1149,10 +1149,10 @@ export default function ManagerDashboard() {
                           if (!confirm(`Перепроверить результаты ${s.childName || s.shortId}?`)) return;
                           setRecheckingId(s.shortId);
                           try {
-                            const data = await fetchGasAPI("/api/gas", { action: "recheckScores", shortId: s.shortId }, "");
+                            const data = await fetchGasAPI("/api/gas", { action: "recheckScores", shortId: s.shortId, tenantId: activeTenantId || '' }, "");
                             if (data.success) {
                               setStudents(prev => prev.map(st => st.shortId === s.shortId ? { ...st, ru: data.scores.russian, ma: data.scores.math, lo: data.scores.logic, en: data.scores.english, diagnosticsRaw: data.diagnosticsRaw } : st));
-                              toast.success(`✅ Перепроверка завершена!\nРус: ${data.scores.russian} | Мат: ${data.scores.math} | Лог: ${data.scores.logic} | Англ: ${data.scores.english}`);
+                              toast.success(`✅ Перепроверка завершена!\nРус: ${data.scores.russian} | Мат: ${data.scores.math} | Лог: ${data.scores.logic} | Англ: ${data.scores.english}` + (data.keptSubjects?.length ? `\nБез изменений (ответы не сохранены): ${data.keptSubjects.join(", ")}` : ""));
                             } else {
                               toast.success("Ошибка: " + data.error);
                             }
@@ -1173,7 +1173,7 @@ export default function ManagerDashboard() {
                         onClick={async () => {
                           setReviewLoading(true);
                           try {
-                            const data = await fetchGasAPI("/api/gas", { action: "getAnswerComparison", shortId: s.shortId }, "");
+                            const data = await fetchGasAPI("/api/gas", { action: "getAnswerComparison", shortId: s.shortId, tenantId: activeTenantId || '' }, "");
                             if (data.success) {
                               setReviewData(data);
                             } else {

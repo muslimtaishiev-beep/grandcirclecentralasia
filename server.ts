@@ -7,7 +7,7 @@ import admin from "firebase-admin";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import compression from "compression";
-import { calculateScoresTs } from "./src/lib/scoringEngine.js";
+import { calculateScoresTs, isAnswerCorrect } from "./src/lib/scoringEngine.js";
 import { publicTenantView } from "./src/server/tenantView.js";
 import { hasAnyPermission } from "./src/server/access.js";
 import { checkTenantOpen, loadTenant, TenantError } from "./src/server/tenantAccess.js";
@@ -152,7 +152,7 @@ try {
 // operation it is recording — losing a log line is bad, losing a student's
 // exam because logging hiccuped is far worse.
 export type AuditAction =
-  | "EXAM_STARTED" | "EXAM_SUBMITTED" | "EXAM_ENGLISH_SUBMITTED"
+  | "EXAM_STARTED" | "EXAM_RESCORED" | "EXAM_SUBMITTED" | "EXAM_ENGLISH_SUBMITTED"
   | "EXAM_SUSPENDED" | "EXAM_RESUME_REQUESTED" | "EXAM_RESUME_APPROVED"
   | "EXAM_FULLSCREEN_EXIT" | "PROCTORING_REPORT" | "PROCTORING_VIOLATION"
   | "LOGIN_SUCCESS" | "LOGIN_FAILED" | "LOGOUT"
@@ -631,6 +631,11 @@ app.get("/api/tenant/resolve", async (req, res) => {
  */
 const examCache = new Map<string, { at: number; value: any }>();
 const EXAM_CACHE_MS = 60_000;
+
+function safeParse(v: any): Record<string, any> {
+  if (v && typeof v === "object") return v;
+  try { const o = JSON.parse(String(v || "{}")); return o && typeof o === "object" ? o : {}; } catch { return {}; }
+}
 
 async function cachedRead<T>(key: string, loader: () => Promise<T>): Promise<T> {
   const hit = examCache.get(key);
@@ -1223,7 +1228,9 @@ async function processExamSubmission(payload: any) {
         cheated: Boolean(cheated),
         scores: mergedScores,
         maxScoreSnapshot: mergedMaxScoreSnapshot,
-        answersJson: typeof answers === 'string' ? answers : JSON.stringify(answers || {}),
+        // Ответы копятся: сдача английского раньше затирала ответы основной
+        // части, и проверить работу целиком было нельзя.
+        answersJson: JSON.stringify({ ...safeParse(existing?.answersJson), ...(parsedAnswers || {}) }),
         diagnosticSummary: summaryText,
         diagnosticsRaw,
         status: "ЗАВЕРШЕН"
@@ -1509,6 +1516,53 @@ app.get("/api/public/check-retake/:shortId", async (req, res) => {
 });
 
 // GAS Proxy
+/**
+ * Вопросы и ключи теста организации — для проверки работы и пересчёта.
+ * Ключи собираются в том же порядке приоритета, что и при сдаче, и
+ * обрезаются до реальных вопросов теста: в test_answer_keys лежат остатки
+ * старых пересидов, которые иначе раздувают «возможные» баллы по темам.
+ */
+type ExamQuestionSet = { russian: any[]; math: any[]; logic: any[]; english: any[] };
+async function loadExamQuestions(tenantId: string, grade: number): Promise<ExamQuestionSet | null> {
+  return cachedRead(`testq_${tenantId}_${grade}`, async () => {
+    const snap = await admin.firestore().collection("tests").doc(`test_grade_${grade}_${tenantId}`).get();
+    const data = snap.data();
+    if (!data?.questions || (data.tenantId && data.tenantId !== tenantId)) return null;
+    const arr = (v: any) => (Array.isArray(v) ? v : []);
+    return { russian: arr(data.questions.russian), math: arr(data.questions.math), logic: arr(data.questions.logic), english: arr(data.questions.english) };
+  });
+}
+async function loadExamKeys(tenantId: string, grade: number, questions: ExamQuestionSet | null) {
+  const acc: any = await cachedRead(`keys_${tenantId}_${grade}`, async () => {
+    const ids = [`test_grade_${grade}_${tenantId}`, `test_grade_${grade}`, `key_grade_${grade}_${tenantId}`, `key_grade_${grade}_GLOBAL`, `${grade}`];
+    const out: any = { russian: {}, math: {}, logic: {}, english: {} };
+    const snaps = await admin.firestore().getAll(...ids.map(id => admin.firestore().collection("test_answer_keys").doc(id)));
+    for (const d of snaps) {
+      if (!d.exists) continue;
+      const k = d.data()?.keys || {};
+      for (const subject of ["russian", "math", "logic", "english"]) if (k[subject]) out[subject] = { ...k[subject], ...out[subject] };
+    }
+    return out;
+  });
+  const keys: any = { russian: {}, math: {}, logic: {}, english: {} };
+  for (const subject of ["russian", "math", "logic", "english"] as const) {
+    const real = questions ? new Set(questions[subject].map((q: any) => q.id)) : null;
+    keys[subject] = Object.fromEntries(Object.entries(acc[subject] || {}).filter(([id]) => !real || real.size === 0 || real.has(id)));
+  }
+  return keys;
+}
+/** Ответ в человеческом виде: для выбора — текст варианта, а не «2» или «B». */
+function prettyAnswer(q: any, raw: string): string {
+  const alts = String(raw).split("||").map(a => a.trim()).filter(Boolean);
+  const one = (a: string) => {
+    const opts: string[] = Array.isArray(q?.options) ? q.options : [];
+    const esc = a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const hit = opts.find(o => o === a) || opts.find(o => new RegExp(`^${esc}\\s*[).]`, "i").test(o));
+    return hit || a;
+  };
+  return alts.map(one).join(" или ");
+}
+
 app.post("/api/gas", async (req, res) => {
   const gasUrl = process.env.VITE_GAS_URL || process.env.GAS_URL;
   // ⚠️ SECURITY: API key injected server-side ONLY — never from client body
@@ -1569,6 +1623,7 @@ app.post("/api/gas", async (req, res) => {
       "checkSuspendStatus",
       "getStudentByShortId"
     ];
+    let gasUser: any = null;
     if (!publicActions.includes(payload.action)) {
       const authHeader = req.headers["authorization"] || "";
       const token = authHeader.replace("Bearer ", "").trim();
@@ -1578,7 +1633,7 @@ app.post("/api/gas", async (req, res) => {
       }
       
       try {
-        await admin.auth().verifyIdToken(token);
+        gasUser = await admin.auth().verifyIdToken(token);
       } catch(e) {
         return res.status(401).json({ error: "Unauthorized: Invalid Firebase ID Token" });
       }
@@ -1718,6 +1773,83 @@ app.post("/api/gas", async (req, res) => {
         // No local record — legacy suspension stored only in GAS; fall through to proxy.
       } catch (e: any) {
         console.warn("[Suspend] Local status check failed, falling back to GAS:", e.message);
+      }
+    }
+
+    // Проверка работы и пересчёт — из базы, а не из Google Apps Script.
+    // Работы давно хранятся здесь и до таблиц не доходят: Apps Script отвечал
+    // «Student not found», и завуч не мог ни посмотреть ответы, ни пересчитать
+    // баллы после исправления ключей.
+    if ((payload.action === "getAnswerComparison" || payload.action === "recheckScores") && useFirebase && payload.shortId) {
+      try {
+        const shortId = String(payload.shortId);
+        const subRef = admin.firestore().collection("submissions").doc(`sub_${shortId}`);
+        const subSnap = await subRef.get();
+        if (!subSnap.exists) return res.json({ success: false, error: "Работа не найдена в базе" });
+        const sub = subSnap.data()!;
+        const tenantId = String(sub.tenantId || "");
+        if (payload.tenantId && String(payload.tenantId) !== tenantId) {
+          return res.status(404).json({ success: false, error: "Работа не найдена в этой организации" });
+        }
+        const allowed = await hasAnyPermission(admin.firestore(), gasUser, tenantId, ["tests:review", "tests:manage"]);
+        if (!allowed) return res.status(403).json({ success: false, error: "Нет прав на проверку работ этой организации" });
+        const grade = Number(sub.grade) || 0;
+        const questions = await loadExamQuestions(tenantId, grade);
+        if (!questions) return res.json({ success: false, error: `Тест для ${grade} класса не найден` });
+        const keys = await loadExamKeys(tenantId, grade, questions);
+        const answers = safeParse(sub.answersJson);
+        const SUBJECTS: Array<["russian" | "math" | "logic" | "english", string]> =
+          [["russian", "Русский язык"], ["math", "Математика"], ["logic", "Логика"], ["english", "Английский язык"]];
+        const hasAnswers = (subject: string) => Object.keys(keys[subject] || {}).some(id => answers[id] !== undefined);
+
+        if (payload.action === "getAnswerComparison") {
+          const comparison: any[] = [];
+          for (const [subject, label] of SUBJECTS) {
+            const saved = hasAnswers(subject);
+            questions[subject].forEach((q: any, idx: number) => {
+              const entry = keys[subject]?.[q.id];
+              const raw = answers[q.id];
+              const answered = raw !== undefined && raw !== null && String(raw).trim() !== "";
+              comparison.push({
+                subject: label, questionId: String(idx + 1), topic: entry?.topic || "",
+                studentAnswer: answered ? prettyAnswer(q, String(raw)) : (saved ? "— (пропущен)" : "— (ответы не сохранены)"),
+                correctAnswer: entry ? prettyAnswer(q, String(entry.ans)) : "—",
+                isCorrect: Boolean(entry) && answered && isAnswerCorrect(raw, entry),
+              });
+            });
+          }
+          return res.json({ success: true, comparison, studentName: sub.studentName || "", grade, scores: sub.scores || {} });
+        }
+
+        // Пересчёт по текущим ключам. Предмет, ответов по которому в базе нет
+        // (старые работы, где сдача английского затёрла основную часть),
+        // оставляем с прежним баллом, а не обнуляем.
+        const result = calculateScoresTs(grade, answers, keys as any);
+        const prev = sub.scores || {};
+        const kept: string[] = [];
+        const scores: any = { russian: 0, math: 0, logic: 0, english: 0, total: 0 };
+        for (const [subject, label] of SUBJECTS) {
+          if (hasAnswers(subject)) scores[subject] = Number(result.scores[subject]) || 0;
+          else { scores[subject] = Number(prev[subject]) || 0; kept.push(label); }
+        }
+        scores.total = scores.russian + scores.math + scores.logic;
+        const sumPts = (arr: any[]) => arr.reduce((a, q) => a + (q.points || 1), 0);
+        const maxScoreSnapshot = sumPts(questions.russian) + sumPts(questions.math) + sumPts(questions.logic);
+        const now = admin.firestore.Timestamp.now();
+        const batch = admin.firestore().batch();
+        batch.set(subRef, { scores, maxScoreSnapshot, diagnosticsRaw: result.diagnosticsRaw, diagnosticSummary: result.summaryText,
+          recheckedAt: now, recheckedBy: gasUser?.email || "" }, { merge: true });
+        batch.set(admin.firestore().collection("crm_contacts").doc(`cnt_${tenantId}_${shortId}`), { totalScore: scores.total, scores, updatedAt: now }, { merge: true });
+        batch.set(admin.firestore().collection("crm_deals").doc(`deal_${tenantId}_${shortId}`), { testScore: scores.total, updatedAt: now }, { merge: true });
+        await batch.commit();
+        writeAuditLog("EXAM_RESCORED", tenantId, {
+          studentShortId: shortId, studentName: sub.studentName || "", grade,
+          actor: gasUser?.email || "", before: prev, after: scores, keptSubjects: kept,
+        });
+        return res.json({ success: true, scores, maxScoreSnapshot, diagnosticsRaw: result.diagnosticsRaw, previousScores: prev, keptSubjects: kept });
+      } catch (e: any) {
+        console.warn("[Review] local review failed:", e.message);
+        return res.status(500).json({ success: false, error: e.message });
       }
     }
 
