@@ -1886,9 +1886,21 @@ router.put("/questions/:id", requireFirebaseAuth, requireScreen("placement"), as
     const finalOptions = (patch.options as string[]) || snap.data()!.options || [];
     const finalAnswer = String(patch.answer ?? snap.data()!.answer ?? "");
     if (finalType === "multiple_choice") {
-      const letters = ["А", "Б", "В", "Г", "Д", "Е"];
-      const idx = letters.indexOf(finalAnswer.toUpperCase());
-      if (idx === -1 || idx >= finalOptions.length) {
+      // Буква ответа сверяется с буквами самих вариантов («A) …», «Б. …»)
+      // с тем же сложением алфавитов, что и при проверке работ: раньше
+      // принимались только кириллические А–Е, и вопрос с латинскими
+      // A/B/C из импорта нельзя было сохранить вовсе.
+      const optionLetters = finalOptions
+        .map((o: string) => (String(o).match(/^\s*([A-Za-zА-Яа-яЁё]|\d{1,2})\s*[).]/) || [])[1])
+        .filter(Boolean)
+        .map(foldAnswer);
+      const positional = ["а", "б", "в", "г", "д", "е"].slice(0, finalOptions.length).map(foldAnswer);
+      const latinPositional = ["a", "b", "c", "d", "e", "f"].slice(0, finalOptions.length);
+      const given = foldAnswer(finalAnswer);
+      const ok = optionLetters.length
+        ? optionLetters.includes(given)
+        : positional.includes(given) || latinPositional.includes(given);
+      if (!ok) {
         return res.status(400).json({ success: false, error: `Правильный ответ «${finalAnswer}» не соответствует ни одному варианту` });
       }
     } else if (!finalAnswer) {
