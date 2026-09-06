@@ -105,7 +105,16 @@ export default function ManagerForm() {
       const data = await fetchGasAPI("/api/gas", { action: "getStudentByShortId", shortId, tenantId });
       if (data.success) {
         setStudent(data.student);
-        setChildName(data.student.studentName);
+        if (data.student.studentName || data.student.childName) {
+          setChildName(data.student.childName || data.student.studentName || "");
+        }
+        if (data.student.parentName && data.student.parentName !== '—') {
+          setParentName(data.student.parentName);
+        }
+        const existingPhone = data.student.phone || data.student.studentPhone;
+        if (existingPhone && existingPhone !== '—') {
+          setPhone(String(existingPhone));
+        }
         if (data.student.grade) {
           try {
             const snap = await getDoc(doc(db, 'tests', `test_grade_${data.student.grade}_${tenantId}`));

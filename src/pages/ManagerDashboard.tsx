@@ -55,6 +55,7 @@ export default function ManagerDashboard() {
   // Modal states
   const [modalType, setModalType] = useState<"ACCEPT" | "REJECT" | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
+  const [isSubmittingDecision, setIsSubmittingDecision] = useState(false);
 
   // Accept Form
   const [paymentInfo, setPaymentInfo] = useState("");
@@ -804,8 +805,9 @@ export default function ManagerDashboard() {
   };
 
   const submitFinalDecision = async () => {
-    if (!selectedStudent || !modalType) return;
+    if (!selectedStudent || !modalType || isSubmittingDecision) return;
     
+    setIsSubmittingDecision(true);
     const decision = modalType === "ACCEPT" ? "ПРИНЯТ" : "ОТКЛОНЕН";
     const finalRejectReason = rejectReason === "Другое" ? otherReason : rejectReason;
 
@@ -833,6 +835,8 @@ export default function ManagerDashboard() {
       }
     } catch (err: any) {
       toast.error("Ошибка сети: " + (err.message || err));
+    } finally {
+      setIsSubmittingDecision(false);
     }
   };
 
@@ -1067,18 +1071,16 @@ export default function ManagerDashboard() {
                       )}
                     </td>
                     <td className="p-4">
-                      {s.managerName !== "Не назначен" && s.finalDecision !== "ПРИНЯТ" && s.finalDecision !== "ОТКЛОНЕН" && (
+                      {s.finalDecision !== "ПРИНЯТ" && s.finalDecision !== "ОТКЛОНЕН" && (
                         <div className="flex gap-2">
-                          <button onClick={() => openAcceptModal(s.shortId)} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200">Принять</button>
-                          <button onClick={() => openRejectModal(s.shortId)} className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200">Отклонить</button>
+                          <button onClick={() => openAcceptModal(s.shortId)} className="text-xs bg-green-100 text-green-700 font-bold px-2.5 py-1 rounded hover:bg-green-200 cursor-pointer">Принять</button>
+                          <button onClick={() => openRejectModal(s.shortId)} className="text-xs bg-red-100 text-red-700 font-bold px-2.5 py-1 rounded hover:bg-red-200 cursor-pointer">Отклонить</button>
                         </div>
                       )}
-                      <div className="mt-2">
-                        <button onClick={() => allowRetake(s.shortId)} className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded hover:bg-amber-200 shadow-sm w-full font-medium">Разрешить пересдачу / продолжение</button>
+                      <div className="mt-2 space-y-1">
+                        <button onClick={() => allowRetake(s.shortId)} className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded hover:bg-amber-200 shadow-sm w-full font-medium cursor-pointer">Разрешить пересдачу / продолжение</button>
+                        <button onClick={() => navigate(`/workspace/${activeTenantId}/tests/check/${s.shortId}`)} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 w-full font-medium cursor-pointer">Заполнить анкету</button>
                       </div>
-                      {s.managerName === "Не назначен" && (
-                        <button onClick={() => navigate(`/workspace/${activeTenantId}/tests/check/${s.shortId}`)} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">Заполнить анкету</button>
-                      )}
                       {(s.hasDiagnostics || (s.diagnosticsRaw && Object.keys(s.diagnosticsRaw).length > 0)) && (
                         <div className="mt-2 space-y-1">
                           <button 
@@ -1354,7 +1356,9 @@ export default function ManagerDashboard() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Комментарий для ученика</label>
                     <textarea value={feedback} onChange={e => setFeedback(e.target.value)} className="w-full border border-gray-300 rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500" placeholder="Например: Отличный результат!" rows={2}></textarea>
                   </div>
-                  <button onClick={submitFinalDecision} className="w-full bg-green-600 text-white rounded-xl py-3 font-bold mt-4 hover:bg-green-700">Подтвердить прием</button>
+                  <button onClick={submitFinalDecision} disabled={isSubmittingDecision} className="w-full bg-green-600 text-white rounded-xl py-3 font-bold mt-4 hover:bg-green-700 disabled:opacity-50 cursor-pointer">
+                    {isSubmittingDecision ? "Сохранение..." : "Подтвердить прием"}
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -1377,7 +1381,9 @@ export default function ManagerDashboard() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Обратная связь для ученика</label>
                     <textarea value={feedback} onChange={e => setFeedback(e.target.value)} className="w-full border border-gray-300 rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-red-500" placeholder="Например: Не хватило баллов по математике" rows={2}></textarea>
                   </div>
-                  <button onClick={submitFinalDecision} className="w-full bg-red-600 text-white rounded-xl py-3 font-bold mt-4 hover:bg-red-700">Подтвердить отказ</button>
+                  <button onClick={submitFinalDecision} disabled={isSubmittingDecision} className="w-full bg-red-600 text-white rounded-xl py-3 font-bold mt-4 hover:bg-red-700 disabled:opacity-50 cursor-pointer">
+                    {isSubmittingDecision ? "Сохранение..." : "Подтвердить отказ"}
+                  </button>
                 </div>
               )}
             </div>
