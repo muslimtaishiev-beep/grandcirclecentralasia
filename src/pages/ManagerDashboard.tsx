@@ -1192,14 +1192,25 @@ export default function ManagerDashboard() {
                     </td>
                     <td className="p-4">
                       {s.finalDecision !== "ПРИНЯТ" && s.finalDecision !== "ОТКЛОНЕН" && (
-                        <div className="flex gap-2">
-                          <button onClick={() => openAcceptModal(s.shortId)} className="text-xs bg-green-100 text-green-700 font-bold px-2.5 py-1 rounded hover:bg-green-200 cursor-pointer">Принять</button>
-                          <button onClick={() => openRejectModal(s.shortId)} className="text-xs bg-red-100 text-red-700 font-bold px-2.5 py-1 rounded hover:bg-red-200 cursor-pointer">Отклонить</button>
+                        <div className="flex gap-2 mb-2">
+                          <button 
+                            onClick={() => navigate(`/workspace/${activeTenantId}/tests/check/${s.shortId}?mode=accept`)} 
+                            className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm cursor-pointer transition flex items-center gap-1"
+                            title="Открыть анкету и принять ученика с оплатой"
+                          >
+                            <span>💚</span> Принять
+                          </button>
+                          <button 
+                            onClick={() => navigate(`/workspace/${activeTenantId}/tests/check/${s.shortId}?mode=reject`)} 
+                            className="text-xs bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold px-2.5 py-1.5 rounded-lg cursor-pointer transition flex items-center gap-1"
+                            title="Отклонить заявку"
+                          >
+                            <span>🔴</span> Отклонить
+                          </button>
                         </div>
                       )}
-                      <div className="mt-2 space-y-1">
+                      <div className="space-y-1">
                         <button onClick={() => allowRetake(s.shortId)} className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded hover:bg-amber-200 shadow-sm w-full font-medium cursor-pointer">Разрешить пересдачу / продолжение</button>
-                        <button onClick={() => navigate(`/workspace/${activeTenantId}/tests/check/${s.shortId}`)} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 w-full font-medium cursor-pointer">Заполнить анкету</button>
                       </div>
                       {(s.hasDiagnostics || (s.diagnosticsRaw && Object.keys(s.diagnosticsRaw).length > 0)) && (
                         <div className="mt-2 space-y-1">
@@ -1437,9 +1448,9 @@ export default function ManagerDashboard() {
         )}
 
         {/* Modals */}
-        {modalType && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 relative">
+        {modalType && createPortal(
+          <div className="fixed inset-0 z-[999999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto min-h-screen" onClick={closeModals}>
+            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 relative my-auto" onClick={e => e.stopPropagation()}>
               <button onClick={closeModals} className="absolute top-4 right-4 text-gray-400 hover:text-gray-800">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
               </button>
@@ -1456,11 +1467,11 @@ export default function ManagerDashboard() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Взнос</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Взнос (сом)</label>
                       <input type="number" value={initialFee} onChange={e => setInitialFee(e.target.value)} className="w-full border border-gray-300 rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500" placeholder="0" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Общая стоимость (со скидкой)</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Общая стоимость (сом)</label>
                       <input type="number" value={totalCost} onChange={e => setTotalCost(e.target.value)} className="w-full border border-gray-300 rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500" placeholder="0" />
                     </div>
                   </div>
@@ -1507,7 +1518,8 @@ export default function ManagerDashboard() {
                 </div>
               )}
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         {/* Certificate Offscreen Container for PDF Export */}

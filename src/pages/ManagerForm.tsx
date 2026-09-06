@@ -235,7 +235,7 @@ export default function ManagerForm() {
   }
 
   return (
-    <div className="min-h-dvh bg-slate-50 py-12 px-4">
+    <div className="min-h-dvh bg-slate-50 py-8 px-4 flex items-center justify-center">
       <Toaster position="top-center" />
       {student && (
         <div style={{ width: 0, height: 0, overflow: "hidden" }}>
