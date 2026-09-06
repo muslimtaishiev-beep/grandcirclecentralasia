@@ -56,6 +56,8 @@ export default function ManagerDashboard() {
   const [financeSummary, setFinanceSummary] = useState<{
     totalInitialFees: number;
     totalContractValue: number;
+    totalMonthlyPaid: number;
+    totalCashCollected: number;
     acceptedCount: number;
     totalPayroll: number;
     netBalance: number;
@@ -63,6 +65,8 @@ export default function ManagerDashboard() {
   }>({
     totalInitialFees: 0,
     totalContractValue: 0,
+    totalMonthlyPaid: 0,
+    totalCashCollected: 0,
     acceptedCount: 0,
     totalPayroll: 0,
     netBalance: 0,
@@ -76,12 +80,19 @@ export default function ManagerDashboard() {
     const accepted = students.filter(s => s.finalDecision === "ПРИНЯТ" && (s.tenantId === activeTenantId || !s.tenantId));
     let initSum = 0;
     let contractSum = 0;
+    let monthlySum = 0;
+
     accepted.forEach(s => {
-      const initStr = String(s.initialFee || "0").replace(/\s+/g, "").replace(/₸/g, "").replace(/kzt/gi, "");
-      const totStr = String(s.totalCost || "0").replace(/\s+/g, "").replace(/₸/g, "").replace(/kzt/gi, "");
+      const initStr = String(s.initialFee || "0").replace(/[^\d.]/g, "");
+      const totStr = String(s.totalCost || "0").replace(/[^\d.]/g, "");
+      const mPaidStr = String(s.monthlyPaidSum || s.firstMonthPaymentAmount || "0").replace(/[^\d.]/g, "");
+      
       initSum += parseFloat(initStr) || 0;
       contractSum += parseFloat(totStr) || 0;
+      monthlySum += parseFloat(mPaidStr) || 0;
     });
+
+    const cashCollected = initSum + monthlySum;
 
     (async () => {
       try {
@@ -95,9 +106,11 @@ export default function ManagerDashboard() {
             setFinanceSummary({
               totalInitialFees: data.totalInitialFees || initSum,
               totalContractValue: data.totalContractValue || contractSum,
+              totalMonthlyPaid: data.totalMonthlyPaid || monthlySum,
+              totalCashCollected: data.totalCashCollected || cashCollected,
               acceptedCount: data.acceptedCount || accepted.length,
               totalPayroll: data.totalPayroll || 0,
-              netBalance: data.netBalance !== undefined ? data.netBalance : (initSum - (data.totalPayroll || 0)),
+              netBalance: data.netBalance !== undefined ? data.netBalance : (cashCollected - (data.totalPayroll || 0)),
               projectedBalance: data.projectedBalance !== undefined ? data.projectedBalance : ((initSum + contractSum) - (data.totalPayroll || 0))
             });
             return;
@@ -110,8 +123,10 @@ export default function ManagerDashboard() {
         ...prev,
         totalInitialFees: initSum,
         totalContractValue: contractSum,
+        totalMonthlyPaid: monthlySum,
+        totalCashCollected: cashCollected,
         acceptedCount: accepted.length,
-        netBalance: initSum - prev.totalPayroll,
+        netBalance: cashCollected - prev.totalPayroll,
         projectedBalance: (initSum + contractSum) - prev.totalPayroll
       }));
     })();
@@ -962,11 +977,11 @@ export default function ManagerDashboard() {
               💵
             </div>
             <div>
-              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Касса (Взносы)</div>
+              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Касса (Фактически)</div>
               <div className="text-xl font-bold text-slate-900 mt-0.5">
-                {financeSummary.totalInitialFees.toLocaleString("ru-RU")} сом
+                {financeSummary.totalCashCollected.toLocaleString("ru-RU")} сом
               </div>
-              <div className="text-[11px] text-emerald-600 font-medium">Зачислено: {financeSummary.acceptedCount} учеников</div>
+              <div className="text-[11px] text-emerald-600 font-medium">Взносы ({financeSummary.totalInitialFees.toLocaleString("ru-RU")}) + Помесячно ({financeSummary.totalMonthlyPaid.toLocaleString("ru-RU")})</div>
             </div>
           </div>
 
@@ -975,11 +990,11 @@ export default function ManagerDashboard() {
               📜
             </div>
             <div>
-              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Сумма договоров</div>
+              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Договоры за год (со скидкой)</div>
               <div className="text-xl font-bold text-slate-900 mt-0.5">
                 {financeSummary.totalContractValue.toLocaleString("ru-RU")} сом
               </div>
-              <div className="text-[11px] text-blue-600 font-medium">Общая выручка</div>
+              <div className="text-[11px] text-blue-600 font-medium">Годовой объем ({financeSummary.acceptedCount} учеников)</div>
             </div>
           </div>
 
@@ -992,7 +1007,7 @@ export default function ManagerDashboard() {
               <div className="text-xl font-bold text-slate-900 mt-0.5">
                 {financeSummary.totalPayroll.toLocaleString("ru-RU")} сом
               </div>
-              <div className="text-[11px] text-purple-600 font-medium">Расходы на зарплаты</div>
+              <div className="text-[11px] text-purple-600 font-medium">Расходы на сотрудников</div>
             </div>
           </div>
 
@@ -1007,7 +1022,7 @@ export default function ManagerDashboard() {
               <div className={`text-xl font-bold mt-0.5 ${financeSummary.netBalance >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                 {financeSummary.netBalance.toLocaleString("ru-RU")} сом
               </div>
-              <div className="text-[11px] text-slate-400 font-medium">Взносы кассы минус ФОТ</div>
+              <div className="text-[11px] text-slate-400 font-medium">Касса (факт) минус ФОТ</div>
             </div>
           </div>
         </div>

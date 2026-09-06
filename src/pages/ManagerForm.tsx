@@ -97,9 +97,10 @@ export default function ManagerForm() {
   const [decisionMode, setDecisionMode] = useState<"ACCEPT" | "PSYCHOLOGIST" | "REJECT">(initialMode as any);
 
   // Payment fields for ACCEPT mode
-  const [paymentInfo, setPaymentInfo] = useState("Kaspi Pay");
+  const [paymentInfo, setPaymentInfo] = useState("MBANK");
   const [initialFee, setInitialFee] = useState("");
   const [totalCost, setTotalCost] = useState("");
+  const [monthlyPaidSum, setMonthlyPaidSum] = useState("");
   const [firstMonthPayment, setFirstMonthPayment] = useState("Оплачено");
 
   // Rejection fields for REJECT mode
@@ -129,6 +130,7 @@ export default function ManagerForm() {
         }
         if (data.student.initialFee) setInitialFee(String(data.student.initialFee));
         if (data.student.totalCost) setTotalCost(String(data.student.totalCost));
+        if (data.student.monthlyPaidSum || data.student.firstMonthPaymentAmount) setMonthlyPaidSum(String(data.student.monthlyPaidSum || data.student.firstMonthPaymentAmount));
         if (data.student.paymentInfo) setPaymentInfo(String(data.student.paymentInfo));
         if (data.student.firstMonthPayment) setFirstMonthPayment(String(data.student.firstMonthPayment));
         if (data.student.rejectReason) setRejectReason(String(data.student.rejectReason));
@@ -193,6 +195,7 @@ export default function ManagerForm() {
         payload.paymentInfo = paymentInfo;
         payload.initialFee = initialFee;
         payload.totalCost = totalCost;
+        payload.monthlyPaidSum = monthlyPaidSum;
         payload.firstMonthPayment = firstMonthPayment;
       } else if (decisionMode === "PSYCHOLOGIST") {
         payload.sentToPsych = true;
@@ -414,12 +417,14 @@ export default function ManagerForm() {
                       <select 
                         value={paymentInfo} 
                         onChange={e => setPaymentInfo(e.target.value)}
-                        className="w-full border border-emerald-300 rounded-xl p-2.5 bg-white text-sm text-slate-800"
+                        className="w-full border border-emerald-300 rounded-xl p-2.5 bg-white text-sm text-slate-800 font-medium"
                       >
-                        <option value="Kaspi Pay">Kaspi Pay</option>
+                        <option value="MBANK">MBANK (МБэнк)</option>
+                        <option value="О!Деньги">О!Деньги</option>
+                        <option value="Bakai Bank">Bakai Bank</option>
                         <option value="Наличные в кассу">Наличные в кассу</option>
                         <option value="Банковский перевод (р/с)">Банковский перевод (р/с)</option>
-                        <option value="Рассрочка Kaspi">Рассрочка Kaspi</option>
+                        <option value="Рассрочка / Элсом">Рассрочка / Элсом</option>
                         <option value="Другое">Другое</option>
                       </select>
                     </div>
@@ -429,7 +434,7 @@ export default function ManagerForm() {
                       <select 
                         value={firstMonthPayment} 
                         onChange={e => setFirstMonthPayment(e.target.value)}
-                        className="w-full border border-emerald-300 rounded-xl p-2.5 bg-white text-sm text-slate-800"
+                        className="w-full border border-emerald-300 rounded-xl p-2.5 bg-white text-sm text-slate-800 font-medium"
                       >
                         <option value="Оплачено">Оплачено</option>
                         <option value="В ожидании">В ожидании</option>
@@ -438,7 +443,7 @@ export default function ManagerForm() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
                       <label className="block text-xs font-semibold mb-1 text-emerald-900">Вступительный взнос (сом) *</label>
                       <input 
@@ -450,15 +455,29 @@ export default function ManagerForm() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold mb-1 text-emerald-900">Стоимость по договору (сом) *</label>
+                      <label className="block text-xs font-semibold mb-1 text-emerald-900">Оплачено по месяцам (сом)</label>
                       <input 
                         type="text" 
-                        placeholder="450 000" 
+                        placeholder="35 000" 
+                        value={monthlyPaidSum} 
+                        onChange={e => setMonthlyPaidSum(e.target.value)}
+                        className="w-full border border-emerald-300 rounded-xl p-2.5 bg-white text-sm font-semibold text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold mb-1 text-emerald-900">Договор за год со скидкой (сом) *</label>
+                      <input 
+                        type="text" 
+                        placeholder="350 000" 
                         value={totalCost} 
                         onChange={e => setTotalCost(e.target.value)}
                         className="w-full border border-emerald-300 rounded-xl p-2.5 bg-white text-sm font-semibold text-slate-800"
                       />
                     </div>
+                  </div>
+
+                  <div className="text-[11px] text-emerald-800 bg-emerald-100/60 p-2.5 rounded-xl border border-emerald-200">
+                    💡 <b>Учёт кассы:</b> В реальную кассу попадают <u>Вступительный взнос</u> + <u>Оплачено по месяцам</u>. Общая стоимость договора за год фиксируется отдельно и не завышает баланс кассы.
                   </div>
                 </div>
               )}

@@ -638,17 +638,23 @@ app.get("/api/tenant/finance-summary", requireFirebaseAuth, async (req: any, res
 
     let totalInitialFees = 0;
     let totalContractValue = 0;
+    let totalMonthlyPaid = 0;
     let acceptedCount = 0;
 
     subSnap.forEach(d => {
       const data = d.data();
       acceptedCount++;
-      const initFeeStr = String(data.initialFee || "0").replace(/\s+/g, "").replace(/₸/g, "").replace(/kzt/gi, "");
-      const totCostStr = String(data.totalCost || "0").replace(/\s+/g, "").replace(/₸/g, "").replace(/kzt/gi, "");
+      const initFeeStr = String(data.initialFee || "0").replace(/[^\d.]/g, "");
+      const totCostStr = String(data.totalCost || "0").replace(/[^\d.]/g, "");
+      const mPaidStr = String(data.monthlyPaidSum || data.firstMonthPaymentAmount || "0").replace(/[^\d.]/g, "");
+      
       const initFee = parseFloat(initFeeStr) || 0;
       const totCost = parseFloat(totCostStr) || 0;
+      const mPaid = parseFloat(mPaidStr) || 0;
+
       totalInitialFees += initFee;
       totalContractValue += totCost;
+      totalMonthlyPaid += mPaid;
     });
 
     // 2. Расчет зарплат и ФОТ по организации
@@ -664,7 +670,8 @@ app.get("/api/tenant/finance-summary", requireFirebaseAuth, async (req: any, res
       console.warn("[finance-summary] Payroll query notice:", e.message);
     }
 
-    const netBalance = totalInitialFees - totalPayroll;
+    const totalCashCollected = totalInitialFees + totalMonthlyPaid;
+    const netBalance = totalCashCollected - totalPayroll;
     const projectedBalance = (totalInitialFees + totalContractValue) - totalPayroll;
 
     return res.json({
@@ -673,6 +680,8 @@ app.get("/api/tenant/finance-summary", requireFirebaseAuth, async (req: any, res
       acceptedCount,
       totalInitialFees,
       totalContractValue,
+      totalMonthlyPaid,
+      totalCashCollected,
       totalPayroll,
       netBalance,
       projectedBalance
@@ -2071,6 +2080,7 @@ app.post("/api/gas", async (req, res) => {
             ...(payload.paymentInfo !== undefined ? { paymentInfo: payload.paymentInfo } : {}),
             ...(payload.initialFee !== undefined ? { initialFee: payload.initialFee } : {}),
             ...(payload.totalCost !== undefined ? { totalCost: payload.totalCost } : {}),
+            ...(payload.monthlyPaidSum !== undefined ? { monthlyPaidSum: payload.monthlyPaidSum } : {}),
             ...(payload.firstMonthPayment !== undefined ? { firstMonthPayment: payload.firstMonthPayment } : {}),
             ...(payload.rejectReason !== undefined ? { rejectReason: payload.rejectReason } : {}),
             ...(payload.feedback !== undefined ? { feedback: payload.feedback } : {}),
