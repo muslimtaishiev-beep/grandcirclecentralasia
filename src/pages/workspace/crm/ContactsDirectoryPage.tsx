@@ -44,7 +44,7 @@ export default function ContactsDirectoryPage() {
           tenantId: data.tenantId,
           fullName: data.fullName || data.name || 'Без имени',
           email: data.email || '—',
-          phone: data.phone || '—',
+          phone: data.phone != null ? String(data.phone) : '—',
           type: data.type || 'student',
           companyName: data.companyName || '',
           totalDealsCount: data.totalDealsCount || 0,
@@ -134,7 +134,7 @@ export default function ContactsDirectoryPage() {
 
   const filtered = contacts.filter(c => 
     (c.fullName || '').toLowerCase().includes(search.toLowerCase()) || 
-    (c.phone || '').includes(search) ||
+    String(c.phone || '').includes(search) ||
     (c.email || '').toLowerCase().includes(search.toLowerCase())
   );
 
