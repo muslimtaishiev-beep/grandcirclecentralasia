@@ -1,9 +1,9 @@
 import { resolveWorkspaceConfig } from "../../shared/workspaceConfig";
 import React, { useEffect, useState } from "react";
 import { useOutletContext, Link, useParams } from "react-router-dom";
-import { Users, FileText, CheckSquare, Layers, TrendingUp, ArrowRight, ShieldCheck, Zap } from "lucide-react";
+import { Users, FileText, CheckSquare, Layers, TrendingUp, ArrowRight, ShieldCheck, Zap, Landmark } from "lucide-react";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
-import { db } from "../../lib/firebase";
+import { db, auth } from "../../lib/firebase";
 
 export default function WorkspaceDashboard() {
   const { activeTenant } = useOutletContext<any>() || {};
@@ -17,21 +17,30 @@ export default function WorkspaceDashboard() {
     docsCount: 0
   });
 
+  const [financeSummary, setFinanceSummary] = useState<{
+    totalCashCollected: number;
+    totalInitialFees: number;
+    totalMonthlyPaid: number;
+    totalContractValue: number;
+    acceptedCount: number;
+    totalPayroll: number;
+    netBalance: number;
+  }>({
+    totalCashCollected: 0,
+    totalInitialFees: 0,
+    totalMonthlyPaid: 0,
+    totalContractValue: 0,
+    acceptedCount: 0,
+    totalPayroll: 0,
+    netBalance: 0
+  });
+
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!orgId) return;
     let cancelled = false;
 
-    /**
-     * Счётчики считаются НА СЕРВЕРЕ (getCountFromServer).
-     *
-     * Раньше здесь висели пять живых подписок на целые коллекции — и всё
-     * ради пяти чисел: браузер скачивал каждую сделку, каждую задачу и
-     * каждый тест (а тест хранит внутри весь банк вопросов), чтобы взять
-     * snap.size. Плюс любая правка в любой из коллекций перерисовывала
-     * дашборд. Счёт на сервере возвращает одно число на коллекцию.
-     */
     (async () => {
       const { getCountFromServer } = await import("firebase/firestore");
       const countOf = async (col: string) => {
@@ -48,6 +57,29 @@ export default function WorkspaceDashboard() {
       ]);
       if (cancelled) return;
       setStats({ membersCount, testsCount, dealsCount, tasksCount, docsCount });
+
+      // Fetch financial summary for tenant dashboard
+      try {
+        const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        const res = await fetch(`/api/tenant/finance-summary?tenantId=${encodeURIComponent(orgId)}`, {
+          headers: { Authorization: token ? `Bearer ${token}` : "" }
+        });
+        const j = await res.json();
+        if (!cancelled && j && j.success) {
+          setFinanceSummary({
+            totalCashCollected: j.totalCashCollected || 0,
+            totalInitialFees: j.totalInitialFees || 0,
+            totalMonthlyPaid: j.totalMonthlyPaid || 0,
+            totalContractValue: j.totalContractValue || 0,
+            acceptedCount: j.acceptedCount || 0,
+            totalPayroll: j.totalPayroll || 0,
+            netBalance: j.netBalance || 0
+          });
+        }
+      } catch (e) {
+        console.warn("[WorkspaceDashboard] Finance fetch error:", e);
+      }
+
       setLoading(false);
     })();
 
@@ -63,14 +95,70 @@ export default function WorkspaceDashboard() {
           <div className="flex items-center gap-2 text-xs font-mono text-[var(--accent)] font-bold uppercase tracking-wider mb-2">
             <Zap className="w-4 h-4" /> {activeTenant?.name && !activeTenant.name.startsWith("org_") ? activeTenant.name : "Ваша организация"}
           </div>
-          {/* Заголовок из настроек организации; по умолчанию — прежний
-              текст, поэтому у Академии ничего не меняется. */}
           <h1 className="text-3xl font-extrabold text-[var(--text-main)] tracking-tight">
             {resolveWorkspaceConfig(activeTenant?.workspaceConfig).dashboardTitle}
           </h1>
           <p className="text-[var(--text-muted)] mt-2 max-w-2xl text-sm leading-relaxed">
             {resolveWorkspaceConfig(activeTenant?.workspaceConfig).dashboardSubtitle}
           </p>
+        </div>
+      </div>
+
+      {/* Financial Analytics Widget of Tenant */}
+      <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] p-6 rounded-2xl shadow-sm space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-emerald-500/10 text-emerald-500 rounded-xl">
+              <Landmark className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-[var(--text-main)]">Финансовый свод и Касса организации</h2>
+              <p className="text-xs text-[var(--text-muted)]">Синхронизированные данные поступлений от учеников и расходов на зарплаты</p>
+            </div>
+          </div>
+          <Link
+            to={`/workspace/${orgId}/edu/payroll`}
+            className="text-xs font-bold text-emerald-600 hover:text-emerald-500 flex items-center gap-1.5 bg-emerald-500/10 px-4 py-2 rounded-xl border border-emerald-500/20 transition"
+          >
+            <span>Кассовая книга и Зарплаты</span>
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+          <div className="bg-[var(--bg-app)] border border-emerald-500/30 p-4 rounded-xl">
+            <div className="text-[11px] font-mono uppercase font-bold text-emerald-600">Касса (Фактически)</div>
+            <div className="text-2xl font-black text-emerald-600 mt-1">
+              {financeSummary.totalCashCollected.toLocaleString("ru-RU")} сом
+            </div>
+            <div className="text-[11px] text-[var(--text-muted)] mt-1">
+              Взносы ({financeSummary.totalInitialFees.toLocaleString("ru-RU")}) + Помесячно ({financeSummary.totalMonthlyPaid.toLocaleString("ru-RU")})
+            </div>
+          </div>
+
+          <div className="bg-[var(--bg-app)] border border-[var(--border-color)] p-4 rounded-xl">
+            <div className="text-[11px] font-mono uppercase font-bold text-[var(--text-muted)]">Договоры за год (со скидкой)</div>
+            <div className="text-2xl font-black text-[var(--text-main)] mt-1">
+              {financeSummary.totalContractValue.toLocaleString("ru-RU")} сом
+            </div>
+            <div className="text-[11px] text-blue-500 font-medium mt-1">Годовой объем ({financeSummary.acceptedCount} учеников)</div>
+          </div>
+
+          <div className="bg-[var(--bg-app)] border border-[var(--border-color)] p-4 rounded-xl">
+            <div className="text-[11px] font-mono uppercase font-bold text-[var(--text-muted)]">ФОТ Зарплат</div>
+            <div className="text-2xl font-black text-purple-500 mt-1">
+              {financeSummary.totalPayroll.toLocaleString("ru-RU")} сом
+            </div>
+            <div className="text-[11px] text-purple-500 font-medium mt-1">Расходы на сотрудников</div>
+          </div>
+
+          <div className="bg-[var(--bg-app)] border border-[var(--border-color)] p-4 rounded-xl">
+            <div className="text-[11px] font-mono uppercase font-bold text-[var(--text-muted)]">Чистый баланс кассы</div>
+            <div className={`text-2xl font-black mt-1 ${financeSummary.netBalance >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+              {financeSummary.netBalance.toLocaleString("ru-RU")} сом
+            </div>
+            <div className="text-[11px] text-[var(--text-muted)] mt-1">Касса (факт) − ФОТ</div>
+          </div>
         </div>
       </div>
 
