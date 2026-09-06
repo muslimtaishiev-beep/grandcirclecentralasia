@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Calendar, Download, Printer, RefreshCw, Loader2, Check, Users, Settings2, FileText, Info } from "lucide-react";
+import { Calendar, Download, Printer, RefreshCw, Loader2, Check, Users, Settings2, FileText, Info, Landmark, ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { auth } from "../../../lib/firebase";
 import { resolveLegalProfile } from "../../../shared/legal";
 import {
@@ -12,10 +12,7 @@ import {
 /**
  * Зарплаты — все сотрудники организации, расчёт по правилам КР.
  *
- * Три вкладки: ведомость за месяц (начисления, взносы, налог, к выплате,
- * статусы), условия оплаты по каждому сотруднику, настройки ставок.
- * Печать расчётной ведомости и расчётного листка с реквизитами
- * организации, выгрузка CSV для бухгалтерии. Считает сервер.
+ * Вкладки: ведомость за месяц, сотрудники и условия, Касса и движения денег, настройки ставок.
  */
 type Rec = any;
 const month0 = () => new Date().toISOString().slice(0, 7);
@@ -28,11 +25,12 @@ export default function TeacherPayrollPage() {
   const tenantId: string = activeTenant?.id || "";
   const legal = resolveLegalProfile(activeTenant);
 
-  const [tab, setTab] = useState<"statement" | "employees" | "settings">("statement");
+  const [tab, setTab] = useState<"statement" | "employees" | "cash" | "settings">("statement");
   const [month, setMonth] = useState(month0());
   const [records, setRecords] = useState<Rec[]>([]);
   const [employees, setEmployees] = useState<EmployeeTerms[]>([]);
   const [settings, setSettings] = useState<PayrollSettings>(resolvePayrollSettings({}));
+  const [cashSummary, setCashSummary] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,8 +53,21 @@ export default function TeacherPayrollPage() {
     if (!tenantId) return;
     setLoading(true); setError(null);
     try {
-      const [r, e, s] = await Promise.all([api(`/records?month=${month}`), api("/employees"), api("/settings")]);
-      setRecords(r.records || []); setEmployees(e.employees || []); setSettings(resolvePayrollSettings(s.settings));
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+      const [r, e, s, finRes] = await Promise.all([
+        api(`/records?month=${month}`),
+        api("/employees"),
+        api("/settings"),
+        fetch(`/api/tenant/finance-summary?tenantId=${encodeURIComponent(tenantId)}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).then(res => res.json()).catch(() => ({}))
+      ]);
+      setRecords(r.records || []);
+      setEmployees(e.employees || []);
+      setSettings(resolvePayrollSettings(s.settings));
+      if (finRes && finRes.success) {
+        setCashSummary(finRes);
+      }
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
   }, [api, tenantId, month]);
@@ -178,7 +189,7 @@ ${r.inputs.note ? `<p>Примечание: ${esc(r.inputs.note)}</p>` : ""}
       </div>
 
       <div className="flex gap-1 bg-[var(--bg-app)] border border-[var(--border-color)] rounded-xl p-1 text-xs w-fit">
-        {([["statement", "Ведомость", FileText], ["employees", `Сотрудники и условия (${employees.length})`, Users], ["settings", "Ставки и вычеты", Settings2]] as const).map(([k, label, Icon]) => (
+        {([["statement", "Ведомость", FileText], ["employees", `Сотрудники и условия (${employees.length})`, Users], ["cash", "Касса и движения", Landmark], ["settings", "Ставки и вычеты", Settings2]] as const).map(([k, label, Icon]) => (
           <button key={k} onClick={() => setTab(k)} data-testid={`payroll-tab-${k}`}
             className={`px-4 py-2 rounded-lg font-bold transition flex items-center gap-1.5 ${tab === k ? "bg-[var(--bg-surface)] text-emerald-500 shadow-xs" : "text-[var(--text-muted)]"}`}>
             <Icon className="w-3.5 h-3.5" /> {label}
@@ -263,6 +274,159 @@ ${r.inputs.note ? `<p>Примечание: ${esc(r.inputs.note)}</p>` : ""}
               {!employees.length && <tr><td colSpan={8} className="px-3 py-10 text-center text-[var(--text-muted)] text-sm">Сотрудников нет — добавьте их в «Роли и доступы».</td></tr>}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ── Касса и движения денег ── */}
+      {!loading && tab === "cash" && (
+        <div className="space-y-6">
+          <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-4 text-xs text-emerald-700 flex gap-3 items-start">
+            <Landmark className="w-5 h-5 shrink-0 text-emerald-600 mt-0.5" />
+            <div>
+              <div className="font-bold text-sm text-emerald-900 mb-0.5">Касса организации и учет движения средств</div>
+              Синхронизированный учет кассы: поступления формируются из <b>вступительных взносов</b> и <b>оплат по месяцам</b> принятых учеников, а расходами являются <b>выплаты по зарплатным ведомостям (ФОТ)</b>. Годовая стоимость договоров фиксируется справочно и не завышает баланс кассы.
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-[var(--bg-surface)] border border-emerald-500/30 rounded-2xl p-4 shadow-sm">
+              <div className="text-[11px] uppercase font-bold text-emerald-600 tracking-wider">Касса (Фактически)</div>
+              <div className="text-2xl font-black text-emerald-600 mt-1">
+                {((cashSummary?.totalCashCollected || 0)).toLocaleString("ru-RU")} сом
+              </div>
+              <div className="text-[11px] text-[var(--text-muted)] mt-1">Взносы + оклады по месяцам</div>
+            </div>
+
+            <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-4 shadow-sm">
+              <div className="text-[11px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Договоры за год (со скидкой)</div>
+              <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+                {((cashSummary?.totalContractValue || 0)).toLocaleString("ru-RU")} сом
+              </div>
+              <div className="text-[11px] text-blue-600 font-medium mt-1">Общий объем ({cashSummary?.acceptedCount || 0} учеников)</div>
+            </div>
+
+            <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-4 shadow-sm">
+              <div className="text-[11px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Расходы на Зарплаты (ФОТ)</div>
+              <div className="text-2xl font-black text-purple-600 mt-1">
+                {((cashSummary?.totalPayroll || totals.totalCost || 0)).toLocaleString("ru-RU")} сом
+              </div>
+              <div className="text-[11px] text-purple-600 font-medium mt-1">Начисления сотрудникам</div>
+            </div>
+
+            <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-4 shadow-sm">
+              <div className="text-[11px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Чистый баланс кассы</div>
+              <div className={`text-2xl font-black mt-1 ${(cashSummary?.netBalance || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                {((cashSummary?.netBalance || 0)).toLocaleString("ru-RU")} сом
+              </div>
+              <div className="text-[11px] text-[var(--text-muted)] mt-1">Касса (факт) − ФОТ</div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-base flex items-center gap-2">
+                <ArrowDownLeft className="w-5 h-5 text-emerald-500" />
+                Поступления в кассу от учеников
+              </h3>
+              <span className="text-xs text-[var(--text-muted)]">Принято учеников: {cashSummary?.acceptedCount || 0}</span>
+            </div>
+
+            <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl overflow-x-auto shadow-sm">
+              <table className="w-full text-sm min-w-[850px]">
+                <thead className="bg-[var(--bg-panel)] text-[11px] uppercase font-mono text-[var(--text-muted)]">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Ученик</th>
+                    <th className="px-4 py-3 text-left">Класс</th>
+                    <th className="px-4 py-3 text-left">Способ оплаты</th>
+                    <th className="px-4 py-3 text-right">Вступительный взнос</th>
+                    <th className="px-4 py-3 text-right">Оплачено по месяцам</th>
+                    <th className="px-4 py-3 text-right">Итого в кассу</th>
+                    <th className="px-4 py-3 text-right">Договор за год</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(cashSummary?.studentTransactions || []).map((t: any) => (
+                    <tr key={t.id} className="border-t border-[var(--border-color)] hover:bg-[var(--bg-panel)]/50 transition">
+                      <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">{t.studentName}</td>
+                      <td className="px-4 py-3 text-xs text-[var(--text-muted)]">{t.grade ? `${t.grade} класс` : "—"}</td>
+                      <td className="px-4 py-3 text-xs">
+                        <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-700 font-semibold border border-emerald-500/20">
+                          {t.paymentInfo || "MBANK"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-emerald-600 font-medium">
+                        {(t.initialFee || 0).toLocaleString("ru-RU")} сом
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-emerald-600 font-medium">
+                        {(t.monthlyPaidSum || 0).toLocaleString("ru-RU")} сом
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums font-black text-emerald-600">
+                        {(t.totalPaidIntoCash || 0).toLocaleString("ru-RU")} сом
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[var(--text-muted)] font-mono text-xs">
+                        {(t.totalCost || 0).toLocaleString("ru-RU")} сом
+                      </td>
+                    </tr>
+                  ))}
+                  {(!cashSummary?.studentTransactions || cashSummary.studentTransactions.length === 0) && (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-[var(--text-muted)] text-sm">
+                        Поступлений в кассу пока нет. При принятии учеников внесенные взносы будут отображаться здесь автоматически.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-base flex items-center gap-2">
+                <ArrowUpRight className="w-5 h-5 text-rose-500" />
+                Расходы кассы на выплату зарплат ({monthTitle(month)})
+              </h3>
+              <span className="text-xs text-[var(--text-muted)]">Общие расходы: {fmt(totals.totalCost)} {cur}</span>
+            </div>
+
+            <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl overflow-x-auto shadow-sm">
+              <table className="w-full text-sm min-w-[850px]">
+                <thead className="bg-[var(--bg-panel)] text-[11px] uppercase font-mono text-[var(--text-muted)]">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Сотрудник</th>
+                    <th className="px-4 py-3 text-left">Должность</th>
+                    <th className="px-4 py-3 text-right">Начислено</th>
+                    <th className="px-4 py-3 text-right">Удержания / Налоги</th>
+                    <th className="px-4 py-3 text-right">К выплате из кассы</th>
+                    <th className="px-4 py-3 text-center">Статус</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {records.map((r: any) => (
+                    <tr key={r.id} className="border-t border-[var(--border-color)] hover:bg-[var(--bg-panel)]/50 transition">
+                      <td className="px-4 py-3 font-semibold">{r.fullName}</td>
+                      <td className="px-4 py-3 text-xs text-[var(--text-muted)]">{r.position || "—"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{fmt(r.calc.gross)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[var(--text-muted)]">{fmt(r.calc.sfEmployee + r.calc.incomeTax)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums font-black text-rose-600">{fmt(r.calc.toPay)} {cur}</td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase ${r.status === "paid" ? "bg-emerald-500/15 text-emerald-600" : r.status === "approved" ? "bg-sky-500/15 text-sky-600" : "bg-slate-500/15 text-slate-500"}`}>
+                          {STATUS_LABEL[r.status as PayrollStatus]}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {!records.length && (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-[var(--text-muted)] text-sm">
+                        За {monthTitle(month)} ведомости выплат еще нет.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 

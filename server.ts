@@ -641,6 +641,8 @@ app.get("/api/tenant/finance-summary", requireFirebaseAuth, async (req: any, res
     let totalMonthlyPaid = 0;
     let acceptedCount = 0;
 
+    const studentTransactions: any[] = [];
+
     subSnap.forEach(d => {
       const data = d.data();
       acceptedCount++;
@@ -655,6 +657,18 @@ app.get("/api/tenant/finance-summary", requireFirebaseAuth, async (req: any, res
       totalInitialFees += initFee;
       totalContractValue += totCost;
       totalMonthlyPaid += mPaid;
+
+      studentTransactions.push({
+        id: d.id,
+        studentName: data.childName || data.studentName || "Ученик",
+        grade: data.grade || "",
+        paymentInfo: data.paymentInfo || "MBANK",
+        initialFee: initFee,
+        monthlyPaidSum: mPaid,
+        totalCost: totCost,
+        totalPaidIntoCash: initFee + mPaid,
+        date: data.submittedAt || data.updatedAt || data.date || null
+      });
     });
 
     // 2. Расчет зарплат и ФОТ по организации
@@ -684,7 +698,8 @@ app.get("/api/tenant/finance-summary", requireFirebaseAuth, async (req: any, res
       totalCashCollected,
       totalPayroll,
       netBalance,
-      projectedBalance
+      projectedBalance,
+      studentTransactions
     });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
