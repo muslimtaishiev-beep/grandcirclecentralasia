@@ -52,6 +52,71 @@ export default function ManagerDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Tenant Financial Analytics State
+  const [financeSummary, setFinanceSummary] = useState<{
+    totalInitialFees: number;
+    totalContractValue: number;
+    acceptedCount: number;
+    totalPayroll: number;
+    netBalance: number;
+    projectedBalance: number;
+  }>({
+    totalInitialFees: 0,
+    totalContractValue: 0,
+    acceptedCount: 0,
+    totalPayroll: 0,
+    netBalance: 0,
+    projectedBalance: 0
+  });
+
+  useEffect(() => {
+    if (!activeTenantId) return;
+
+    // Fast client fallback from loaded students
+    const accepted = students.filter(s => s.finalDecision === "ПРИНЯТ" && (s.tenantId === activeTenantId || !s.tenantId));
+    let initSum = 0;
+    let contractSum = 0;
+    accepted.forEach(s => {
+      const initStr = String(s.initialFee || "0").replace(/\s+/g, "").replace(/₸/g, "").replace(/kzt/gi, "");
+      const totStr = String(s.totalCost || "0").replace(/\s+/g, "").replace(/₸/g, "").replace(/kzt/gi, "");
+      initSum += parseFloat(initStr) || 0;
+      contractSum += parseFloat(totStr) || 0;
+    });
+
+    (async () => {
+      try {
+        const token = await firebaseAuth.currentUser?.getIdToken();
+        if (token) {
+          const res = await fetch(`/api/tenant/finance-summary?tenantId=${encodeURIComponent(activeTenantId)}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (data.success) {
+            setFinanceSummary({
+              totalInitialFees: data.totalInitialFees || initSum,
+              totalContractValue: data.totalContractValue || contractSum,
+              acceptedCount: data.acceptedCount || accepted.length,
+              totalPayroll: data.totalPayroll || 0,
+              netBalance: data.netBalance !== undefined ? data.netBalance : (initSum - (data.totalPayroll || 0)),
+              projectedBalance: data.projectedBalance !== undefined ? data.projectedBalance : ((initSum + contractSum) - (data.totalPayroll || 0))
+            });
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("[FinanceSummary] fetch notice:", e);
+      }
+      setFinanceSummary(prev => ({
+        ...prev,
+        totalInitialFees: initSum,
+        totalContractValue: contractSum,
+        acceptedCount: accepted.length,
+        netBalance: initSum - prev.totalPayroll,
+        projectedBalance: (initSum + contractSum) - prev.totalPayroll
+      }));
+    })();
+  }, [students, activeTenantId]);
+
   // Modal states
   const [modalType, setModalType] = useState<"ACCEPT" | "REJECT" | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
@@ -890,9 +955,64 @@ export default function ManagerDashboard() {
           </div>
         </div>
 
-        {/* Interrupted exams awaiting a decision. Shown above the roster because
-            a student sitting locked out of a running exam is time-critical —
-            unlike the roster, which can be read at any point. */}
+        {/* Tenant Financial Analytics Cards */}
+        <div className="mb-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-2xl font-bold shrink-0">
+              💵
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Касса (Взносы)</div>
+              <div className="text-xl font-bold text-slate-900 mt-0.5">
+                {financeSummary.totalInitialFees.toLocaleString("ru-RU")} ₸
+              </div>
+              <div className="text-[11px] text-emerald-600 font-medium">Зачислено: {financeSummary.acceptedCount} учеников</div>
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-2xl font-bold shrink-0">
+              📜
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Сумма договоров</div>
+              <div className="text-xl font-bold text-slate-900 mt-0.5">
+                {financeSummary.totalContractValue.toLocaleString("ru-RU")} ₸
+              </div>
+              <div className="text-[11px] text-blue-600 font-medium">Общая выручка</div>
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-2xl font-bold shrink-0">
+              👥
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">ФОТ Зарплат</div>
+              <div className="text-xl font-bold text-slate-900 mt-0.5">
+                {financeSummary.totalPayroll.toLocaleString("ru-RU")} ₸
+              </div>
+              <div className="text-[11px] text-purple-600 font-medium">Расходы на зарплаты</div>
+            </div>
+          </div>
+
+          <div className={`p-5 rounded-2xl border shadow-sm flex items-center gap-4 ${
+            financeSummary.netBalance >= 0 ? "bg-slate-900 text-white border-slate-800" : "bg-rose-950 text-white border-rose-900"
+          }`}>
+            <div className="w-12 h-12 rounded-xl bg-white/10 text-white flex items-center justify-center text-2xl font-bold shrink-0">
+              ⚖️
+            </div>
+            <div>
+              <div className="text-xs text-slate-300 font-semibold uppercase tracking-wider">Чистый баланс</div>
+              <div className={`text-xl font-bold mt-0.5 ${financeSummary.netBalance >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                {financeSummary.netBalance.toLocaleString("ru-RU")} ₸
+              </div>
+              <div className="text-[11px] text-slate-400 font-medium">Взносы кассы минус ФОТ</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Interrupted exams awaiting a decision */}
         {suspended.length > 0 && (
           <div className="mb-6 bg-amber-50 border border-amber-300 rounded-2xl overflow-hidden">
             <div className="px-5 py-3 border-b border-amber-200 flex items-center gap-2">

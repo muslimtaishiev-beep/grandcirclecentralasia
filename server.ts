@@ -620,6 +620,68 @@ app.get("/api/tenant/resolve", async (req, res) => {
   }
 });
 
+/** GET /api/tenant/finance-summary?tenantId=org_x — изолированный финансовый свод по организации (взносы, выручка, ФОТ зарплат, баланс кассы). */
+app.get("/api/tenant/finance-summary", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const tenantId = String(req.query.tenantId || "").trim();
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: "Не указан ID организации" });
+    }
+
+    const db = admin.firestore();
+
+    // 1. Принятые ученики строго в рамках этого tenantId
+    const subSnap = await db.collection("submissions")
+      .where("tenantId", "==", tenantId)
+      .where("finalDecision", "==", "ПРИНЯТ")
+      .get();
+
+    let totalInitialFees = 0;
+    let totalContractValue = 0;
+    let acceptedCount = 0;
+
+    subSnap.forEach(d => {
+      const data = d.data();
+      acceptedCount++;
+      const initFeeStr = String(data.initialFee || "0").replace(/\s+/g, "").replace(/₸/g, "").replace(/kzt/gi, "");
+      const totCostStr = String(data.totalCost || "0").replace(/\s+/g, "").replace(/₸/g, "").replace(/kzt/gi, "");
+      const initFee = parseFloat(initFeeStr) || 0;
+      const totCost = parseFloat(totCostStr) || 0;
+      totalInitialFees += initFee;
+      totalContractValue += totCost;
+    });
+
+    // 2. Расчет зарплат и ФОТ по организации
+    let totalPayroll = 0;
+    try {
+      const payrollSnap = await db.collection("tenants").doc(tenantId).collection("payroll_records").get();
+      payrollSnap.forEach(d => {
+        const p = d.data();
+        const toPay = parseFloat(String(p.calc?.toPay || p.toPay || 0)) || 0;
+        totalPayroll += toPay;
+      });
+    } catch (e: any) {
+      console.warn("[finance-summary] Payroll query notice:", e.message);
+    }
+
+    const netBalance = totalInitialFees - totalPayroll;
+    const projectedBalance = (totalInitialFees + totalContractValue) - totalPayroll;
+
+    return res.json({
+      success: true,
+      tenantId,
+      acceptedCount,
+      totalInitialFees,
+      totalContractValue,
+      totalPayroll,
+      netBalance,
+      projectedBalance
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 /**
  * Кэш вопросов и ключей ответов.
  *
@@ -1952,13 +2014,16 @@ app.post("/api/gas", async (req, res) => {
       }
     }
 
-    // 2. Submit Manager Form (filling questionnaire)
+    // 2. Submit Manager Form (filling questionnaire & single-step decision/payment)
     if (payload.action === "submitManagerForm" && useFirebase && payload.shortId) {
       try {
         const shortId = String(payload.shortId).trim();
         const tenantId = String(payload.tenantId || "").trim();
         const childName = String(payload.childName || "").trim();
         const isPsych = Boolean(payload.sentToPsych);
+        const rawDecision = String(payload.finalDecision || "").trim();
+        const finalDecision = rawDecision === "ПРИНЯТ" || rawDecision === "accepted" ? "ПРИНЯТ" : rawDecision === "ОТКЛОНЕН" || rawDecision === "rejected" ? "ОТКЛОНЕН" : undefined;
+        const status = finalDecision ? finalDecision : (isPsych ? "К ПСИХОЛОГУ" : "ОБРАБОТАН");
         const now = admin.firestore.Timestamp.now();
         const db = admin.firestore();
 
@@ -1985,7 +2050,10 @@ app.post("/api/gas", async (req, res) => {
           managerName: payload.managerName || "",
           managerComment: payload.managerComment || "",
           sentToPsych: isPsych,
-          status: isPsych ? "К ПСИХОЛОГУ" : "ОБРАБОТАН",
+          status,
+          ...(finalDecision ? { finalDecision } : {}),
+          ...(payload.rejectReason ? { rejectReason: payload.rejectReason } : {}),
+          ...(payload.feedback ? { feedback: payload.feedback } : {}),
           updatedAt: now
         }, { merge: true });
 
@@ -1998,6 +2066,14 @@ app.post("/api/gas", async (req, res) => {
             managerName: payload.managerName || "",
             managerComment: payload.managerComment || "",
             sentToPsych: isPsych,
+            status,
+            ...(finalDecision ? { finalDecision } : {}),
+            ...(payload.paymentInfo !== undefined ? { paymentInfo: payload.paymentInfo } : {}),
+            ...(payload.initialFee !== undefined ? { initialFee: payload.initialFee } : {}),
+            ...(payload.totalCost !== undefined ? { totalCost: payload.totalCost } : {}),
+            ...(payload.firstMonthPayment !== undefined ? { firstMonthPayment: payload.firstMonthPayment } : {}),
+            ...(payload.rejectReason !== undefined ? { rejectReason: payload.rejectReason } : {}),
+            ...(payload.feedback !== undefined ? { feedback: payload.feedback } : {}),
             updatedAt: now
           }, { merge: true });
         }
@@ -2005,13 +2081,16 @@ app.post("/api/gas", async (req, res) => {
         // crm_deals
         const dealDocId = tenantId ? `deal_${tenantId}_${shortId}` : `deal_${shortId}`;
         const dealRef = db.collection("crm_deals").doc(dealDocId);
+        const stageId = finalDecision === "ПРИНЯТ" ? "stage_won" : finalDecision === "ОТКЛОНЕН" ? "stage_lost" : (isPsych ? "stage_psychologist" : "stage_manager_done");
         batch.set(dealRef, {
           id: dealDocId,
           shortId,
           ...(tenantId ? { tenantId } : {}),
           contactName: childName,
           contactPhone: payload.phone || "",
-          stageId: isPsych ? "stage_psychologist" : "stage_manager_done",
+          stageId,
+          ...(finalDecision ? { finalDecision } : {}),
+          ...(payload.totalCost ? { amount: payload.totalCost } : {}),
           updatedAt: now
         }, { merge: true });
 
@@ -2021,11 +2100,12 @@ app.post("/api/gas", async (req, res) => {
           shortId,
           childName,
           managerName: payload.managerName || "",
-          sentToPsych: isPsych
+          sentToPsych: isPsych,
+          finalDecision
         });
 
         mirrorToGas(payload);
-        return res.json({ success: true });
+        return res.json({ success: true, finalDecision });
       } catch (e: any) {
         console.warn("[submitManagerForm] Local update notice:", e.message);
       }

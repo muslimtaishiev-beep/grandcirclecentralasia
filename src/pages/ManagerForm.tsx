@@ -4,9 +4,7 @@ import { useSearchParams, useNavigate, useParams } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { fetchGasAPI } from "../lib/utils";
-// html2pdf весит 961 КБ и нужен только по нажатию «скачать PDF». Статический
-// импорт заставлял КАЖДОГО менеджера скачивать его при открытии экрана —
-// почти мегабайт до первой отрисовки. Теперь подгружается по требованию.
+import toast, { Toaster } from "react-hot-toast";
 const loadHtml2Pdf = async () => (await import("html2pdf.js")).default;
 import { DiagnosticReportPdf } from "../components/DiagnosticReportPdf";
 import { useAuth } from "../contexts/AuthContext";
@@ -19,6 +17,7 @@ export default function ManagerForm() {
 
   const urlShortId = routeShortId || searchParams.get("shortId") || searchParams.get("testId") || "";
   const tenantId = routeOrgId || searchParams.get("tenantId");
+  const initialMode = searchParams.get("mode") === "reject" ? "REJECT" : searchParams.get("mode") === "psychologist" ? "PSYCHOLOGIST" : "ACCEPT";
   const cabinetPath = tenantId ? `/workspace/${tenantId}/tests/manage` : "/workspace";
 
   const [shortId, setShortId] = useState(urlShortId);
@@ -36,7 +35,6 @@ export default function ManagerForm() {
   }, [user]);
 
   const [analyzing, setAnalyzing] = useState(false);
-  // Печать организации — из её реквизитов (публичный срез), не из кода.
   const [stampUrl, setStampUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!routeOrgId) return;
@@ -46,7 +44,7 @@ export default function ManagerForm() {
 
   const generatePdf = () => {
     if (!student || !student.diagnosticsRaw || Object.keys(student.diagnosticsRaw).length === 0) {
-      alert("У данного ученика нет сохраненных данных аналитики.");
+      toast.error("У данного ученика нет сохраненных данных аналитики.");
       return;
     }
     setAnalyzing(true);
@@ -73,12 +71,12 @@ export default function ManagerForm() {
             }, "");
             
             if (res.success) {
-              alert("PDF успешно сохранен на Google Диск!");
+              toast.success("PDF успешно сохранен на Google Диск!");
             } else {
-              alert("Ошибка при сохранении на Диск: " + (res.error || JSON.stringify(res)));
+              toast.error("Ошибка при сохранении на Диск: " + (res.error || JSON.stringify(res)));
             }
           } catch(err: any) {
-            alert("Критическая ошибка сети при сохранении: " + err.message);
+            toast.error("Критическая ошибка сети при сохранении: " + err.message);
             console.error(err);
           }
         }).then(() => {
@@ -89,12 +87,26 @@ export default function ManagerForm() {
       }
     }, 500);
   };
+
   const [childName, setChildName] = useState("");
   const [parentName, setParentName] = useState("");
   const [phone, setPhone] = useState("");
-  const [sentToPsych, setSentToPsych] = useState(false);
   const [managerComment, setManagerComment] = useState("");
   
+  // Single-Step Decision Mode: "ACCEPT" | "PSYCHOLOGIST" | "REJECT"
+  const [decisionMode, setDecisionMode] = useState<"ACCEPT" | "PSYCHOLOGIST" | "REJECT">(initialMode as any);
+
+  // Payment fields for ACCEPT mode
+  const [paymentInfo, setPaymentInfo] = useState("Kaspi Pay");
+  const [initialFee, setInitialFee] = useState("");
+  const [totalCost, setTotalCost] = useState("");
+  const [firstMonthPayment, setFirstMonthPayment] = useState("Оплачено");
+
+  // Rejection fields for REJECT mode
+  const [rejectReason, setRejectReason] = useState("Низкий балл");
+  const [otherReason, setOtherReason] = useState("");
+  const [feedback, setFeedback] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -115,6 +127,14 @@ export default function ManagerForm() {
         if (existingPhone && existingPhone !== '—') {
           setPhone(String(existingPhone));
         }
+        if (data.student.initialFee) setInitialFee(String(data.student.initialFee));
+        if (data.student.totalCost) setTotalCost(String(data.student.totalCost));
+        if (data.student.paymentInfo) setPaymentInfo(String(data.student.paymentInfo));
+        if (data.student.firstMonthPayment) setFirstMonthPayment(String(data.student.firstMonthPayment));
+        if (data.student.rejectReason) setRejectReason(String(data.student.rejectReason));
+        if (data.student.feedback) setFeedback(String(data.student.feedback));
+        if (data.student.managerComment) setManagerComment(String(data.student.managerComment));
+
         if (data.student.grade) {
           try {
             const snap = await getDoc(doc(db, 'tests', `test_grade_${data.student.grade}_${tenantId}`));
@@ -124,7 +144,7 @@ export default function ManagerForm() {
           } catch(e) {}
         }
       } else {
-        setError(data.error);
+        setError(data.error || "Ученик не найден");
       }
     } catch (err: any) {
       setError(err.message);
@@ -132,64 +152,109 @@ export default function ManagerForm() {
     setLoading(false);
   };
 
-  const submitForm = async (isPsych: boolean) => {
+  useEffect(() => {
+    if (urlShortId) {
+      fetchStudent();
+    }
+  }, [urlShortId]);
+
+  const handleSubmitDecision = async () => {
     if (!managerName || !childName || !parentName || !phone) {
-      setError("Заполните все обязательные поля");
+      setError("Заполните все обязательные поля (Имя менеджера, Имя ученика, ФИО родителя, Телефон)");
       return;
     }
+    
+    if (decisionMode === "ACCEPT" && (!initialFee || !totalCost)) {
+      if (!confirm("Вступительный взнос или стоимость обучения не заполнены. Продолжить принятие без фиксирования сумм?")) {
+        return;
+      }
+    }
+
     setLoading(true);
+    setError("");
+
     try {
-      const data = await fetchGasAPI("/api/gas", {
-          action: "submitManagerForm",
-          shortId,
-          childName,
-          parentName,
-          phone,
-          managerName,
-          managerComment,
-          sentToPsych: isPsych,
-          tenantId
-      });
+      const finalRejectReason = rejectReason === "Другое" ? otherReason : rejectReason;
+
+      const payload: any = {
+        action: "submitManagerForm",
+        shortId,
+        childName,
+        parentName,
+        phone,
+        managerName,
+        managerComment,
+        tenantId
+      };
+
+      if (decisionMode === "ACCEPT") {
+        payload.sentToPsych = false;
+        payload.finalDecision = "ПРИНЯТ";
+        payload.paymentInfo = paymentInfo;
+        payload.initialFee = initialFee;
+        payload.totalCost = totalCost;
+        payload.firstMonthPayment = firstMonthPayment;
+      } else if (decisionMode === "PSYCHOLOGIST") {
+        payload.sentToPsych = true;
+      } else if (decisionMode === "REJECT") {
+        payload.sentToPsych = false;
+        payload.finalDecision = "ОТКЛОНЕН";
+        payload.rejectReason = finalRejectReason;
+        payload.feedback = feedback;
+      }
+
+      const data = await fetchGasAPI("/api/gas", payload);
+
       if (data.success) {
-        if (isPsych) {
-          navigate(`/receipt/${shortId}${tenantId ? `?tenantId=${tenantId}` : ''}`);
+        if (decisionMode === "ACCEPT") {
+          toast.success("🎉 Ученик успешно ПРИНЯТ! Данные по оплате сохранены.");
+          setTimeout(() => navigate(cabinetPath), 1200);
+        } else if (decisionMode === "PSYCHOLOGIST") {
+          toast.success("📋 Ученик успешно направлен к психологу.");
+          setTimeout(() => navigate(`/receipt/${shortId}${tenantId ? `?tenantId=${tenantId}` : ''}`), 1000);
         } else {
-          navigate(cabinetPath);
+          toast.success("❌ Решение об отказе зарегистрировано.");
+          setTimeout(() => navigate(cabinetPath), 1200);
         }
       } else {
-        setError(data.error);
+        setError(data.error || "Не удалось сохранить решение");
       }
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || "Ошибка соединения с сервером");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   if (authLoading) {
     return (
       <div className="min-h-dvh bg-slate-50 flex items-center justify-center p-4 text-slate-500">
-        Загрузка...
+        Загрузка формы...
       </div>
     );
   }
 
   return (
     <div className="min-h-dvh bg-slate-50 py-12 px-4">
+      <Toaster position="top-center" />
       {student && (
         <div style={{ width: 0, height: 0, overflow: "hidden" }}>
           <DiagnosticReportPdf student={student} stampUrl={stampUrl} />
         </div>
       )}
-      <div className="max-w-xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden">
+      <div className="max-w-2xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden">
         <div className="bg-blue-600 px-8 py-6 text-white text-center flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Анкета Менеджера</h1>
-          <button onClick={() => navigate(cabinetPath)} className="text-sm bg-white/20 px-3 py-1 rounded-lg">Кабинет</button>
+          <div>
+            <h1 className="text-2xl font-bold text-left">Анкета Менеджера</h1>
+            <p className="text-blue-100 text-xs text-left mt-0.5">Принятие, напраление к психологу или отказ в один шаг</p>
+          </div>
+          <button onClick={() => navigate(cabinetPath)} className="text-sm bg-white/20 px-4 py-2 rounded-xl hover:bg-white/30 font-medium">Кабинет</button>
         </div>
 
         <div className="p-8">
           {error && (
-            <div className="bg-red-50 text-red-600 p-4 rounded-xl mb-6 text-sm border border-red-100">
-              {error}
+            <div className="bg-red-50 text-red-600 p-4 rounded-xl mb-6 text-sm border border-red-100 font-medium">
+              ⚠️ {error}
             </div>
           )}
 
@@ -202,9 +267,9 @@ export default function ManagerForm() {
                   value={shortId} 
                   onChange={e => setShortId(e.target.value)} 
                   placeholder="123456"
-                  className="w-full border rounded-xl p-3 text-xl tracking-widest bg-slate-50 font-mono" 
+                  className="w-full border border-slate-300 rounded-xl p-3 text-xl tracking-widest bg-slate-50 font-mono" 
                 />
-                <button onClick={fetchStudent} disabled={loading} className="bg-blue-600 text-white px-6 rounded-xl font-medium">
+                <button onClick={fetchStudent} disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white px-6 rounded-xl font-semibold transition">
                   {loading ? "..." : "Найти"}
                 </button>
               </div>
@@ -224,32 +289,38 @@ export default function ManagerForm() {
                 const percent = totalMax > 0 ? Math.round((student.totalScore / totalMax) * 100) : 0;
                 
                 return (
-                  <div className="bg-green-50 border border-green-100 p-4 rounded-xl mb-6">
-                    <h3 className="font-bold text-green-800 text-lg mb-2">Ученик найден</h3>
-                    <div className="grid grid-cols-2 gap-2 text-sm text-green-700">
+                  <div className="bg-slate-50 border border-slate-200 p-5 rounded-2xl mb-4">
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <span className="text-xs font-mono text-slate-400">ID: {student.shortId}</span>
+                        <h3 className="font-bold text-slate-800 text-lg">{student.childName || student.studentName || "Ученик"}</h3>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        student.finalDecision === "ПРИНЯТ" ? "bg-green-600 text-white" :
+                        student.finalDecision === "ОТКЛОНЕН" ? "bg-red-600 text-white" :
+                        "bg-amber-100 text-amber-800"
+                      }`}>
+                        {student.finalDecision || "НЕ ОБРАБОТАН"}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-sm text-slate-700 bg-white p-3 rounded-xl border border-slate-100">
                       <div>Класс: <b>{student.grade}</b></div>
-                      <div>Общий балл: <b>{student.totalScore} из {totalMax} <span className="text-xs">({percent}%)</span></b></div>
+                      <div>Общий балл: <b>{student.totalScore} из {totalMax} ({percent}%)</b></div>
                       <div>Русский: <b>{student.russian} из {maxRu}</b></div>
                       <div>Математика: <b>{student.math} из {maxMa}</b></div>
                       <div>Логика: <b>{student.logic} из {maxLo}</b></div>
-                      {student.cheated && <div className="col-span-2 text-red-600 font-bold bg-red-100 px-2 py-1 rounded inline-block w-max mt-2">! Заподозрен в списывании</div>}
+                      {student.cheated && <div className="col-span-2 text-red-600 font-bold bg-red-50 px-2 py-1 rounded text-xs mt-1">! Заподозрен в списывании</div>}
                     </div>
+
                     {student.diagnosticsRaw && Object.keys(student.diagnosticsRaw).length > 0 && (
-                      <div className="mt-4 pt-4 border-t border-green-200">
+                      <div className="mt-3 pt-3 border-t border-slate-200">
                         <button 
                           onClick={generatePdf} 
                           disabled={analyzing}
-                          className={`px-4 py-2 rounded-xl shadow-sm font-medium flex items-center gap-2 ${
-                            analyzing 
-                              ? "bg-gray-200 text-gray-500 cursor-not-allowed" 
-                              : "bg-white text-green-700 hover:bg-green-100 border border-green-200"
-                          }`}
+                          className="px-4 py-2 rounded-xl shadow-sm font-medium text-xs bg-white text-indigo-700 hover:bg-indigo-50 border border-indigo-200 flex items-center gap-2"
                         >
-                          {analyzing ? (
-                            <><span className="animate-spin text-green-700">↻</span> Генерация и сохранение...</>
-                          ) : (
-                            <>📄 Скачать Анализ работы</>
-                          )}
+                          {analyzing ? "↻ Генерация..." : "📄 Скачать Анализ работы (PDF)"}
                         </button>
                       </div>
                     )}
@@ -257,47 +328,210 @@ export default function ManagerForm() {
                 );
               })()}
 
+              {/* Data fields */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2 text-slate-700">Имя менеджера *</label>
-                  <input type="text" value={managerName} onChange={e=>setManagerName(e.target.value)} className="w-full border rounded-xl p-3 bg-slate-50" />
+                  <label className="block text-sm font-medium mb-1.5 text-slate-700">Имя менеджера *</label>
+                  <input type="text" value={managerName} onChange={e=>setManagerName(e.target.value)} className="w-full border border-slate-300 rounded-xl p-3 bg-white text-sm" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2 text-slate-700">Имя ученика *</label>
-                  <input type="text" value={childName} onChange={e=>setChildName(e.target.value)} className="w-full border rounded-xl p-3 bg-slate-50" />
+                  <label className="block text-sm font-medium mb-1.5 text-slate-700">Имя ученика *</label>
+                  <input type="text" value={childName} onChange={e=>setChildName(e.target.value)} className="w-full border border-slate-300 rounded-xl p-3 bg-white text-sm" />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2 text-slate-700">ФИО Родителя *</label>
-                  <input type="text" value={parentName} onChange={e=>setParentName(e.target.value)} className="w-full border rounded-xl p-3 bg-slate-50" />
+                  <label className="block text-sm font-medium mb-1.5 text-slate-700">ФИО Родителя *</label>
+                  <input type="text" value={parentName} onChange={e=>setParentName(e.target.value)} className="w-full border border-slate-300 rounded-xl p-3 bg-white text-sm" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2 text-slate-700">Телефон *</label>
-                  <input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} className="w-full border rounded-xl p-3 bg-slate-50" />
+                  <label className="block text-sm font-medium mb-1.5 text-slate-700">Телефон родителя *</label>
+                  <input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} className="w-full border border-slate-300 rounded-xl p-3 bg-white text-sm" />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2 text-slate-700">Комментарий менеджера</label>
-                <textarea value={managerComment} onChange={e=>setManagerComment(e.target.value)} className="w-full border rounded-xl p-3 bg-slate-50 h-24"></textarea>
+                <label className="block text-sm font-medium mb-1.5 text-slate-700">Комментарий менеджера</label>
+                <textarea value={managerComment} onChange={e=>setManagerComment(e.target.value)} placeholder="Заметки по беседе с родителями..." className="w-full border border-slate-300 rounded-xl p-3 bg-white text-sm h-20"></textarea>
               </div>
 
-              <div className="pt-4 flex gap-4">
+              {/* UPFRONT DECISION SELECTION TABS */}
+              <div className="pt-2">
+                <label className="block text-sm font-bold text-slate-800 mb-2">Выберите решение по ученику:</label>
+                <div className="grid grid-cols-3 gap-2 p-1.5 bg-slate-100 rounded-2xl">
+                  <button 
+                    type="button"
+                    onClick={() => setDecisionMode("ACCEPT")}
+                    className={`py-3 px-3 rounded-xl font-bold text-xs transition flex flex-col items-center gap-1 ${
+                      decisionMode === "ACCEPT" 
+                        ? "bg-emerald-600 text-white shadow-md" 
+                        : "text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    <span>💚 ПРИНЯТЬ</span>
+                    <span className="font-normal text-[10px] opacity-90">(с оплатой)</span>
+                  </button>
+
+                  <button 
+                    type="button"
+                    onClick={() => setDecisionMode("PSYCHOLOGIST")}
+                    className={`py-3 px-3 rounded-xl font-bold text-xs transition flex flex-col items-center gap-1 ${
+                      decisionMode === "PSYCHOLOGIST" 
+                        ? "bg-purple-600 text-white shadow-md" 
+                        : "text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    <span>🟣 К ПСИХОЛОГУ</span>
+                    <span className="font-normal text-[10px] opacity-90">(на собеседование)</span>
+                  </button>
+
+                  <button 
+                    type="button"
+                    onClick={() => setDecisionMode("REJECT")}
+                    className={`py-3 px-3 rounded-xl font-bold text-xs transition flex flex-col items-center gap-1 ${
+                      decisionMode === "REJECT" 
+                        ? "bg-rose-600 text-white shadow-md" 
+                        : "text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    <span>🔴 ОТКЛОНИТЬ</span>
+                    <span className="font-normal text-[10px] opacity-90">(отказ)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* MODE 1: ACCEPTANCE FORM WITH PAYMENT FIELDS */}
+              {decisionMode === "ACCEPT" && (
+                <div className="bg-emerald-50 border border-emerald-200 p-5 rounded-2xl space-y-4 animate-fadeIn">
+                  <h4 className="font-bold text-emerald-900 text-sm flex items-center gap-2">
+                    <span>💳</span> Данные по оплате и договору (Принятие ученика)
+                  </h4>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold mb-1 text-emerald-900">Форма / Способ оплаты</label>
+                      <select 
+                        value={paymentInfo} 
+                        onChange={e => setPaymentInfo(e.target.value)}
+                        className="w-full border border-emerald-300 rounded-xl p-2.5 bg-white text-sm text-slate-800"
+                      >
+                        <option value="Kaspi Pay">Kaspi Pay</option>
+                        <option value="Наличные в кассу">Наличные в кассу</option>
+                        <option value="Банковский перевод (р/с)">Банковский перевод (р/с)</option>
+                        <option value="Рассрочка Kaspi">Рассрочка Kaspi</option>
+                        <option value="Другое">Другое</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold mb-1 text-emerald-900">Статус 1-го месяца</label>
+                      <select 
+                        value={firstMonthPayment} 
+                        onChange={e => setFirstMonthPayment(e.target.value)}
+                        className="w-full border border-emerald-300 rounded-xl p-2.5 bg-white text-sm text-slate-800"
+                      >
+                        <option value="Оплачено">Оплачено</option>
+                        <option value="В ожидании">В ожидании</option>
+                        <option value="Частично">Частично</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold mb-1 text-emerald-900">Вступительный взнос (₸) *</label>
+                      <input 
+                        type="text" 
+                        placeholder="50 000" 
+                        value={initialFee} 
+                        onChange={e => setInitialFee(e.target.value)}
+                        className="w-full border border-emerald-300 rounded-xl p-2.5 bg-white text-sm font-semibold text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold mb-1 text-emerald-900">Стоимость по договору (₸) *</label>
+                      <input 
+                        type="text" 
+                        placeholder="450 000" 
+                        value={totalCost} 
+                        onChange={e => setTotalCost(e.target.value)}
+                        className="w-full border border-emerald-300 rounded-xl p-2.5 bg-white text-sm font-semibold text-slate-800"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MODE 2: REJECTION FORM */}
+              {decisionMode === "REJECT" && (
+                <div className="bg-rose-50 border border-rose-200 p-5 rounded-2xl space-y-4 animate-fadeIn">
+                  <h4 className="font-bold text-rose-900 text-sm flex items-center gap-2">
+                    <span>❌</span> Укажите причину отказа
+                  </h4>
+
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-rose-900">Основная причина</label>
+                    <select 
+                      value={rejectReason} 
+                      onChange={e => setRejectReason(e.target.value)}
+                      className="w-full border border-rose-300 rounded-xl p-2.5 bg-white text-sm text-slate-800"
+                    >
+                      <option value="Низкий балл">Низкий академический балл</option>
+                      <option value="Высокая стоимость">Высокая стоимость обучения</option>
+                      <option value="Выбрали другую школу">Выбрали другую школу</option>
+                      <option value="Переезд в другой город">Переезд в другой город</option>
+                      <option value="Отсутствие мест">Отсутствие свободных мест</option>
+                      <option value="Другое">Другая причина</option>
+                    </select>
+                  </div>
+
+                  {rejectReason === "Другое" && (
+                    <div>
+                      <label className="block text-xs font-semibold mb-1 text-rose-900">Уточните причину</label>
+                      <input 
+                        type="text" 
+                        value={otherReason} 
+                        onChange={e => setOtherReason(e.target.value)}
+                        placeholder="Введите причину отказа..." 
+                        className="w-full border border-rose-300 rounded-xl p-2.5 bg-white text-sm text-slate-800"
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-rose-900">Обратная связь для родителей</label>
+                    <textarea 
+                      value={feedback} 
+                      onChange={e => setFeedback(e.target.value)}
+                      placeholder="Рекомендации по подтягиванию предмета..."
+                      className="w-full border border-rose-300 rounded-xl p-2.5 bg-white text-sm text-slate-800 h-20"
+                    ></textarea>
+                  </div>
+                </div>
+              )}
+
+              {/* SUBMIT BUTTON */}
+              <div className="pt-2">
                 <button 
-                  onClick={() => submitForm(false)}
+                  onClick={handleSubmitDecision}
                   disabled={loading}
-                  className="flex-1 py-4 bg-slate-200 text-slate-700 rounded-xl font-medium disabled:opacity-50 hover:bg-slate-300 transition"
+                  className={`w-full py-4 rounded-2xl font-bold text-white shadow-lg transition flex items-center justify-center gap-2 text-base ${
+                    loading ? "bg-slate-400 cursor-not-allowed" :
+                    decisionMode === "ACCEPT" ? "bg-emerald-600 hover:bg-emerald-700" :
+                    decisionMode === "PSYCHOLOGIST" ? "bg-purple-600 hover:bg-purple-700" :
+                    "bg-rose-600 hover:bg-rose-700"
+                  }`}
                 >
-                  Принять (без психолога)
-                </button>
-                <button 
-                  onClick={() => submitForm(true)}
-                  disabled={loading}
-                  className="flex-1 py-4 bg-blue-600 text-white rounded-xl font-medium disabled:opacity-50 hover:bg-blue-700 transition"
-                >
-                  Направить к психологу
+                  {loading ? (
+                    <span>Отправка данных...</span>
+                  ) : decisionMode === "ACCEPT" ? (
+                    <><span>✅</span> Зачислить ученика (Принять с оплатой)</>
+                  ) : decisionMode === "PSYCHOLOGIST" ? (
+                    <><span>📋</span> Направить к психологу</>
+                  ) : (
+                    <><span>❌</span> Подтвердить отказ (Отклонить)</>
+                  )}
                 </button>
               </div>
             </div>
