@@ -440,7 +440,7 @@ export default function ManagerForm() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold mb-1 text-emerald-900">Вступительный взнос (₸) *</label>
+                      <label className="block text-xs font-semibold mb-1 text-emerald-900">Вступительный взнос (сом) *</label>
                       <input 
                         type="text" 
                         placeholder="50 000" 
@@ -450,7 +450,7 @@ export default function ManagerForm() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold mb-1 text-emerald-900">Стоимость по договору (₸) *</label>
+                      <label className="block text-xs font-semibold mb-1 text-emerald-900">Стоимость по договору (сом) *</label>
                       <input 
                         type="text" 
                         placeholder="450 000" 

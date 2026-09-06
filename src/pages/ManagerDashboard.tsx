@@ -964,7 +964,7 @@ export default function ManagerDashboard() {
             <div>
               <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Касса (Взносы)</div>
               <div className="text-xl font-bold text-slate-900 mt-0.5">
-                {financeSummary.totalInitialFees.toLocaleString("ru-RU")} ₸
+                {financeSummary.totalInitialFees.toLocaleString("ru-RU")} сом
               </div>
               <div className="text-[11px] text-emerald-600 font-medium">Зачислено: {financeSummary.acceptedCount} учеников</div>
             </div>
@@ -977,7 +977,7 @@ export default function ManagerDashboard() {
             <div>
               <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Сумма договоров</div>
               <div className="text-xl font-bold text-slate-900 mt-0.5">
-                {financeSummary.totalContractValue.toLocaleString("ru-RU")} ₸
+                {financeSummary.totalContractValue.toLocaleString("ru-RU")} сом
               </div>
               <div className="text-[11px] text-blue-600 font-medium">Общая выручка</div>
             </div>
@@ -990,7 +990,7 @@ export default function ManagerDashboard() {
             <div>
               <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">ФОТ Зарплат</div>
               <div className="text-xl font-bold text-slate-900 mt-0.5">
-                {financeSummary.totalPayroll.toLocaleString("ru-RU")} ₸
+                {financeSummary.totalPayroll.toLocaleString("ru-RU")} сом
               </div>
               <div className="text-[11px] text-purple-600 font-medium">Расходы на зарплаты</div>
             </div>
@@ -1005,7 +1005,7 @@ export default function ManagerDashboard() {
             <div>
               <div className="text-xs text-slate-300 font-semibold uppercase tracking-wider">Чистый баланс</div>
               <div className={`text-xl font-bold mt-0.5 ${financeSummary.netBalance >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                {financeSummary.netBalance.toLocaleString("ru-RU")} ₸
+                {financeSummary.netBalance.toLocaleString("ru-RU")} сом
               </div>
               <div className="text-[11px] text-slate-400 font-medium">Взносы кассы минус ФОТ</div>
             </div>
