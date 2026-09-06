@@ -138,11 +138,12 @@ export default function ManagerForm() {
           phone,
           managerName,
           managerComment,
-          sentToPsych: isPsych
+          sentToPsych: isPsych,
+          tenantId
       });
       if (data.success) {
         if (isPsych) {
-          navigate(`/receipt/${shortId}`);
+          navigate(`/receipt/${shortId}${tenantId ? `?tenantId=${tenantId}` : ''}`);
         } else {
           navigate(cabinetPath);
         }

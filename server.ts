@@ -157,6 +157,7 @@ export type AuditAction =
   | "EXAM_FULLSCREEN_EXIT" | "PROCTORING_REPORT" | "PROCTORING_VIOLATION"
   | "LOGIN_SUCCESS" | "LOGIN_FAILED" | "LOGOUT"
   | "TENANT_CREATED" | "TENANT_UPDATED" | "MEMBER_INVITED" | "MEMBER_ROLE_CHANGED"
+  | "MANAGER_FORM_SUBMITTED" | "STUDENT_DECISION_UPDATED"
   | "CLIENT_ERROR";
 
 function writeAuditLog(action: AuditAction, tenantId: string, fields: Record<string, any> = {}) {
@@ -1853,43 +1854,319 @@ app.post("/api/gas", async (req, res) => {
       }
     }
 
-    // Tenant-scoped student lookup. This action is public (an anonymous student
-    // needs it to resume their English section and to recover after an "already
-    // submitted" error), and it used to be a straight GAS proxy keyed on shortId
-    // alone — so ANY caller could read ANY tenant's student record, name, scores
-    // and all, just by guessing a 6-digit id. Served from Firestore now with a
-    // hard tenantId match; GAS remains the fallback only when no local submission
-    // exists yet (student registered but hasn't submitted).
-    if (payload.action === "getStudentByShortId" && useFirebase && payload.shortId) {
+    // ------------------------------------------------------------------------
+    // Multi-tenant Firestore Handlers for Student Admissions & Manager/Psychologist Forms
+    // ------------------------------------------------------------------------
+
+    // 1. Unified Student Lookup (getStudentByShortId & getPsychologistStudent)
+    if ((payload.action === "getStudentByShortId" || payload.action === "getPsychologistStudent") && useFirebase && payload.shortId) {
       try {
-        const requestedTenantId = (payload.tenantId || "unknown");
-        const snap = await admin.firestore().collection("submissions").doc(`sub_${payload.shortId}`).get();
-        const d = snap.data();
-        if (d) {
-          if (d.tenantId && d.tenantId !== requestedTenantId) {
-            console.warn(`[Security] getStudentByShortId cross-tenant blocked: ${payload.shortId} belongs to ${d.tenantId}, requested by ${requestedTenantId}`);
+        const shortId = String(payload.shortId).trim();
+        const requestedTenantId = payload.tenantId ? String(payload.tenantId).trim() : "";
+        const db = admin.firestore();
+
+        let subDoc: any = null;
+        let cntDoc: any = null;
+        let suspDoc: any = null;
+
+        // Try submissions doc `sub_${shortId}` or query
+        const subSnap = await db.collection("submissions").doc(`sub_${shortId}`).get();
+        if (subSnap.exists) {
+          subDoc = subSnap.data();
+        } else {
+          let q = db.collection("submissions").where("studentShortId", "==", shortId);
+          if (requestedTenantId) q = q.where("tenantId", "==", requestedTenantId);
+          const qSnap = await q.limit(1).get();
+          if (!qSnap.empty) subDoc = qSnap.docs[0].data();
+        }
+
+        // Try crm_contacts
+        if (requestedTenantId) {
+          const cntSnap = await db.collection("crm_contacts").doc(`cnt_${requestedTenantId}_${shortId}`).get();
+          if (cntSnap.exists) cntDoc = cntSnap.data();
+        }
+        if (!cntDoc) {
+          let qCnt = db.collection("crm_contacts").where("shortId", "==", shortId);
+          if (requestedTenantId) qCnt = qCnt.where("tenantId", "==", requestedTenantId);
+          const qCntSnap = await qCnt.limit(1).get();
+          if (!qCntSnap.empty) cntDoc = qCntSnap.docs[0].data();
+        }
+
+        // Try exam_suspensions
+        const suspSnap = await db.collection("exam_suspensions").doc(shortId).get();
+        if (suspSnap.exists) suspDoc = suspSnap.data();
+
+        if (subDoc || cntDoc || suspDoc) {
+          const tenantId = subDoc?.tenantId || cntDoc?.tenantId || suspDoc?.tenantId || requestedTenantId;
+          
+          if (requestedTenantId && tenantId && tenantId !== requestedTenantId) {
+            console.warn(`[Security] ${payload.action} cross-tenant blocked: ${shortId} belongs to ${tenantId}, requested by ${requestedTenantId}`);
             return res.json({ success: false, error: "Ученик не найден" });
           }
+
+          const studentName = subDoc?.studentName || cntDoc?.fullName || cntDoc?.name || suspDoc?.studentName || `Ученик ${shortId}`;
+          const parentName = cntDoc?.parentName || subDoc?.parentName || "—";
+          const phone = cntDoc?.phone || subDoc?.studentPhone || suspDoc?.studentPhone || "—";
+          const grade = Number(subDoc?.grade || cntDoc?.grade || suspDoc?.grade || 7);
+          const ru = subDoc?.scores?.russian ?? cntDoc?.scores?.russian ?? 0;
+          const ma = subDoc?.scores?.math ?? cntDoc?.scores?.math ?? 0;
+          const lo = subDoc?.scores?.logic ?? cntDoc?.scores?.logic ?? 0;
+          const en = subDoc?.scores?.english ?? cntDoc?.scores?.english ?? 0;
+          const totalScore = subDoc?.scores?.total ?? cntDoc?.totalScore ?? (ru + ma + lo);
+
           return res.json({
             success: true,
             student: {
-              shortId: d.studentShortId,
-              studentName: d.studentName,
-              grade: d.grade,
-              russian: d.scores?.russian ?? "",
-              math: d.scores?.math ?? "",
-              logic: d.scores?.logic ?? "",
-              english: d.scores?.english ?? "",
-              totalScore: d.scores?.total ?? "",
-              cheated: Boolean(d.cheated),
-              diagnosticsReport: d.diagnosticSummary || "",
-              testId: d.testId,
-            },
+              shortId,
+              studentName,
+              childName: studentName,
+              parentName,
+              phone,
+              grade,
+              russian: ru,
+              math: ma,
+              logic: lo,
+              english: en,
+              ru,
+              ma,
+              lo,
+              en,
+              totalScore,
+              cheated: Boolean(subDoc?.cheated),
+              diagnosticsRaw: subDoc?.diagnosticsRaw || null,
+              diagnosticsReport: subDoc?.diagnosticSummary || "",
+              managerName: subDoc?.managerName || cntDoc?.managerName || "Не назначен",
+              managerComment: subDoc?.managerComment || cntDoc?.managerComment || "",
+              sentToPsych: Boolean(subDoc?.sentToPsych || cntDoc?.sentToPsych),
+              status: subDoc?.status || cntDoc?.status || suspDoc?.status || "ЗАВЕРШЕН",
+              finalDecision: subDoc?.finalDecision || cntDoc?.finalDecision || "НЕ ОБРАБОТАН",
+              date: subDoc?.submittedAt?.toDate ? subDoc.submittedAt.toDate().toISOString() : new Date().toISOString(),
+              tenantId,
+              testId: subDoc?.testId || `test_${shortId}`,
+            }
           });
         }
-        // No local submission — fall through to GAS (student may only exist in Sheets).
+        // Fall through to GAS if not found locally
       } catch (e: any) {
-        console.warn("[getStudentByShortId] Local lookup failed, falling back to GAS:", e.message);
+        console.warn(`[${payload.action}] Local lookup notice:`, e.message);
+      }
+    }
+
+    // 2. Submit Manager Form (filling questionnaire)
+    if (payload.action === "submitManagerForm" && useFirebase && payload.shortId) {
+      try {
+        const shortId = String(payload.shortId).trim();
+        const tenantId = String(payload.tenantId || "").trim();
+        const childName = String(payload.childName || "").trim();
+        const isPsych = Boolean(payload.sentToPsych);
+        const now = admin.firestore.Timestamp.now();
+        const db = admin.firestore();
+
+        // Check cross-tenant isolation
+        const subSnap = await db.collection("submissions").doc(`sub_${shortId}`).get();
+        if (subSnap.exists && subSnap.data()?.tenantId && tenantId && subSnap.data().tenantId !== tenantId) {
+          console.warn(`[Security] submitManagerForm cross-tenant blocked: ${shortId} belongs to ${subSnap.data().tenantId}, requested by ${tenantId}`);
+          return res.status(403).json({ success: false, error: "Ученик принадлежит другой организации" });
+        }
+
+        const batch = db.batch();
+
+        // crm_contacts
+        const cntDocId = tenantId ? `cnt_${tenantId}_${shortId}` : `cnt_${shortId}`;
+        const cntRef = db.collection("crm_contacts").doc(cntDocId);
+        batch.set(cntRef, {
+          id: cntDocId,
+          shortId,
+          ...(tenantId ? { tenantId } : {}),
+          fullName: childName,
+          name: childName,
+          parentName: payload.parentName || "",
+          phone: payload.phone || "",
+          managerName: payload.managerName || "",
+          managerComment: payload.managerComment || "",
+          sentToPsych: isPsych,
+          status: isPsych ? "К ПСИХОЛОГУ" : "ОБРАБОТАН",
+          updatedAt: now
+        }, { merge: true });
+
+        // submissions
+        if (subSnap.exists) {
+          batch.set(subSnap.ref, {
+            studentName: childName,
+            parentName: payload.parentName || "",
+            studentPhone: payload.phone || "",
+            managerName: payload.managerName || "",
+            managerComment: payload.managerComment || "",
+            sentToPsych: isPsych,
+            updatedAt: now
+          }, { merge: true });
+        }
+
+        // crm_deals
+        const dealDocId = tenantId ? `deal_${tenantId}_${shortId}` : `deal_${shortId}`;
+        const dealRef = db.collection("crm_deals").doc(dealDocId);
+        batch.set(dealRef, {
+          id: dealDocId,
+          shortId,
+          ...(tenantId ? { tenantId } : {}),
+          contactName: childName,
+          contactPhone: payload.phone || "",
+          stageId: isPsych ? "stage_psychologist" : "stage_manager_done",
+          updatedAt: now
+        }, { merge: true });
+
+        await batch.commit();
+
+        writeAuditLog("MANAGER_FORM_SUBMITTED", tenantId || "unknown", {
+          shortId,
+          childName,
+          managerName: payload.managerName || "",
+          sentToPsych: isPsych
+        });
+
+        mirrorToGas(payload);
+        return res.json({ success: true });
+      } catch (e: any) {
+        console.warn("[submitManagerForm] Local update notice:", e.message);
+      }
+    }
+
+    // 3. Update Final Decision (accepting / rejecting student)
+    if (payload.action === "updateFinalDecision" && useFirebase && payload.shortId) {
+      try {
+        const shortId = String(payload.shortId).trim();
+        let tenantId = String(payload.tenantId || "").trim();
+        const decision = payload.finalDecision === "ПРИНЯТ" || payload.finalDecision === "accepted" ? "ПРИНЯТ" : "ОТКЛОНЕН";
+        const decisionStatus = decision === "ПРИНЯТ" ? "accepted" : "rejected";
+        const now = admin.firestore.Timestamp.now();
+        const db = admin.firestore();
+
+        let subSnap = await db.collection("submissions").doc(`sub_${shortId}`).get();
+        if (!subSnap.exists && tenantId) {
+          const qSnap = await db.collection("submissions")
+            .where("tenantId", "==", tenantId)
+            .where("studentShortId", "==", shortId).limit(1).get();
+          if (!qSnap.empty) subSnap = qSnap.docs[0];
+        }
+
+        // Strict cross-tenant check
+        if (subSnap.exists && subSnap.data()?.tenantId && tenantId && subSnap.data().tenantId !== tenantId) {
+          console.warn(`[Security] updateFinalDecision cross-tenant blocked: ${shortId} belongs to ${subSnap.data().tenantId}, requested by ${tenantId}`);
+          return res.status(403).json({ success: false, error: "Ученик принадлежит другой организации" });
+        }
+
+        if (!tenantId && subSnap.exists) {
+          tenantId = subSnap.data()?.tenantId || "";
+        }
+
+        const batch = db.batch();
+
+        if (subSnap.exists) {
+          batch.set(subSnap.ref, {
+            finalDecision: decision,
+            paymentInfo: payload.paymentInfo || "",
+            initialFee: payload.initialFee || "",
+            totalCost: payload.totalCost || "",
+            firstMonthPayment: payload.firstMonthPayment || "",
+            rejectReason: payload.rejectReason || "",
+            feedback: payload.feedback || "",
+            updatedAt: now
+          }, { merge: true });
+        }
+
+        // Update crm_contacts
+        let cntSnap = tenantId ? await db.collection("crm_contacts").doc(`cnt_${tenantId}_${shortId}`).get() : null;
+        if (!cntSnap || !cntSnap.exists) {
+          const qSnap = await db.collection("crm_contacts").where("shortId", "==", shortId).limit(1).get();
+          if (!qSnap.empty) cntSnap = qSnap.docs[0];
+        }
+        if (cntSnap && cntSnap.exists) {
+          batch.set(cntSnap.ref, {
+            finalDecision: decision,
+            status: decision === "ПРИНЯТ" ? "ПРИНЯТ" : "ОТКЛОНЕН",
+            rejectReason: payload.rejectReason || "",
+            feedback: payload.feedback || "",
+            updatedAt: now
+          }, { merge: true });
+        }
+
+        // Update crm_deals
+        let dealSnap = tenantId ? await db.collection("crm_deals").doc(`deal_${tenantId}_${shortId}`).get() : null;
+        if (!dealSnap || !dealSnap.exists) {
+          const qSnap = await db.collection("crm_deals").where("shortId", "==", shortId).limit(1).get();
+          if (!qSnap.empty) dealSnap = qSnap.docs[0];
+        }
+        if (dealSnap && dealSnap.exists) {
+          batch.set(dealSnap.ref, {
+            stageId: decision === "ПРИНЯТ" ? "stage_won" : "stage_lost",
+            finalDecision: decision,
+            updatedAt: now
+          }, { merge: true });
+        }
+
+        // Sync user document if childName matches
+        if (payload.childName) {
+          const childNameLower = String(payload.childName).trim().toLowerCase();
+          const userSnap = await db.collection("users").get();
+          userSnap.forEach(uDoc => {
+            const u = uDoc.data();
+            if (tenantId && u.tenantId && u.tenantId !== tenantId) return;
+            const f = (u.firstName || "").toLowerCase().trim();
+            const l = (u.lastName || "").toLowerCase().trim();
+            const full1 = `${f} ${l}`.trim();
+            const full2 = `${l} ${f}`.trim();
+            if (childNameLower === full1 || childNameLower === full2 || childNameLower === f || full1.includes(childNameLower)) {
+              batch.set(uDoc.ref, { decisionStatus, feedback: payload.feedback || "" }, { merge: true });
+            }
+          });
+        }
+
+        await batch.commit();
+
+        writeAuditLog("STUDENT_DECISION_UPDATED", tenantId || "unknown", {
+          shortId,
+          finalDecision: decision,
+          actor: gasUser?.email || "manager"
+        });
+
+        mirrorToGas(payload);
+        return res.json({ success: true, finalDecision: decision });
+      } catch (e: any) {
+        console.warn("[updateFinalDecision] Local update notice:", e.message);
+      }
+    }
+
+    // 4. Submit Psychologist Form
+    if (payload.action === "submitPsychologistForm" && useFirebase && payload.shortId) {
+      try {
+        const shortId = String(payload.shortId).trim();
+        const verdict = payload.verdict || "БРАТЬ";
+        const comment = payload.comment || "";
+        const now = admin.firestore.Timestamp.now();
+        const db = admin.firestore();
+
+        const batch = db.batch();
+
+        const subSnap = await db.collection("submissions").doc(`sub_${shortId}`).get();
+        if (subSnap.exists) {
+          batch.set(subSnap.ref, { psychVerdict: verdict, psychComment: comment, updatedAt: now }, { merge: true });
+        }
+
+        const qCntSnap = await db.collection("crm_contacts").where("shortId", "==", shortId).limit(1).get();
+        if (!qCntSnap.empty) {
+          batch.set(qCntSnap.docs[0].ref, {
+            psychVerdict: verdict,
+            psychComment: comment,
+            status: verdict === "БРАТЬ" ? "РЕКОМЕНДОВАН" : "НЕ РЕКОМЕНДОВАН",
+            updatedAt: now
+          }, { merge: true });
+        }
+
+        await batch.commit();
+        mirrorToGas(payload);
+        return res.json({ success: true });
+      } catch (e: any) {
+        console.warn("[submitPsychologistForm] Local update notice:", e.message);
       }
     }
 
@@ -1913,43 +2190,6 @@ app.post("/api/gas", async (req, res) => {
       }
     }
 
-    // Данные ученика по номеру работы — из Firestore, не из GAS.
-    //
-    // Это дёргают при восстановлении прерванной сессии, при восстановлении
-    // после сбоя сабмита и в кабинете менеджера. Раньше каждый такой вызов
-    // ждал синхронного ответа Apps Script (таймаут 50с), хотя работа уже
-    // лежит в submissions. GAS остаётся фолбэком, если локально не нашлось.
-    if (payload.action === "getStudentByShortId" && useFirebase && payload.shortId) {
-      try {
-        const shortId = String(payload.shortId);
-        const tenantId = (payload.tenantId || "unknown");
-        const docId = `sub_${shortId}`;
-        let snap = await admin.firestore().collection("submissions").doc(docId).get();
-        if (!snap.exists) {
-          const q = await admin.firestore().collection("submissions")
-            .where("tenantId", "==", tenantId)
-            .where("studentShortId", "==", shortId).limit(1).get();
-          if (!q.empty) snap = q.docs[0];
-        }
-        if (snap.exists) {
-          const d: any = snap.data();
-          return res.json({
-            success: true,
-            student: {
-              shortId, studentName: d.studentName || "", grade: d.grade,
-              studentPhone: d.studentPhone || "", studentEmail: d.studentEmail || "",
-              scores: d.scores || {}, status: d.status || "ЗАВЕРШЕН",
-              cheated: Boolean(d.cheated), maxScoreSnapshot: d.maxScoreSnapshot,
-              diagnosticsRaw: d.diagnosticsRaw, diagnosticSummary: d.diagnosticSummary,
-            },
-          });
-        }
-        // Не нашли локально — падаем в GAS ниже (там могут быть старые записи).
-      } catch (e: any) {
-        console.warn("[getStudentByShortId] local read failed, falling back to GAS:", e.message);
-      }
-    }
-
     let rawText = "";
     let data;
     
@@ -1958,119 +2198,23 @@ app.post("/api/gas", async (req, res) => {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(50000) // 50 seconds timeout for Google Apps Script cold starts and Google Docs PDF exports
+        signal: AbortSignal.timeout(50000)
       });
       
       rawText = await fetchRes.text();
       data = JSON.parse(rawText);
+      return res.json(data);
     } catch (e: any) {
-      console.warn(`GAS Proxy fetch error for action [${payload.action}]:`, e.name === 'AbortError' ? 'Timeout' : e.message);
-      
-      // If payload action was submitTest or submitEnglishTest, attempt quick recovery
-      if (payload.action === 'submitTest' || payload.action === 'submitEnglishTest') {
-        try {
-          const shortId = payload.shortId;
-          const recoverRes = await fetch(gasUrl, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({ action: "getStudentByShortId", shortId, apiKey: gasApiKey }),
-            signal: AbortSignal.timeout(5000)
-          });
-          const recoverData = JSON.parse(await recoverRes.text());
-          if (recoverData.success && recoverData.student && (recoverData.student.totalScore > 0 || recoverData.student.english > 0)) {
-            return res.json({
-              success: true,
-              totalScore: recoverData.student.totalScore,
-              scores: { russian: recoverData.student.russian, math: recoverData.student.math, logic: recoverData.student.logic, english: recoverData.student.english },
-              cheated: recoverData.student.cheated,
-              diagnosticsReport: recoverData.student.diagnosticsReport
-            });
-          }
-        } catch (recoverErr) {}
-      }
-
+      console.warn(`GAS Proxy fetch notice for action [${payload.action}]:`, e.name === 'AbortError' ? 'Timeout' : e.message);
       return res.status(503).json({ 
         success: false, 
-        error: "Google Apps Script временно не ответил. Попробуйте еще раз через несколько секунд.",
+        error: "Google Apps Script временно не ответил.",
         details: e.message 
       });
     }
-
-    // Handle edge case: if GAS says "already submitted", recover student data and return success
-    if (data && !data.success && data.error && 
-        (payload.action === 'submitTest' || payload.action === 'submitEnglishTest') &&
-        data.error.includes('already')) {
-      try {
-        const shortId = payload.shortId;
-        const recoverRes = await fetch(gasUrl, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({ action: "getStudentByShortId", shortId, apiKey: gasApiKey }),
-          signal: AbortSignal.timeout(5000)
-        });
-        const recoverData = JSON.parse(await recoverRes.text());
-        if (recoverData.success && recoverData.student) {
-          return res.json({
-            success: true,
-            totalScore: recoverData.student.totalScore,
-            scores: { russian: recoverData.student.russian, math: recoverData.student.math, logic: recoverData.student.logic, english: recoverData.student.english },
-            cheated: recoverData.student.cheated,
-            diagnosticsReport: recoverData.student.diagnosticsReport
-          });
-        }
-      } catch (recoverErr) {
-        console.warn('Recovery after already-submitted failed:', recoverErr);
-      }
-    }
-    
-    // Sync with Firestore if final decision updated
-    if (payload.action === "updateFinalDecision" && data.success && payload.childName) {
-      try {
-        const decisionStatus = payload.finalDecision === "ПРИНЯТ" ? "accepted" : "rejected";
-        const childName = payload.childName.trim().toLowerCase();
-        
-        // Find user by matching first/last name, scoped to tenant
-        const snapshot = await admin.firestore().collection('users')
-          .where("tenantId", "==", (payload.tenantId || "unknown"))
-          .get();
-        let matchedUserId = null;
-        
-        snapshot.forEach(doc => {
-           const d = doc.data();
-           const f = (d.firstName || "").toLowerCase().trim();
-           const l = (d.lastName || "").toLowerCase().trim();
-           const fullName1 = `${f} ${l}`.trim();
-           const fullName2 = `${l} ${f}`.trim();
-           if (childName === fullName1 || childName === fullName2 || childName === f || childName.includes(f) || fullName1.includes(childName)) {
-              matchedUserId = doc.id;
-           }
-        });
-        
-        if (matchedUserId) {
-          await admin.firestore().collection('users').doc(matchedUserId).update({
-            decisionStatus,
-            feedback: payload.feedback || ""
-          });
-        }
-        
-        // Also update decisions collection for redundancy/Signup.tsx logic
-        const docId = childName.replace(/\s+/g, '_');
-        await admin.firestore().collection('decisions').doc(docId).set({
-           fullName: childName,
-           decisionStatus,
-           feedback: payload.feedback || "",
-           updatedAt: new Date().toISOString()
-        }, { merge: true });
-        
-      } catch (syncErr) {
-        console.error("Firestore sync error:", syncErr);
-      }
-    }
-    
-    res.json(data);
   } catch (err: any) {
     console.error("GAS Proxy error:", err);
-    res.status(500).json({ error: "Failed to communicate with GAS" });
+    res.status(500).json({ error: "Failed to communicate with proxy" });
   }
 });
 

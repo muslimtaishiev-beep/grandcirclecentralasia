@@ -821,16 +821,18 @@ export default function ManagerDashboard() {
           totalCost,
           firstMonthPayment,
           rejectReason: finalRejectReason,
-          feedback
+          feedback,
+          tenantId: activeTenantId
       }, "");
-      if (data.success) {
+      if (data && data.success) {
         setStudents(prev => (prev || []).map(s => s.shortId === selectedStudent ? { ...s, finalDecision: decision } : s));
+        toast.success(decision === "ПРИНЯТ" ? "Ученик успешно принят!" : "Решение (отказ) зарегистрировано");
         closeModals();
       } else {
-        toast.success("Ошибка: " + data.error);
+        toast.error("Ошибка: " + (data?.error || "Не удалось обновить решение"));
       }
-    } catch (err) {
-      toast.success("Ошибка сети");
+    } catch (err: any) {
+      toast.error("Ошибка сети: " + (err.message || err));
     }
   };
 
