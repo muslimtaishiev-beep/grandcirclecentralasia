@@ -71,6 +71,21 @@ const checkinLimiter = rateLimit({
   validate: false,
 });
 app.use("/api/forms/checkin", checkinLimiter);
+
+// Приём заявок с внешних сайтов: ручки открыты анониму, поэтому лимит
+// заметно строже общего. Участники мероприятия обычно сидят за одним
+// Wi-Fi (один IP на всех), так что предел не может быть маленьким — но
+// он конечный, чтобы ни массовую подачу мусорных заявок, ни перебор
+// ссылок участников нельзя было вести с одного адреса.
+const intakePublicLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  message: { success: false, error: "Слишком много запросов подряд — подождите минуту." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+});
+app.use("/api/intake/public", intakePublicLimiter);
 app.use("/api/admin/login", authLimiter);
 app.use("/api/tenants/request", authLimiter);
 
@@ -181,6 +196,7 @@ import tenantRoutes from "./src/routes/tenantRoutes.js";
 import superAdminRoutes from "./src/routes/superAdminRoutes.js";
 import placementRoutes from "./src/routes/placementRoutes.js";
 import formRoutes from "./src/routes/formRoutes.js";
+import intakeRoutes from "./src/routes/intakeRoutes.js";
 import payrollRoutes from "./src/routes/payrollRoutes.js";
 import { sendTestResultEmail } from "./emailService.js";
 
@@ -189,6 +205,7 @@ app.use("/api/tenants", tenantRoutes);
 app.use("/api/superadmin", superAdminRoutes);
 app.use("/api/placement", placementRoutes);
 app.use("/api/forms", formRoutes);
+app.use("/api/intake", intakeRoutes);
 app.use("/api/payroll", payrollRoutes);
 
 let memoryDbStore: any = null;

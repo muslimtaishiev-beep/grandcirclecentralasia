@@ -178,6 +178,19 @@ service cloud.firestore {
     // отправка и чек-ин — через публичные эндпоинты. Прямая запись с клиента
     // позволяла менять статусы мимо истории и аудита.
     match /form_submissions/{docId} { allow read: if hasTenantAccess(); allow write: if false; }
+
+    // Приём заявок с внешних сайтов и бронирование ресурсов.
+    // Пишет ТОЛЬКО сервер: счётчик занятых мест живёт внутри транзакции
+    // бронирования, и любая прямая запись с клиента рассинхронизировала бы
+    // его с бронями — на последнее место сели бы двое.
+    match /intake_streams/{docId}     { allow read: if hasTenantAccess(); allow write: if false; }
+    match /bookable_resources/{docId} { allow read: if hasTenantAccess(); allow write: if false; }
+    match /resource_bookings/{docId}  { allow read: if hasTenantAccess(); allow write: if false; }
+    // Заявки закрыты ПРАВОМ, а не одним лишь членством: в них лежит токен
+    // участника — по сути пароль без пароля, дающий доступ к его броням.
+    // Волонтёр, которому выдали только проверку билетов, не должен иметь
+    // возможности выгрузить токены всех участников.
+    match /intake_entries/{docId}     { allow read: if hasPerm(resource.data.tenantId, 'ik'); allow write: if false; }
     match /custom_business_functions/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
     match /testimonials/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
     match /app_screens/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }

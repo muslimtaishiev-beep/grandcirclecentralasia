@@ -1,0 +1,188 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Пример регистрации</title>
+<!--
+  Рабочий пример для внешней команды: весь путь участника на голом fetch,
+  без библиотек и сборки. Открывается файлом в браузере.
+
+  Это НЕ дизайн — оформление ваше. Здесь показано только как разговаривать
+  с сервером: какие запросы, что приходит в ответ, как обрабатывать «мест
+  не осталось».
+
+  Перед запуском впишите два значения ниже. Адрес вашего сайта при этом
+  должен быть в списке разрешённых у организатора, иначе браузер получит 403.
+-->
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+  fieldset { border: 1px solid #ddd; border-radius: 8px; margin: 16px 0; padding: 16px; }
+  legend { font-weight: 600; }
+  input, button, select { font: inherit; padding: 8px; margin: 4px 0; }
+  input { width: 260px; }
+  button { cursor: pointer; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .muted { color: #666; font-size: 13px; }
+  .err { color: #b00; }
+  .ok { color: #070; }
+  pre { background: #f6f6f6; padding: 12px; border-radius: 6px; overflow: auto; font-size: 13px; }
+</style>
+
+<h1>Регистрация — пример работы с API</h1>
+
+<fieldset>
+  <legend>Настройки</legend>
+  <div class="row">
+    <input id="base" value="https://www.studyfreeforum.com" placeholder="адрес сервера">
+    <input id="stream" placeholder="идентификатор потока (streamId)">
+  </div>
+  <div class="muted">Оба значения даёт организатор.</div>
+</fieldset>
+
+<fieldset>
+  <legend>1. Заявка</legend>
+  <div class="row">
+    <input id="name" placeholder="Имя и фамилия">
+    <input id="email" placeholder="Почта" type="email">
+    <input id="phone" placeholder="Телефон">
+  </div>
+  <!-- Любые свои поля: сервер их не диктует. Здесь для примера состав команды. -->
+  <div class="row"><input id="track" placeholder="Направление"></div>
+  <div id="mates"></div>
+  <button onclick="addMate()">+ участник команды</button>
+  <button onclick="submitEntry()">Отправить заявку</button>
+  <div id="entryMsg"></div>
+</fieldset>
+
+<fieldset>
+  <legend>2. Моя страница</legend>
+  <div class="row">
+    <input id="token" placeholder="код из заявки">
+    <button onclick="loadMine()">Открыть</button>
+  </div>
+  <div id="mine"></div>
+</fieldset>
+
+<script>
+const $ = id => document.getElementById(id);
+const api = () => $("base").value.replace(/\/+$/, "") + "/api/intake/public";
+
+// Код участника — единственный способ вернуться к своей броне.
+// Храним его и в адресе, и в браузере: человек может закрыть вкладку.
+const saved = new URLSearchParams(location.search).get("code") || localStorage.getItem("intakeToken");
+if (saved) $("token").value = saved;
+
+function addMate() {
+  const i = $("mates").children.length + 1;
+  const div = document.createElement("div");
+  div.className = "row";
+  div.innerHTML = `<input placeholder="Имя участника ${i}" class="mate-name">
+                   <input placeholder="Роль" class="mate-role">`;
+  $("mates").appendChild(div);
+}
+
+async function call(path, options) {
+  const res = await fetch(api() + path, options);
+  const body = await res.json().catch(() => ({ error: "Сервер вернул не JSON" }));
+  return { status: res.status, body };
+}
+
+async function submitEntry() {
+  const team = [...document.querySelectorAll("#mates .row")].map(r => ({
+    name: r.querySelector(".mate-name").value,
+    role: r.querySelector(".mate-role").value,
+  })).filter(m => m.name);
+
+  // contact — обязателен, всё остальное свободно.
+  const payload = {
+    contact: { name: $("name").value, email: $("email").value, phone: $("phone").value },
+    answers: { track: $("track").value, team, teamSize: team.length },
+  };
+
+  const { status, body } = await call(`/stream/${$("stream").value}/submit`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  });
+
+  if (!body.success) {
+    $("entryMsg").innerHTML = `<div class="err">${body.error} (код ${status})</div>`;
+    return;
+  }
+  localStorage.setItem("intakeToken", body.token);
+  $("token").value = body.token;
+  $("entryMsg").innerHTML = `<div class="ok">${body.duplicate ? "Вы уже регистрировались." : "Заявка принята."}
+    Ваш код: <b>${body.token}</b>${body.requireApproval ? "<br>Бронирование откроется после одобрения." : ""}</div>`;
+  loadMine();
+}
+
+async function loadMine() {
+  const token = $("token").value.trim();
+  if (!token) return;
+  const { body } = await call(`/my/${encodeURIComponent(token)}`);
+  if (!body.success) { $("mine").innerHTML = `<div class="err">${body.error}</div>`; return; }
+
+  const booked = new Set(body.bookings.filter(b => b.status === "active").map(b => b.resourceId));
+  const groups = {};
+  for (const r of body.resources) (groups[r.group || "Общее"] ||= []).push(r);
+
+  $("mine").innerHTML = `
+    <p>${body.entry.contact.name} — <b>${body.entry.statusLabel}</b></p>
+    ${!body.canBook ? '<p class="muted">Бронирование пока недоступно.</p>' : ""}
+    ${Object.entries(groups).map(([g, list]) => `
+      <h4>${g}</h4>
+      ${list.map(r => `
+        <div class="row">
+          <span>${r.title} — свободно ${r.free} из ${r.capacity}</span>
+          ${booked.has(r.id)
+            ? `<button onclick="cancel('${r.id}')">Отменить</button>`
+            : `<button onclick="book('${r.id}')" ${!body.canBook || r.free === 0 ? "disabled" : ""}>Занять</button>`}
+        </div>`).join("")}
+    `).join("")}
+    <h4>Команда</h4>
+    <div class="row">
+      <input id="teamTitle" placeholder="Название команды">
+      <button onclick="createTeam()">Создать</button>
+      <input id="joinCode" placeholder="или код команды">
+      <button onclick="joinTeam()">Вступить</button>
+    </div>
+    ${body.bookings.filter(b => b.joinCode).map(b => `<p class="ok">Код вашей команды: <b>${b.joinCode}</b></p>`).join("")}
+    <details><summary class="muted">Что видит сервер</summary><pre>${JSON.stringify(body.entry.answers, null, 2)}</pre></details>`;
+}
+
+async function book(resourceId) {
+  const { body } = await call(`/my/${$("token").value}/book`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ resourceId }),
+  });
+  // «Мест не осталось» — обычный исход, а не сбой: пока человек заполнял
+  // форму, места могли разобрать. Показываем и перезагружаем список.
+  if (body.result === "full") alert("Мест не осталось — обновляю список.");
+  else if (!body.success) alert(body.error);
+  loadMine();
+}
+
+async function cancel(resourceId) {
+  await call(`/my/${$("token").value}/cancel`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ resourceId }),
+  });
+  loadMine();
+}
+
+async function createTeam() {
+  const { body } = await call(`/my/${$("token").value}/create`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: $("teamTitle").value }),
+  });
+  if (!body.success) alert(body.error);
+  else alert("Код команды: " + body.joinCode);
+  loadMine();
+}
+
+async function joinTeam() {
+  const { body } = await call(`/my/${$("token").value}/join`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ joinCode: $("joinCode").value }),
+  });
+  if (!body.success) alert(body.error);
+  loadMine();
+}
+
+addMate();
+if (saved) loadMine();
+</script>

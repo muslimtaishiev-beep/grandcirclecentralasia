@@ -24,6 +24,8 @@ export type PermissionKey =
   | "crm:read" | "crm:manage"
   // Работа и общение
   | "chat:use" | "tasks:use" | "docs:use" | "sheets:use" | "tickets:check"
+  // Приём заявок и бронирование
+  | "intake:manage"
   // Администрирование
   | "team:manage" | "settings:manage";
 
@@ -54,6 +56,8 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: "sheets:use", label: "Таблицы", description: "Совместные таблицы", category: "Работа" },
   { key: "tickets:check", label: "Проверка билетов", description: "Сканер QR на входе — отметка гостей", category: "Работа" },
 
+  { key: "intake:manage", label: "Приём заявок и бронирование", description: "Потоки приёма с внешних сайтов, занимаемые ресурсы и брони", category: "CRM и продажи" },
+
   { key: "team:manage", label: "Управление сотрудниками", description: "Приглашения, должности, назначение прав", category: "Администрирование" },
   { key: "settings:manage", label: "Настройки организации", description: "Название, терминология экранов, модули, интеграции", category: "Администрирование" },
 ];
@@ -74,7 +78,7 @@ export const isPermissionKey = (v: unknown): v is PermissionKey =>
 export const PERMISSION_CODES: Record<PermissionKey, string> = {
   "tests:read": "tr", "tests:manage": "tm", "tests:review": "tv", "certificates:issue": "ci", "placement:manage": "pm",
   "edu:schedule": "es", "edu:payroll": "ep",
-  "crm:read": "cr", "crm:manage": "cm",
+  "crm:read": "cr", "crm:manage": "cm", "intake:manage": "ik",
   "chat:use": "ch", "tasks:use": "ta", "docs:use": "dc", "sheets:use": "sh", "tickets:check": "tk",
   "team:manage": "tg", "settings:manage": "sg",
 };
@@ -166,6 +170,7 @@ export const WORKSPACE_SCREENS: { key: string; label: string; group: string }[] 
   { key: "crm", label: "CRM", group: "Продажи и заявки" },
   { key: "forms", label: "Заявки и QR", group: "Продажи и заявки" },
   { key: "tickets", label: "Проверка билетов", group: "Продажи и заявки" },
+  { key: "intake", label: "Приём и бронирование", group: "Продажи и заявки" },
 
   { key: "sites", label: "Site Builder", group: "Инструменты" },
   { key: "functions", label: "Function Studio", group: "Инструменты" },
@@ -196,6 +201,9 @@ export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | nu
   // Срез: своё право (раньше — роль с подстрокой «завуч» в названии).
   placement: ["placement:manage", "tests:manage", "tests:review"],
   forms: ["team:manage", "certificates:issue", "crm:manage"],
+  // Без этой строки navAllowed вернул бы true и экран открылся бы ВСЕМ
+  // сотрудникам организации: отсутствие ключа здесь означает «доступно всем».
+  intake: ["intake:manage", "crm:manage"],
   functions: ["team:manage", "settings:manage"],
   departments: ["team:manage", "settings:manage"],
   permissions: ["team:manage", "settings:manage"],
@@ -213,6 +221,7 @@ export const ORG_MODULES: { key: string; label: string; description: string; per
   { key: "mod_tests", label: "Тесты и экзамены", description: "Тесты, прокторинг, вступительный срез", permissions: ["tests:read", "tests:manage", "tests:review", "certificates:issue", "placement:manage"], screens: ["tests", "testsManage", "placement"] },
   { key: "mod_crm", label: "CRM и продажи", description: "Контакты, сделки, воронки", permissions: ["crm:read", "crm:manage"], screens: ["crm"] },
   { key: "mod_tickets", label: "Заявки и билеты", description: "Конструктор заявок, QR-билеты, проверка на входе", permissions: ["tickets:check"], screens: ["forms", "tickets"] },
+  { key: "mod_intake", label: "Приём и бронирование", description: "Заявки с внешних сайтов, занимаемые ресурсы, брони", permissions: ["intake:manage"], screens: ["intake"] },
   { key: "mod_docs", label: "Документы и таблицы", description: "Совместные документы и таблицы", permissions: ["docs:use", "sheets:use"], screens: ["docs", "sheets"] },
 ];
 
