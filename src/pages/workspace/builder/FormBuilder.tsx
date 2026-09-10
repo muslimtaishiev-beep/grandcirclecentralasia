@@ -17,7 +17,9 @@ import {
   FileText,
   Clock,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
@@ -148,9 +150,73 @@ export default function FormBuilder() {
     setFields(prev => prev.filter((_, i) => i !== index));
   };
 
+  /**
+   * Варианты выбора — отдельным списком, а не одной строкой через запятую.
+   *
+   * Раньше строка резалась по запятым на КАЖДОЕ нажатие клавиши, куски
+   * обрезались по краям и пустые выбрасывались: запятую съедало как
+   * разделитель, пробел срезало, а вариант с запятой внутри («Бишкек,
+   * центр») ввести было нельзя вовсе. Теперь каждый вариант живёт своей
+   * строкой ввода и хранится как есть.
+   */
+  const optionsOf = (field: any): string[] => (Array.isArray(field.options) ? field.options : []);
+
+  const setOptions = (index: number, next: string[]) => updateField(index, 'options', next);
+
+  const addOption = (index: number) => {
+    const cur = optionsOf(fields[index]);
+    setOptions(index, [...cur, '']);
+  };
+
+  const updateOption = (index: number, optIdx: number, value: string) => {
+    const next = [...optionsOf(fields[index])];
+    next[optIdx] = value;
+    setOptions(index, next);
+  };
+
+  const removeOption = (index: number, optIdx: number) => {
+    setOptions(index, optionsOf(fields[index]).filter((_, i) => i !== optIdx));
+  };
+
+  /** Порядок вариантов виден гостю — его должно быть можно менять. */
+  const moveOption = (index: number, optIdx: number, delta: number) => {
+    const cur = [...optionsOf(fields[index])];
+    const target = optIdx + delta;
+    if (target < 0 || target >= cur.length) return;
+    [cur[optIdx], cur[target]] = [cur[target], cur[optIdx]];
+    setOptions(index, cur);
+  };
+
+  /** Совпадающие варианты гость различить не сможет — предупреждаем заранее. */
+  const duplicateOptions = (field: any): Set<number> => {
+    const seen = new Map<string, number>();
+    const dupes = new Set<number>();
+    optionsOf(field).forEach((o, i) => {
+      const key = String(o).trim().toLowerCase();
+      if (!key) return;
+      if (seen.has(key)) { dupes.add(i); dupes.add(seen.get(key)!); } else { seen.set(key, i); }
+    });
+    return dupes;
+  };
+
   const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formTitle.trim()) return;
+
+    // Пустые варианты в список гостя попадать не должны: пустая строка в
+    // выпадающем списке выглядит как сбой и выбрать её нельзя. Убираем их
+    // здесь, а не при вводе, — иначе поле схлопывалось бы под руками.
+    const cleanFields = fields.map((f: any) => (
+      f.type === 'select'
+        ? { ...f, options: optionsOf(f).map((o: string) => String(o).trim()).filter(Boolean) }
+        : f
+    ));
+
+    const brokenSelect = cleanFields.find((f: any) => f.type === 'select' && f.options.length < 2);
+    if (brokenSelect) {
+      alert(`У поля «${brokenSelect.label || 'без названия'}» нужно минимум два варианта ответа.`);
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -159,7 +225,7 @@ export default function FormBuilder() {
         tenantId: currentOrgId,
         title: formTitle.trim(),
         description: formDesc.trim(),
-        fields,
+        fields: cleanFields,
         qrTrackingEnabled,
         mode: formMode,
         active: true,
@@ -570,15 +636,75 @@ export default function FormBuilder() {
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
-                    {field.type === 'select' && (
-                      <input
-                        type="text"
-                        value={(field.options || []).join(', ')}
-                        onChange={(e) => updateField(idx, 'options', e.target.value.split(',').map((o: string) => o.trim()).filter(Boolean))}
-                        placeholder="Варианты через запятую: 9 класс, 10 класс, 11 класс"
-                        className="w-full px-3 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg text-[11px]"
-                      />
-                    )}
+                    {field.type === 'select' && (() => {
+                      const options = optionsOf(field);
+                      const dupes = duplicateOptions(field);
+                      const filled = options.filter(o => String(o).trim()).length;
+                      return (
+                        <div className="space-y-1.5 pl-1 border-l-2 border-[var(--border-color)]">
+                          <div className="flex items-center justify-between pl-2">
+                            <span className="text-[11px] font-semibold text-[var(--text-muted)]">
+                              Варианты ответа{filled > 0 ? ` — ${filled}` : ''}
+                            </span>
+                            {filled < 2 && (
+                              <span className="text-[11px] text-amber-600">Нужно минимум два</span>
+                            )}
+                          </div>
+
+                          {options.length === 0 && (
+                            <p className="pl-2 text-[11px] text-[var(--text-muted)]">
+                              Пока пусто. Добавьте варианты, из которых гость будет выбирать.
+                            </p>
+                          )}
+
+                          {options.map((opt: string, optIdx: number) => (
+                            <div key={optIdx} className="flex items-center gap-1.5 pl-2">
+                              <span className="text-[11px] text-[var(--text-muted)] w-4 shrink-0 text-right">{optIdx + 1}.</span>
+                              <input
+                                type="text"
+                                value={opt}
+                                onChange={(e) => updateOption(idx, optIdx, e.target.value)}
+                                onKeyDown={(e) => {
+                                  // Enter добавляет следующий вариант, а не отправляет форму:
+                                  // список заполняют подряд, не трогая мышь.
+                                  if (e.key === 'Enter') { e.preventDefault(); addOption(idx); }
+                                }}
+                                autoFocus={opt === '' && optIdx === options.length - 1}
+                                placeholder={`Вариант ${optIdx + 1}`}
+                                className={`flex-1 px-2.5 py-1.5 bg-[var(--bg-surface)] border rounded-lg text-xs ${
+                                  dupes.has(optIdx) ? 'border-amber-500' : 'border-[var(--border-color)]'
+                                }`}
+                              />
+                              <button type="button" onClick={() => moveOption(idx, optIdx, -1)} disabled={optIdx === 0}
+                                title="Выше"
+                                className="p-1 rounded text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-default">
+                                <ChevronUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button type="button" onClick={() => moveOption(idx, optIdx, 1)} disabled={optIdx === options.length - 1}
+                                title="Ниже"
+                                className="p-1 rounded text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-default">
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              </button>
+                              <button type="button" onClick={() => removeOption(idx, optIdx)} title="Удалить вариант"
+                                className="p-1 rounded text-red-500 hover:bg-red-500/10">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+
+                          {dupes.size > 0 && (
+                            <p className="pl-2 text-[11px] text-amber-600">
+                              Одинаковые варианты выделены — гость не сможет их различить.
+                            </p>
+                          )}
+
+                          <button type="button" onClick={() => addOption(idx)}
+                            className="ml-2 mt-0.5 inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-dashed border-[var(--border-color)] text-[11px] font-semibold text-[var(--text-muted)] hover:border-emerald-500 hover:text-emerald-600">
+                            <Plus className="w-3 h-3" /> Добавить вариант
+                          </button>
+                        </div>
+                      );
+                    })()}
                     {field.type === 'file' && (
                       <p className="text-[11px] text-[var(--text-muted)]">
                         Гость приложит фото документа (JPG/PNG, сжимается автоматически). Подходит для удостоверения личности.
