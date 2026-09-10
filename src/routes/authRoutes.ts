@@ -143,6 +143,21 @@ router.get("/me", requireFirebaseAuth, async (req: any, res: any) => {
   }
 });
 
+/**
+ * Техническая причина отказа почты → понятная фраза для руководителя.
+ *
+ * «RESEND_API_KEY not configured» ничего не говорит человеку, который
+ * добавляет сотрудника: ему нужно знать, что делать дальше.
+ */
+function emailInviteHint(reason?: string): string {
+  const raw = String(reason || "");
+  if (/not configured/i.test(raw)) return "Отправка писем не настроена в организации.";
+  if (/domain|verif/i.test(raw)) return "Домен отправителя не подтверждён у почтового сервиса.";
+  if (/invalid recipient/i.test(raw)) return "Адрес почты записан с ошибкой.";
+  if (/rate|limit|quota/i.test(raw)) return "Почтовый сервис временно ограничил отправку — попробуйте позже.";
+  return raw ? `Почтовый сервис отказал: ${raw}` : "Письмо отправить не удалось.";
+}
+
 // POST /api/auth/send-employee-invite - Create user and send invite email
 router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: any) => {
   try {
@@ -269,8 +284,9 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
     // Firebase's default (unbranded, English-first) template with no control over
     // content or language.
     let emailResult: { sent: boolean; reason?: string } = { sent: false, reason: "not attempted" };
+    let resetLink = "";
     try {
-      const resetLink = await admin.auth().generatePasswordResetLink(email);
+      resetLink = await admin.auth().generatePasswordResetLink(email);
       emailResult = await sendStaffInviteEmail({
         email: resolveWorkspaceConfig(targetTenantDoc.data()?.workspaceConfig).email,
         to: email,
@@ -286,7 +302,17 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
       console.warn("[Auth/Invite] Failed to generate/send invite email:", mailErr.message);
     }
 
-    return res.json({ success: true, uid: userRecord.uid, tenantId: targetTenantId, emailSent: emailResult.sent });
+    return res.json({
+      success: true,
+      uid: userRecord.uid,
+      tenantId: targetTenantId,
+      emailSent: emailResult.sent,
+      // Причина отказа и запасная ссылка — наружу, а не только в журнал
+      // сервера: без них пригласивший видел «письмо не ушло» и не мог ни
+      // понять почему, ни дать сотруднику войти.
+      emailError: emailResult.sent ? null : emailInviteHint(emailResult.reason),
+      inviteLink: emailResult.sent ? null : (resetLink || null),
+    });
   } catch (error: any) {
     console.error("[Auth/Invite] Error:", error);
     return res.status(500).json({ success: false, error: error.message });

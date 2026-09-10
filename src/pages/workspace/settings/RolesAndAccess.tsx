@@ -54,7 +54,7 @@ export default function RolesAndAccess() {
   // Добавление сотрудника — приглашение по email с должностью.
   const [inviting, setInviting] = useState(false);
   const [invite, setInvite] = useState({ fullName: "", email: "", customRoleId: "" });
-  const [inviteMsg, setInviteMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [inviteMsg, setInviteMsg] = useState<{ ok: boolean; text: string; link?: string } | null>(null);
 
   const say = (msg: string) => { setNotice(msg); setTimeout(() => setNotice(null), 5000); };
 
@@ -154,11 +154,14 @@ export default function RolesAndAccess() {
         ok: true,
         text: j.emailSent
           ? `Сотрудник добавлен. Письмо со ссылкой для входа отправлено на ${invite.email}.`
-          : `Сотрудник добавлен. Письмо отправить не удалось — передайте ${invite.email} ссылку для входа вручную.`,
+          : `Сотрудник добавлен, но письмо не ушло. ${j.emailError || ""} Передайте ему ссылку ниже — она открывает вход и задаёт пароль.`.trim(),
+        link: j.emailSent ? undefined : (j.inviteLink || undefined),
       });
       setInvite({ fullName: "", email: "", customRoleId: "" });
       void loadRoles();
-      setTimeout(() => { setInviting(false); setInviteMsg(null); }, 2500);
+      // Сообщение со ссылкой не прячем по таймеру: руководителю нужно успеть
+      // её скопировать, иначе сотрудник не войдёт вовсе.
+      if (j.emailSent) setTimeout(() => { setInviting(false); setInviteMsg(null); }, 2500);
     } catch { setInviteMsg({ ok: false, text: "Нет связи с сервером" }); }
     finally { setBusy(false); }
   };
@@ -454,8 +457,29 @@ export default function RolesAndAccess() {
 
             {inviteMsg && (
               <div className={`rounded-xl p-3 text-sm border ${inviteMsg.ok
-                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600"
-                : "bg-red-500/10 border-red-500/30 text-red-500"}`}>{inviteMsg.text}</div>
+                ? (inviteMsg.link
+                    ? "bg-amber-500/10 border-amber-500/30 text-amber-600"
+                    : "bg-emerald-500/10 border-emerald-500/30 text-emerald-600")
+                : "bg-red-500/10 border-red-500/30 text-red-500"}`}>
+                <div>{inviteMsg.text}</div>
+                {inviteMsg.link && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      readOnly
+                      value={inviteMsg.link}
+                      onFocus={(e) => e.currentTarget.select()}
+                      className="flex-1 px-2 py-1.5 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-color)] text-[11px] font-mono text-[var(--text-main)]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { void navigator.clipboard.writeText(inviteMsg.link || ""); }}
+                      className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold shrink-0"
+                    >
+                      Копировать
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
 
             <input value={invite.fullName} onChange={e => setInvite({ ...invite, fullName: e.target.value })}
