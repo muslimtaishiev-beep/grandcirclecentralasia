@@ -411,6 +411,81 @@ router.post("/status", requireFirebaseAuth, requireScreen("forms"), async (req: 
 });
 
 /**
+ * POST /api/forms/delete — убрать заявку из списка или вернуть обратно.
+ *
+ * В корзину, а не насовсем: заявку заполнял живой человек, и восстановить
+ * её иначе нечем — повторно он её не подаст. Случайное нажатие в таблице
+ * из сотни строк иначе стоило бы потерянного участника.
+ *
+ * Сама запись остаётся в базе с пометкой, кто и когда убрал: спор «я
+ * подавал заявку, а меня нет» разбирается по ней.
+ */
+router.post("/delete", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
+  try {
+    const { tenantId, submissionId, restore } = req.body || {};
+    if (!tenantId || !submissionId) return res.status(400).json({ success: false, error: "Bad request" });
+    if (!(await canManageForms(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+
+    const ref = db().collection(SUBS).doc(String(submissionId));
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ success: false, error: "Заявка не найдена" });
+    if (snap.data()!.tenantId !== tenantId) {
+      return res.status(403).json({ success: false, error: "Заявка другой организации" });
+    }
+
+    const now = admin.firestore.Timestamp.now();
+    const by = req.user?.email || req.user?.uid || "";
+    if (restore === true) {
+      await ref.update({
+        deleted: admin.firestore.FieldValue.delete(),
+        deletedAt: admin.firestore.FieldValue.delete(),
+        deletedBy: admin.firestore.FieldValue.delete(),
+        updatedAt: now,
+      });
+      return res.json({ success: true, restored: true });
+    }
+
+    await ref.update({ deleted: true, deletedAt: now, deletedBy: by, updatedAt: now });
+    return res.json({ success: true, deleted: true });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * POST /api/forms/sheet — запомнить таблицу, в которую форма выгружает ответы.
+ *
+ * Таблица привязывается к форме, чтобы повторный перенос обновлял ту же
+ * самую, а не плодил новые с одинаковым названием.
+ */
+router.post("/sheet", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
+  try {
+    const { tenantId, formId, sheetId } = req.body || {};
+    if (!tenantId || !formId) return res.status(400).json({ success: false, error: "Bad request" });
+    if (!(await canManageForms(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+
+    const ref = db().collection(FORMS).doc(String(formId));
+    const snap = await ref.get();
+    if (!snap.exists || snap.data()!.tenantId !== tenantId) {
+      return res.status(404).json({ success: false, error: "Форма не найдена" });
+    }
+
+    const id = str(sheetId, 200);
+    await ref.update({
+      sheetId: id || admin.firestore.FieldValue.delete(),
+      updatedAt: admin.firestore.Timestamp.now(),
+    });
+    return res.json({ success: true, sheetId: id || null });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
  * GET /api/forms/stats — сводка по заявкам, по каждой форме отдельно.
  *
  * Это то, ради чего конструктор и нужен: сколько заявок пришло по каждой

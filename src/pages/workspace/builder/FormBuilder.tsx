@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useOutletContext, useParams } from 'react-router-dom';
+import { useOutletContext, useParams, useNavigate } from 'react-router-dom';
 import { 
   FileCheck2, 
   Plus, 
@@ -21,11 +21,12 @@ import {
   ChevronUp,
   ChevronDown
 } from 'lucide-react';
-import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc, setDoc, deleteDoc, serverTimestamp, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
 import FancyQr, { QR_THEMES, QrThemePicker, downloadQr, type QrTheme } from '../../../components/forms/FancyQr';
 import { STATUS_LABEL, STATUS_COLOR, MODE_STATUSES, type FormMode } from '../../../shared/formStatuses';
 import { auth } from '../../../lib/firebase';
+import { useAuth } from '../../../contexts/AuthContext';
 
 export default function FormBuilder() {
   const { activeTenant } = useOutletContext<any>() || {};
@@ -33,6 +34,8 @@ export default function FormBuilder() {
   // Без организации не подписываемся ни на что: подставной тенант означал
   // бы показать чужие заявки.
   const currentOrgId = activeTenant?.id || orgId || '';
+  const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [forms, setForms] = useState<any[]>([]);
   const [submissions, setSubmissions] = useState<any[]>([]);
@@ -126,6 +129,169 @@ export default function FormBuilder() {
       unsubSubs();
     };
   }, [currentOrgId]);
+
+  /**
+   * Фильтры и корзина.
+   *
+   * Заявок бывают сотни, и без отбора по форме и статусу таблица
+   * бесполезна: нужную строку в ней не найти.
+   */
+  const [filterFormId, setFilterFormId] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<string>('');
+  const [search, setSearch] = useState('');
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [subView, setSubView] = useState<any | null>(null);
+  const [busySub, setBusySub] = useState<string | null>(null);
+
+  const visibleSubs = submissions.filter((sub: any) => {
+    if (showDeleted !== Boolean(sub.deleted)) return false;
+    if (filterFormId && sub.formId !== filterFormId) return false;
+    if (filterStatus && (sub.status || 'new') !== filterStatus) return false;
+    if (search.trim()) {
+      const hay = [sub.applicantName, sub.applicantPhone, sub.applicantEmail, sub.qrToken]
+        .concat(Object.values(sub.data || {}).map(v => String(v).slice(0, 200)))
+        .join(' ').toLowerCase();
+      if (!hay.includes(search.trim().toLowerCase())) return false;
+    }
+    return true;
+  });
+
+  const deletedCount = submissions.filter((s: any) => s.deleted).length;
+
+  /** Подписи полей формы — чтобы в ответах читалось «Город», а не «field_3». */
+  const labelsOf = (formId: string): Record<string, string> => {
+    const f = forms.find(x => x.id === formId);
+    const map: Record<string, string> = {};
+    (f?.fields || []).forEach((x: any) => { map[x.id] = x.label || x.id; });
+    return map;
+  };
+
+  const removeSubmission = async (sub: any, restore = false) => {
+    if (!restore && !confirm(`Убрать заявку «${sub.applicantName || 'без имени'}» из списка? Её можно будет вернуть.`)) return;
+    setBusySub(sub.id);
+    try {
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+      const res = await fetch('/api/forms/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tenantId: currentOrgId, submissionId: sub.id, restore }),
+      });
+      const data = await res.json();
+      if (!data.success) alert(data.error || 'Не удалось');
+      // onSnapshot сам обновит список.
+    } catch (e: any) { alert(`Не удалось: ${e.message}`); }
+    finally { setBusySub(null); }
+  };
+
+  /**
+   * Выгрузка ответов таблицей.
+   *
+   * Колонки — поля формы, по одной заявке в строке. Файлы в выгрузку не
+   * попадают: там base64 на сотни килобайт, который сломает любую таблицу.
+   */
+  const exportSubs = (formId: string) => {
+    const form = forms.find(f => f.id === formId);
+    const rows = submissions.filter((s: any) => s.formId === formId && !s.deleted);
+    if (!rows.length) { alert('По этой форме заявок пока нет.'); return; }
+
+    const fields = (form?.fields || []).filter((f: any) => f.type !== 'file');
+    const head = ['Дата', 'Имя', 'Телефон', 'Почта', 'Статус', 'Код']
+      .concat(fields.map((f: any) => f.label || f.id));
+
+    // Точка с запятой и BOM: так файл открывается в Гугл Таблицах и Excel
+    // с русскими буквами и разнесённый по колонкам, а не одной строкой.
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`;
+    const lines = [head.map(esc).join(';')];
+    for (const r of rows) {
+      const when = r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toLocaleString('ru-RU') : '';
+      lines.push([
+        when, r.applicantName || '', r.applicantPhone || '', r.applicantEmail || '',
+        STATUS_LABEL[(r.status || 'new') as keyof typeof STATUS_LABEL] || r.status || '', r.qrToken || '',
+      ].concat(fields.map((f: any) => r.data?.[f.id] ?? '')).map(esc).join(';'));
+    }
+
+    const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${(form?.title || 'Заявки').replace(/[^\wа-яА-ЯёЁ -]/g, '')} — ${new Date().toLocaleDateString('ru-RU')}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  /**
+   * Перенести ответы в таблицу воркспейса.
+   *
+   * В свою таблицу, а не в чужую Гугл-таблицу: писать в чужой документ по
+   * обычной ссылке Google не даёт, и «перенос» свёлся бы к тому, что
+   * человек сам перетаскивает файл. Здесь ответы попадают в таблицу сразу
+   * и открываются на редактирование, как любая другая таблица организации.
+   *
+   * Таблица создаётся один раз и запоминается у формы: следующий перенос
+   * обновляет ту же таблицу, а не плодит новые с тем же названием.
+   */
+  const toWorkspaceSheet = async (formId: string) => {
+    const form = forms.find(f => f.id === formId);
+    const rows = submissions.filter((s: any) => s.formId === formId && !s.deleted);
+    if (!rows.length) { alert('По этой форме заявок пока нет.'); return; }
+    if (!currentOrgId || !user?.uid) return;
+
+    setBusySub(formId);
+    try {
+      const { sheetService } = await import('../../../services/collab/sheetService');
+      const fields = (form?.fields || []).filter((f: any) => f.type !== 'file');
+      const head = ['Дата', 'Имя', 'Телефон', 'Почта', 'Статус', 'Код']
+        .concat(fields.map((f: any) => f.label || f.id));
+
+      const table: string[][] = [head];
+      for (const r of rows) {
+        table.push([
+          r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toLocaleString('ru-RU') : '',
+          r.applicantName || '', r.applicantPhone || '', r.applicantEmail || '',
+          STATUS_LABEL[(r.status || 'new') as keyof typeof STATUS_LABEL] || '', r.qrToken || '',
+        ].concat(fields.map((f: any) => String(r.data?.[f.id] ?? ''))));
+      }
+
+      // Ячейки в формате «A1»: буква колонки + номер строки.
+      const colName = (i: number) => {
+        let n = i, name = '';
+        do { name = String.fromCharCode(65 + (n % 26)) + name; n = Math.floor(n / 26) - 1; } while (n >= 0);
+        return name;
+      };
+      const cells: Record<string, any> = {};
+      table.forEach((row, ri) => row.forEach((value, ci) => {
+        if (value !== '') cells[`${colName(ci)}${ri + 1}`] = { rawValue: value, computedValue: value };
+      }));
+
+      let sheetId = form?.sheetId || '';
+      const exists = sheetId
+        ? (await getDoc(doc(db, 'tenants', currentOrgId, 'workspace_sheets', sheetId))).exists()
+        : false;
+
+      if (!exists) {
+        sheetId = await sheetService.createSheet(currentOrgId, user.uid, `Ответы — ${form?.title || 'форма'}`);
+        const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+        await fetch('/api/forms/sheet', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ tenantId: currentOrgId, formId, sheetId }),
+        });
+      }
+
+      await setDoc(doc(db, 'tenants', currentOrgId, 'workspace_sheets', sheetId), {
+        cells,
+        rowsCount: Math.max(100, table.length + 10),
+        columnsCount: Math.max(26, head.length + 2),
+        lastEditedByStaffId: user.uid,
+        updatedAt: Date.now(),
+      }, { merge: true });
+
+      navigate(`/workspace/${currentOrgId}/sheets/${sheetId}`);
+    } catch (e: any) {
+      alert(`Не удалось перенести в таблицу: ${e.message}`);
+    } finally {
+      setBusySub(null);
+    }
+  };
 
   const addField = () => {
     const newF = {
@@ -455,10 +621,68 @@ export default function FormBuilder() {
         </div>
       ) : (
         /* Submissions List */
+        <div className="space-y-3">
+          {/* Отбор: без него в сотне заявок нужную строку не найти. */}
+          <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-3 flex flex-wrap items-center gap-2">
+            <select value={filterFormId} onChange={e => setFilterFormId(e.target.value)}
+              className="px-3 py-1.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-lg text-xs">
+              <option value="">Все формы</option>
+              {forms.map(f => <option key={f.id} value={f.id}>{f.title}</option>)}
+            </select>
+
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+              className="px-3 py-1.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-lg text-xs">
+              <option value="">Любой статус</option>
+              {Object.entries(STATUS_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+            </select>
+
+            <input value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Поиск по имени, телефону, ответам…"
+              className="flex-1 min-w-[200px] px-3 py-1.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-lg text-xs" />
+
+            {(filterFormId || filterStatus || search) && (
+              <button onClick={() => { setFilterFormId(''); setFilterStatus(''); setSearch(''); }}
+                className="px-2.5 py-1.5 rounded-lg text-xs text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/10">
+                Сбросить
+              </button>
+            )}
+
+            <div className="ml-auto flex items-center gap-2">
+              {deletedCount > 0 && (
+                <button onClick={() => setShowDeleted(v => !v)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${showDeleted
+                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-600'
+                    : 'border-[var(--border-color)] text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/10'}`}>
+                  {showDeleted ? 'К списку заявок' : `Удалённые (${deletedCount})`}
+                </button>
+              )}
+
+              {/* Перенос и скачивание работают по одной форме: в общей куче
+                  у заявок разные поля, и колонки не сойдутся. */}
+              <button
+                onClick={() => filterFormId ? void toWorkspaceSheet(filterFormId) : alert('Выберите форму — у разных форм разные поля, и в общей таблице колонки не сойдутся.')}
+                disabled={busySub === filterFormId && !!filterFormId}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 inline-flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5" />
+                {busySub === filterFormId && filterFormId ? 'Переношу…' : 'В таблицу'}
+              </button>
+
+              <button
+                onClick={() => filterFormId ? exportSubs(filterFormId) : alert('Выберите форму, ответы которой нужно скачать.')}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold border border-[var(--border-color)] text-[var(--text-main)] hover:bg-black/5 dark:hover:bg-white/10">
+                Скачать
+              </button>
+            </div>
+          </div>
+
         <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-xs">
-          {submissions.length === 0 ? (
+          {visibleSubs.length === 0 ? (
             <div className="p-12 text-center text-[var(--text-muted)] text-xs">
-              Заявок пока нет. Поделитесь ссылкой на форму с клиентами!
+              {showDeleted
+                ? 'В корзине пусто.'
+                : submissions.length === 0
+                  ? 'Заявок пока нет. Поделитесь ссылкой на форму с клиентами!'
+                  : 'Под фильтры ничего не подошло.'}
             </div>
           ) : (
             <table className="w-full text-left text-xs">
@@ -466,13 +690,14 @@ export default function FormBuilder() {
                 <tr>
                   <th className="px-5 py-3 font-medium">Заявитель / ФИО</th>
                   <th className="px-5 py-3 font-medium">Форма</th>
-                  <th className="px-5 py-3 font-medium">Статус QR-Паспорта</th>
+                  <th className="px-5 py-3 font-medium">Ответы</th>
+                  <th className="px-5 py-3 font-medium">Статус</th>
                   <th className="px-5 py-3 font-medium">Дата подачи</th>
-                  <th className="px-5 py-3 font-medium text-right">QR Паспорт</th>
+                  <th className="px-5 py-3 font-medium text-right">Действия</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border-color)]">
-                {submissions.map(sub => (
+                {visibleSubs.map(sub => (
                   <tr key={sub.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition">
                     <td className="px-5 py-3.5">
                       <div className="font-bold text-[var(--text-main)]">{sub.applicantName || 'Неизвестный'}</div>
@@ -482,6 +707,34 @@ export default function FormBuilder() {
                       <span className="font-mono text-emerald-500 font-bold">{sub.formTitle || 'Форма'}</span>
                     </td>
                     <td className="px-5 py-3.5">
+                      {(() => {
+                        // Короткая выжимка ответов прямо в строке: без неё
+                        // таблица показывала только имя и статус, а сами
+                        // ответы, ради которых форму и заполняли, увидеть
+                        // было негде.
+                        const labels = labelsOf(sub.formId);
+                        const entries = Object.entries(sub.data || {})
+                          .filter(([, v]) => String(v ?? '').trim() && !String(v).startsWith('data:'));
+                        if (!entries.length) return <span className="text-[var(--text-muted)] text-[11px]">—</span>;
+                        const preview = entries.slice(0, 2)
+                          .map(([k, v]) => `${labels[k] || k}: ${String(v).slice(0, 28)}`).join(' · ');
+                        return (
+                          <button onClick={() => setSubView(sub)}
+                            className="text-left text-[11px] text-[var(--text-main)] hover:text-emerald-500 transition">
+                            <span className="line-clamp-1">{preview}</span>
+                            {entries.length > 2 && (
+                              <span className="text-[var(--text-muted)]">и ещё {entries.length - 2}</span>
+                            )}
+                          </button>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      {/* Цвет статуса — тот же, что везде в проекте: раньше
+                          все статусы выглядели одинаково, и отличить новую
+                          заявку от отклонённой в списке было нельзя. */}
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_COLOR[(sub.status || 'new') as keyof typeof STATUS_COLOR]}`} />
                       <select 
                         value={sub.status || 'new'}
                         onChange={(e) => updateSubmissionStatus(sub.id, e.target.value)}
@@ -494,6 +747,7 @@ export default function FormBuilder() {
                             <option key={st} value={st}>{STATUS_LABEL[st]}</option>
                           ))}
                       </select>
+                      </div>
                     </td>
                     <td className="px-5 py-3.5 text-[11px] font-mono text-[var(--text-muted)]">
                       {sub.createdAt ? new Date(sub.createdAt.seconds ? sub.createdAt.seconds * 1000 : sub.createdAt).toLocaleDateString() : 'Сегодня'}
@@ -516,14 +770,105 @@ export default function FormBuilder() {
                         onClick={() => setSelectedSubmissionForQr(sub)}
                         className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 px-3 py-1 rounded-lg font-bold text-[11px] inline-flex items-center gap-1.5 transition cursor-pointer"
                       >
-                        <QrCode className="w-3.5 h-3.5" /> Показать QR
+                        <QrCode className="w-3.5 h-3.5" /> QR
                       </button>
+                      {sub.deleted ? (
+                        <button
+                          onClick={() => void removeSubmission(sub, true)}
+                          disabled={busySub === sub.id}
+                          className="ml-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 border border-amber-500/30 px-3 py-1 rounded-lg font-bold text-[11px] transition disabled:opacity-50">
+                          Вернуть
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => void removeSubmission(sub)}
+                          disabled={busySub === sub.id}
+                          title="Убрать в корзину"
+                          className="ml-2 p-1.5 rounded-lg text-red-500 hover:bg-red-500/10 transition disabled:opacity-50">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
+        </div>
+        </div>
+      )}
+
+      {/* Окно с полной заявкой: в таблице видна только выжимка. */}
+      {subView && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setSubView(null)}>
+          <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-3xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6 space-y-4 shadow-2xl"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between border-b border-[var(--border-color)] pb-3">
+              <div>
+                <h3 className="text-lg font-bold">{subView.applicantName || 'Без имени'}</h3>
+                <p className="text-[11px] text-[var(--text-muted)]">
+                  {subView.formTitle || 'Заявка'}
+                  {subView.createdAt?.seconds
+                    ? ` · ${new Date(subView.createdAt.seconds * 1000).toLocaleString('ru-RU')}`
+                    : ''}
+                </p>
+              </div>
+              <button onClick={() => setSubView(null)} className="p-2 hover:bg-black/10 rounded-xl text-slate-400">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              <span className={`w-2 h-2 rounded-full ${STATUS_COLOR[(subView.status || 'new') as keyof typeof STATUS_COLOR]}`} />
+              <span className="font-bold">{STATUS_LABEL[(subView.status || 'new') as keyof typeof STATUS_LABEL]}</span>
+              {subView.qrToken && <span className="ml-auto font-mono text-[var(--text-muted)]">{subView.qrToken}</span>}
+            </div>
+
+            {(subView.applicantPhone || subView.applicantEmail) && (
+              <div className="text-xs text-[var(--text-muted)]">
+                {[subView.applicantPhone, subView.applicantEmail].filter(Boolean).join(' · ')}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              {(() => {
+                const labels = labelsOf(subView.formId);
+                const entries = Object.entries(subView.data || {});
+                if (!entries.length) return <p className="text-xs text-[var(--text-muted)]">Ответов нет.</p>;
+                return entries.map(([k, v]) => {
+                  const value = String(v ?? '');
+                  return (
+                    <div key={k} className="border-b border-[var(--border-color)] pb-2">
+                      <div className="text-[11px] font-semibold text-[var(--text-muted)]">{labels[k] || k}</div>
+                      {value.startsWith('data:image/') ? (
+                        <img src={value} alt={labels[k] || k}
+                          className="mt-1 max-h-48 rounded-xl border border-[var(--border-color)]" />
+                      ) : (
+                        <div className="text-sm text-[var(--text-main)] whitespace-pre-wrap break-words">
+                          {value || '—'}
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            {Array.isArray(subView.history) && subView.history.length > 0 && (
+              <div className="pt-2">
+                <div className="text-[11px] font-semibold text-[var(--text-muted)] mb-1">Ход рассмотрения</div>
+                {subView.history.map((h: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between text-[11px] py-0.5">
+                    <span>{STATUS_LABEL[h.status as keyof typeof STATUS_LABEL] || h.status}</span>
+                    <span className="text-[var(--text-muted)] font-mono">
+                      {h.at?.seconds ? new Date(h.at.seconds * 1000).toLocaleDateString('ru-RU') : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
