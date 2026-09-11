@@ -36,13 +36,15 @@ export default function SheetCell({ id, data, isActive, isEditing, onClick, onDo
     fontWeight: data?.style?.isBold ? 'bold' : 'normal',
     fontStyle: data?.style?.isItalic ? 'italic' : 'normal',
     textAlign: data?.style?.align || 'left',
-    color: data?.style?.textColor || 'inherit',
+    // Цвет текста берём из темы, а не наследуем: без этого содержимое
+    // ячеек тонуло в тёмном фоне листа и читалось с трудом.
+    color: data?.style?.textColor || 'var(--text-main)',
     backgroundColor: data?.style?.backgroundColor || 'transparent'
   };
 
   return (
     <div 
-      className={`border-r border-b border-[var(--border-color)] relative select-none ${isActive ? 'outline outline-2 outline-emerald-500 z-10 bg-emerald-50 dark:bg-emerald-900/20' : 'bg-transparent hover:bg-[var(--bg-surface)]'}`}
+      className={`border-r border-b border-[var(--border-color)] relative select-none ${isActive ? 'outline outline-2 outline-emerald-500 z-10 bg-emerald-500/10' : 'hover:bg-emerald-500/5'}`}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       style={{ minWidth: 100 }} // Assuming default width
@@ -55,10 +57,10 @@ export default function SheetCell({ id, data, isActive, isEditing, onClick, onDo
           onChange={e => setEditVal(e.target.value)}
           onKeyDown={onKeyDown}
           onBlur={() => onChange(editVal)}
-          className="absolute inset-0 w-full h-full p-1 bg-white dark:bg-slate-800 outline-none text-sm font-mono z-20"
+          className="absolute inset-0 w-full h-full px-2 bg-[var(--bg-surface)] text-[var(--text-main)] outline outline-2 outline-emerald-500 text-sm font-mono z-20"
         />
       ) : (
-        <div className="w-full h-full p-1 text-sm overflow-hidden whitespace-nowrap text-ellipsis" style={styleObj}>
+        <div className="w-full h-full px-2 py-1 text-[13px] leading-5 overflow-hidden whitespace-nowrap text-ellipsis" style={styleObj}>
           {formattedVal}
         </div>
       )}

@@ -21,7 +21,7 @@ import {
   ChevronUp,
   ChevronDown
 } from 'lucide-react';
-import { collection, query, where, onSnapshot, doc, getDoc, setDoc, deleteDoc, serverTimestamp, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
 import FancyQr, { QR_THEMES, QrThemePicker, downloadQr, type QrTheme } from '../../../components/forms/FancyQr';
 import { STATUS_LABEL, STATUS_COLOR, MODE_STATUSES, type FormMode } from '../../../shared/formStatuses';
@@ -226,8 +226,12 @@ export default function FormBuilder() {
    * человек сам перетаскивает файл. Здесь ответы попадают в таблицу сразу
    * и открываются на редактирование, как любая другая таблица организации.
    *
-   * Таблица создаётся один раз и запоминается у формы: следующий перенос
-   * обновляет ту же таблицу, а не плодит новые с тем же названием.
+   * Таблица создаётся один раз и запоминается у формы; дальше новые заявки
+   * дописывает сервер сам, строкой вниз. Эта кнопка нужна для первого
+   * переноса и чтобы подтянуть заявки, пришедшие до привязки таблицы.
+   *
+   * Уже существующие строки не трогаем: в таблице ведут свои пометки в
+   * соседних колонках, и полная перестройка листа стирала бы эту работу.
    */
   const toWorkspaceSheet = async (formId: string) => {
     const form = forms.find(f => f.id === formId);
@@ -257,17 +261,14 @@ export default function FormBuilder() {
         do { name = String.fromCharCode(65 + (n % 26)) + name; n = Math.floor(n / 26) - 1; } while (n >= 0);
         return name;
       };
-      const cells: Record<string, any> = {};
-      table.forEach((row, ri) => row.forEach((value, ci) => {
-        if (value !== '') cells[`${colName(ci)}${ri + 1}`] = { rawValue: value, computedValue: value };
-      }));
-
       let sheetId = form?.sheetId || '';
-      const exists = sheetId
-        ? (await getDoc(doc(db, 'tenants', currentOrgId, 'workspace_sheets', sheetId))).exists()
-        : false;
+      let existing: any = null;
+      if (sheetId) {
+        const snap = await getDoc(doc(db, 'tenants', currentOrgId, 'workspace_sheets', sheetId));
+        if (snap.exists()) existing = snap.data();
+      }
 
-      if (!exists) {
+      if (!existing) {
         sheetId = await sheetService.createSheet(currentOrgId, user.uid, `Ответы — ${form?.title || 'форма'}`);
         const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
         await fetch('/api/forms/sheet', {
@@ -277,13 +278,52 @@ export default function FormBuilder() {
         });
       }
 
-      await setDoc(doc(db, 'tenants', currentOrgId, 'workspace_sheets', sheetId), {
-        cells,
-        rowsCount: Math.max(100, table.length + 10),
-        columnsCount: Math.max(26, head.length + 2),
+      // Какие заявки уже в таблице — по коду в шестой колонке. Повторный
+      // перенос дописывает только недостающие, а не собирает лист заново:
+      // иначе пометки, сделанные в таблице руками, стирались бы.
+      const prevCells: Record<string, any> = existing?.cells || {};
+      const already = new Set(
+        Object.entries(prevCells)
+          .filter(([k]) => /^F\d+$/.test(k))
+          .map(([, v]) => String((v as any)?.rawValue || '')),
+      );
+      let lastRow = 0;
+      for (const key of Object.keys(prevCells)) {
+        const n = Number((key.match(/\d+$/) || [])[0]);
+        if (Number.isFinite(n) && n > lastRow) lastRow = n;
+      }
+
+      const cells: Record<string, any> = {};
+      if (lastRow === 0) {
+        head.forEach((value, ci) => { cells[`${colName(ci)}1`] = { rawValue: value, computedValue: value }; });
+        lastRow = 1;
+      }
+      let added = 0;
+      for (let i = 1; i < table.length; i++) {
+        const row = table[i];
+        if (already.has(row[5])) continue; // код заявки уже в таблице
+        lastRow++; added++;
+        row.forEach((value, ci) => {
+          if (value !== '') cells[`${colName(ci)}${lastRow}`] = { rawValue: value, computedValue: value };
+        });
+      }
+
+      if (added === 0 && existing) {
+        alert('В таблице уже есть все заявки по этой форме.');
+        navigate(`/workspace/${currentOrgId}/sheets/${sheetId}`);
+        return;
+      }
+
+      const patch: Record<string, any> = {
+        rowsCount: Math.max(Number(existing?.rowsCount) || 100, lastRow + 10),
+        columnsCount: Math.max(Number(existing?.columnsCount) || 26, head.length + 2),
         lastEditedByStaffId: user.uid,
         updatedAt: Date.now(),
-      }, { merge: true });
+      };
+      // Точечно по ячейкам, а не целым полем cells: так соседние колонки с
+      // пометками остаются нетронутыми.
+      Object.entries(cells).forEach(([k, v]) => { patch[`cells.${k}`] = v; });
+      await updateDoc(doc(db, 'tenants', currentOrgId, 'workspace_sheets', sheetId), patch);
 
       navigate(`/workspace/${currentOrgId}/sheets/${sheetId}`);
     } catch (e: any) {

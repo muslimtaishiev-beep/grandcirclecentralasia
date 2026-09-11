@@ -55,6 +55,71 @@ const STATUSES = FORM_STATUSES;
 
 const formMode = (f: any): FormMode => (f?.mode === "ticket" ? "ticket" : "application");
 
+/** Имя колонки таблицы по её номеру: 0 → A, 25 → Z, 26 → AA. */
+function columnName(index: number): string {
+  let n = index, name = "";
+  do { name = String.fromCharCode(65 + (n % 26)) + name; n = Math.floor(n / 26) - 1; } while (n >= 0);
+  return name;
+}
+
+/**
+ * Дописать заявку строкой в таблицу формы.
+ *
+ * Пишем на сервере, а не в кабинете: заявка приходит, когда кабинет может
+ * быть ни у кого не открыт, и строка всё равно должна появиться.
+ *
+ * Только ДОПИСЫВАЕМ вниз, ничего не перезаписывая: в таблице люди ведут
+ * свои пометки в соседних колонках, и перестройка листа стирала бы их
+ * работу при каждой новой заявке.
+ *
+ * Ошибку глотаем: таблица — удобство, а падение записи в неё не должно
+ * оборачиваться для человека отказом в приёме заявки.
+ */
+async function appendToSheet(form: any, formId: string, submission: Record<string, any>): Promise<void> {
+  try {
+    const tenantId = String(form?.tenantId || "");
+    const sheetId = String(form?.sheetId || "");
+    if (!tenantId || !sheetId) return;
+
+    const sheetRef = db().collection("tenants").doc(tenantId).collection("workspace_sheets").doc(sheetId);
+    const snap = await sheetRef.get();
+    if (!snap.exists) return;
+
+    const sheet = snap.data() || {};
+    const cells: Record<string, any> = sheet.cells || {};
+
+    // Куда писать: сразу под последней занятой строкой. Так строка встаёт
+    // в конец даже если кто-то дописывал свои строки руками.
+    let lastRow = 1;
+    for (const key of Object.keys(cells)) {
+      const row = Number((key.match(/\d+$/) || [])[0]);
+      if (Number.isFinite(row) && row > lastRow) lastRow = row;
+    }
+    const targetRow = lastRow + 1;
+
+    const fields: any[] = (Array.isArray(form.fields) ? form.fields : []).filter((f: any) => f.type !== "file");
+    const values = [
+      new Date().toLocaleString("ru-RU"),
+      String(submission.applicantName || ""),
+      String(submission.applicantPhone || ""),
+      String(submission.applicantEmail || ""),
+      STATUS_LABEL[(submission.status || "new") as Status] || "",
+      String(submission.qrToken || ""),
+    ].concat(fields.map((f: any) => String(submission.data?.[f.id] ?? "")));
+
+    const patch: Record<string, any> = {
+      updatedAt: Date.now(),
+      rowsCount: Math.max(Number(sheet.rowsCount) || 100, targetRow + 10),
+    };
+    values.forEach((value, i) => {
+      if (value !== "") patch[`cells.${columnName(i)}${targetRow}`] = { rawValue: value, computedValue: value };
+    });
+    await sheetRef.update(patch);
+  } catch (e: any) {
+    console.warn("[Forms/Sheet] Не удалось дописать заявку в таблицу:", e.message);
+  }
+}
+
 // ─────────────────────────── Публичная часть ───────────────────────────
 
 /**
@@ -192,6 +257,13 @@ router.post("/submit", async (req: any, res: any) => {
       // видят не только текущее состояние, но и когда оно менялось.
       history: [{ status: "new", at: admin.firestore.Timestamp.now(), by: "" }],
       createdAt: admin.firestore.Timestamp.now(),
+    });
+
+    // Строка в таблицу формы — в фоне: человек не должен ждать записи в
+    // таблицу, чтобы увидеть «заявка принята».
+    void appendToSheet(form, String(formId), {
+      applicantName, applicantPhone, applicantEmail,
+      status: "new", qrToken, data: clean,
     });
 
     return res.json({
