@@ -303,8 +303,10 @@ export default function FormBuilder() {
         const row = table[i];
         if (already.has(row[5])) continue; // код заявки уже в таблице
         lastRow++; added++;
+        // Пустой ответ пишем пустой ячейкой, а не пропускаем: иначе на этом
+        // месте оставалось бы значение, лежавшее там раньше.
         row.forEach((value, ci) => {
-          if (value !== '') cells[`${colName(ci)}${lastRow}`] = { rawValue: value, computedValue: value };
+          cells[`${colName(ci)}${lastRow}`] = { rawValue: value, computedValue: value };
         });
       }
 

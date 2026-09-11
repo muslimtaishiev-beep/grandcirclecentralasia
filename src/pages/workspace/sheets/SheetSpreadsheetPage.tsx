@@ -52,6 +52,58 @@ export default function SheetSpreadsheetPage() {
     sheetService.exportToCSV(sheet);
   };
 
+  /**
+   * Вставка и удаление строк.
+   *
+   * Содержимое ниже точки вставки сдвигается целиком, вместе со стилями:
+   * иначе «вставить строку» означало бы затереть соседнюю, и таблицу
+   * приходилось бы переписывать руками.
+   *
+   * delta = +1 вставляет пустую строку, -1 удаляет строку `at`.
+   */
+  const shiftRows = async (at: number, delta: 1 | -1) => {
+    if (!sheet || !activeTenant?.id || !sheetId) return;
+    const cells = sheet.cells || {};
+    const next: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(cells)) {
+      const col = (key.match(/^[A-Z]+/) || [''])[0];
+      const row = Number((key.match(/\d+$/) || [0])[0]);
+      if (!col || !row) continue;
+      if (delta === -1 && row === at) continue;       // удаляемая строка
+      const shifted = row >= at ? row + delta : row;  // всё ниже — сдвигаем
+      if (shifted < 1) continue;
+      next[`${col}${shifted}`] = value;
+    }
+
+    await sheetService.replaceCells(activeTenant.id, sheetId, next, {
+      rowsCount: Math.max(1, (sheet.rowsCount || 100) + delta),
+    });
+  };
+
+  /** То же для колонок: содержимое правее сдвигается, стили сохраняются. */
+  const shiftColumns = async (at: string, delta: 1 | -1) => {
+    if (!sheet || !activeTenant?.id || !sheetId) return;
+    const cells = sheet.cells || {};
+    const atIndex = at.charCodeAt(0) - 65;
+    const next: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(cells)) {
+      const col = (key.match(/^[A-Z]+/) || [''])[0];
+      const row = Number((key.match(/\d+$/) || [0])[0]);
+      if (!col || !row || col.length > 1) continue;
+      const index = col.charCodeAt(0) - 65;
+      if (delta === -1 && index === atIndex) continue;
+      const shifted = index >= atIndex ? index + delta : index;
+      if (shifted < 0 || shifted > 25) continue;
+      next[`${String.fromCharCode(65 + shifted)}${row}`] = value;
+    }
+
+    await sheetService.replaceCells(activeTenant.id, sheetId, next, {
+      columnsCount: Math.min(26, Math.max(1, (sheet.columnsCount || 26) + delta)),
+    });
+  };
+
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col bg-[var(--bg-app)]">
       <CellFormatToolbar 
@@ -85,6 +137,10 @@ export default function SheetSpreadsheetPage() {
           setIsEditing(false);
         }}
         onCellKeyDown={handleCellKeyDown}
+        onInsertRow={(at) => void shiftRows(at, 1)}
+        onDeleteRow={(at) => void shiftRows(at, -1)}
+        onInsertColumn={(at) => void shiftColumns(at, 1)}
+        onDeleteColumn={(at) => void shiftColumns(at, -1)}
       />
     </div>
   );

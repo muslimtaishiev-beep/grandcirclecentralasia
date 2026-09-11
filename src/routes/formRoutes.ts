@@ -111,8 +111,11 @@ async function appendToSheet(form: any, formId: string, submission: Record<strin
       updatedAt: Date.now(),
       rowsCount: Math.max(Number(sheet.rowsCount) || 100, targetRow + 10),
     };
+    // Пустой ответ записываем пустой ячейкой, а не пропускаем: пропуск
+    // оставлял в этом месте то, что лежало там раньше, и строка выглядела
+    // собранной из разных заявок.
     values.forEach((value, i) => {
-      if (value !== "") patch[`cells.${columnName(i)}${targetRow}`] = { rawValue: value, computedValue: value };
+      patch[`cells.${columnName(i)}${targetRow}`] = { rawValue: value, computedValue: value };
     });
     await sheetRef.update(patch);
   } catch (e: any) {
@@ -483,6 +486,54 @@ router.post("/status", requireFirebaseAuth, requireScreen("forms"), async (req: 
 });
 
 /**
+ * Найти строку заявки в таблице формы по её коду в колонке F.
+ * Возвращает номер строки или 0, если заявки в таблице нет.
+ */
+async function findSheetRow(tenantId: string, sheetId: string, qrToken: string): Promise<number> {
+  if (!tenantId || !sheetId || !qrToken) return 0;
+  const snap = await db().collection("tenants").doc(tenantId).collection("workspace_sheets").doc(sheetId).get();
+  if (!snap.exists) return 0;
+  const cells: Record<string, any> = snap.data()?.cells || {};
+  for (const [key, value] of Object.entries(cells)) {
+    if (!/^F\d+$/.test(key)) continue;
+    if (String((value as any)?.rawValue || "") !== qrToken) continue;
+    return Number((key.match(/\d+$/) || [])[0]) || 0;
+  }
+  return 0;
+}
+
+/**
+ * Убрать строку заявки из таблицы — при удалении заявки в корзину.
+ *
+ * Очищаем ячейки строки, а не сдвигаем лист: сдвиг ломал бы формулы и
+ * пометки, которые люди ведут в соседних колонках напротив своих строк.
+ * Пустая строка на месте удалённой честно показывает, что заявки больше
+ * нет, и при восстановлении она заполняется обратно.
+ */
+async function clearSheetRow(form: any, qrToken: string): Promise<void> {
+  try {
+    const tenantId = String(form?.tenantId || "");
+    const sheetId = String(form?.sheetId || "");
+    const row = await findSheetRow(tenantId, sheetId, qrToken);
+    if (!row) return;
+
+    const sheetRef = db().collection("tenants").doc(tenantId).collection("workspace_sheets").doc(sheetId);
+    const snap = await sheetRef.get();
+    const cells: Record<string, any> = snap.data()?.cells || {};
+    const patch: Record<string, any> = { updatedAt: Date.now() };
+    // Чистим только колонки самой заявки: пометки человека правее не трогаем.
+    const width = 6 + ((Array.isArray(form.fields) ? form.fields : []).filter((f: any) => f.type !== "file").length);
+    for (let i = 0; i < width; i++) {
+      const key = `${columnName(i)}${row}`;
+      if (cells[key]) patch[`cells.${key}`] = admin.firestore.FieldValue.delete();
+    }
+    await sheetRef.update(patch);
+  } catch (e: any) {
+    console.warn("[Forms/Sheet] Не удалось убрать строку из таблицы:", e.message);
+  }
+}
+
+/**
  * POST /api/forms/delete — убрать заявку из списка или вернуть обратно.
  *
  * В корзину, а не насовсем: заявку заполнял живой человек, и восстановить
@@ -509,6 +560,10 @@ router.post("/delete", requireFirebaseAuth, requireScreen("forms"), async (req: 
 
     const now = admin.firestore.Timestamp.now();
     const by = req.user?.email || req.user?.uid || "";
+    const sub = snap.data()!;
+    const formSnap = await db().collection(FORMS).doc(String(sub.formId || "")).get();
+    const form = formSnap.exists ? { ...formSnap.data(), id: formSnap.id } : null;
+
     if (restore === true) {
       await ref.update({
         deleted: admin.firestore.FieldValue.delete(),
@@ -516,10 +571,16 @@ router.post("/delete", requireFirebaseAuth, requireScreen("forms"), async (req: 
         deletedBy: admin.firestore.FieldValue.delete(),
         updatedAt: now,
       });
+      // Возвращённая заявка снова попадает в таблицу: из корзины она
+      // выходит в общий список, и таблица должна это показывать.
+      if (form) void appendToSheet(form, String(sub.formId || ""), sub);
       return res.json({ success: true, restored: true });
     }
 
     await ref.update({ deleted: true, deletedAt: now, deletedBy: by, updatedAt: now });
+    // Убранная заявка не должна оставаться в таблице рядом с действующими:
+    // она в корзине, и в выгрузке ей не место.
+    if (form) void clearSheetRow(form, String(sub.qrToken || ""));
     return res.json({ success: true, deleted: true });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });

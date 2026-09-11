@@ -10,9 +10,29 @@ interface Props {
   onCellDoubleClick: (id: string) => void;
   onCellChange: (id: string, val: string) => void;
   onCellKeyDown: (id: string, e: React.KeyboardEvent) => void;
+  onInsertRow?: (at: number) => void;
+  onDeleteRow?: (at: number) => void;
+  onInsertColumn?: (at: string) => void;
+  onDeleteColumn?: (at: string) => void;
 }
 
-export default function SpreadsheetGrid({ sheet, activeCell, isEditing, onCellClick, onCellDoubleClick, onCellChange, onCellKeyDown }: Props) {
+export default function SpreadsheetGrid({ sheet, activeCell, isEditing, onCellClick, onCellDoubleClick, onCellChange, onCellKeyDown, onInsertRow, onDeleteRow, onInsertColumn, onDeleteColumn }: Props) {
+  /**
+   * Выделение строки или колонки целиком и меню вставки — как в привычных
+   * таблицах: раньше по номеру строки нельзя было ни кликнуть, ни добавить
+   * строку между существующими, и лист приходилось переписывать руками.
+   */
+  const [selectedRow, setSelectedRow] = React.useState<number | null>(null);
+  const [selectedCol, setSelectedCol] = React.useState<string | null>(null);
+  const [menu, setMenu] = React.useState<{ x: number; y: number; row?: number; col?: string } | null>(null);
+
+  React.useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    return () => { window.removeEventListener('click', close); window.removeEventListener('scroll', close, true); };
+  }, [menu]);
   const cols = Array.from({ length: sheet.columnsCount }, (_, i) => String.fromCharCode(65 + i));
   // Показываем заполненное плюс небольшой запас, а не все 100 строк:
   // лист из двух строк ответов и девяноста восьми пустых выглядит
@@ -73,10 +93,15 @@ export default function SpreadsheetGrid({ sheet, activeCell, isEditing, onCellCl
           {cols.map(c => (
             <div key={c}
               style={{ width: colWidths[c] }}
-              className={`h-8 border-r border-b border-[var(--border-color)] flex items-center justify-center font-bold text-[11px] shrink-0 select-none transition-colors ${
-                c === activeCol
-                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-[var(--bg-panel)] text-[var(--text-muted)]'
+              onClick={() => { setSelectedCol(c); setSelectedRow(null); }}
+              onContextMenu={(e) => { e.preventDefault(); setSelectedCol(c); setSelectedRow(null); setMenu({ x: e.clientX, y: e.clientY, col: c }); }}
+              title="Нажмите, чтобы выделить колонку. Правая кнопка — вставить или удалить."
+              className={`h-8 border-r border-b border-[var(--border-color)] flex items-center justify-center font-bold text-[11px] shrink-0 select-none transition-colors cursor-pointer ${
+                c === selectedCol
+                  ? 'bg-emerald-500 text-white'
+                  : c === activeCol
+                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-[var(--bg-panel)] text-[var(--text-muted)] hover:bg-emerald-500/10'
               }`}>
               {c}
             </div>
@@ -86,10 +111,16 @@ export default function SpreadsheetGrid({ sheet, activeCell, isEditing, onCellCl
         {/* Rows */}
         {rows.map(r => (
           <div key={r} className="flex flex-nowrap h-7">
-            <div className={`w-12 h-full border-r border-b border-[var(--border-color)] flex items-center justify-center font-bold text-[11px] shrink-0 sticky left-0 z-20 select-none transition-colors ${
-              r === activeRow
-                ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                : 'bg-[var(--bg-panel)] text-[var(--text-muted)]'
+            <div
+              onClick={() => { setSelectedRow(r); setSelectedCol(null); }}
+              onContextMenu={(e) => { e.preventDefault(); setSelectedRow(r); setSelectedCol(null); setMenu({ x: e.clientX, y: e.clientY, row: r }); }}
+              title="Нажмите, чтобы выделить строку. Правая кнопка — вставить или удалить."
+              className={`w-12 h-full border-r border-b border-[var(--border-color)] flex items-center justify-center font-bold text-[11px] shrink-0 sticky left-0 z-20 select-none transition-colors cursor-pointer ${
+              r === selectedRow
+                ? 'bg-emerald-500 text-white'
+                : r === activeRow
+                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                  : 'bg-[var(--bg-panel)] text-[var(--text-muted)] hover:bg-emerald-500/10'
             }`}>
               {r}
             </div>
@@ -97,7 +128,11 @@ export default function SpreadsheetGrid({ sheet, activeCell, isEditing, onCellCl
               const cellId = `${c}${r}`;
               return (
                 <div key={cellId} style={{ width: colWidths[c] }}
-                  className={`shrink-0 h-full ${r % 2 === 0 ? 'bg-black/[0.02] dark:bg-white/[0.02]' : ''}`}>
+                  className={`shrink-0 h-full ${
+                    r === selectedRow || c === selectedCol
+                      ? 'bg-emerald-500/10'
+                      : r % 2 === 0 ? 'bg-black/[0.02] dark:bg-white/[0.02]' : ''
+                  }`}>
                   <SheetCell 
                     id={cellId}
                     data={sheet.cells?.[cellId]}
@@ -114,6 +149,48 @@ export default function SpreadsheetGrid({ sheet, activeCell, isEditing, onCellCl
           </div>
         ))}
       </div>
+
+      {/* Меню строки или колонки: вставить до, вставить после, удалить. */}
+      {menu && (
+        <div
+          style={{ top: menu.y, left: menu.x }}
+          onClick={(e) => e.stopPropagation()}
+          className="fixed z-50 min-w-[190px] rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] shadow-2xl py-1 text-sm">
+          {menu.row !== undefined ? (
+            <>
+              <button onClick={() => { onInsertRow?.(menu.row!); setMenu(null); }}
+                className="w-full text-left px-3 py-2 hover:bg-emerald-500/10">
+                Вставить строку выше
+              </button>
+              <button onClick={() => { onInsertRow?.(menu.row! + 1); setMenu(null); }}
+                className="w-full text-left px-3 py-2 hover:bg-emerald-500/10">
+                Вставить строку ниже
+              </button>
+              <div className="my-1 border-t border-[var(--border-color)]" />
+              <button onClick={() => { onDeleteRow?.(menu.row!); setMenu(null); }}
+                className="w-full text-left px-3 py-2 text-red-500 hover:bg-red-500/10">
+                Удалить строку {menu.row}
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => { onInsertColumn?.(menu.col!); setMenu(null); }}
+                className="w-full text-left px-3 py-2 hover:bg-emerald-500/10">
+                Вставить колонку слева
+              </button>
+              <button onClick={() => { onInsertColumn?.(String.fromCharCode(menu.col!.charCodeAt(0) + 1)); setMenu(null); }}
+                className="w-full text-left px-3 py-2 hover:bg-emerald-500/10">
+                Вставить колонку справа
+              </button>
+              <div className="my-1 border-t border-[var(--border-color)]" />
+              <button onClick={() => { onDeleteColumn?.(menu.col!); setMenu(null); }}
+                className="w-full text-left px-3 py-2 text-red-500 hover:bg-red-500/10">
+                Удалить колонку {menu.col}
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

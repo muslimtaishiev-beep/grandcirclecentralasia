@@ -45,6 +45,23 @@ class SheetService {
     return ref.id;
   }
 
+  /**
+   * Полная замена набора ячеек — для вставки и удаления строк и колонок.
+   *
+   * Именно замена, а не слияние: при сдвиге строк часть ячеек исчезает со
+   * старых мест, и обычное слияние оставило бы их дубликаты на прежних
+   * позициях.
+   */
+  async replaceCells(
+    tenantId: string,
+    sheetId: string,
+    cells: Record<string, any>,
+    extra: Partial<WorkspaceSpreadsheet> = {},
+  ) {
+    const ref = doc(db, 'tenants', tenantId, 'workspace_sheets', sheetId);
+    await updateDoc(ref, { cells, updatedAt: Date.now(), ...extra });
+  }
+
   async updateCell(tenantId: string, sheetId: string, cellId: string, rawValue: string, staffId: string) {
     const ref = doc(db, 'tenants', tenantId, 'workspace_sheets', sheetId);
     
