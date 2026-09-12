@@ -2017,6 +2017,13 @@ app.post("/api/gas", async (req, res) => {
           const en = subDoc?.scores?.english ?? cntDoc?.scores?.english ?? 0;
           const totalScore = subDoc?.scores?.total ?? cntDoc?.totalScore ?? (ru + ma + lo);
 
+          // Сдан ли английский — решаем по НАЛИЧИЮ ОТВЕТОВ, а не по баллу.
+          // Балл 0 бывает у двоих: у того, кто английский ещё не открывал,
+          // и у того, кто сдал и не угадал ни одного вопроса. Отличить их
+          // по числу нельзя, а ученику, вернувшемуся «сдать позже», нужно
+          // дать продолжить, а не сообщать, что он уже сдавал.
+          const englishSubmitted = Object.keys(safeParse(subDoc?.answersJson)).some(k => k.startsWith("en_"));
+
           return res.json({
             success: true,
             student: {
@@ -2030,6 +2037,7 @@ app.post("/api/gas", async (req, res) => {
               math: ma,
               logic: lo,
               english: en,
+              englishSubmitted,
               ru,
               ma,
               lo,

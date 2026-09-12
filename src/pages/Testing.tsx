@@ -839,8 +839,15 @@ export default function Testing() {
              totalScore: student.totalScore,
              scores: { russian: student.russian, math: student.math, logic: student.logic, english: student.english }
            });
-           if (student.english !== "") {
-             return alert("Английский тест уже был сдан для этого Test ID!");
+           // Спрашиваем сервер, сдан ли английский, а не сравниваем балл с
+           // пустой строкой: сервер отдаёт число, и 0 !== "" — поэтому
+           // ученик, нажавший «сдать позже» и вернувшийся, получал отказ
+           // «английский уже сдан». По баллу отличить «не сдавал» от
+           // «сдал на нуль» вообще нельзя — нужен признак наличия ответов.
+           const alreadyDone = student.englishSubmitted === true
+             || (student.englishSubmitted === undefined && Number(student.english) > 0);
+           if (alreadyDone) {
+             return alert("Английскую часть по этому номеру работы уже сдавали. Если это ошибка, обратитесь к менеджеру.");
            }
            if (document.documentElement.requestFullscreen) {
              const p = document.documentElement.requestFullscreen();
