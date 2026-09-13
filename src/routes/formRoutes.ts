@@ -505,10 +505,14 @@ async function findSheetRow(tenantId: string, sheetId: string, qrToken: string):
 /**
  * Убрать строку заявки из таблицы — при удалении заявки в корзину.
  *
- * Очищаем ячейки строки, а не сдвигаем лист: сдвиг ломал бы формулы и
- * пометки, которые люди ведут в соседних колонках напротив своих строк.
- * Пустая строка на месте удалённой честно показывает, что заявки больше
- * нет, и при восстановлении она заполняется обратно.
+ * Строка удаляется целиком, а нижние подтягиваются вверх — как при
+ * удалении строки в любой таблице. Раньше ячейки лишь очищались, и на
+ * месте убранной заявки оставалась дыра: в списке заявки нет, а в таблице
+ * зияет пустая строка, и посчитать участников по таблице нельзя.
+ *
+ * Сдвигаем ВСЮ строку, вместе с пометками, которые ведут в соседних
+ * колонках: пометка написана напротив конкретного человека и должна
+ * уехать вместе с ним, иначе она окажется напротив чужой заявки.
  */
 async function clearSheetRow(form: any, qrToken: string): Promise<void> {
   try {
@@ -520,14 +524,24 @@ async function clearSheetRow(form: any, qrToken: string): Promise<void> {
     const sheetRef = db().collection("tenants").doc(tenantId).collection("workspace_sheets").doc(sheetId);
     const snap = await sheetRef.get();
     const cells: Record<string, any> = snap.data()?.cells || {};
-    const patch: Record<string, any> = { updatedAt: Date.now() };
-    // Чистим только колонки самой заявки: пометки человека правее не трогаем.
-    const width = 6 + ((Array.isArray(form.fields) ? form.fields : []).filter((f: any) => f.type !== "file").length);
-    for (let i = 0; i < width; i++) {
-      const key = `${columnName(i)}${row}`;
-      if (cells[key]) patch[`cells.${key}`] = admin.firestore.FieldValue.delete();
+
+    // Пересобираем лист без удалённой строки. Заменяем набор ячеек целиком:
+    // при сдвиге часть ячеек освобождает свои прежние места, и слияние
+    // оставило бы их там дубликатами.
+    const next: Record<string, any> = {};
+    for (const [key, value] of Object.entries(cells)) {
+      const col = (key.match(/^[A-Z]+/) || [])[0];
+      const at = Number((key.match(/\d+$/) || [])[0]);
+      if (!col || !at) continue;
+      if (at === row) continue;              // сама удалённая строка
+      next[`${col}${at > row ? at - 1 : at}`] = value;
     }
-    await sheetRef.update(patch);
+
+    await sheetRef.update({
+      cells: next,
+      rowsCount: Math.max(1, Number(snap.data()?.rowsCount || 100) - 1),
+      updatedAt: Date.now(),
+    });
   } catch (e: any) {
     console.warn("[Forms/Sheet] Не удалось убрать строку из таблицы:", e.message);
   }
