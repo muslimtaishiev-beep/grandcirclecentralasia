@@ -331,6 +331,20 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "form_submissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "formId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "publicShown",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

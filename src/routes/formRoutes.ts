@@ -175,6 +175,116 @@ router.get("/public/list", async (req: any, res: any) => {
 });
 
 /**
+ * GET /api/forms/public/:formId/submissions — витрина заявок.
+ *
+ * Показывает, что уже предложили другие и что ответила организация:
+ * школьный сайт выборов просил именно это — без витрины человек видит
+ * только свою заявку и не понимает, идёт ли работа вообще.
+ *
+ * Отдаём ТОЛЬКО заявки, помеченные вручную. Не «все, кроме скрытых»:
+ * анкета анонимная, люди писали не для публикации, и по умолчанию
+ * публичной не становится ничего.
+ *
+ * Персональные поля вырезаются даже у помеченной заявки. Сегодня в анкете
+ * одно поле про предложение, но её правят в кабинете, и завтра там может
+ * появиться имя или телефон — витрина не должна их раскрыть.
+ */
+const PERSONAL_FIELD = /фамили|имя|фио|отчеств|телефон|номер|whatsapp|почт|e-?mail|адрес|класс|школ|родител|контакт|name|phone|mail/i;
+
+router.get("/public/:formId/submissions", async (req: any, res: any) => {
+  try {
+    const formId = str(req.params.formId, 200);
+    const formSnap = await db().collection(FORMS).doc(formId).get();
+    if (!formSnap.exists) return res.status(404).json({ success: false, error: "Анкета не найдена." });
+    const form = formSnap.data()!;
+
+    const gate = await checkTenantOpen(form.tenantId, "forms");
+    if (!gate.ok) return res.json({ success: true, submissions: [], total: 0 });
+
+    // Какие поля анкеты можно показывать: всё, что похоже на персональные
+    // сведения или является файлом, наружу не идёт.
+    const safeFields = (Array.isArray(form.fields) ? form.fields : [])
+      .filter((f: any) => f.type !== "file" && !PERSONAL_FIELD.test(String(f.label || "")))
+      .map((f: any) => String(f.id));
+
+    const snap = await db().collection(SUBS)
+      .where("formId", "==", formId)
+      .where("publicShown", "==", true)
+      .limit(50).get();
+
+    const submissions = snap.docs
+      .filter(d => !d.data().deleted)
+      .map(d => {
+        const sub = d.data();
+        const status: Status = STATUSES.includes(sub.status) ? sub.status : "new";
+
+        const data: Record<string, string> = {};
+        for (const id of safeFields) {
+          const value = sub.data?.[id];
+          if (value !== undefined && value !== null && String(value).trim()) data[id] = String(value);
+        }
+
+        // Ответ организации — последний непустой из истории. Отдельного
+        // поля не заводим: сотрудник пишет ответ один раз, при смене
+        // статуса, и он же уходит и заявителю, и на витрину. Два разных
+        // текста означали бы, что один из них забудут заполнить.
+        const notes = (Array.isArray(sub.history) ? sub.history : []).filter((h: any) => String(h?.note || "").trim());
+        const last = notes[notes.length - 1];
+
+        return {
+          code: sub.qrToken || d.id,
+          createdAt: sub.createdAt || null,
+          status,
+          statusLabel: STATUS_LABEL[status],
+          data,
+          reply: last ? { text: String(last.note), at: last.at || null } : null,
+        };
+      })
+      .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+
+    return res.json({
+      success: true,
+      org: publicOrg(gate.tenant),
+      formTitle: String(form.title || ""),
+      fieldLabels: Object.fromEntries(
+        (Array.isArray(form.fields) ? form.fields : [])
+          .filter((f: any) => safeFields.includes(String(f.id)))
+          .map((f: any) => [String(f.id), String(f.label || "")]),
+      ),
+      submissions,
+      total: submissions.length,
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * GET /api/forms/public/:formId/stats — сколько предложений и сколько решено.
+ *
+ * Считает ВСЕ заявки, не только публичные: цифра «предложений 47» никого
+ * не раскрывает, а показывает, что работа идёт. Тексты при этом закрыты.
+ */
+router.get("/public/:formId/stats", async (req: any, res: any) => {
+  try {
+    const formId = str(req.params.formId, 200);
+    const formSnap = await db().collection(FORMS).doc(formId).get();
+    if (!formSnap.exists) return res.status(404).json({ success: false, error: "Анкета не найдена." });
+
+    const gate = await checkTenantOpen(formSnap.data()!.tenantId, "forms");
+    if (!gate.ok) return res.json({ success: true, total: 0, resolved: 0 });
+
+    const snap = await db().collection(SUBS).where("formId", "==", formId).limit(1000).get();
+    const alive = snap.docs.filter(d => !d.data().deleted);
+    const resolved = alive.filter(d => ["approved", "paid", "checked_in"].includes(String(d.data().status || "")));
+
+    return res.json({ success: true, total: alive.length, resolved: resolved.length });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
  * GET /api/forms/public/:formId — форма для заполнения.
  *
  * Неактивная форма не отдаёт поля: если её закрыли, посторонний не должен
@@ -599,6 +709,40 @@ async function clearSheetRow(form: any, qrToken: string): Promise<void> {
     console.warn("[Forms/Sheet] Не удалось убрать строку из таблицы:", e.message);
   }
 }
+
+/**
+ * POST /api/forms/publish — показывать заявку на витрине или убрать с неё.
+ *
+ * Решение про каждую заявку принимает человек: анкета анонимная, и люди
+ * писали не для публикации.
+ */
+router.post("/publish", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
+  try {
+    const { tenantId, submissionId, shown } = req.body || {};
+    if (!tenantId || !submissionId) return res.status(400).json({ success: false, error: "Bad request" });
+    if (!(await canManageForms(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+
+    const ref = db().collection(SUBS).doc(String(submissionId));
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ success: false, error: "Заявка не найдена" });
+    if (snap.data()!.tenantId !== tenantId) {
+      return res.status(403).json({ success: false, error: "Заявка другой организации" });
+    }
+
+    const publicShown = shown === true;
+    await ref.update({
+      publicShown,
+      publicShownAt: publicShown ? admin.firestore.Timestamp.now() : admin.firestore.FieldValue.delete(),
+      publicShownBy: publicShown ? (req.user?.email || "") : admin.firestore.FieldValue.delete(),
+      updatedAt: admin.firestore.Timestamp.now(),
+    });
+    return res.json({ success: true, publicShown });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
 
 /**
  * POST /api/forms/delete — убрать заявку из списка или вернуть обратно.

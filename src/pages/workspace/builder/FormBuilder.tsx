@@ -175,6 +175,29 @@ export default function FormBuilder() {
     return map;
   };
 
+  /**
+   * Показывать заявку на витрине или убрать с неё.
+   *
+   * Решение принимается по каждой заявке отдельно: анкета может быть
+   * анонимной, и человек писал не для публикации.
+   */
+  const togglePublic = async (sub: any) => {
+    const next = !sub.publicShown;
+    if (next && !confirm(`Показать эту заявку на сайте организации?\n\nЕё текст увидят все посетители.`)) return;
+    setBusySub(sub.id);
+    try {
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+      const res = await fetch('/api/forms/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tenantId: currentOrgId, submissionId: sub.id, shown: next }),
+      });
+      const data = await res.json();
+      if (!data.success) alert(data.error || 'Не удалось');
+    } catch (e: any) { alert(`Не удалось: ${e.message}`); }
+    finally { setBusySub(null); }
+  };
+
   const removeSubmission = async (sub: any, restore = false) => {
     if (!restore && !confirm(`Убрать заявку «${sub.applicantName || 'без имени'}» из списка? Её можно будет вернуть.`)) return;
     setBusySub(sub.id);
@@ -864,6 +887,19 @@ export default function FormBuilder() {
                         className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 px-3 py-1 rounded-lg font-bold text-[11px] inline-flex items-center gap-1.5 transition cursor-pointer"
                       >
                         <QrCode className="w-3.5 h-3.5" /> QR
+                      </button>
+                      <button
+                        onClick={() => void togglePublic(sub)}
+                        disabled={busySub === sub.id}
+                        title={sub.publicShown
+                          ? 'Показывается на сайте организации — нажмите, чтобы убрать'
+                          : 'Показать эту заявку на сайте организации'}
+                        className={`ml-2 px-2.5 py-1 rounded-lg font-bold text-[11px] border transition disabled:opacity-50 ${
+                          sub.publicShown
+                            ? 'bg-sky-500/15 border-sky-500/40 text-sky-600'
+                            : 'border-[var(--border-color)] text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/10'
+                        }`}>
+                        {sub.publicShown ? '◉ На сайте' : '○ На сайт'}
                       </button>
                       {sub.deleted ? (
                         <button
