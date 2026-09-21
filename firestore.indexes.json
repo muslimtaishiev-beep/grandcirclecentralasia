@@ -317,6 +317,20 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "custom_forms",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tenantId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "publicListed",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

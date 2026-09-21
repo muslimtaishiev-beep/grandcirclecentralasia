@@ -126,6 +126,55 @@ async function appendToSheet(form: any, formId: string, submission: Record<strin
 // ─────────────────────────── Публичная часть ───────────────────────────
 
 /**
+ * GET /api/forms/public/list?tenantId= — анкеты организации для чужого сайта.
+ *
+ * Отдаёт ТОЛЬКО помеченные «показывать на внешних сайтах». Список всех
+ * анкет подряд наружу отдавать нельзя: рядом с открытым опросом у
+ * организации лежат внутренние анкеты (например, на два десятка полей про
+ * семью ребёнка), и само их существование — не публичные сведения.
+ *
+ * Признак выключен по умолчанию, поэтому включение этой ручки ничего не
+ * раскрывает само по себе: пока организатор не отметит анкету, список пуст.
+ *
+ * Полей анкеты здесь нет — только название и описание. За полями идут в
+ * /public/:formId по идентификатору из этого списка.
+ */
+router.get("/public/list", async (req: any, res: any) => {
+  try {
+    const tenantId = str(req.query.tenantId, 200);
+    if (!tenantId) return res.status(400).json({ success: false, error: "Не указана организация" });
+
+    const gate = await checkTenantOpen(tenantId, "forms");
+    const tenant = gate.ok ? gate.tenant : await loadTenant(tenantId);
+    if (!gate.ok) {
+      return res.json({ success: true, org: publicOrg(tenant), forms: [] });
+    }
+
+    const snap = await db().collection(FORMS)
+      .where("tenantId", "==", tenantId)
+      .where("publicListed", "==", true)
+      .limit(50).get();
+
+    const forms = snap.docs
+      .filter(d => d.data().active !== false)
+      .map(d => {
+        const f = d.data();
+        return {
+          id: d.id,
+          title: String(f.title || "Заявка"),
+          description: String(f.description || ""),
+          mode: formMode(f),
+        };
+      })
+      .sort((a, b) => a.title.localeCompare(b.title, "ru"));
+
+    return res.json({ success: true, org: publicOrg(tenant), forms });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
  * GET /api/forms/public/:formId — форма для заполнения.
  *
  * Неактивная форма не отдаёт поля: если её закрыли, посторонний не должен

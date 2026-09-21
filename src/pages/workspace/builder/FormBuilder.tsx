@@ -48,6 +48,15 @@ export default function FormBuilder() {
   const [formTitle, setFormTitle] = useState('');
   const [formDesc, setFormDesc] = useState('');
   const [qrTrackingEnabled, setQrTrackingEnabled] = useState(true);
+  /**
+   * Показывать ли анкету в общем списке организации для внешних сайтов.
+   *
+   * По умолчанию выключено: рядом с открытым опросом у организации лежат
+   * внутренние анкеты, и само их существование — не публичные сведения.
+   * Ссылку на анкету можно раздать и без этого, список нужен лишь тем, кто
+   * собирает страницу «все наши анкеты» на своём сайте.
+   */
+  const [publicListed, setPublicListed] = useState(false);
   // Режим формы: обычная заявка или билет на событие. От него зависят набор
   // статусов и появление QR-билета у гостя после одобрения.
   const [formMode, setFormMode] = useState<FormMode>('application');
@@ -435,6 +444,7 @@ export default function FormBuilder() {
         description: formDesc.trim(),
         fields: cleanFields,
         qrTrackingEnabled,
+        publicListed,
         mode: formMode,
         active: true,
         updatedAt: serverTimestamp(),
@@ -548,6 +558,9 @@ export default function FormBuilder() {
               setFormDesc('');
               setFormMode('application');
               setQrTrackingEnabled(true);
+              // Новая анкета не публичная, даже если прошлая была: показ
+              // наружу — осознанное решение, а не наследство от соседней.
+              setPublicListed(false);
               setFields([
                 { id: `field_${Date.now()}`, label: 'Фамилия и имя', type: 'text', required: true, placeholder: '' },
               ]);
@@ -671,6 +684,7 @@ export default function FormBuilder() {
                         setFields(Array.isArray(form.fields) && form.fields.length ? form.fields : []);
                         setFormMode(form.mode === 'ticket' ? 'ticket' : 'application');
                         setQrTrackingEnabled(form.qrTrackingEnabled !== false);
+                        setPublicListed(form.publicListed === true);
                         setIsModalOpen(true);
                       }}
                       className="text-[var(--text-muted)] hover:text-emerald-500 font-bold flex items-center gap-1.5 transition cursor-pointer">
@@ -1094,6 +1108,15 @@ export default function FormBuilder() {
                   <label className="flex items-center gap-2 text-[11px] text-[var(--text-muted)] cursor-pointer pt-1">
                     <input type="checkbox" checked={qrTrackingEnabled} onChange={(e) => setQrTrackingEnabled(e.target.checked)} />
                     Выдавать QR-код отслеживания после отправки
+                  </label>
+                  <label className="flex items-start gap-2 text-[11px] text-[var(--text-muted)] cursor-pointer">
+                    <input type="checkbox" checked={publicListed} onChange={(e) => setPublicListed(e.target.checked)} className="mt-0.5" />
+                    <span>
+                      Показывать в списке анкет для внешних сайтов
+                      <span className="block text-[10px] opacity-70">
+                        Анкету увидят на сторонних страницах организации. Ссылка работает и без этого.
+                      </span>
+                    </span>
                   </label>
                 </div>
 
