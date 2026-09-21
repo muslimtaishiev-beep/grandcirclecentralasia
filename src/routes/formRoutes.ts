@@ -329,10 +329,14 @@ router.get("/track/:token", async (req: any, res: any) => {
         checkedInAt: s.checkedInAt || null,
         createdAt: s.createdAt || null,
         updatedAt: s.updatedAt || null,
+        // Комментарий сотрудника отдаём заявителю: он для него и пишется —
+        // «почему отказ», «когда ждать», «что донести». Раньше он оставался
+        // только в кабинете, и человек видел голую смену статуса.
         history: (Array.isArray(s.history) ? s.history : []).map((h: any) => ({
           status: h.status,
           label: STATUS_LABEL[h.status as Status] || h.status,
           at: h.at || null,
+          note: String(h.note || ""),
         })),
       },
     });

@@ -168,9 +168,18 @@ export default function QrTracker() {
                   и так знает, а посторонний знать не должен. */}
               <div className="space-y-2 text-slate-300 pt-1">
                 {(submission.history || []).map((h: any, i: number) => (
-                  <div key={i} className="flex justify-between items-center py-1 border-b border-slate-900">
-                    <span className="font-semibold text-white">{h.label}</span>
-                    <span className="text-slate-400 font-mono text-[11px]">{fmtDate(h.at)}</span>
+                  <div key={i} className="py-1 border-b border-slate-900">
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold text-white">{h.label}</span>
+                      <span className="text-slate-400 font-mono text-[11px]">{fmtDate(h.at)}</span>
+                    </div>
+                    {/* Ответ организации заявителю: ради него человек сюда и
+                        заходит — узнать не только «что», но и «почему». */}
+                    {h.note && (
+                      <div className="mt-1.5 rounded-lg bg-slate-900 border-l-2 border-emerald-500 px-3 py-2 text-slate-200 whitespace-pre-wrap">
+                        {h.note}
+                      </div>
+                    )}
                   </div>
                 ))}
 

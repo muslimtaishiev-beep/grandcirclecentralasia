@@ -457,19 +457,56 @@ export default function FormBuilder() {
    * принята»), не писалось, КТО сменил статус, и обходилась серверная
    * проверка принадлежности заявки организации.
    */
-  const updateSubmissionStatus = async (subId: string, newStatus: string) => {
+  /**
+   * Смена статуса с комментарием.
+   *
+   * Сервер писал комментарий в историю заявки с самого начала, но взять
+   * его было неоткуда: выпадающий список менял статус молча. Из-за этого
+   * в истории оставалось «кто и когда», но не «почему» — а именно это
+   * спрашивают, когда через месяц разбирают отказ.
+   *
+   * Поэтому сначала окно, и только потом запрос.
+   */
+  const [statusDraft, setStatusDraft] = useState<
+    { sub: any; status: string; note: string; withNote: boolean } | null
+  >(null);
+  const [statusBusy, setStatusBusy] = useState(false);
+
+  const askStatusChange = (sub: any, newStatus: string) => {
+    if ((sub.status || 'new') === newStatus) return;
+    setStatusDraft({ sub, status: newStatus, note: '', withNote: true });
+  };
+
+  const applyStatusChange = async () => {
+    if (!statusDraft) return;
+    const { sub, status, note, withNote } = statusDraft;
+
+    // Галочка снята — комментарий не спрашиваем вовсе. Она включена, но
+    // поле пустое — не даём сохранить: пустой комментарий в истории
+    // неотличим от его отсутствия, и человек зря думает, что записал причину.
+    if (withNote && !note.trim()) return;
+
+    setStatusBusy(true);
     try {
       const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
       const res = await fetch('/api/forms/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ tenantId: currentOrgId, submissionId: subId, status: newStatus }),
+        body: JSON.stringify({
+          tenantId: currentOrgId,
+          submissionId: sub.id,
+          status,
+          note: withNote ? note.trim() : '',
+        }),
       });
       const data = await res.json();
-      if (!data.success) alert(data.error || 'Не удалось сменить статус');
+      if (!data.success) { alert(data.error || 'Не удалось сменить статус'); return; }
+      setStatusDraft(null);
       // onSnapshot сам подтянет обновление — локально ничего не трогаем.
     } catch(e: any) {
       alert(`Не удалось сменить статус: ${e.message}`);
+    } finally {
+      setStatusBusy(false);
     }
   };
 
@@ -779,7 +816,7 @@ export default function FormBuilder() {
                         <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_COLOR[(sub.status || 'new') as keyof typeof STATUS_COLOR]}`} />
                       <select 
                         value={sub.status || 'new'}
-                        onChange={(e) => updateSubmissionStatus(sub.id, e.target.value)}
+                        onChange={(e) => askStatusChange(sub, e.target.value)}
                         className="bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-lg px-2.5 py-1 text-[11px] font-bold font-mono text-[var(--text-main)] focus:outline-none focus:border-emerald-500"
                       >
                         {/* Набор статусов зависит от режима формы: у билета
@@ -837,6 +874,82 @@ export default function FormBuilder() {
             </table>
           )}
         </div>
+        </div>
+      )}
+
+      {/* Смена статуса с ответом заявителю: текст появится у него на
+          странице отслеживания рядом с новым статусом. */}
+      {statusDraft && (
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => !statusBusy && setStatusDraft(null)}>
+          <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between border-b border-[var(--border-color)] pb-3">
+              <div>
+                <h3 className="text-lg font-bold">Смена статуса</h3>
+                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                  {statusDraft.sub.applicantName || 'Без имени'} — {statusDraft.sub.formTitle || 'Заявка'}
+                </p>
+              </div>
+              <button onClick={() => setStatusDraft(null)} disabled={statusBusy}
+                className="p-2 hover:bg-black/10 rounded-xl text-slate-400 disabled:opacity-40">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 text-sm">
+              <span className={`w-2 h-2 rounded-full ${STATUS_COLOR[(statusDraft.sub.status || 'new') as keyof typeof STATUS_COLOR]}`} />
+              <span className="text-[var(--text-muted)]">{STATUS_LABEL[(statusDraft.sub.status || 'new') as keyof typeof STATUS_LABEL]}</span>
+              <span className="text-[var(--text-muted)]">→</span>
+              <span className={`w-2 h-2 rounded-full ${STATUS_COLOR[statusDraft.status as keyof typeof STATUS_COLOR]}`} />
+              <span className="font-bold">{STATUS_LABEL[statusDraft.status as keyof typeof STATUS_LABEL]}</span>
+            </div>
+
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input type="checkbox" checked={statusDraft.withNote}
+                onChange={e => setStatusDraft({ ...statusDraft, withNote: e.target.checked })}
+                className="w-4 h-4 rounded border-slate-300" />
+              <span className="text-sm">Написать ответ заявителю</span>
+            </label>
+
+            {statusDraft.withNote ? (
+              <div className="space-y-1">
+                <textarea
+                  value={statusDraft.note}
+                  onChange={e => setStatusDraft({ ...statusDraft, note: e.target.value.slice(0, 300) })}
+                  autoFocus
+                  rows={3}
+                  placeholder="Что сообщить человеку: причина решения, что делать дальше, когда ждать ответа"
+                  className="w-full px-3 py-2 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl text-sm resize-none focus:outline-none focus:border-emerald-500"
+                />
+                <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)]">
+                  <span>Увидит заявитель на странице своей заявки</span>
+                  <span>{statusDraft.note.length}/300</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Статус сменится молча — заявитель увидит только новое состояние, без пояснения.
+              </p>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button onClick={() => setStatusDraft(null)} disabled={statusBusy}
+                className="px-4 py-2 rounded-xl border border-[var(--border-color)] font-bold text-sm disabled:opacity-40">
+                Отмена
+              </button>
+              <button
+                onClick={() => void applyStatusChange()}
+                disabled={statusBusy || (statusDraft.withNote && !statusDraft.note.trim())}
+                title={statusDraft.withNote && !statusDraft.note.trim()
+                  ? 'Напишите ответ или снимите галочку'
+                  : undefined}
+                className="px-5 py-2 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-2">
+                {statusBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                <span>Сменить статус</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
