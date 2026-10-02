@@ -325,7 +325,7 @@ router.get("/public/:formId", async (req: any, res: any) => {
   }
 });
 
-/** POST /api/forms/submit — отправка заявки посетителем. */
+/** POST /api/forms/submit — отправка или обновление заявки посетителем. */
 router.post("/submit", async (req: any, res: any) => {
   try {
     const { formId, data } = req.body || {};
@@ -354,10 +354,7 @@ router.post("/submit", async (req: any, res: any) => {
       if (f.type === "checkbox") {
         value = Boolean(raw);
       } else if (f.type === "file") {
-        // Файл приходит сжатым data-URL с клиента. Обычная обрезка до 2000
-        // символов уничтожила бы base64, поэтому у файлов свой путь: только
-        // изображения и лимит как у фото среза (placementRoutes) — этого
-        // хватает для удостоверения, которое сверяют глазами на входе.
+        // Файл приходит сжатым data-URL с клиента.
         value = String(raw ?? "");
         if (value && !value.startsWith("data:image/")) {
           return res.status(400).json({
@@ -386,8 +383,14 @@ router.post("/submit", async (req: any, res: any) => {
         error: `Заполните обязательные поля: ${missing.join(", ")}`,
       });
     }
-    // Общий предел заявки: лимит Firestore — 1 МБ на документ, и заявка с
-    // двумя файлами не должна упереться в него уже при записи.
+
+    // Включаем поддержку сырых ключей для внешних запросов API, если data передана словарем
+    if (typeof data === "object") {
+      Object.keys(data).forEach(k => {
+        if (!clean[k]) clean[k] = data[k];
+      });
+    }
+
     if (JSON.stringify(clean).length > 700 * 1024) {
       return res.status(413).json({
         success: false,
@@ -395,16 +398,92 @@ router.post("/submit", async (req: any, res: any) => {
       });
     }
 
-    // Имя, телефон и почта нужны отдельно — по ним заявку ищут в кабинете.
-    // Берём из полей, помеченных ролью, иначе угадываем по типу и названию.
-    const pick = (re: RegExp) => {
+    // Имя, телефон, почта и специфические поля StudyFree (включая прямое соответствие ID)
+    const pick = (re: RegExp, exactId?: string) => {
+      if (exactId && clean[exactId] !== undefined && String(clean[exactId]).trim()) {
+        return str(clean[exactId], 500);
+      }
       const f = fields.find(x => re.test(String(x.label || "")) || re.test(String(x.id || "")));
-      return f ? str(clean[f.id], 200) : "";
+      return f ? str(clean[f.id], 500) : "";
     };
-    const applicantName = pick(/фамили|имя|фио|name/i);
-    const applicantPhone = pick(/телефон|phone|моб/i);
-    const applicantEmail = pick(/e-?mail|почт/i);
 
+    const applicantName = pick(/фамили|имя|фио|name/i, "field_1790767291933");
+    const applicantPhone = pick(/телефон|phone|моб/i, "field_1790768013294");
+    const applicantEmail = pick(/e-?mail|почт/i, "field_1790767998828");
+    const participationFormat = pick(/формат|format/i, "field_1790768170123");
+    const teamName = pick(/название команды|team name/i, "field_1790768063759");
+    const teamCode = pick(/код команды|team code/i, "field_1790768090009");
+    const teamPassword = pick(/пароль команды|team password/i, "field_1790768091708");
+    const presentationUrl = pick(/презентаци|presentation/i, "field_1790940529090");
+
+    // ПРОВЕРКА RE-SUBMISSION / UPDATE ПО TOKEN, CODE ИЛИ QRTOKEN
+    const inputToken = str(
+      req.body.token || req.body.code || req.body.qrToken || req.body.submissionId ||
+      data?.token || data?.code || data?.qrToken, 100
+    );
+
+    if (inputToken) {
+      // Ищем существующую заявку по qrToken или по ID документа
+      let existingDocSnap: any = null;
+      const byTokenSnap = await db().collection(SUBS)
+        .where("qrToken", "==", inputToken)
+        .limit(1).get();
+
+      if (!byTokenSnap.empty) {
+        existingDocSnap = byTokenSnap.docs[0];
+      } else {
+        const byIdSnap = await db().collection(SUBS).doc(inputToken).get();
+        if (byIdSnap.exists) {
+          existingDocSnap = byIdSnap;
+        }
+      }
+
+      if (existingDocSnap) {
+        const existingRef = existingDocSnap.ref;
+        const existingData = existingDocSnap.data() || {};
+        const mergedData = { ...(existingData.data || {}), ...clean };
+
+        await existingRef.update({
+          data: mergedData,
+          applicantName: applicantName || existingData.applicantName || "",
+          applicantPhone: applicantPhone || existingData.applicantPhone || "",
+          applicantEmail: applicantEmail || existingData.applicantEmail || "",
+          participationFormat: participationFormat || existingData.participationFormat || "",
+          teamName: teamName || existingData.teamName || "",
+          teamCode: teamCode || existingData.teamCode || "",
+          teamPassword: teamPassword || existingData.teamPassword || "",
+          presentationUrl: presentationUrl || existingData.presentationUrl || "",
+          updatedAt: admin.firestore.Timestamp.now(),
+          history: admin.firestore.FieldValue.arrayUnion({
+            status: existingData.status || "new",
+            at: admin.firestore.Timestamp.now(),
+            by: "applicant_update",
+            note: "Заявка обновлена заявителем",
+          }),
+        });
+
+        // Обновляем строку в таблице
+        void appendToSheet(form, String(formId), {
+          applicantName: applicantName || existingData.applicantName,
+          applicantPhone: applicantPhone || existingData.applicantPhone,
+          applicantEmail: applicantEmail || existingData.applicantEmail,
+          status: existingData.status || "new",
+          qrToken: existingData.qrToken,
+          data: mergedData,
+        });
+
+        return res.json({
+          success: true,
+          updated: true,
+          qrToken: existingData.qrToken,
+          trackUrl: `/track/${existingData.qrToken}`,
+          mode: formMode(form),
+          message: "Заявка успешно обновлена!",
+        });
+      }
+    }
+
+    // Если токена нет или документа не нашлось — создаём новую запись
     const qrToken = makeToken();
     const ref = db().collection(SUBS).doc();
     await ref.set({
@@ -413,16 +492,14 @@ router.post("/submit", async (req: any, res: any) => {
       formTitle: form.title || "Заявка",
       qrToken,
       applicantName, applicantPhone, applicantEmail,
+      participationFormat, teamName, teamCode, teamPassword, presentationUrl,
       status: "new" as Status,
       data: clean,
-      // История статусов — основа отслеживания: и заявитель, и кабинет
-      // видят не только текущее состояние, но и когда оно менялось.
       history: [{ status: "new", at: admin.firestore.Timestamp.now(), by: "" }],
       createdAt: admin.firestore.Timestamp.now(),
+      updatedAt: admin.firestore.Timestamp.now(),
     });
 
-    // Строка в таблицу формы — в фоне: человек не должен ждать записи в
-    // таблицу, чтобы увидеть «заявка принята».
     void appendToSheet(form, String(formId), {
       applicantName, applicantPhone, applicantEmail,
       status: "new", qrToken, data: clean,
@@ -430,6 +507,7 @@ router.post("/submit", async (req: any, res: any) => {
 
     return res.json({
       success: true,
+      updated: false,
       qrToken,
       trackUrl: `/track/${qrToken}`,
       mode: formMode(form),

@@ -169,9 +169,19 @@ export default function FormBuilder() {
 
   /** Подписи полей формы — чтобы в ответах читалось «Город», а не «field_3». */
   const labelsOf = (formId: string): Record<string, string> => {
+    const FRIENDLY_NAMES: Record<string, string> = {
+      field_1790767291933: 'ФИО участника',
+      field_1790767998828: 'Email',
+      field_1790768013294: 'Телефон',
+      field_1790768170123: 'Формат участия',
+      field_1790768063759: 'Название команды',
+      field_1790768090009: 'Код команды',
+      field_1790768091708: 'Пароль команды',
+      field_1790940529090: 'Презентация (файл/ссылка)',
+    };
     const f = forms.find(x => x.id === formId);
-    const map: Record<string, string> = {};
-    (f?.fields || []).forEach((x: any) => { map[x.id] = x.label || x.id; });
+    const map: Record<string, string> = { ...FRIENDLY_NAMES };
+    (f?.fields || []).forEach((x: any) => { map[x.id] = x.label || FRIENDLY_NAMES[x.id] || x.id; });
     return map;
   };
 
