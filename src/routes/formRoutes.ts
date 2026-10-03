@@ -518,6 +518,415 @@ router.post("/submit", async (req: any, res: any) => {
   }
 });
 
+/** Извлечение контекста тенанта и токенов из заголовков или параметров */
+function extractTenantContext(req: any): { tenantId?: string; apiKey?: string; userToken?: string } {
+  const apiKey = (req.headers["x-api-key"] || req.headers["api-key"] || req.headers["x-tenant-api-key"] || req.query.api_key || req.query.apiKey || "") as string;
+  const headerTenantId = (req.headers["x-tenant-id"] || req.headers["tenant-id"] || "") as string;
+  const bodyTenantId = (req.body?.tenant_id || req.body?.tenantId || req.query?.tenant_id || req.query?.tenantId || "") as string;
+  const authHeader = (req.headers["authorization"] || "") as string;
+  const userToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+
+  return {
+    tenantId: (headerTenantId || bodyTenantId).trim(),
+    apiKey: apiKey.trim(),
+    userToken,
+  };
+}
+
+/**
+ * POST /api/forms/submissions/search — Универсальный поиск заявок
+ */
+router.post("/submissions/search", async (req: any, res: any) => {
+  try {
+    const formId = str(req.body.form_id || req.body.formId, 200);
+    if (!formId) {
+      return res.status(400).json({ success: false, error: "Параметр form_id обязателен" });
+    }
+
+    const formSnap = await db().collection(FORMS).doc(formId).get();
+    if (!formSnap.exists) {
+      return res.status(404).json({ success: false, error: "Форма не найдена" });
+    }
+    const form = formSnap.data()!;
+
+    const { tenantId: clientTenantId } = extractTenantContext(req);
+    if (clientTenantId && clientTenantId !== form.tenantId && !req.user?.isSuperadmin) {
+      return res.status(403).json({ success: false, error: "Форма принадлежит другой организации" });
+    }
+
+    const gate = await checkTenantOpen(form.tenantId, "forms");
+    if (!gate.ok && !req.user?.isSuperadmin) {
+      return res.status(gate.status || 403).json({ success: false, error: gate.error });
+    }
+
+    const filter = req.body.filter || {};
+    const searchVal = str(filter.value, 1000).toLowerCase();
+    const targetField = str(filter.field_id || filter.fieldId || filter.field_name || filter.fieldName, 200);
+    const exactMatch = filter.exact_match !== false && filter.exactMatch !== false;
+
+    const limit = Math.min(Math.max(Number(req.body.limit) || 50, 1), 200);
+    const offset = Math.max(Number(req.body.offset) || 0, 0);
+
+    const snap = await db().collection(SUBS)
+      .where("formId", "==", formId)
+      .limit(1000)
+      .get();
+
+    let docs = snap.docs.filter(d => !d.data().deleted);
+
+    if (searchVal) {
+      const cleanSearchVal = searchVal.replace(/[^a-z0-9а-яё]/gi, "");
+
+      docs = docs.filter(d => {
+        const sub = d.data();
+        const dataObj = sub.data || {};
+
+        const checkValue = (raw: any): boolean => {
+          if (raw === undefined || raw === null) return false;
+          const valStr = String(raw).trim().toLowerCase();
+          const cleanValStr = valStr.replace(/[^a-z0-9а-яё]/gi, "");
+
+          if (exactMatch) {
+            if (valStr === searchVal) return true;
+            if (cleanSearchVal && cleanValStr === cleanSearchVal) return true;
+            return false;
+          } else {
+            if (valStr.includes(searchVal)) return true;
+            if (cleanSearchVal && cleanValStr.includes(cleanSearchVal)) return true;
+            return false;
+          }
+        };
+
+        if (targetField) {
+          if (checkValue(dataObj[targetField])) return true;
+          if (checkValue(sub[targetField])) return true;
+          const fieldDef = (Array.isArray(form.fields) ? form.fields : []).find(
+            (f: any) => String(f.id) === targetField || String(f.label || "").toLowerCase() === targetField.toLowerCase()
+          );
+          if (fieldDef && checkValue(dataObj[fieldDef.id])) return true;
+          return false;
+        } else {
+          for (const key of Object.keys(dataObj)) {
+            if (checkValue(dataObj[key])) return true;
+          }
+          const topFields = [
+            sub.applicantName, sub.applicantPhone, sub.applicantEmail,
+            sub.teamName, sub.teamCode, sub.teamPassword, sub.qrToken, sub.participationFormat, sub.presentationUrl
+          ];
+          for (const topVal of topFields) {
+            if (checkValue(topVal)) return true;
+          }
+          return false;
+        }
+      });
+    }
+
+    docs.sort((a, b) => {
+      const tA = a.data().createdAt?.toMillis?.() || 0;
+      const tB = b.data().createdAt?.toMillis?.() || 0;
+      return tB - tA;
+    });
+
+    const total = docs.length;
+    const pagedDocs = docs.slice(offset, offset + limit);
+
+    const submissions = pagedDocs.map(d => {
+      const sub = d.data();
+      const status: Status = STATUSES.includes(sub.status) ? sub.status : "new";
+      return {
+        id: d.id,
+        submission_id: d.id,
+        code: sub.qrToken || d.id,
+        qrToken: sub.qrToken || d.id,
+        form_id: sub.formId,
+        tenant_id: sub.tenantId,
+        status,
+        status_label: STATUS_LABEL[status] || status,
+        applicant_name: sub.applicantName || "",
+        applicant_email: sub.applicantEmail || "",
+        applicant_phone: sub.applicantPhone || "",
+        team_name: sub.teamName || "",
+        team_code: sub.teamCode || "",
+        team_password: sub.teamPassword || "",
+        participation_format: sub.participationFormat || "",
+        presentation_url: sub.presentationUrl || "",
+        data: sub.data || {},
+        history: sub.history || [],
+        created_at: sub.createdAt || null,
+        updated_at: sub.updatedAt || null,
+      };
+    });
+
+    return res.json({
+      success: true,
+      total,
+      limit,
+      offset,
+      submissions,
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * POST /api/forms/submissions/upsert — Универсальное создание или обновление заявки
+ */
+router.post("/submissions/upsert", async (req: any, res: any) => {
+  try {
+    const formId = str(req.body.form_id || req.body.formId, 200);
+    if (!formId) {
+      return res.status(400).json({ success: false, error: "Параметр form_id обязателен" });
+    }
+
+    const formSnap = await db().collection(FORMS).doc(formId).get();
+    if (!formSnap.exists) {
+      return res.status(404).json({ success: false, error: "Форма не найдена" });
+    }
+    const form = formSnap.data()!;
+
+    const { tenantId: clientTenantId } = extractTenantContext(req);
+    if (clientTenantId && clientTenantId !== form.tenantId && !req.user?.isSuperadmin) {
+      return res.status(403).json({ success: false, error: "Форма принадлежит другой организации" });
+    }
+
+    const gate = await checkTenantOpen(form.tenantId, "forms");
+    if (!gate.ok && !req.user?.isSuperadmin) {
+      return res.status(gate.status || 403).json({ success: false, error: gate.error });
+    }
+
+    const { match_by, matchBy, token, code, qrToken, submission_id, submissionId, data, status: newStatus } = req.body || {};
+    const inputData = typeof data === "object" && data !== null ? data : {};
+
+    const fields: any[] = Array.isArray(form.fields) ? form.fields : [];
+
+    const clean: Record<string, any> = {};
+    for (const f of fields) {
+      const raw = inputData[f.id] ?? inputData[f.label];
+      if (raw !== undefined) {
+        clean[f.id] = f.type === "checkbox" ? Boolean(raw) : str(raw, 2000);
+      }
+    }
+    Object.keys(inputData).forEach(k => {
+      if (clean[k] === undefined) clean[k] = inputData[k];
+    });
+
+    const pick = (re: RegExp, exactId?: string) => {
+      if (exactId && clean[exactId] !== undefined && String(clean[exactId]).trim()) {
+        return str(clean[exactId], 500);
+      }
+      const f = fields.find(x => re.test(String(x.label || "")) || re.test(String(x.id || "")));
+      return f ? str(clean[f.id], 500) : "";
+    };
+
+    const applicantName = pick(/фамили|имя|фио|name/i, "field_1790767291933") || str(req.body.applicantName || req.body.applicant_name, 500);
+    const applicantPhone = pick(/телефон|phone|моб/i, "field_1790768013294") || str(req.body.applicantPhone || req.body.applicant_phone, 500);
+    const applicantEmail = pick(/e-?mail|почт/i, "field_1790767998828") || str(req.body.applicantEmail || req.body.applicant_email, 500);
+    const participationFormat = pick(/формат|format/i, "field_1790768170123") || str(req.body.participationFormat || req.body.participation_format, 500);
+    const teamName = pick(/название команды|team name/i, "field_1790768063759") || str(req.body.teamName || req.body.team_name, 500);
+    const teamCode = pick(/код команды|team code/i, "field_1790768090009") || str(req.body.teamCode || req.body.team_code, 500);
+    const teamPassword = pick(/пароль команды|team password/i, "field_1790768091708") || str(req.body.teamPassword || req.body.team_password, 500);
+    const presentationUrl = pick(/презентаци|presentation/i, "field_1790940529090") || str(req.body.presentationUrl || req.body.presentation_url, 500);
+
+    let existingDocSnap: any = null;
+
+    const directToken = str(token || code || qrToken || submission_id || submissionId, 100);
+    if (directToken) {
+      const byTokenSnap = await db().collection(SUBS).where("formId", "==", formId).where("qrToken", "==", directToken).limit(1).get();
+      if (!byTokenSnap.empty) {
+        existingDocSnap = byTokenSnap.docs[0];
+      } else {
+        const byIdSnap = await db().collection(SUBS).doc(directToken).get();
+        if (byIdSnap.exists && byIdSnap.data()?.formId === formId) {
+          existingDocSnap = byIdSnap;
+        }
+      }
+    }
+
+    const matchObj = match_by || matchBy;
+    if (!existingDocSnap && matchObj && matchObj.value) {
+      const matchVal = str(matchObj.value, 500).toLowerCase();
+      const cleanMatchVal = matchVal.replace(/[^a-z0-9а-яё]/gi, "");
+      const matchField = str(matchObj.field_id || matchObj.fieldId, 200);
+
+      const allSubSnap = await db().collection(SUBS).where("formId", "==", formId).limit(500).get();
+      for (const d of allSubSnap.docs) {
+        const subData = d.data();
+        if (subData.deleted) continue;
+        const dataMap = subData.data || {};
+
+        const checkMatch = (val: any) => {
+          if (!val) return false;
+          const s = String(val).trim().toLowerCase();
+          const cleanS = s.replace(/[^a-z0-9а-яё]/gi, "");
+          return s === matchVal || (cleanMatchVal && cleanS === cleanMatchVal);
+        };
+
+        if (matchField) {
+          if (checkMatch(dataMap[matchField]) || checkMatch(subData[matchField])) {
+            existingDocSnap = d;
+            break;
+          }
+        } else {
+          if (checkMatch(subData.qrToken) || checkMatch(subData.teamCode) || checkMatch(subData.applicantEmail)) {
+            existingDocSnap = d;
+            break;
+          }
+        }
+      }
+    }
+
+    const validStatus = STATUSES.includes(newStatus) ? newStatus : undefined;
+
+    if (existingDocSnap) {
+      const existingRef = existingDocSnap.ref;
+      const existingData = existingDocSnap.data() || {};
+      const mergedData = { ...(existingData.data || {}), ...clean };
+
+      const updatePayload: Record<string, any> = {
+        data: mergedData,
+        applicantName: applicantName || existingData.applicantName || "",
+        applicantPhone: applicantPhone || existingData.applicantPhone || "",
+        applicantEmail: applicantEmail || existingData.applicantEmail || "",
+        participationFormat: participationFormat || existingData.participationFormat || "",
+        teamName: teamName || existingData.teamName || "",
+        teamCode: teamCode || existingData.teamCode || "",
+        teamPassword: teamPassword || existingData.teamPassword || "",
+        presentationUrl: presentationUrl || existingData.presentationUrl || "",
+        updatedAt: admin.firestore.Timestamp.now(),
+      };
+
+      if (validStatus && validStatus !== existingData.status) {
+        updatePayload.status = validStatus;
+        updatePayload.history = admin.firestore.FieldValue.arrayUnion({
+          status: validStatus,
+          at: admin.firestore.Timestamp.now(),
+          by: "api_upsert",
+          note: "Статус обновлён через API",
+        });
+      }
+
+      await existingRef.update(updatePayload);
+
+      void appendToSheet(form, formId, {
+        applicantName: updatePayload.applicantName,
+        applicantPhone: updatePayload.applicantPhone,
+        applicantEmail: updatePayload.applicantEmail,
+        status: validStatus || existingData.status || "new",
+        qrToken: existingData.qrToken,
+        data: mergedData,
+      });
+
+      return res.json({
+        success: true,
+        action: "updated",
+        submission_id: existingDocSnap.id,
+        code: existingData.qrToken || existingDocSnap.id,
+        qrToken: existingData.qrToken || existingDocSnap.id,
+        data: mergedData,
+        message: "Заявка успешно обновлена",
+      });
+    }
+
+    const qrTokenVal = makeToken();
+    const newRef = db().collection(SUBS).doc();
+    const subDoc = {
+      tenantId: form.tenantId || "",
+      formId,
+      formTitle: form.title || "Заявка",
+      qrToken: qrTokenVal,
+      applicantName, applicantPhone, applicantEmail,
+      participationFormat, teamName, teamCode, teamPassword, presentationUrl,
+      status: (validStatus || "new") as Status,
+      data: clean,
+      history: [{ status: validStatus || "new", at: admin.firestore.Timestamp.now(), by: "api_upsert" }],
+      createdAt: admin.firestore.Timestamp.now(),
+      updatedAt: admin.firestore.Timestamp.now(),
+    };
+
+    await newRef.set(subDoc);
+
+    void appendToSheet(form, formId, {
+      applicantName, applicantPhone, applicantEmail,
+      status: validStatus || "new", qrToken: qrTokenVal, data: clean,
+    });
+
+    return res.json({
+      success: true,
+      action: "created",
+      submission_id: newRef.id,
+      code: qrTokenVal,
+      qrToken: qrTokenVal,
+      data: clean,
+      message: "Заявка успешно создана",
+    });
+
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * POST /api/forms/team/check — Поиск и проверка пароля команды
+ */
+router.post("/team/check", async (req: any, res: any) => {
+  try {
+    const formId = str(req.body.formId || req.body.form_id, 200);
+    const code = str(req.body.code, 200);
+    const password = str(req.body.password, 200);
+
+    if (!formId || !code) {
+      return res.status(400).json({ success: false, error: "Параметры formId и code обязательны" });
+    }
+
+    const cleanCode = code.toLowerCase().replace(/[^a-z0-9а-яё]/gi, "");
+
+    const snap = await db().collection(SUBS)
+      .where("formId", "==", formId)
+      .limit(500)
+      .get();
+
+    const matchedDoc = snap.docs.find(d => {
+      const s = d.data();
+      if (s.deleted) return false;
+      const c1 = String(s.teamCode || "").toLowerCase().replace(/[^a-z0-9а-яё]/gi, "");
+      const c2 = String(s.qrToken || "").toLowerCase().replace(/[^a-z0-9а-яё]/gi, "");
+      const c3 = String(s.data?.field_1790768090009 || "").toLowerCase().replace(/[^a-z0-9а-яё]/gi, "");
+      return c1 === cleanCode || c2 === cleanCode || c3 === cleanCode;
+    });
+
+    if (!matchedDoc) {
+      return res.json({
+        success: true,
+        found: false,
+        message: "Команда с таким кодом не найдена",
+      });
+    }
+
+    const sub = matchedDoc.data();
+    const storedPassword = String(sub.teamPassword || sub.data?.field_1790768091708 || "").trim();
+
+    let passwordMatches: boolean | undefined = undefined;
+    if (password) {
+      passwordMatches = storedPassword === password.trim();
+    }
+
+    return res.json({
+      success: true,
+      found: true,
+      submissionId: matchedDoc.id,
+      code: sub.qrToken || sub.teamCode || matchedDoc.id,
+      teamName: sub.teamName || sub.data?.field_1790768063759 || "",
+      participationFormat: sub.participationFormat || sub.data?.field_1790768170123 || "",
+      status: sub.status || "new",
+      passwordMatches,
+      data: sub.data || {},
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 /**
  * GET /api/forms/track/:token — статус заявки по QR.
  *
