@@ -1,26 +1,26 @@
-# Приём заявок на внешнем сайте — инструкция
+# Приём и управление заявками на внешнем сайте — Инструкция и API Reference
 
-Документ самодостаточный. Чтобы сделать страницу, которая принимает заявки, больше ничего знать не нужно: ни про нашу базу, ни про устройство платформы.
+Документ самодостаточный. Чтобы сделать страницу, которая принимает, ищет или обновляет заявки, больше ничего знать не нужно: ни про устройство базы, ни про архитектуру StudyFree.
 
 ## Что это
 
-Организация ведёт свои анкеты в кабинете: набор полей, статусы заявок, отметка гостей по QR. Ваш сайт подключается к готовой анкете и присылает в неё заявки — оформление, тексты и порядок экранов целиком ваши.
-
-**Что вы получаете бесплатно:** заявка попадает в кабинет организации, ей присваивается код, человек может отслеживать её статус по ссылке, а сотрудники — обрабатывать привычным образом.
-
-**Чего делать не нужно:** ключей, авторизации, библиотек. Обычные `fetch`-запросы.
+Организация ведёт свои анкеты в кабинете: набор полей, статусы заявок, отметка гостей по QR. Ваш внешний сайт подключается к готовой анкете и может:
+1. Читать список полей и рисовать форму на клиенте.
+2. Отправлять новые заявки или автоматически обновлять существующие (Upsert).
+3. Искать заявки по любому полю (по коду команды, по email, по имени и т.д.).
+4. Частично обновлять поля поданной заявки (`PATCH`).
+5. Проверять доступ команд по коду и паролю.
 
 **Адрес сервера:** `https://www.studyfreeforum.com`
 
-Все ответы — JSON вида `{"success": true, ...}` либо `{"success": false, "error": "текст"}`. Текст ошибки на русском, его можно показывать человеку как есть.
+Все ответы — JSON вида `{"success": true, ...}` либо `{"success": false, "error": "текст"}`.
 
 ---
 
-## Что нужно от организации
+## Важные данные от организации
 
-Только **идентификатор анкеты** (`formId`) — строка вида `form_1789491208354`. Его даёт организатор: кабинет → «Заявки и QR» → нужная форма.
-
-Либо **идентификатор организации** (`tenantId`, например `org_future_leaders`) — тогда сайт сам запросит список её открытых анкет и покажет их человеку, см. следующий раздел.
+- **`formId`**: Идентификатор анкеты вида `form_1789491208354`. (Кабинет → «Заявки и QR» → форма).
+- **`tenantId`**: Идентификатор организации (например `org_future_leaders`).
 
 Анкеты «Академии будущих лидеров»:
 
@@ -36,99 +36,27 @@
 
 ---
 
-## Список анкет организации
+## Обзор эндпоинтов
 
-Если сайт должен показать несколько анкет сразу — «выберите, куда подаёте заявку» — запросите список:
-
-```
-GET https://www.studyfreeforum.com/api/forms/public/list?tenantId=org_future_leaders
-```
-
-```json
-{
-  "success": true,
-  "org": { "name": "Академия будущих лидеров", "logoUrl": null, "primaryColor": null },
-  "forms": [
-    { "id": "form_1789491208354", "title": "Идеи и предложения для парламента", "description": "", "mode": "application" },
-    { "id": "form_1788613220215", "title": "ХАКАТОН", "description": "", "mode": "ticket" }
-  ]
-}
-```
-
-**В списке только те анкеты, которые организатор отметил галочкой «Показывать в списке для внешних сайтов».** Остальные не отдаются — у организации есть внутренние анкеты, и само их существование не публичные сведения. Если список пуст, попросите организатора отметить нужные.
-
-Полей анкеты здесь нет — только название и режим. За полями идите в `/public/{formId}` с идентификатором из списка.
-
-Анкета, снятая с приёма, из списка пропадает сама.
+| Действие | Метод & Path | Авторизация / Заголовки |
+|---|---|---|
+| Список анкет | `GET /api/forms/public/list?tenantId={tenantId}` | Не требуется |
+| Получить поля анкеты | `GET /api/forms/public/{formId}` | Не требуется |
+| Отправить/обновить заявку | `POST /api/forms/submit` | Не требуется |
+| Универсальный поиск заявок | `POST /api/forms/submissions/search` | `X-Api-Key` / `Authorization: Bearer` / `X-Tenant-ID` |
+| Частичное обновление заявки | `PATCH /api/forms/submissions/{submissionId}` | `X-Api-Key` / `Authorization: Bearer` / `X-Tenant-ID` |
+| Создание / Upsert заявки | `POST /api/forms/submissions/upsert` | `X-Api-Key` / `Authorization: Bearer` / `X-Tenant-ID` |
+| Проверка кода и пароля команды | `POST /api/forms/team/check` | Не требуется |
+| Отслеживание статуса по QR | `GET /api/forms/track/{token}` | Не требуется |
+| Витрина публичных заявок | `GET /api/forms/public/{formId}/submissions` | Не требуется |
+| Статистика заявок (счётчик) | `GET /api/forms/public/{formId}/stats` | Не требуется |
 
 ---
 
-## Витрина: что предложили другие
+## 1. Получение полей анкеты (`GET /api/forms/public/{formId}`)
 
-Показать на сайте уже поданные заявки и ответы организации:
-
-```
-GET https://www.studyfreeforum.com/api/forms/public/{formId}/submissions
-```
-
-```json
-{
-  "success": true,
-  "org": { "name": "Академия будущих лидеров", "logoUrl": null, "primaryColor": null },
-  "formTitle": "Предложения по улучшению школы",
-  "fieldLabels": { "field_1789541693809": "предложение" },
-  "submissions": [
-    {
-      "code": "T7L97QJLPR",
-      "createdAt": { "_seconds": 1789931630 },
-      "status": "review",
-      "statusLabel": "На рассмотрении",
-      "data": { "field_1789541693809": "В столовой нет вегетарианского варианта" },
-      "reply": {
-        "text": "Обсудили на встрече партии. Берём в работу с понедельника.",
-        "at": { "_seconds": 1790018030 }
-      }
-    }
-  ],
-  "total": 1
-}
-```
-
-**Отдаются только заявки, которые сотрудник отметил кнопкой «На сайт» в кабинете.** Не «все, кроме скрытых»: анкета может быть анонимной, и человек писал не для публикации. По умолчанию публичной не становится ничего, поэтому пустой ответ — это нормально, попросите организатора отметить нужные.
-
-**Персональные поля вырезаются** даже у помеченной заявки: если в анкете есть имя, телефон, почта, адрес или класс — в витрину они не попадут. Названия оставшихся полей приходят в `fieldLabels`, чтобы было чем подписать текст.
-
-`reply` — ответ организации, тот же, что видит заявитель у себя. Его пишут при смене статуса; если ответа не было, приходит `null`. Берётся последний ответ, отдельного «публичного текста» заводить не нужно.
-
-Отдаются последние 50 заявок, удалённые не попадают.
-
-### Только цифры
-
-Если тексты не нужны, а нужен счётчик:
-
-```
-GET https://www.studyfreeforum.com/api/forms/public/{formId}/stats
-→ { "success": true, "total": 47, "resolved": 12 }
-```
-
-Считаются **все** живые заявки, не только публичные: цифра никого не раскрывает, а показывает, что работа идёт. `resolved` — со статусами «Одобрено», «Оплачено» и «Гость пришёл».
-
----
-
-## Три шага
-
-```
-1. GET  /api/forms/public/{formId}   → какие поля спрашивать
-2. POST /api/forms/submit            → отправить заявку, получить код
-3. GET  /api/forms/track/{код}       → показать человеку статус (по желанию)
-```
-
----
-
-## 1. Узнать поля анкеты
-
-```
-GET https://www.studyfreeforum.com/api/forms/public/{formId}
+```http
+GET https://www.studyfreeforum.com/api/forms/public/form_1789491208354
 ```
 
 ```json
@@ -137,18 +65,16 @@ GET https://www.studyfreeforum.com/api/forms/public/{formId}
   "org": { "name": "Академия будущих лидеров", "logoUrl": null, "primaryColor": null },
   "form": {
     "id": "form_1789491208354",
-    "title": "Идеи и предложения для агитационной работы парламента",
+    "title": "Заявка на участие",
     "description": "",
     "mode": "application",
     "fields": [
-      { "id": "field_1789491136160", "label": "Фамилия и имя", "type": "text", "required": false },
-      { "id": "field_1789491192330", "label": "Ваше предложение/ия", "type": "text", "required": true }
+      { "id": "field_1789491136160", "label": "Фамилия и имя", "type": "text", "required": true },
+      { "id": "field_1789491192330", "label": "Email", "type": "text", "required": true }
     ]
   }
 }
 ```
-
-**Не вшивайте поля в код.** Организатор меняет анкету в кабинете, и страница должна подхватывать изменения сама — иначе после правки формы сайт начнёт слать не те данные.
 
 ### Типы полей
 
@@ -160,80 +86,219 @@ GET https://www.studyfreeforum.com/api/forms/public/{formId}
 | `date` | выбор даты | |
 | `select` | список выбора | варианты в `options` — массив строк |
 | `checkbox` | галочка | отправляйте `true` или `false` |
-| `file` | загрузка фотографии | **только изображение**, см. ниже |
-
-Поле с `required: true` обязательно — не давайте отправить форму без него, иначе сервер вернёт `400` со списком незаполненного.
-
-Если анкету закрыли, придёт `410` и `{"closed": true}` — покажите текст из `error` и не рисуйте форму.
+| `file` | загрузка фотографии | **только изображение** (data:image/...) |
 
 ---
 
-## 2. Отправить заявку
+## 2. Отправка и автоматический Upsert (`POST /api/forms/submit`)
 
-```
+### Обычная отправка (создание новой заявки):
+```json
 POST https://www.studyfreeforum.com/api/forms/submit
 Content-Type: application/json
 
 {
   "formId": "form_1789491208354",
   "data": {
-    "field_1789491136160": "Осмонова Айгуль",
-    "field_1789491192330": "Предлагаю проводить дебаты каждый месяц"
+    "field_1789491136160": "Алексей Иванов",
+    "field_1789491192330": "alexey@example.com"
   }
 }
 ```
 
-Ключи в `data` — это **`id` полей**, не их названия. Отправляйте только те поля, что пришли в первом шаге: лишние ключи сервер отбросит.
+### Автоматическое обновление существующей заявки (Upsert по токену или полю):
+Чтобы обновить ранее поданную заявку (например, при повторной отправке с известным `token` / `code` или при уникальном email), передайте `token` или объект `upsert_by`:
 
-Ответ:
+```json
+POST https://www.studyfreeforum.com/api/forms/submit
+Content-Type: application/json
+
+{
+  "formId": "form_1789491208354",
+  "token": "T7L97QJLPR",
+  "upsert_by": {
+    "field_id": "field_1789491192330",
+    "value": "alexey@example.com"
+  },
+  "data": {
+    "field_1789491136160": "Алексей Иванов",
+    "field_1789491192330": "alexey@example.com",
+    "field_presentation_url": "https://example.com/slides.pdf"
+  }
+}
+```
+
+**Ответ сервера:**
+```json
+{
+  "success": true,
+  "updated": true,
+  "qrToken": "T7L97QJLPR",
+  "trackUrl": "/track/T7L97QJLPR",
+  "mode": "application",
+  "message": "Заявка успешно обновлена!"
+}
+```
+
+---
+
+## 3. Универсальный поиск заявок (`POST /api/forms/submissions/search`)
+
+Позволяет осуществлять гибкий поиск по любому полю (по коду команды, по роли, по поисковому слову) без хардкода схемы.
+
+```http
+POST https://www.studyfreeforum.com/api/forms/submissions/search
+Content-Type: application/json
+X-Api-Key: <TENANT_API_KEY>
+
+{
+  "form_id": "form_1789491208354",
+  "filter": {
+    "field_id": "field_1790768090009",
+    "value": "LOGOS-BLUE-3341",
+    "exact_match": true
+  },
+  "limit": 50,
+  "offset": 0
+}
+```
+
+* Если `field_id` не указан — поиск выполняется по **всем** текстовым полям анкеты и общим атрибутам.
+* `exact_match: true` — точный поиск (регистронезависимо и с игнорированием лишних дефисов/пробелов).
+* `exact_match: false` — частичный поиск (`contains`).
+
+**Ответ сервера:**
+```json
+{
+  "success": true,
+  "total": 2,
+  "limit": 50,
+  "offset": 0,
+  "data": [
+    {
+      "submission_id": "sub_9876543210",
+      "form_id": "form_1789491208354",
+      "code": "T7L97QJLPR",
+      "status": "new",
+      "status_label": "Новая",
+      "fields": {
+        "field_1790768090009": "LOGOS-BLUE-3341",
+        "field_name": "Алексей Иванов",
+        "field_presentation_url": "https://example.com/slides.pdf"
+      },
+      "created_at": "2026-10-03T18:20:00.000Z",
+      "updated_at": "2026-10-03T19:10:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+## 4. Частичное обновление поля заявки (`PATCH /api/forms/submissions/{submissionId}`)
+
+Позволяет дозагрузить ссылку на презентацию, дополнить анкету или сменить отдельные данные конкретной заявки:
+
+```http
+PATCH https://www.studyfreeforum.com/api/forms/submissions/sub_9876543210
+Content-Type: application/json
+X-Api-Key: <TENANT_API_KEY>
+
+{
+  "fields": {
+    "field_presentation_url": "https://my-drive.com/presentation.pdf",
+    "field_notes": "Добавлены слайды с внешнего сайта"
+  }
+}
+```
+
+**Ответ сервера:**
+```json
+{
+  "success": true,
+  "submission_id": "sub_9876543210",
+  "updated_at": "2026-10-03T23:25:00.000Z",
+  "fields": {
+    "field_1790768090009": "LOGOS-BLUE-3341",
+    "field_presentation_url": "https://my-drive.com/presentation.pdf",
+    "field_notes": "Добавлены слайды с внешнего сайта"
+  }
+}
+```
+
+---
+
+## 5. Проверка кода и пароля команды (`POST /api/forms/team/check`)
+
+Оптимизированный сервис для командных соревнований и хакатонов:
+
+```http
+POST https://www.studyfreeforum.com/api/forms/team/check
+Content-Type: application/json
+
+{
+  "formId": "form_1789491208354",
+  "code": "LOGOS-BLUE-3341",
+  "password": "secret_password"
+}
+```
+
+**Ответ сервера:**
+```json
+{
+  "success": true,
+  "found": true,
+  "submissionId": "sub_9876543210",
+  "code": "LOGOS-BLUE-3341",
+  "teamName": "CyberLogos",
+  "participationFormat": "Офлайн",
+  "status": "approved",
+  "passwordMatches": true,
+  "data": { ... }
+}
+```
+
+---
+
+## 6. Отслеживание статуса по QR / Коду (`GET /api/forms/track/{token}`)
+
+```http
+GET https://www.studyfreeforum.com/api/forms/track/T7L97QJLPR
+```
 
 ```json
 {
   "success": true,
-  "qrToken": "T7L97QJLPR",
-  "trackUrl": "/track/T7L97QJLPR",
-  "mode": "application",
-  "message": "Заявка принята."
+  "submission": {
+    "code": "T7L97QJLPR",
+    "formTitle": "Хакатон 2026",
+    "applicantName": "Алексей Иванов",
+    "status": "approved",
+    "statusLabel": "Одобрено",
+    "ticketActive": true,
+    "createdAt": { "_seconds": 1789931630 },
+    "history": [
+      { "status": "approved", "label": "Одобрено", "note": "Ждём на площадке к 10:00" }
+    ]
+  }
 }
 ```
 
-`qrToken` — код заявки. Покажите его человеку и сохраните: по нему он потом смотрит статус. Ссылка для него — `https://www.studyfreeforum.com/track/{qrToken}`.
-
-### Фотографии
-
-Поле с `type: "file"` принимает **только изображение** (JPG или PNG), закодированное строкой `data:image/...`. Сожмите его до отправки: предел 400 КБ на файл и 700 КБ на всю заявку.
-
-Документы PDF не принимаются. Если нужно резюме или справка файлом — попросите ссылку обычным текстовым полем.
-
 ---
 
-## 3. Показать статус (по желанию)
+## Коды ошибок HTTP
 
-```
-GET https://www.studyfreeforum.com/api/forms/track/{qrToken}
-```
-
-Отдаёт название анкеты, имя заявителя, текущий статус с русской подписью и историю рассмотрения. Для билетных анкет — признак `ticketActive`: когда он `true`, человеку пора показать QR-пропуск.
-
-Можно не делать свою страницу: ссылка `https://www.studyfreeforum.com/track/{qrToken}` уже показывает всё это, с оформлением организации.
-
----
-
-## Ошибки
-
-| Код | Что случилось | Что показать |
+| Код | Ошибка | Описание |
 |---|---|---|
-| `400` | не заполнено обязательное поле, или картинка не картинка | текст из `error` |
-| `404` | анкета или код не найдены | «Анкета недоступна» |
-| `410` | приём заявок закрыт | текст из `error` |
-| `413` | файл или заявка слишком большие | «Уменьшите фотографию» |
-| `429` | слишком много запросов подряд | «Подождите минуту» |
-
-Сервер ограничивает частоту запросов с одного адреса. Обычной регистрации это не мешает, но не опрашивайте статус в цикле — обновляйте по действию человека.
+| `400` | `INVALID_PARAMETERS` | Не заполнено обязательное поле или неверный формат параметров |
+| `401` / `403` | `UNAUTHORIZED_ACCESS` | Форма принадлежит другому тенанту или отсутствуют права |
+| `404` | `NOT_FOUND` | Форма или заявка с таким кодом/ID не найдена |
+| `410` | `CLOSED` | Приём заявок по этой форме закрыт организатором |
+| `413` | `PAYLOAD_TOO_LARGE` | Превышен размер файлов в заявке |
 
 ---
 
-## Рабочий пример
+## Полный JS-пример (HTML / Native Fetch)
 
 ```html
 <div id="app"></div>
@@ -241,87 +306,28 @@ GET https://www.studyfreeforum.com/api/forms/track/{qrToken}
 const BASE = "https://www.studyfreeforum.com";
 const FORM_ID = "form_1789491208354";
 
-async function render() {
-  const r = await fetch(`${BASE}/api/forms/public/${FORM_ID}`);
-  const j = await r.json();
+async function submitOrUpdate(data, existingToken = null) {
+  const payload = { formId: FORM_ID, data };
+  if (existingToken) payload.token = existingToken;
 
-  if (!j.success) {
-    document.getElementById("app").textContent = j.error;
-    return;
-  }
-
-  const form = document.createElement("form");
-  form.innerHTML = `<h2>${j.form.title}</h2>`;
-
-  for (const f of j.form.fields) {
-    const label = document.createElement("label");
-    label.textContent = f.label + (f.required ? " *" : "");
-
-    let input;
-    if (f.type === "textarea") {
-      input = document.createElement("textarea");
-    } else if (f.type === "select") {
-      input = document.createElement("select");
-      input.innerHTML = `<option value="">Выберите…</option>` +
-        (f.options || []).map(o => `<option>${o}</option>`).join("");
-    } else if (f.type === "checkbox") {
-      input = document.createElement("input");
-      input.type = "checkbox";
-    } else {
-      input = document.createElement("input");
-      input.type = f.type === "number" ? "number" : f.type === "date" ? "date" : "text";
-    }
-    input.dataset.fieldId = f.id;
-    input.dataset.fieldType = f.type;
-    if (f.required) input.required = true;
-
-    label.appendChild(input);
-    form.appendChild(label);
-  }
-
-  const button = document.createElement("button");
-  button.textContent = "Отправить";
-  form.appendChild(button);
-
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-    const data = {};
-    form.querySelectorAll("[data-field-id]").forEach(el => {
-      data[el.dataset.fieldId] = el.dataset.fieldType === "checkbox" ? el.checked : el.value;
-    });
-
-    const res = await fetch(`${BASE}/api/forms/submit`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ formId: FORM_ID, data }),
-    });
-    const out = await res.json();
-
-    if (!out.success) { alert(out.error); return; }
-    document.getElementById("app").innerHTML =
-      `<h2>Заявка принята</h2>
-       <p>Ваш код: <b>${out.qrToken}</b></p>
-       <p><a href="${BASE}/track/${out.qrToken}" target="_blank">Посмотреть статус</a></p>`;
-  };
-
-  document.getElementById("app").innerHTML = "";
-  document.getElementById("app").appendChild(form);
+  const res = await fetch(`${BASE}/api/forms/submit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return await res.json();
 }
 
-render();
+async function searchSubmissions(fieldId, value) {
+  const res = await fetch(`${BASE}/api/forms/submissions/search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      form_id: FORM_ID,
+      filter: { field_id: fieldId, value, exact_match: true }
+    }),
+  });
+  return await res.json();
+}
 </script>
 ```
-
-Этот пример читает анкету, рисует поля по её описанию и отправляет заявку. Оформление добавьте своё — логика останется той же.
-
----
-
-## Что стоит знать
-
-**Анкету меняет организатор, а не вы.** Поля, их порядок и обязательность задаются в кабинете. Читайте их запросом, а не переписывайте на сайте.
-
-**Заявка не редактируется.** После отправки человек может только смотреть статус. Если нужна правка — он подаёт заново, а организатор убирает лишнюю.
-
-**Повторная отправка создаёт вторую заявку.** Защиты от двойного нажатия на стороне сервера нет: блокируйте кнопку после отправки.
-
-**Есть второй, более мощный способ подключения** — модуль приёма с бронированием мест (когда нужны команды, лимиты мест, слоты времени). Он описан в `INTAKE_API.md`. Для обычного сбора заявок хватает того, что здесь.

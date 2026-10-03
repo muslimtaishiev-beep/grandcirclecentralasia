@@ -416,16 +416,19 @@ router.post("/submit", async (req: any, res: any) => {
     const teamPassword = pick(/пароль команды|team password/i, "field_1790768091708");
     const presentationUrl = pick(/презентаци|presentation/i, "field_1790940529090");
 
-    // ПРОВЕРКА RE-SUBMISSION / UPDATE ПО TOKEN, CODE ИЛИ QRTOKEN
+    // ПРОВЕРКА RE-SUBMISSION / UPDATE ПО TOKEN, CODE, QRTOKEN ИЛИ UPSERT_BY
+    const upsertObj = req.body.upsert_by || req.body.upsertBy;
     const inputToken = str(
       req.body.token || req.body.code || req.body.qrToken || req.body.submissionId ||
       data?.token || data?.code || data?.qrToken, 100
     );
 
+    let existingDocSnap: any = null;
+
     if (inputToken) {
       // Ищем существующую заявку по qrToken или по ID документа
-      let existingDocSnap: any = null;
       const byTokenSnap = await db().collection(SUBS)
+        .where("formId", "==", String(formId))
         .where("qrToken", "==", inputToken)
         .limit(1).get();
 
@@ -437,6 +440,39 @@ router.post("/submit", async (req: any, res: any) => {
           existingDocSnap = byIdSnap;
         }
       }
+    }
+
+    if (!existingDocSnap && upsertObj && upsertObj.value) {
+      const upsertField = str(upsertObj.field_id || upsertObj.fieldId, 200);
+      const upsertVal = str(upsertObj.value, 500).toLowerCase();
+      const cleanUpsertVal = upsertVal.replace(/[^a-z0-9а-яё]/gi, "");
+
+      const allSubSnap = await db().collection(SUBS).where("formId", "==", String(formId)).limit(500).get();
+      for (const d of allSubSnap.docs) {
+        const subData = d.data();
+        if (subData.deleted) continue;
+        const dataMap = subData.data || {};
+
+        const checkMatch = (val: any) => {
+          if (!val) return false;
+          const s = String(val).trim().toLowerCase();
+          const cleanS = s.replace(/[^a-z0-9а-яё]/gi, "");
+          return s === upsertVal || (cleanUpsertVal && cleanS === cleanUpsertVal);
+        };
+
+        if (upsertField) {
+          if (checkMatch(dataMap[upsertField]) || checkMatch(subData[upsertField])) {
+            existingDocSnap = d;
+            break;
+          }
+        } else {
+          if (checkMatch(subData.qrToken) || checkMatch(subData.teamCode) || checkMatch(subData.applicantEmail)) {
+            existingDocSnap = d;
+            break;
+          }
+        }
+      }
+    }
 
       if (existingDocSnap) {
         const existingRef = existingDocSnap.ref;
@@ -481,7 +517,6 @@ router.post("/submit", async (req: any, res: any) => {
           message: "Заявка успешно обновлена!",
         });
       }
-    }
 
     // Если токена нет или документа не нашлось — создаём новую запись
     const qrToken = makeToken();
@@ -926,6 +961,85 @@ router.post("/team/check", async (req: any, res: any) => {
     return res.status(500).json({ success: false, error: e.message });
   }
 });
+
+/**
+ * PATCH /api/forms/submissions/:submission_id — Частичное обновление заявки
+ * Поддерживает также POST /api/forms/submissions/:submission_id/update
+ */
+const patchSubmissionHandler = async (req: any, res: any) => {
+  try {
+    const submissionId = str(req.params.submission_id || req.params.submissionId, 200);
+    if (!submissionId) {
+      return res.status(400).json({ success: false, error: "INVALID_PARAMETERS", message: "Field 'submission_id' is required." });
+    }
+
+    let docSnap = await db().collection(SUBS).doc(submissionId).get();
+    if (!docSnap.exists) {
+      const byTokenSnap = await db().collection(SUBS).where("qrToken", "==", submissionId).limit(1).get();
+      if (!byTokenSnap.empty) {
+        docSnap = byTokenSnap.docs[0];
+      }
+    }
+
+    if (!docSnap || !docSnap.exists) {
+      return res.status(404).json({ success: false, error: "NOT_FOUND", message: "Submission not found." });
+    }
+
+    const existingData = docSnap.data()!;
+    const formId = existingData.formId;
+
+    const formSnap = await db().collection(FORMS).doc(String(formId)).get();
+    const form = formSnap.exists ? formSnap.data()! : null;
+
+    const { tenantId: clientTenantId } = extractTenantContext(req);
+    if (clientTenantId && clientTenantId !== existingData.tenantId && !req.user?.isSuperadmin) {
+      return res.status(403).json({ success: false, error: "UNAUTHORIZED_ACCESS", message: "Form does not belong to the authenticated tenant." });
+    }
+
+    const fieldsPatch = req.body.fields || req.body.data || req.body;
+    if (typeof fieldsPatch !== "object" || !fieldsPatch) {
+      return res.status(400).json({ success: false, error: "INVALID_PARAMETERS", message: "fields object is required." });
+    }
+
+    const mergedFields = { ...(existingData.data || {}), ...fieldsPatch };
+
+    const now = admin.firestore.Timestamp.now();
+    await docSnap.ref.update({
+      data: mergedFields,
+      updatedAt: now,
+      history: admin.firestore.FieldValue.arrayUnion({
+        status: existingData.status || "new",
+        at: now,
+        by: "api_patch",
+        note: "Поля обновлены через PATCH API",
+      }),
+    });
+
+    if (form) {
+      void appendToSheet(form, String(formId), {
+        applicantName: existingData.applicantName,
+        applicantPhone: existingData.applicantPhone,
+        applicantEmail: existingData.applicantEmail,
+        status: existingData.status || "new",
+        qrToken: existingData.qrToken,
+        data: mergedFields,
+      });
+    }
+
+    return res.json({
+      success: true,
+      submission_id: docSnap.id,
+      updated_at: new Date().toISOString(),
+      fields: mergedFields,
+      data: mergedFields,
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: "INTERNAL_ERROR", message: e.message });
+  }
+};
+
+router.patch("/submissions/:submission_id", patchSubmissionHandler);
+router.post("/submissions/:submission_id/update", patchSubmissionHandler);
 
 /**
  * GET /api/forms/track/:token — статус заявки по QR.
