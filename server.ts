@@ -92,6 +92,10 @@ app.use("/api/tenants/request", authLimiter);
 const allowedOrigins = [
   "https://www.studyfreeforum.com",
   "https://studyfreeforum.com",
+  "https://logoshackathon.com",
+  "https://www.logoshackathon.com",
+  "http://logoshackathon.com",
+  "http://www.logoshackathon.com",
   "http://localhost:3000",
   "http://localhost:3005",
   "http://localhost:5173",
@@ -99,7 +103,7 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.endsWith('.logoshackathon.com')) {
       callback(null, true);
     } else {
       callback(null, true);
