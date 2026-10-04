@@ -1,4 +1,5 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import admin from "firebase-admin";
 import crypto from "crypto";
 import { requireFirebaseAuth } from "./authRoutes.js";
@@ -553,6 +554,19 @@ router.post("/submit", async (req: any, res: any) => {
   }
 });
 
+/** Rate limiting middleware: max 30 requests per minute */
+const formsApiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: {
+    success: false,
+    error: "TOO_MANY_REQUESTS",
+    message: "Превышен лимит запросов. Максимум 30 запросов в минуту.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 /** Извлечение контекста тенанта и токенов из заголовков или параметров */
 function extractTenantContext(req: any): { tenantId?: string; apiKey?: string; userToken?: string } {
   const apiKey = (req.headers["x-api-key"] || req.headers["api-key"] || req.headers["x-tenant-api-key"] || req.query.api_key || req.query.apiKey || "") as string;
@@ -568,10 +582,116 @@ function extractTenantContext(req: any): { tenantId?: string; apiKey?: string; u
   };
 }
 
+/** Вспомогательная функция маскирования и очистки чувствительных полей (паролей команд) */
+function sanitizeSubmissionFields(sub: any): any {
+  if (!sub || typeof sub !== "object") return sub;
+  const cleanSub = { ...sub };
+
+  delete cleanSub.teamPassword;
+  delete cleanSub.team_password;
+  delete cleanSub.password;
+
+  if (cleanSub.data && typeof cleanSub.data === "object") {
+    const cleanData = { ...cleanSub.data };
+    delete cleanData.field_1790768091708;
+    delete cleanData.teamPassword;
+    delete cleanData.team_password;
+    delete cleanData.password;
+    delete cleanData["пароль команды"];
+    delete cleanData["Пароль команды"];
+    cleanSub.data = cleanData;
+  }
+
+  return cleanSub;
+}
+
+/** Логирование аудита вызовов API */
+async function logApiAudit(req: any, action: string, details: Record<string, any>) {
+  try {
+    const ip = (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").toString().split(",")[0].trim();
+    const { tenantId } = extractTenantContext(req);
+    await db().collection("audit_logs").add({
+      action,
+      endpoint: req.originalUrl || req.url,
+      method: req.method,
+      ip,
+      tenantId: tenantId || details.tenantId || "unknown",
+      userId: req.user?.uid || req.user?.email || "api_key",
+      details,
+      timestamp: admin.firestore.Timestamp.now(),
+    });
+  } catch (err) {
+    console.error("[Audit Log Error]", err);
+  }
+}
+
+/** Авторизация API запросов по секретному ключу / Bearer токену / API key */
+async function authenticateFormApi(req: any, res: any, next: any) {
+  try {
+    if (req.user) {
+      return next();
+    }
+
+    const { tenantId, apiKey, userToken } = extractTenantContext(req);
+    const secretHeader = (req.headers["x-api-secret"] || req.headers["x-secret-key"] || req.headers["authorization"] || "") as string;
+    const SERVER_SECRET = process.env.STUDYFREE_SECRET_KEY || process.env.TENANT_SECRET_KEY || "sf_sec_logos_2026";
+
+    if (userToken && userToken === SERVER_SECRET) {
+      return next();
+    }
+
+    if (secretHeader && (secretHeader === SERVER_SECRET || secretHeader === `Bearer ${SERVER_SECRET}`)) {
+      return next();
+    }
+
+    if (userToken) {
+      try {
+        const decoded = await admin.auth().verifyIdToken(userToken);
+        if (decoded && decoded.uid) {
+          req.user = decoded;
+          return next();
+        }
+      } catch (err) {
+        // Token verification failed, continue checking API keys
+      }
+    }
+
+    const providedKey = apiKey || (secretHeader.startsWith("Bearer ") ? secretHeader.slice(7) : secretHeader);
+    if (providedKey) {
+      if (providedKey === SERVER_SECRET) {
+        return next();
+      }
+
+      if (tenantId) {
+        const tenantSnap = await db().collection("tenants").doc(tenantId).get();
+        if (tenantSnap.exists) {
+          const tenantData = tenantSnap.data();
+          if (tenantData?.apiKey === providedKey || tenantData?.secretKey === providedKey) {
+            return next();
+          }
+        }
+      }
+
+      const keyTenantSnap = await db().collection("tenants").where("apiKey", "==", providedKey).limit(1).get();
+      if (!keyTenantSnap.empty) {
+        return next();
+      }
+    }
+
+    return res.status(401).json({
+      success: false,
+      error: "UNAUTHORIZED",
+      message: "Доступ запрещен. Требуется заголовок Authorization (Bearer <TOKEN>) или X-API-Key / X-API-Secret.",
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: "AUTH_ERROR", message: e.message });
+  }
+}
+
 /**
- * POST /api/forms/submissions/search — Универсальный поиск заявок
+ * POST /api/forms/submissions/search — Универсальный поиск заявок (Защищенный API)
  */
-router.post("/submissions/search", async (req: any, res: any) => {
+router.post("/submissions/search", formsApiLimiter, authenticateFormApi, async (req: any, res: any) => {
   try {
     const formId = str(req.body.form_id || req.body.formId, 200);
     if (!formId) {
@@ -646,7 +766,7 @@ router.post("/submissions/search", async (req: any, res: any) => {
           }
           const topFields = [
             sub.applicantName, sub.applicantPhone, sub.applicantEmail,
-            sub.teamName, sub.teamCode, sub.teamPassword, sub.qrToken, sub.participationFormat, sub.presentationUrl
+            sub.teamName, sub.teamCode, sub.qrToken, sub.participationFormat, sub.presentationUrl
           ];
           for (const topVal of topFields) {
             if (checkValue(topVal)) return true;
@@ -668,7 +788,7 @@ router.post("/submissions/search", async (req: any, res: any) => {
     const submissions = pagedDocs.map(d => {
       const sub = d.data();
       const status: Status = STATUSES.includes(sub.status) ? sub.status : "new";
-      return {
+      const item = {
         id: d.id,
         submission_id: d.id,
         code: sub.qrToken || d.id,
@@ -682,7 +802,6 @@ router.post("/submissions/search", async (req: any, res: any) => {
         applicant_phone: sub.applicantPhone || "",
         team_name: sub.teamName || "",
         team_code: sub.teamCode || "",
-        team_password: sub.teamPassword || "",
         participation_format: sub.participationFormat || "",
         presentation_url: sub.presentationUrl || "",
         data: sub.data || {},
@@ -690,7 +809,10 @@ router.post("/submissions/search", async (req: any, res: any) => {
         created_at: sub.createdAt || null,
         updated_at: sub.updatedAt || null,
       };
+      return sanitizeSubmissionFields(item);
     });
+
+    void logApiAudit(req, "SUBMISSIONS_SEARCH", { formId, total, limit, offset, tenantId: form.tenantId });
 
     return res.json({
       success: true,
@@ -705,9 +827,9 @@ router.post("/submissions/search", async (req: any, res: any) => {
 });
 
 /**
- * POST /api/forms/submissions/upsert — Универсальное создание или обновление заявки
+ * POST /api/forms/submissions/upsert — Универсальное создание или обновление заявки (Защищенный API)
  */
-router.post("/submissions/upsert", async (req: any, res: any) => {
+router.post("/submissions/upsert", formsApiLimiter, authenticateFormApi, async (req: any, res: any) => {
   try {
     const formId = str(req.body.form_id || req.body.formId, 200);
     if (!formId) {
@@ -852,13 +974,15 @@ router.post("/submissions/upsert", async (req: any, res: any) => {
         data: mergedData,
       });
 
+      void logApiAudit(req, "SUBMISSIONS_UPSERT", { formId, submissionId: existingDocSnap.id, action: "updated", tenantId: form.tenantId });
+
       return res.json({
         success: true,
         action: "updated",
         submission_id: existingDocSnap.id,
         code: existingData.qrToken || existingDocSnap.id,
         qrToken: existingData.qrToken || existingDocSnap.id,
-        data: mergedData,
+        data: sanitizeSubmissionFields({ data: mergedData }).data,
         message: "Заявка успешно обновлена",
       });
     }
@@ -886,13 +1010,15 @@ router.post("/submissions/upsert", async (req: any, res: any) => {
       status: validStatus || "new", qrToken: qrTokenVal, data: clean,
     });
 
+    void logApiAudit(req, "SUBMISSIONS_UPSERT", { formId, submissionId: newRef.id, action: "created", tenantId: form.tenantId });
+
     return res.json({
       success: true,
       action: "created",
       submission_id: newRef.id,
       code: qrTokenVal,
       qrToken: qrTokenVal,
-      data: clean,
+      data: sanitizeSubmissionFields({ data: clean }).data,
       message: "Заявка успешно создана",
     });
 
@@ -902,9 +1028,9 @@ router.post("/submissions/upsert", async (req: any, res: any) => {
 });
 
 /**
- * POST /api/forms/team/check — Поиск и проверка пароля команды
+ * POST /api/forms/team/check — Поиск и проверка пароля команды (Rate limited)
  */
-router.post("/team/check", async (req: any, res: any) => {
+router.post("/team/check", formsApiLimiter, async (req: any, res: any) => {
   try {
     const formId = str(req.body.formId || req.body.form_id, 200);
     const code = str(req.body.code, 200);
@@ -946,6 +1072,8 @@ router.post("/team/check", async (req: any, res: any) => {
       passwordMatches = storedPassword === password.trim();
     }
 
+    void logApiAudit(req, "TEAM_CHECK", { formId, code, found: true });
+
     return res.json({
       success: true,
       found: true,
@@ -955,7 +1083,7 @@ router.post("/team/check", async (req: any, res: any) => {
       participationFormat: sub.participationFormat || sub.data?.field_1790768170123 || "",
       status: sub.status || "new",
       passwordMatches,
-      data: sub.data || {},
+      data: sanitizeSubmissionFields({ data: sub.data || {} }).data,
     });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
@@ -963,7 +1091,7 @@ router.post("/team/check", async (req: any, res: any) => {
 });
 
 /**
- * PATCH /api/forms/submissions/:submission_id — Частичное обновление заявки
+ * PATCH /api/forms/submissions/:submission_id — Частичное обновление заявки (Защищенный API)
  * Поддерживает также POST /api/forms/submissions/:submission_id/update
  */
 const patchSubmissionHandler = async (req: any, res: any) => {
@@ -1026,20 +1154,24 @@ const patchSubmissionHandler = async (req: any, res: any) => {
       });
     }
 
+    void logApiAudit(req, "SUBMISSIONS_PATCH", { submissionId, formId, tenantId: existingData.tenantId });
+
+    const cleanMerged = sanitizeSubmissionFields({ data: mergedFields }).data;
+
     return res.json({
       success: true,
       submission_id: docSnap.id,
       updated_at: new Date().toISOString(),
-      fields: mergedFields,
-      data: mergedFields,
+      fields: cleanMerged,
+      data: cleanMerged,
     });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: "INTERNAL_ERROR", message: e.message });
   }
 };
 
-router.patch("/submissions/:submission_id", patchSubmissionHandler);
-router.post("/submissions/:submission_id/update", patchSubmissionHandler);
+router.patch("/submissions/:submission_id", formsApiLimiter, authenticateFormApi, patchSubmissionHandler);
+router.post("/submissions/:submission_id/update", formsApiLimiter, authenticateFormApi, patchSubmissionHandler);
 
 /**
  * GET /api/forms/track/:token — статус заявки по QR.
