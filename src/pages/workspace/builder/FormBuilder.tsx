@@ -110,14 +110,21 @@ export default function FormBuilder() {
 
     setLoading(true);
     const qForms = query(collection(db, 'custom_forms'), where('tenantId', '==', currentOrgId));
-    // Свежие заявки, не больше 300: в data заявки лежит фото документа
-    // (base64 до 400КБ), и подписка без лимита тянула бы в браузер снимки
-    // всех гостей события разом.
+    // Предел был 300, и у организации с 470 заявками старые просто
+    // исчезали из кабинета — выглядело как потеря данных, хотя в базе
+    // лежало всё.
+    //
+    // Ограничение стояло из-за фотографий: в заявке бывает снимок
+    // документа (base64 до 400 КБ), и подписка без лимита тянула бы в
+    // браузер снимки всех гостей разом. Но фотография и не нужна в
+    // списке — она открывается отдельным окном по клику. Поэтому вместо
+    // маленького лимита выбрасываем тяжёлые поля из того, что держим в
+    // памяти, а снимок подгружаем по требованию.
     const qSubs = query(
       collection(db, 'form_submissions'),
       where('tenantId', '==', currentOrgId),
       orderBy('createdAt', 'desc'),
-      limit(300),
+      limit(2000),
     );
 
     const unsubForms = onSnapshot(qForms, (snap) => {
@@ -128,7 +135,18 @@ export default function FormBuilder() {
 
     const unsubSubs = onSnapshot(qSubs, (snap) => {
       const list: any[] = [];
-      snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+      snap.forEach(d => {
+        const raw: any = d.data();
+        // Снимки документов в списке не нужны: они открываются по клику,
+        // а в памяти держать сотни картинок по 400 КБ нельзя.
+        const data: Record<string, any> = {};
+        let hasFile = false;
+        for (const [k, v] of Object.entries(raw.data || {})) {
+          if (typeof v === 'string' && v.startsWith('data:')) { hasFile = true; continue; }
+          data[k] = v;
+        }
+        list.push({ id: d.id, ...raw, data, hasFile });
+      });
       setSubmissions(list);
       setLoading(false);
     });
@@ -206,6 +224,28 @@ export default function FormBuilder() {
       if (!data.success) alert(data.error || 'Не удалось');
     } catch (e: any) { alert(`Не удалось: ${e.message}`); }
     finally { setBusySub(null); }
+  };
+
+  /**
+   * Снимок документа — по требованию.
+   *
+   * В списке его нет: сотни фотографий по 400 КБ в памяти браузера
+   * означали бы, что кабинет не открывается вовсе. Читаем саму заявку в
+   * момент, когда человек нажал «Документ».
+   */
+  const openDocument = async (sub: any) => {
+    setBusySub(sub.id);
+    try {
+      const snap = await getDoc(doc(db, 'form_submissions', sub.id));
+      const data: any = snap.data()?.data || {};
+      const src = Object.values(data).find((v: any) => typeof v === 'string' && v.startsWith('data:'));
+      if (!src) { alert('Документ не найден.'); return; }
+      setDocView({ name: sub.applicantName || 'Документ', src: String(src) });
+    } catch (e: any) {
+      alert(`Не удалось открыть документ: ${e.message}`);
+    } finally {
+      setBusySub(null);
+    }
   };
 
   const removeSubmission = async (sub: any, restore = false) => {
@@ -766,6 +806,12 @@ export default function FormBuilder() {
               placeholder="Поиск по имени, телефону, ответам…"
               className="flex-1 min-w-[200px] px-3 py-1.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-lg text-xs" />
 
+            <span className="text-[11px] text-[var(--text-muted)] font-mono">
+              {visibleSubs.length === submissions.filter((x: any) => !x.deleted).length
+                ? `${visibleSubs.length}`
+                : `${visibleSubs.length} из ${submissions.filter((x: any) => !x.deleted).length}`}
+            </span>
+
             {(filterFormId || filterStatus || search) && (
               <button onClick={() => { setFilterFormId(''); setFilterStatus(''); setSearch(''); }}
                 className="px-2.5 py-1.5 rounded-lg text-xs text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/10">
@@ -879,19 +925,14 @@ export default function FormBuilder() {
                       {sub.createdAt ? new Date(sub.createdAt.seconds ? sub.createdAt.seconds * 1000 : sub.createdAt).toLocaleDateString() : 'Сегодня'}
                     </td>
                     <td className="px-5 py-3.5 text-right">
-                      {(() => {
-                        // Первое файловое поле формы этой заявки — там лежит
-                        // фото документа, если гость его прикладывал.
-                        const ff = (forms.find(f => f.id === sub.formId)?.fields || []).find((x: any) => x.type === 'file');
-                        const src = ff ? sub.data?.[ff.id] : null;
-                        return src ? (
-                          <button
-                            onClick={() => setDocView({ name: sub.applicantName || 'Документ', src })}
-                            className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 px-3 py-1 rounded-lg font-bold text-[11px] inline-flex items-center gap-1.5 transition cursor-pointer mr-2">
-                            📄 Документ
-                          </button>
-                        ) : null;
-                      })()}
+                      {sub.hasFile && (
+                        <button
+                          onClick={() => void openDocument(sub)}
+                          disabled={busySub === sub.id}
+                          className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 px-3 py-1 rounded-lg font-bold text-[11px] inline-flex items-center gap-1.5 transition cursor-pointer mr-2 disabled:opacity-50">
+                          📄 Документ
+                        </button>
+                      )}
                       <button 
                         onClick={() => setSelectedSubmissionForQr(sub)}
                         className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 px-3 py-1 rounded-lg font-bold text-[11px] inline-flex items-center gap-1.5 transition cursor-pointer"
