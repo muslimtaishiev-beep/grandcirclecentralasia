@@ -166,6 +166,75 @@ export default function FormBuilder() {
   const [filterFormId, setFilterFormId] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [search, setSearch] = useState('');
+
+  /**
+   * Отбор по отдельным полям анкеты.
+   *
+   * Общий поиск по всему тексту отвечает на «где-то встречается слово»,
+   * но не на живые вопросы: кто подал за последнюю неделю, кто выбрал
+   * командное участие, кто не дал согласия. Для этого нужен не один
+   * ввод, а по условию на каждое поле — и у каждого поля свой вид:
+   * дата диапазоном, галочка «да/нет», список выбором из вариантов.
+   *
+   * Условия хранятся как { [id поля]: значение }. Пустое значение
+   * означает «не фильтруем», поэтому лишние условия не мешают.
+   */
+  const [fieldFilters, setFieldFilters] = useState<Record<string, any>>({});
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Поля выбранной анкеты плюс те, что есть у любой заявки.
+  const filterableFields = React.useMemo(() => {
+    const form = forms.find(f => f.id === filterFormId);
+    const own = (form?.fields || []).map((f: any) => ({
+      id: f.id, label: f.label || f.id, type: f.type, options: f.options || [],
+    }));
+    return [
+      { id: '__date', label: 'Дата подачи', type: 'daterange', options: [] },
+      { id: '__name', label: 'Имя заявителя', type: 'text', options: [] },
+      { id: '__contact', label: 'Телефон или почта', type: 'text', options: [] },
+      { id: '__code', label: 'Код заявки', type: 'text', options: [] },
+      ...own,
+    ];
+  }, [forms, filterFormId]);
+
+  const activeFilterCount = Object.values(fieldFilters)
+    .filter(v => v !== '' && v !== undefined && v !== null
+      && !(typeof v === 'object' && !v.from && !v.to)).length;
+
+  /** Подходит ли заявка под все заданные условия. */
+  const matchesFieldFilters = (sub: any): boolean => {
+    for (const [key, cond] of Object.entries(fieldFilters)) {
+      if (cond === '' || cond === undefined || cond === null) continue;
+
+      if (key === '__date') {
+        const ms = sub.createdAt?.seconds ? sub.createdAt.seconds * 1000 : 0;
+        if (!ms) return false;
+        if (cond.from && ms < new Date(cond.from).setHours(0, 0, 0, 0)) return false;
+        if (cond.to && ms > new Date(cond.to).setHours(23, 59, 59, 999)) return false;
+        continue;
+      }
+
+      const text = (v: unknown) => String(v ?? '').toLowerCase();
+      if (key === '__name') { if (!text(sub.applicantName).includes(text(cond))) return false; continue; }
+      if (key === '__code') { if (!text(sub.qrToken).includes(text(cond))) return false; continue; }
+      if (key === '__contact') {
+        const hay = `${text(sub.applicantPhone)} ${text(sub.applicantEmail)}`;
+        if (!hay.includes(text(cond))) return false;
+        continue;
+      }
+
+      const value = sub.data?.[key];
+      // Галочка: «да» и «нет» — разные условия, поэтому сравниваем строго.
+      if (cond === '__true') { if (value !== true && String(value) !== 'true') return false; continue; }
+      if (cond === '__false') { if (value === true || String(value) === 'true') return false; continue; }
+      // Пусто или заполнено — частый вопрос: «кто не указал команду».
+      if (cond === '__empty') { if (String(value ?? '').trim()) return false; continue; }
+      if (cond === '__filled') { if (!String(value ?? '').trim()) return false; continue; }
+
+      if (!text(value).includes(text(cond))) return false;
+    }
+    return true;
+  };
   const [showDeleted, setShowDeleted] = useState(false);
   const [subView, setSubView] = useState<any | null>(null);
   const [busySub, setBusySub] = useState<string | null>(null);
@@ -180,10 +249,22 @@ export default function FormBuilder() {
         .join(' ').toLowerCase();
       if (!hay.includes(search.trim().toLowerCase())) return false;
     }
+    if (!matchesFieldFilters(sub)) return false;
     return true;
   });
 
   const deletedCount = submissions.filter((s: any) => s.deleted).length;
+
+  /**
+   * Корзина опустела — возвращаемся к списку сами.
+   *
+   * Кнопка «К списку заявок» живёт рядом со счётчиком корзины и исчезает
+   * вместе с ним. Если вернуть или стереть последнюю заявку, человек
+   * оставался в пустой корзине без единой кнопки выхода.
+   */
+  React.useEffect(() => {
+    if (showDeleted && deletedCount === 0) setShowDeleted(false);
+  }, [showDeleted, deletedCount]);
 
   /** Подписи полей формы — чтобы в ответах читалось «Город», а не «field_3». */
   const labelsOf = (formId: string): Record<string, string> => {
@@ -338,8 +419,11 @@ export default function FormBuilder() {
    */
   const exportSubs = (formId: string) => {
     const form = forms.find(f => f.id === formId);
-    const rows = submissions.filter((s: any) => s.formId === formId && !s.deleted);
-    if (!rows.length) { alert('По этой форме заявок пока нет.'); return; }
+    // Выгружаем ТО, ЧТО НА ЭКРАНЕ: человек отобрал заявки фильтрами и
+    // ждёт именно их. Раньше скачивались все заявки формы, и отбор
+    // приходилось повторять руками в скачанном файле.
+    const rows = visibleSubs.filter((s: any) => s.formId === formId && !s.deleted);
+    if (!rows.length) { alert('Под выбранные условия не подошла ни одна заявка.'); return; }
 
     const fields = (form?.fields || []).filter((f: any) => f.type !== 'file');
     const head = ['Дата', 'Имя', 'Телефон', 'Почта', 'Статус', 'Код']
@@ -360,7 +444,8 @@ export default function FormBuilder() {
     const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `${(form?.title || 'Заявки').replace(/[^\wа-яА-ЯёЁ -]/g, '')} — ${new Date().toLocaleDateString('ru-RU')}.csv`;
+    const filtered = activeFilterCount > 0 || !!filterStatus || !!search.trim();
+    a.download = `${(form?.title || 'Заявки').replace(/[^\wа-яА-ЯёЁ -]/g, '')}${filtered ? ' (отбор)' : ''} — ${new Date().toLocaleDateString('ru-RU')}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -382,8 +467,10 @@ export default function FormBuilder() {
    */
   const toWorkspaceSheet = async (formId: string) => {
     const form = forms.find(f => f.id === formId);
-    const rows = submissions.filter((s: any) => s.formId === formId && !s.deleted);
-    if (!rows.length) { alert('По этой форме заявок пока нет.'); return; }
+    // Как и выгрузка файлом — по тому, что на экране: две кнопки рядом
+    // не должны вести себя по-разному.
+    const rows = visibleSubs.filter((s: any) => s.formId === formId && !s.deleted);
+    if (!rows.length) { alert('Под выбранные условия не подошла ни одна заявка.'); return; }
     if (!currentOrgId || !user?.uid) return;
 
     setBusySub(formId);
@@ -877,8 +964,20 @@ export default function FormBuilder() {
                 : `${visibleSubs.length} из ${submissions.filter((x: any) => !x.deleted).length}`}
             </span>
 
-            {(filterFormId || filterStatus || search) && (
-              <button onClick={() => { setFilterFormId(''); setFilterStatus(''); setSearch(''); }}
+            <button
+              onClick={() => setShowFilters(v => !v)}
+              disabled={!filterFormId}
+              title={filterFormId ? 'Отбор по отдельным полям анкеты' : 'Сначала выберите форму'}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition disabled:opacity-40 ${
+                activeFilterCount > 0
+                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600'
+                  : 'border-[var(--border-color)] text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/10'
+              }`}>
+              Фильтры{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+            </button>
+
+            {(filterFormId || filterStatus || search || activeFilterCount > 0) && (
+              <button onClick={() => { setFilterFormId(''); setFilterStatus(''); setSearch(''); setFieldFilters({}); }}
                 className="px-2.5 py-1.5 rounded-lg text-xs text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/10">
                 Сбросить
               </button>
@@ -933,6 +1032,90 @@ export default function FormBuilder() {
               )}
             </div>
           </div>
+
+          {/* Отбор по каждому полю анкеты.
+              У каждого типа свой способ спросить: дату — диапазоном,
+              галочку — «да/нет», список — его же вариантами. Одно общее
+              текстовое поле на всё не отвечает на вопросы вроде «кто подал
+              за неделю» или «кто не дал согласия». */}
+          {showFilters && filterFormId && (
+            <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-bold text-[var(--text-muted)]">Отбор по полям анкеты</span>
+                {activeFilterCount > 0 && (
+                  <button onClick={() => setFieldFilters({})}
+                    className="text-[11px] text-[var(--text-muted)] hover:text-emerald-500">
+                    Очистить условия
+                  </button>
+                )}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {filterableFields.map((f: any) => {
+                  const value = fieldFilters[f.id];
+                  const set = (v: any) => setFieldFilters(prev => {
+                    const next = { ...prev };
+                    if (v === '' || v === undefined || v === null) delete next[f.id];
+                    else next[f.id] = v;
+                    return next;
+                  });
+                  const base = "w-full px-2.5 py-1.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-lg text-xs";
+
+                  return (
+                    <div key={f.id} className="space-y-1">
+                      <label className="block text-[11px] font-semibold text-[var(--text-muted)]">{f.label}</label>
+
+                      {f.type === 'daterange' ? (
+                        <div className="flex items-center gap-1.5">
+                          <input type="date" className={base}
+                            value={value?.from || ''}
+                            onChange={e => set({ ...(value || {}), from: e.target.value })} />
+                          <span className="text-[11px] text-[var(--text-muted)] shrink-0">—</span>
+                          <input type="date" className={base}
+                            value={value?.to || ''}
+                            onChange={e => set({ ...(value || {}), to: e.target.value })} />
+                        </div>
+                      ) : f.type === 'checkbox' ? (
+                        <select className={base} value={value || ''} onChange={e => set(e.target.value)}>
+                          <option value="">Не важно</option>
+                          <option value="__true">Отмечено</option>
+                          <option value="__false">Не отмечено</option>
+                        </select>
+                      ) : f.type === 'select' ? (
+                        <select className={base} value={value || ''} onChange={e => set(e.target.value)}>
+                          <option value="">Любой</option>
+                          {(f.options || []).map((o: string) => <option key={o} value={o}>{o}</option>)}
+                          <option value="__empty">— не выбрано —</option>
+                        </select>
+                      ) : f.type === 'date' ? (
+                        <input type="date" className={base} value={value || ''} onChange={e => set(e.target.value)} />
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <input type="text" className={base} placeholder="Содержит…"
+                            value={value && !String(value).startsWith('__') ? value : ''}
+                            onChange={e => set(e.target.value)} />
+                          <select
+                            className="px-1.5 py-1.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-lg text-[11px] shrink-0"
+                            value={String(value || '').startsWith('__') ? value : ''}
+                            onChange={e => set(e.target.value)}
+                            title="Пусто или заполнено">
+                            <option value="">∙</option>
+                            <option value="__filled">Заполнено</option>
+                            <option value="__empty">Пусто</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-[var(--border-color)] text-[11px] text-[var(--text-muted)]">
+                Подходит заявок: <b className="text-[var(--text-main)]">{visibleSubs.length}</b>
+                {activeFilterCount > 0 && ' — кнопка «Скачать» выгрузит именно их'}
+              </div>
+            </div>
+          )}
 
         <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-xs">
           {visibleSubs.length === 0 ? (
