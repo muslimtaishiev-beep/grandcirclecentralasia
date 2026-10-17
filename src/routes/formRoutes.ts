@@ -10,6 +10,7 @@ import {
 import { hasAnyPermission } from "../server/access.js";
 import { checkTenantOpen, requireScreen, loadTenant } from "../server/tenantAccess.js";
 import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
+import { sendFormTicketEmail } from "../../emailService.js";
 
 /** Что о организации можно показать заявителю: название, брендинг, тексты билетов. */
 function publicOrg(t: any) {
@@ -385,11 +386,23 @@ router.post("/submit", async (req: any, res: any) => {
       });
     }
 
-    // Включаем поддержку сырых ключей для внешних запросов API, если data передана словарем
-    if (typeof data === "object") {
-      Object.keys(data).forEach(k => {
-        if (!clean[k]) clean[k] = data[k];
-      });
+    // Внешний сайт может прислать ключи, которых нет среди объявленных
+    // полей: анкету правят в кабинете, и сайт успевает отстать. Такие
+    // значения принимаем, но по тем же правилам, что и свои, — иначе
+    // белый список выше не значит ничего и в заявку попадёт что угодно,
+    // включая мегабайтные строки и вложенные объекты.
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      const known = new Set(fields.map((f: any) => String(f.id)));
+      let extras = 0;
+      for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
+        if (known.has(k) || clean[k] !== undefined) continue;
+        if (++extras > 30) break;                       // не даём раздуть заявку
+        if (!/^[\w.-]{1,80}$/.test(k)) continue;         // ключ — не произвольный текст
+        if (v === null || typeof v === "boolean" || typeof v === "number") { clean[k] = v; continue; }
+        if (typeof v !== "string") continue;            // объекты и массивы не принимаем
+        if (/^\s*data:/i.test(v)) continue;             // файлы идут своим полем
+        clean[k] = str(v, 2000);
+      }
     }
 
     if (JSON.stringify(clean).length > 700 * 1024) {
@@ -512,6 +525,7 @@ router.post("/submit", async (req: any, res: any) => {
         return res.json({
           success: true,
           updated: true,
+          submissionId: existingDocSnap.id,
           qrToken: existingData.qrToken,
           trackUrl: `/track/${existingData.qrToken}`,
           mode: formMode(form),
@@ -541,14 +555,88 @@ router.post("/submit", async (req: any, res: any) => {
       status: "new", qrToken, data: clean,
     });
 
+    // ✉️ Автоматическая отправка электронного билета на почту, если указан e-mail
+    if (applicantEmail && applicantEmail.includes("@")) {
+      const emailDetails: Record<string, string> = {};
+      if (participationFormat) emailDetails["Формат участия"] = participationFormat;
+      if (teamName) emailDetails["Команда"] = teamName;
+
+      void sendFormTicketEmail({
+        to: applicantEmail,
+        applicantName: applicantName || "Участник",
+        eventTitle: form.title || "Мероприятие",
+        qrToken,
+        details: emailDetails,
+      }).catch(err => console.warn("[Forms/Submit] Ticket email send notice:", err?.message));
+    }
+
     return res.json({
       success: true,
       updated: false,
+      submissionId: ref.id,
       qrToken,
       trackUrl: `/track/${qrToken}`,
       mode: formMode(form),
       message: "Заявка принята.",
     });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/** POST /api/forms/send-ticket — ручная или вызывная отправка билета на почту по qrToken, submissionId или email */
+router.post("/send-ticket", async (req: any, res: any) => {
+  try {
+    const { qrToken, submissionId, email } = req.body || {};
+    if (!qrToken && !submissionId && !email) {
+      return res.status(400).json({ success: false, error: "Укажите qrToken, submissionId или email" });
+    }
+
+    let targetEmail = email;
+    let targetName = "";
+    let targetToken = qrToken;
+    let eventTitle = "Мероприятие";
+    let details: Record<string, string> = {};
+
+    if (qrToken || submissionId) {
+      let snap: any = null;
+      if (qrToken) {
+        const qSnap = await db().collection(SUBS).where("qrToken", "==", String(qrToken)).limit(1).get();
+        if (!qSnap.empty) snap = qSnap.docs[0];
+      }
+      if (!snap && submissionId) {
+        const dSnap = await db().collection(SUBS).doc(String(submissionId)).get();
+        if (dSnap.exists) snap = dSnap;
+      }
+
+      if (snap) {
+        const subData = snap.data() || {};
+        targetEmail = targetEmail || subData.applicantEmail;
+        targetName = subData.applicantName || "Участник";
+        targetToken = subData.qrToken || targetToken;
+        eventTitle = subData.formTitle || eventTitle;
+        if (subData.participationFormat) details["Формат участия"] = subData.participationFormat;
+        if (subData.teamName) details["Команда"] = subData.teamName;
+      }
+    }
+
+    if (!targetEmail || !targetEmail.includes("@")) {
+      return res.status(400).json({ success: false, error: "Укажите корректный email получателя" });
+    }
+
+    const result = await sendFormTicketEmail({
+      to: targetEmail,
+      applicantName: targetName || "Участник",
+      eventTitle: eventTitle || "Мероприятие",
+      qrToken: targetToken || "TICKET",
+      details,
+    });
+
+    if (!result.sent) {
+      return res.status(500).json({ success: false, error: result.reason || "Ошибка отправки письма" });
+    }
+
+    return res.json({ success: true, message: `Билет успешно отправлен на адрес ${targetEmail}` });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }
@@ -864,9 +952,22 @@ router.post("/submissions/upsert", formsApiLimiter, authenticateFormApi, async (
         clean[f.id] = f.type === "checkbox" ? Boolean(raw) : str(raw, 2000);
       }
     }
-    Object.keys(inputData).forEach(k => {
-      if (clean[k] === undefined) clean[k] = inputData[k];
-    });
+    // Те же рамки, что и при обычной подаче: ключи сверх объявленных полей
+    // принимаются, но ограниченно — иначе через эту ручку в заявку можно
+    // записать что угодно.
+    {
+      const known = new Set(fields.map((f: any) => String(f.id)));
+      let extras = 0;
+      for (const [k, v] of Object.entries(inputData as Record<string, unknown>)) {
+        if (known.has(k) || clean[k] !== undefined) continue;
+        if (++extras > 30) break;
+        if (!/^[\w.-]{1,80}$/.test(k)) continue;
+        if (v === null || typeof v === "boolean" || typeof v === "number") { clean[k] = v; continue; }
+        if (typeof v !== "string") continue;
+        if (/^\s*data:/i.test(v)) continue;
+        clean[k] = str(v, 2000);
+      }
+    }
 
     const pick = (re: RegExp, exactId?: string) => {
       if (exactId && clean[exactId] !== undefined && String(clean[exactId]).trim()) {
