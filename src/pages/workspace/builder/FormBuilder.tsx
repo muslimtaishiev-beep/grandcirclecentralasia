@@ -248,6 +248,71 @@ export default function FormBuilder() {
     }
   };
 
+  /**
+   * Стереть заявку насовсем — только из корзины.
+   *
+   * Корзина спасает от случайного нажатия, но из неё нужен выход:
+   * пробные заявки и спам нельзя держать вечно, и в выгрузке их быть
+   * не должно.
+   */
+  const purgeSubmission = async (sub: any) => {
+    if (!confirm(`Стереть заявку «${sub.applicantName || 'без имени'}» насовсем?\n\nВернуть её будет нельзя.`)) return;
+    setBusySub(sub.id);
+    try {
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+      const res = await fetch('/api/forms/purge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tenantId: currentOrgId, submissionId: sub.id }),
+      });
+      const data = await res.json();
+      if (!data.success) alert(data.error || 'Не удалось стереть');
+    } catch (e: any) { alert(`Не удалось: ${e.message}`); }
+    finally { setBusySub(null); }
+  };
+
+  const purgeAll = async () => {
+    const count = submissions.filter((x: any) => x.deleted).length;
+    if (!confirm(`Очистить корзину — стереть ${count} заявок насовсем?\n\nВернуть их будет нельзя.`)) return;
+    setBusySub('all');
+    try {
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+      const res = await fetch('/api/forms/purge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tenantId: currentOrgId, all: true }),
+      });
+      const data = await res.json();
+      if (!data.success) alert(data.error || 'Не удалось');
+      else { alert(`Стёрто заявок: ${data.purged}`); setShowDeleted(false); }
+    } catch (e: any) { alert(`Не удалось: ${e.message}`); }
+    finally { setBusySub(null); }
+  };
+
+  /**
+   * Привести таблицу в соответствие со списком заявок.
+   *
+   * Таблица дописывается по строке на заявку и со временем расходится с
+   * кабинетом: остаются строки удалённых, задваиваются коды. Проверить
+   * глазами сотни строк нельзя — нужна кнопка.
+   */
+  const resyncSheet = async (formId: string) => {
+    if (!confirm('Переписать таблицу по текущему списку заявок?\n\nКолонки заявок будут собраны заново. Ваши пометки в колонках правее останутся, но могут оказаться не напротив своих строк, если порядок заявок изменился.')) return;
+    setBusySub(formId);
+    try {
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+      const res = await fetch('/api/forms/sheet/resync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tenantId: currentOrgId, formId }),
+      });
+      const data = await res.json();
+      if (!data.success) { alert(data.error || 'Не удалось'); return; }
+      alert(`Таблица обновлена: ${data.rows} заявок.`);
+    } catch (e: any) { alert(`Не удалось: ${e.message}`); }
+    finally { setBusySub(null); }
+  };
+
   const removeSubmission = async (sub: any, restore = false) => {
     if (!restore && !confirm(`Убрать заявку «${sub.applicantName || 'без имени'}» из списка? Её можно будет вернуть.`)) return;
     setBusySub(sub.id);
@@ -844,6 +909,28 @@ export default function FormBuilder() {
                 className="px-3 py-1.5 rounded-lg text-xs font-bold border border-[var(--border-color)] text-[var(--text-main)] hover:bg-black/5 dark:hover:bg-white/10">
                 Скачать
               </button>
+
+              {/* Таблица дописывается по строке на заявку и со временем
+                  расходится со списком: остаются строки удалённых заявок.
+                  Проверить глазами сотни строк нельзя — нужна кнопка. */}
+              {filterFormId && forms.find(f => f.id === filterFormId)?.sheetId && (
+                <button
+                  onClick={() => void resyncSheet(filterFormId)}
+                  disabled={busySub === filterFormId}
+                  title="Переписать таблицу по текущему списку заявок"
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold border border-[var(--border-color)] text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50">
+                  {busySub === filterFormId ? 'Обновляю…' : 'Обновить таблицу'}
+                </button>
+              )}
+
+              {showDeleted && deletedCount > 0 && (
+                <button
+                  onClick={() => void purgeAll()}
+                  disabled={busySub === 'all'}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-600 text-white hover:bg-red-500 disabled:opacity-50">
+                  {busySub === 'all' ? 'Стираю…' : `Очистить корзину (${deletedCount})`}
+                </button>
+              )}
             </div>
           </div>
 
@@ -953,12 +1040,21 @@ export default function FormBuilder() {
                         {sub.publicShown ? '◉ На сайте' : '○ На сайт'}
                       </button>
                       {sub.deleted ? (
-                        <button
-                          onClick={() => void removeSubmission(sub, true)}
-                          disabled={busySub === sub.id}
-                          className="ml-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 border border-amber-500/30 px-3 py-1 rounded-lg font-bold text-[11px] transition disabled:opacity-50">
-                          Вернуть
-                        </button>
+                        <>
+                          <button
+                            onClick={() => void removeSubmission(sub, true)}
+                            disabled={busySub === sub.id}
+                            className="ml-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 border border-amber-500/30 px-3 py-1 rounded-lg font-bold text-[11px] transition disabled:opacity-50">
+                            Вернуть
+                          </button>
+                          <button
+                            onClick={() => void purgeSubmission(sub)}
+                            disabled={busySub === sub.id}
+                            title="Стереть насовсем"
+                            className="ml-2 bg-red-500/10 hover:bg-red-500/20 text-red-600 border border-red-500/30 px-3 py-1 rounded-lg font-bold text-[11px] transition disabled:opacity-50">
+                            Стереть
+                          </button>
+                        </>
                       ) : (
                         <button
                           onClick={() => void removeSubmission(sub)}

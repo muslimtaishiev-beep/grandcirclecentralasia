@@ -1579,6 +1579,156 @@ router.post("/publish", requireFirebaseAuth, requireScreen("forms"), async (req:
 });
 
 /**
+ * POST /api/forms/sheet/resync — пересобрать таблицу формы заново.
+ *
+ * Таблица дописывается по одной строке при каждой заявке, и со временем
+ * расходится с кабинетом: остаются строки удалённых заявок, задвоенные
+ * коды после повторной выгрузки, пропуски от сбоев записи. Проверить
+ * глазами 450 строк невозможно — нужна кнопка «привести в порядок».
+ *
+ * Пересобираем ТОЛЬКО колонки заявки, слева направо. Всё, что человек
+ * дописал правее, остаётся на месте — но привязка к своей строке
+ * теряется, если порядок заявок изменился, поэтому в ответе честно
+ * говорим, сколько строк переписано.
+ */
+router.post("/sheet/resync", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
+  try {
+    const { tenantId, formId } = req.body || {};
+    if (!tenantId || !formId) return res.status(400).json({ success: false, error: "Bad request" });
+    if (!(await canManageForms(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+
+    const formSnap = await db().collection(FORMS).doc(String(formId)).get();
+    if (!formSnap.exists || formSnap.data()!.tenantId !== tenantId) {
+      return res.status(404).json({ success: false, error: "Форма не найдена" });
+    }
+    const form = formSnap.data()!;
+    const sheetId = String(form.sheetId || "");
+    if (!sheetId) return res.status(409).json({ success: false, error: "У этой анкеты ещё нет таблицы — нажмите «В таблицу»." });
+
+    const sheetRef = db().collection("tenants").doc(tenantId).collection("workspace_sheets").doc(sheetId);
+    const sheetSnap = await sheetRef.get();
+    if (!sheetSnap.exists) {
+      return res.status(409).json({ success: false, error: "Таблица была удалена — нажмите «В таблицу», чтобы создать заново." });
+    }
+
+    const subsSnap = await db().collection(SUBS).where("formId", "==", String(formId)).limit(2000).get();
+    const live = subsSnap.docs
+      .map(d => d.data())
+      .filter(x => !x.deleted)
+      .sort((a: any, b: any) => (a.createdAt?.toMillis?.() || 0) - (b.createdAt?.toMillis?.() || 0));
+
+    const fields: any[] = (Array.isArray(form.fields) ? form.fields : []).filter((f: any) => f.type !== "file");
+    const head = ["Дата", "Имя", "Телефон", "Почта", "Статус", "Код"].concat(fields.map((f: any) => String(f.label || f.id)));
+    const width = head.length;
+
+    const cells: Record<string, any> = { ...(sheetSnap.data()!.cells || {}) };
+
+    // Стираем прежние колонки заявок целиком: иначе строки от удалённых
+    // заявок остались бы хвостом внизу.
+    for (const key of Object.keys(cells)) {
+      const col = (key.match(/^[A-Z]+/) || [])[0] || "";
+      if (col.length === 1 && col.charCodeAt(0) - 65 < width) delete cells[key];
+    }
+
+    const put = (row: number, values: string[]) => values.forEach((v, i) => {
+      cells[`${columnName(i)}${row}`] = { rawValue: v, computedValue: v };
+    });
+
+    put(1, head);
+    live.forEach((sub: any, i: number) => {
+      put(i + 2, [
+        sub.createdAt?.toDate ? sub.createdAt.toDate().toLocaleString("ru-RU") : "",
+        String(sub.applicantName || ""),
+        String(sub.applicantPhone || ""),
+        String(sub.applicantEmail || ""),
+        STATUS_LABEL[(STATUSES.includes(sub.status) ? sub.status : "new") as Status] || "",
+        String(sub.qrToken || ""),
+      ].concat(fields.map((f: any) => String(sub.data?.[f.id] ?? ""))));
+    });
+
+    await sheetRef.update({
+      cells,
+      rowsCount: Math.max(100, live.length + 20),
+      columnsCount: Math.max(Number(sheetSnap.data()!.columnsCount) || 26, width + 2),
+      updatedAt: Date.now(),
+      lastEditedByStaffId: req.user?.uid || "",
+    });
+
+    return res.json({ success: true, rows: live.length });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * POST /api/forms/purge — стереть заявку окончательно.
+ *
+ * Корзина спасает от случайного нажатия, но из неё должен быть выход:
+ * пробные заявки, спам и дубли нельзя держать вечно, а в выгрузку и в
+ * счётчики они попадать не должны. Доступно только для того, что уже
+ * лежит в корзине — чтобы стереть, нужно сначала осознанно удалить.
+ *
+ * Строка из таблицы убирается вместе с заявкой: иначе в выгрузке
+ * остаются записи, которых в кабинете уже нет.
+ */
+router.post("/purge", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
+  try {
+    const { tenantId, submissionId, all } = req.body || {};
+    if (!tenantId) return res.status(400).json({ success: false, error: "Bad request" });
+    if (!(await canManageForms(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+
+    // Очистить всю корзину разом — иначе сотни пробных заявок придётся
+    // стирать по одной.
+    if (all === true) {
+      const snap = await db().collection(SUBS)
+        .where("tenantId", "==", tenantId).where("deleted", "==", true).limit(500).get();
+
+      let purged = 0;
+      for (const d of snap.docs) {
+        const sub = d.data();
+        const formSnap = await db().collection(FORMS).doc(String(sub.formId || "")).get();
+        if (formSnap.exists) {
+          await clearSheetRow({ ...formSnap.data(), id: formSnap.id }, String(sub.qrToken || ""));
+        }
+        await d.ref.delete();
+        purged++;
+      }
+      return res.json({ success: true, purged });
+    }
+
+    if (!submissionId) return res.status(400).json({ success: false, error: "Bad request" });
+    const ref = db().collection(SUBS).doc(String(submissionId));
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ success: false, error: "Заявка не найдена" });
+
+    const sub = snap.data()!;
+    if (sub.tenantId !== tenantId) {
+      return res.status(403).json({ success: false, error: "Заявка другой организации" });
+    }
+    // Только из корзины: стереть то, что на виду, одним нажатием нельзя.
+    if (sub.deleted !== true) {
+      return res.status(409).json({
+        success: false,
+        error: "Сначала уберите заявку в корзину — оттуда её можно стереть насовсем.",
+      });
+    }
+
+    const formSnap = await db().collection(FORMS).doc(String(sub.formId || "")).get();
+    if (formSnap.exists) {
+      await clearSheetRow({ ...formSnap.data(), id: formSnap.id }, String(sub.qrToken || ""));
+    }
+    await ref.delete();
+    return res.json({ success: true, purged: 1 });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
  * POST /api/forms/delete — убрать заявку из списка или вернуть обратно.
  *
  * В корзину, а не насовсем: заявку заполнял живой человек, и восстановить
