@@ -43,6 +43,7 @@
 | Список анкет | `GET /api/forms/public/list?tenantId={tenantId}` | Не требуется |
 | Получить поля анкеты | `GET /api/forms/public/{formId}` | Не требуется |
 | Отправить/обновить заявку | `POST /api/forms/submit` | Не требуется |
+| Отправить билет на почту | `POST /api/forms/send-ticket` | Не требуется |
 | Универсальный поиск заявок | `POST /api/forms/submissions/search` | `X-Api-Key` / `Authorization: Bearer` / `X-Tenant-ID` |
 | Частичное обновление заявки | `PATCH /api/forms/submissions/{submissionId}` | `X-Api-Key` / `Authorization: Bearer` / `X-Tenant-ID` |
 | Создание / Upsert заявки | `POST /api/forms/submissions/upsert` | `X-Api-Key` / `Authorization: Bearer` / `X-Tenant-ID` |
@@ -132,11 +133,12 @@ Content-Type: application/json
 ```json
 {
   "success": true,
-  "updated": true,
+  "updated": false,
+  "submissionId": "sub_9876543210",
   "qrToken": "T7L97QJLPR",
   "trackUrl": "/track/T7L97QJLPR",
-  "mode": "application",
-  "message": "Заявка успешно обновлена!"
+  "mode": "ticket",
+  "message": "Заявка принята."
 }
 ```
 

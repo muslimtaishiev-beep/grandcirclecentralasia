@@ -1,11 +1,13 @@
 import { Resend } from "resend";
 
-const resendApiKey = process.env.RESEND_API_KEY;
-const resend = resendApiKey ? new Resend(resendApiKey) : null;
+function getResend() {
+  const apiKey = process.env.RESEND_API_KEY;
+  return apiKey ? new Resend(apiKey) : null;
+}
 
-// Must be a domain verified in the Resend dashboard, or the shared Resend
-// sandbox sender ("onboarding@resend.dev") while a custom domain isn't set up yet.
-const FROM_ADDRESS = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+function getFromAddress() {
+  return process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+}
 
 function escapeHtml(value: string): string {
   return String(value ?? "")
@@ -61,6 +63,7 @@ interface TestResultEmailParams {
 }
 
 export async function sendTestResultEmail(params: TestResultEmailParams): Promise<{ sent: boolean; reason?: string }> {
+  const resend = getResend();
   if (!resend) return { sent: false, reason: "RESEND_API_KEY not configured" };
   if (!params.to || !params.to.includes("@")) return { sent: false, reason: "Invalid recipient email" };
 
@@ -107,7 +110,7 @@ export async function sendTestResultEmail(params: TestResultEmailParams): Promis
 
   try {
     const result = await resend.emails.send({
-      from: `${params.email?.fromName || tenantName || "Приёмная комиссия"} <${FROM_ADDRESS}>`,
+      from: `${params.email?.fromName || tenantName || "Приёмная комиссия"} <${getFromAddress()}>`,
       ...(params.email?.replyTo ? { reply_to: params.email.replyTo } : {}),
       to: params.to,
       subject: `Результаты вступительного тестирования — ${studentName}`,
@@ -130,6 +133,7 @@ interface StaffInviteEmailParams {
 }
 
 export async function sendStaffInviteEmail(params: StaffInviteEmailParams): Promise<{ sent: boolean; reason?: string }> {
+  const resend = getResend();
   if (!resend) return { sent: false, reason: "RESEND_API_KEY not configured" };
   if (!params.to || !params.to.includes("@")) return { sent: false, reason: "Invalid recipient email" };
 
@@ -162,7 +166,7 @@ export async function sendStaffInviteEmail(params: StaffInviteEmailParams): Prom
 
   try {
     const result = await resend.emails.send({
-      from: `${params.email?.fromName || tenantName || "Образовательная платформа"} <${FROM_ADDRESS}>`,
+      from: `${params.email?.fromName || tenantName || "Образовательная платформа"} <${getFromAddress()}>`,
       ...(params.email?.replyTo ? { reply_to: params.email.replyTo } : {}),
       to: params.to,
       subject: `Приглашение в «${tenantName}»`,
@@ -174,3 +178,84 @@ export async function sendStaffInviteEmail(params: StaffInviteEmailParams): Prom
     return { sent: false, reason: e?.message || "Unknown Resend error" };
   }
 }
+
+export interface FormTicketEmailParams {
+  email?: TenantEmailSettings;
+  to: string;
+  applicantName: string;
+  eventTitle: string;
+  qrToken: string;
+  ticketUrl?: string;
+  details?: Record<string, string>;
+}
+
+export async function sendFormTicketEmail(params: FormTicketEmailParams): Promise<{ sent: boolean; reason?: string }> {
+  const resend = getResend();
+  if (!resend) return { sent: false, reason: "RESEND_API_KEY not configured" };
+  if (!params.to || !params.to.includes("@")) return { sent: false, reason: "Invalid recipient email" };
+
+  const { applicantName, eventTitle, qrToken, ticketUrl, details } = params;
+  const link = ticketUrl || `https://logoshackathon.com/track/${encodeURIComponent(qrToken)}`;
+
+  let detailsRows = "";
+  if (details && Object.keys(details).length > 0) {
+    detailsRows = Object.entries(details)
+      .filter(([, v]) => v && String(v).trim())
+      .map(([k, v]) => `
+        <tr>
+          <td style="padding:8px 0;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:13px;">${escapeHtml(k)}</td>
+          <td style="padding:8px 0;border-bottom:1px solid #f1f5f9;color:#0f172a;font-size:14px;font-weight:600;text-align:right;">${escapeHtml(String(v))}</td>
+        </tr>`)
+      .join("");
+  }
+
+  const body = `
+    <p style="margin:0 0 4px;font-size:13px;color:#64748b;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;">Электронный билет</p>
+    <h1 style="margin:0 0 16px;font-size:22px;color:#0f172a;">Здравствуйте, ${escapeHtml(applicantName || "участник")}!</h1>
+    <p style="margin:0 0 24px;font-size:14px;line-height:22px;color:#475569;">
+      Спасибо за регистрацию на мероприятие «<strong style="color:#0f172a;">${escapeHtml(eventTitle || "Мероприятие")}</strong>». Ваш электронный билет успешно сформирован.
+    </p>
+    
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#1e1b4b,#312e81);border-radius:14px;margin-bottom:24px;color:#ffffff;">
+      <tr>
+        <td style="padding:24px;text-align:center;">
+          <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#c7d2fe;margin-bottom:6px;">Код билета / QR-токен</div>
+          <div style="font-size:28px;font-weight:800;letter-spacing:3px;font-family:monospace;color:#ffffff;">${escapeHtml(qrToken)}</div>
+        </td>
+      </tr>
+    </table>
+
+    ${detailsRows ? `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+      ${detailsRows}
+    </table>` : ""}
+
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0;">
+      <tr>
+        <td style="border-radius:10px;background:linear-gradient(135deg,#4f46e5,#7c3aed);">
+          <a href="${escapeHtml(link)}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">
+            Открыть билет и QR-код
+          </a>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:24px 0 0;font-size:12px;line-height:18px;color:#94a3b8;">
+      Сохраните этот код или письмо. Вы сможете предъявить QR-код или уникальный номер билета при входе на мероприятие.
+    </p>`;
+
+  try {
+    const result = await resend.emails.send({
+      from: `${params.email?.fromName || eventTitle || "Билетная система"} <${getFromAddress()}>`,
+      ...(params.email?.replyTo ? { reply_to: params.email.replyTo } : {}),
+      to: params.to,
+      subject: `Ваш билет на «${eventTitle}» — ${qrToken}`,
+      html: emailShell(eventTitle, body, params.email?.signature || ""),
+    });
+    if ((result as any)?.error) return { sent: false, reason: (result as any).error.message };
+    return { sent: true };
+  } catch (e: any) {
+    return { sent: false, reason: e?.message || "Unknown Resend error" };
+  }
+}
+
