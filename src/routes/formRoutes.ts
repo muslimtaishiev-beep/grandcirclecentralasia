@@ -1379,11 +1379,27 @@ router.get("/track/:token", async (req: any, res: any) => {
  *   notticket — QR не от билетной формы
  */
 router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
+  // Замер по этапам: у двери скан дольше трёх секунд — это очередь людей, и
+  // разбираться потом по одному «медленно было» нечем. В имитации входа
+  // один скан из 550 завис на 133 секунды, и без разбивки по этапам не было
+  // видно, где именно: в базе, в проверке прав или в самой отметке.
+  const marks: Array<[string, number]> = [];
+  const t0 = Date.now();
+  const mark = (name: string) => marks.push([name, Date.now() - t0]);
+  res.on("finish", () => {
+    const total = Date.now() - t0;
+    if (total > 3000) {
+      console.warn(`[Checkin] медленный скан ${total} мс (HTTP ${res.statusCode}): ` +
+        marks.map(([n, ms]) => `${n}=${ms}`).join(", "));
+    }
+  });
+
   try {
-    const { token } = req.body || {};
+    const { token, requestId } = req.body || {};
     if (!token) return res.status(400).json({ success: false, error: "Нужен код билета" });
 
     const byToken = await db().collection(SUBS).where("qrToken", "==", String(token).trim().toUpperCase()).limit(1).get();
+    mark("поиск билета");
     if (byToken.empty) {
       return res.status(404).json({ success: false, error: "Билет не найден" });
     }
@@ -1393,12 +1409,15 @@ router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
     // Организация должна быть активна, а раздел билетов — не закрыт платформой.
     const gate = await checkTenantOpen(sub.tenantId, req.user?.isSuperadmin ? undefined : "tickets");
     if (!gate.ok) return res.status(gate.status).json({ success: false, error: gate.error });
+    mark("организация");
     if (!(await canCheckTickets(req.user, String(sub.tenantId || "")))) {
       return res.status(403).json({ success: false, error: "Нет доступа к билетам этой организации" });
     }
+    mark("права волонтёра");
 
     const formSnap = await db().collection(FORMS).doc(String(sub.formId || "")).get();
     const form = formSnap.exists ? formSnap.data()! : null;
+    mark("форма");
     const guestName = sub.applicantName || "Без имени";
     if (!form || formMode(form) !== "ticket") {
       return res.json({ success: true, result: "notticket", guest: { name: guestName } });
@@ -1409,6 +1428,15 @@ router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
       const cur = fresh.data()!;
       const curStatus: Status = isFormStatus(cur.status) ? cur.status : "new";
       if (curStatus === "checked_in") {
+        // Та же самая попытка, повторённая после обрыва связи: сканер не
+        // получил ответ и спрашивает снова с тем же идентификатором.
+        // Гостю это не «уже входил» — он вошёл только что, по первому
+        // запросу. Тот же билет с ДРУГИМ идентификатором (скриншот в руках
+        // у друга) по-прежнему красный: отдельная попытка не может
+        // повторить чужую.
+        if (requestId && cur.checkinRequestId && cur.checkinRequestId === String(requestId).slice(0, 80)) {
+          return { result: "ok" as const, status: curStatus, checkedInAt: cur.checkedInAt || null, retried: true };
+        }
         return { result: "already" as const, status: curStatus, checkedInAt: cur.checkedInAt || null };
       }
       if (!TICKET_ACTIVE.includes(curStatus)) {
@@ -1418,6 +1446,8 @@ router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
       tx.update(subRef, {
         status: "checked_in",
         checkedInAt: now,
+        checkedInBy: req.user?.email || req.user?.uid || "scanner",
+        ...(requestId ? { checkinRequestId: String(requestId).slice(0, 80) } : {}),
         updatedAt: now,
         history: admin.firestore.FieldValue.arrayUnion({
           status: "checked_in", at: now,
@@ -1426,6 +1456,7 @@ router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
       });
       return { result: "ok" as const, status: "checked_in" as Status, checkedInAt: now };
     });
+    mark("отметка входа");
 
     return res.json({
       success: true,

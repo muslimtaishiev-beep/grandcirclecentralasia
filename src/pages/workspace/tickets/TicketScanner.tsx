@@ -3,6 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import { resolveWorkspaceConfig } from "../../../shared/workspaceConfig";
 
 import jsQR from "jsqr";
+import { performCheckin } from "../../../lib/checkinClient";
 import { QrCode, Camera, CameraOff, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { auth } from "../../../lib/firebase";
 
@@ -58,6 +59,8 @@ export default function TicketScanner() {
   const [outcome, setOutcome] = useState<ScanOutcome | null>(null);
   const [checkedCount, setCheckedCount] = useState(0);
   const outcomeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Идентификаторы попыток, оставшихся без ответа: код → { идентификатор, когда начали }.
+  const pendingRef = useRef<Map<string, { id: string; at: number }>>(new Map());
 
   const showOutcome = (o: ScanOutcome) => {
     setOutcome(o);
@@ -76,12 +79,15 @@ export default function TicketScanner() {
     busyRef.current = true;
     try {
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-      const res = await fetch("/api/forms/checkin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ token }),
-      });
-      const j = await res.json();
+      const outcome = await performCheckin({ token, idToken, pending: pendingRef.current });
+      if (outcome.kind === "offline") {
+        // Связи нет: этот же билет можно отсканировать сразу, а не через
+        // шесть секунд защиты от дребезга.
+        recentRef.current.delete(token);
+        showOutcome({ result: "error", error: "Нет связи — наведите на код ещё раз" });
+        return;
+      }
+      const j = outcome.body;
       if (!j.success) {
         showOutcome({ result: "error", error: j.error || "Билет не найден" });
         return;
@@ -89,7 +95,11 @@ export default function TicketScanner() {
       showOutcome(j);
       if (j.result === "ok") setCheckedCount(c => c + 1);
     } catch {
-      showOutcome({ result: "error", error: "Нет связи с сервером" });
+      // Токен входа без сети тоже не обновить: getIdToken падает до самого
+      // запроса. Без этого перехвата сканер молчал бы, а не говорил, что
+      // связи нет.
+      recentRef.current.delete(token);
+      showOutcome({ result: "error", error: "Нет связи — наведите на код ещё раз" });
     } finally { busyRef.current = false; }
   }, []);
 

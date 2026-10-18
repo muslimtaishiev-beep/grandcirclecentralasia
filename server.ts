@@ -38,14 +38,43 @@ app.use(helmet({
 
 
 
+// Эти два пути идут мимо общего счётчика — у каждого свой лимитер ниже.
+//
+// Общий лимит считается по адресу, а на мероприятии и волонтёры, и сотни
+// гостей сидят на одном Wi-Fi: у всех один внешний адрес. Гости открывали
+// страницы своих билетов, и всплеск у двери съедал 500 запросов в минуту
+// целиком — после чего сканер волонтёра получал отказ на каждый скан до
+// конца минуты. В имитации входа заблокированными оказались все пять
+// сканов подряд.
+const SEPARATE_BUCKET = ["/api/forms/checkin", "/api/forms/track/"];
+
 const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 500,
+  // Ответ JSON, как у остальных лимитеров: сканер на нечитаемый ответ
+  // показывал «Нет связи с сервером» или «Билет не найден», и волонтёр мог
+  // развернуть гостя с настоящим билетом.
+  message: { success: false, error: "Слишком много запросов подряд — подождите минуту." },
+  skip: (req: any) => SEPARATE_BUCKET.some(prefix => String(req.originalUrl || "").startsWith(prefix)),
   standardHeaders: true,
   legacyHeaders: false,
   validate: false,
 });
 app.use("/api/", apiLimiter);
+
+// Страница билета гостя: у входа её открывают сотни людей сразу, и она
+// должна выдерживать пик. Перебор кодов при этом по-прежнему упирается в
+// потолок: код из 10 знаков по 32 символа — это 50 бит, и 1500 попыток в
+// минуту с одного адреса не приблизят к угадыванию ни на шаг.
+const trackLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 1500,
+  message: { success: false, error: "Слишком много запросов подряд — подождите минуту." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+});
+app.use("/api/forms/track", trackLimiter);
 
 // Rate Limiter for Auth & Sensitive Endpoints
 const authLimiter = rateLimit({
