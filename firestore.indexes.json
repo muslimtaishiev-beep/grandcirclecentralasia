@@ -361,5 +361,11 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "workspace_sheets",
+      "fieldPath": "cells",
+      "indexes": []
+    }
+  ]
 }

@@ -90,18 +90,39 @@ async function appendToSheet(form: any, formId: string, submission: Record<strin
     const sheet = snap.data() || {};
     const cells: Record<string, any> = sheet.cells || {};
 
-    // Куда писать: сразу под последней занятой строкой. Так строка встаёт
-    // в конец даже если кто-то дописывал свои строки руками.
+    // Эта заявка уже в таблице? Тогда обновляем её строку, а не дописываем
+    // новую. Раньше функция всегда дописывала в конец, а маршруты
+    // upsert и PATCH вызывают её при каждом обновлении существующей
+    // заявки — каждое обновление давало ещё одну строку. У хакатона 442
+    // строки оказались 251 заявкой, а раздутая таблица упёрлась в лимит
+    // Firestore раньше, чем набралось настоящих заявок.
+    const code = String(submission.qrToken || "");
+    let existingRow = 0;
+    if (code) {
+      for (const [key, value] of Object.entries(cells)) {
+        if (/^F\d+$/.test(key) && String((value as any)?.rawValue || "") === code) {
+          existingRow = Number(key.slice(1));
+          break;
+        }
+      }
+    }
+
+    // Куда писать новую: сразу под последней занятой строкой. Так строка
+    // встаёт в конец даже если кто-то дописывал свои строки руками.
     let lastRow = 1;
     for (const key of Object.keys(cells)) {
       const row = Number((key.match(/\d+$/) || [])[0]);
       if (Number.isFinite(row) && row > lastRow) lastRow = row;
     }
-    const targetRow = lastRow + 1;
+    const targetRow = existingRow || lastRow + 1;
 
     const fields: any[] = (Array.isArray(form.fields) ? form.fields : []).filter((f: any) => f.type !== "file");
+    // Дата — когда заявка ПОДАНА, а не когда её последний раз правили.
+    const submittedAt = submission.createdAt?.toDate ? submission.createdAt.toDate() : new Date();
     const values = [
-      new Date().toLocaleString("ru-RU"),
+      existingRow
+        ? String(cells[`A${existingRow}`]?.rawValue ?? submittedAt.toLocaleString("ru-RU"))
+        : submittedAt.toLocaleString("ru-RU"),
       String(submission.applicantName || ""),
       String(submission.applicantPhone || ""),
       String(submission.applicantEmail || ""),
