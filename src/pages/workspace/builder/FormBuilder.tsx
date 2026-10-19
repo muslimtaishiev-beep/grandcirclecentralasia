@@ -28,6 +28,19 @@ import { STATUS_LABEL, STATUS_COLOR, MODE_STATUSES, type FormMode } from '../../
 import { auth } from '../../../lib/firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 
+/**
+ * Обрыв сети браузеры называют по-своему: Safari — «Load failed», Chrome —
+ * «Failed to fetch». Человек видел «Не удалось сменить статус: Load failed»
+ * и думал, что сломался кабинет, хотя у него просто пропал интернет.
+ */
+const humanError = (e: any): string =>
+  /load failed|failed to fetch|networkerror|network request failed/i.test(String(e?.message || e))
+    ? 'нет связи с сервером — проверьте интернет и повторите'
+    : String(e?.message || e);
+
+/** Поле анкеты, которое можно править из кабинета (файлы — нет). */
+const editableField = (f: any) => f && f.type !== 'file';
+
 export default function FormBuilder() {
   const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
@@ -303,7 +316,7 @@ export default function FormBuilder() {
       });
       const data = await res.json();
       if (!data.success) alert(data.error || 'Не удалось');
-    } catch (e: any) { alert(`Не удалось: ${e.message}`); }
+    } catch (e: any) { alert(`Не удалось: ${humanError(e)}`); }
     finally { setBusySub(null); }
   };
 
@@ -323,7 +336,7 @@ export default function FormBuilder() {
       if (!src) { alert('Документ не найден.'); return; }
       setDocView({ name: sub.applicantName || 'Документ', src: String(src) });
     } catch (e: any) {
-      alert(`Не удалось открыть документ: ${e.message}`);
+      alert(`Не удалось открыть документ: ${humanError(e)}`);
     } finally {
       setBusySub(null);
     }
@@ -348,7 +361,7 @@ export default function FormBuilder() {
       });
       const data = await res.json();
       if (!data.success) alert(data.error || 'Не удалось стереть');
-    } catch (e: any) { alert(`Не удалось: ${e.message}`); }
+    } catch (e: any) { alert(`Не удалось: ${humanError(e)}`); }
     finally { setBusySub(null); }
   };
 
@@ -366,7 +379,7 @@ export default function FormBuilder() {
       const data = await res.json();
       if (!data.success) alert(data.error || 'Не удалось');
       else { alert(`Стёрто заявок: ${data.purged}`); setShowDeleted(false); }
-    } catch (e: any) { alert(`Не удалось: ${e.message}`); }
+    } catch (e: any) { alert(`Не удалось: ${humanError(e)}`); }
     finally { setBusySub(null); }
   };
 
@@ -390,7 +403,7 @@ export default function FormBuilder() {
       const data = await res.json();
       if (!data.success) { alert(data.error || 'Не удалось'); return; }
       alert(`Таблица обновлена: ${data.rows} заявок.`);
-    } catch (e: any) { alert(`Не удалось: ${e.message}`); }
+    } catch (e: any) { alert(`Не удалось: ${humanError(e)}`); }
     finally { setBusySub(null); }
   };
 
@@ -407,7 +420,7 @@ export default function FormBuilder() {
       const data = await res.json();
       if (!data.success) alert(data.error || 'Не удалось');
       // onSnapshot сам обновит список.
-    } catch (e: any) { alert(`Не удалось: ${e.message}`); }
+    } catch (e: any) { alert(`Не удалось: ${humanError(e)}`); }
     finally { setBusySub(null); }
   };
 
@@ -563,7 +576,7 @@ export default function FormBuilder() {
 
       navigate(`/workspace/${currentOrgId}/sheets/${sheetId}`);
     } catch (e: any) {
-      alert(`Не удалось перенести в таблицу: ${e.message}`);
+      alert(`Не удалось перенести в таблицу: ${humanError(e)}`);
     } finally {
       setBusySub(null);
     }
@@ -703,18 +716,119 @@ export default function FormBuilder() {
    * Поэтому сначала окно, и только потом запрос.
    */
   const [statusDraft, setStatusDraft] = useState<
-    { sub: any; status: string; note: string; withNote: boolean } | null
+    { subs: any[]; status: string; note: string; withNote: boolean } | null
   >(null);
   const [statusBusy, setStatusBusy] = useState(false);
 
+  /**
+   * Выделенные заявки — для массовых действий.
+   *
+   * Действие применяется только к тому, что выделено И видно на экране:
+   * после смены фильтра невидимые заявки не должны меняться «втихую».
+   */
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggleSelected = (id: string) => setSelected(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  /** Итог пачки: сколько изменено и что пропущено — с причинами. */
+  const reportBulk = (data: any) => {
+    const skipped: any[] = Array.isArray(data.skipped) ? data.skipped : [];
+    const lines = [`Изменено заявок: ${data.updated || 0}.`];
+    if (skipped.length) {
+      lines.push(`Пропущено: ${skipped.length}.`);
+      skipped.slice(0, 8).forEach(x => lines.push(`• ${x.name}: ${x.reason}`));
+      if (skipped.length > 8) lines.push(`…и ещё ${skipped.length - 8}`);
+    }
+    alert(lines.join('\n'));
+  };
+
+  /** Массовая правка одного поля: { поле, значение } для выделенных заявок одной анкеты. */
+  const [fieldDraft, setFieldDraft] = useState<{ formId: string; fieldId: string; value: any } | null>(null);
+  const [fieldBusy, setFieldBusy] = useState(false);
+
+  const applyBulkField = async (subs: any[]) => {
+    if (!fieldDraft?.fieldId || !subs.length) return;
+    setFieldBusy(true);
+    try {
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+      const res = await fetch('/api/forms/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          tenantId: currentOrgId, action: 'field',
+          submissionIds: subs.map((x: any) => x.id), fieldId: fieldDraft.fieldId, value: fieldDraft.value,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) { alert(data.error || 'Не удалось изменить'); return; }
+      setFieldDraft(null);
+      setSelected(new Set());
+      reportBulk(data);
+    } catch (e: any) { alert(`Не удалось изменить: ${humanError(e)}`); }
+    finally { setFieldBusy(false); }
+  };
+
+  /** Правка ответов в одной заявке — черновик значений по id поля. */
+  const [editDraft, setEditDraft] = useState<Record<string, any> | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
+
+  const saveEdit = async (sub: any, changed: Record<string, any>) => {
+    setEditBusy(true);
+    try {
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+      const res = await fetch('/api/forms/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tenantId: currentOrgId, submissionId: sub.id, data: changed }),
+      });
+      const data = await res.json();
+      if (!data.success) { alert(data.error || 'Не удалось сохранить'); return; }
+      setEditDraft(null);
+    } catch (e: any) { alert(`Не удалось сохранить: ${humanError(e)}`); }
+    finally { setEditBusy(false); }
+  };
+
+  /** Поле ввода по типу поля анкеты: список — вариантами, галочка — галочкой. */
+  const fieldInput = (f: any, value: any, onChange: (v: any) => void) => {
+    const base = 'w-full px-2.5 py-1.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-lg text-sm text-[var(--text-main)]';
+    if (f.type === 'checkbox') {
+      return (
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" checked={value === true || String(value) === 'true'} onChange={e => onChange(e.target.checked)} />
+          <span>{value === true || String(value) === 'true' ? 'Отмечено' : 'Не отмечено'}</span>
+        </label>
+      );
+    }
+    if (f.type === 'select') {
+      return (
+        <select className={base} value={String(value ?? '')} onChange={e => onChange(e.target.value)}>
+          <option value="">— не выбрано —</option>
+          {(f.options || []).map((o: string) => <option key={o} value={o}>{o}</option>)}
+        </select>
+      );
+    }
+    if (f.type === 'textarea') {
+      return <textarea className={base} rows={3} value={String(value ?? '')} onChange={e => onChange(e.target.value)} />;
+    }
+    return (
+      <input className={base}
+        type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'}
+        value={String(value ?? '')} onChange={e => onChange(e.target.value)} />
+    );
+  };
+
   const askStatusChange = (sub: any, newStatus: string) => {
     if ((sub.status || 'new') === newStatus) return;
-    setStatusDraft({ sub, status: newStatus, note: '', withNote: true });
+    setStatusDraft({ subs: [sub], status: newStatus, note: '', withNote: true });
   };
 
   const applyStatusChange = async () => {
     if (!statusDraft) return;
-    const { sub, status, note, withNote } = statusDraft;
+    const { subs, status, note, withNote } = statusDraft;
+    if (!subs.length) return;
 
     // Галочка снята — комментарий не спрашиваем вовсе. Она включена, но
     // поле пустое — не даём сохранить: пустой комментарий в истории
@@ -724,22 +838,23 @@ export default function FormBuilder() {
     setStatusBusy(true);
     try {
       const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
-      const res = await fetch('/api/forms/status', {
+      // Одна заявка — обычная смена статуса; несколько — одной пачкой, с
+      // отчётом, какие пропущены и почему.
+      const single = subs.length === 1;
+      const res = await fetch(single ? '/api/forms/status' : '/api/forms/bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          tenantId: currentOrgId,
-          submissionId: sub.id,
-          status,
-          note: withNote ? note.trim() : '',
-        }),
+        body: JSON.stringify(single
+          ? { tenantId: currentOrgId, submissionId: subs[0].id, status, note: withNote ? note.trim() : '' }
+          : { tenantId: currentOrgId, action: 'status', submissionIds: subs.map((x: any) => x.id), status, note: withNote ? note.trim() : '' }),
       });
       const data = await res.json();
       if (!data.success) { alert(data.error || 'Не удалось сменить статус'); return; }
       setStatusDraft(null);
+      if (!single) { reportBulk(data); setSelected(new Set()); }
       // onSnapshot сам подтянет обновление — локально ничего не трогаем.
     } catch(e: any) {
-      alert(`Не удалось сменить статус: ${e.message}`);
+      alert(`Не удалось сменить статус: ${humanError(e)}`);
     } finally {
       setStatusBusy(false);
     }
@@ -1117,6 +1232,36 @@ export default function FormBuilder() {
             </div>
           )}
 
+        {(() => {
+          // Только выделенное И видимое: заявки, скрытые фильтром, не
+          // должны меняться «втихую».
+          const picked = visibleSubs.filter((x: any) => selected.has(x.id) && !x.deleted);
+          if (!picked.length) return null;
+          const formIds = [...new Set(picked.map((x: any) => x.formId))];
+          const oneForm = formIds.length === 1 ? forms.find(f => f.id === formIds[0]) : null;
+          return (
+            <div className="sticky top-2 z-20 bg-emerald-600 text-white rounded-2xl px-4 py-2.5 flex flex-wrap items-center gap-2 shadow-lg">
+              <span className="text-sm font-bold mr-1">Выбрано: {picked.length}</span>
+              <button
+                onClick={() => setStatusDraft({ subs: picked, status: 'approved', note: '', withNote: false })}
+                className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-bold">
+                Сменить статус
+              </button>
+              <button
+                onClick={() => oneForm
+                  ? setFieldDraft({ formId: oneForm.id, fieldId: '', value: '' })
+                  : alert('Выбраны заявки разных анкет — у них разные поля. Отфильтруйте по одной анкете.')}
+                className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-bold">
+                Изменить поле
+              </button>
+              <button onClick={() => setSelected(new Set())}
+                className="ml-auto px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-white/15">
+                Снять выделение
+              </button>
+            </div>
+          );
+        })()}
+
         <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-xs">
           {visibleSubs.length === 0 ? (
             <div className="p-12 text-center text-[var(--text-muted)] text-xs">
@@ -1130,6 +1275,15 @@ export default function FormBuilder() {
             <table className="w-full text-left text-xs">
               <thead className="bg-[var(--bg-panel)] border-b border-[var(--border-color)] text-[var(--text-muted)] font-mono uppercase text-[11px]">
                 <tr>
+                  <th className="pl-5 pr-1 py-3 w-8">
+                    <input type="checkbox" aria-label="Выбрать все видимые"
+                      checked={visibleSubs.length > 0 && visibleSubs.every((x: any) => selected.has(x.id))}
+                      onChange={e => setSelected(prev => {
+                        const next = new Set(prev);
+                        visibleSubs.forEach((x: any) => e.target.checked ? next.add(x.id) : next.delete(x.id));
+                        return next;
+                      })} />
+                  </th>
                   <th className="px-5 py-3 font-medium">Заявитель / ФИО</th>
                   <th className="px-5 py-3 font-medium">Форма</th>
                   <th className="px-5 py-3 font-medium">Ответы</th>
@@ -1140,7 +1294,11 @@ export default function FormBuilder() {
               </thead>
               <tbody className="divide-y divide-[var(--border-color)]">
                 {visibleSubs.map(sub => (
-                  <tr key={sub.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition">
+                  <tr key={sub.id} className={`transition ${selected.has(sub.id) ? 'bg-emerald-500/5' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}>
+                    <td className="pl-5 pr-1 py-3.5 w-8">
+                      <input type="checkbox" aria-label="Выбрать заявку"
+                        checked={selected.has(sub.id)} onChange={() => toggleSelected(sub.id)} />
+                    </td>
                     <td className="px-5 py-3.5">
                       <div className="font-bold text-[var(--text-main)]">{sub.applicantName || 'Неизвестный'}</div>
                       <div className="text-[11px] text-[var(--text-muted)]">{sub.applicantPhone || sub.applicantEmail || 'Без контакта'}</div>
@@ -1257,6 +1415,72 @@ export default function FormBuilder() {
         </div>
       )}
 
+      {/* Массовая правка одного поля у выделенных заявок одной анкеты. */}
+      {fieldDraft && (() => {
+        const form = forms.find(f => f.id === fieldDraft.formId);
+        const fields = (form?.fields || []).filter(editableField);
+        const field = fields.find((x: any) => x.id === fieldDraft.fieldId);
+        const picked = visibleSubs.filter((x: any) => selected.has(x.id) && !x.deleted && x.formId === fieldDraft.formId);
+        return (
+          <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => !fieldBusy && setFieldDraft(null)}>
+            <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl"
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-start justify-between border-b border-[var(--border-color)] pb-3">
+                <div>
+                  <h3 className="text-lg font-bold">Изменить поле</h3>
+                  <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                    {form?.title || 'Анкета'} · выбрано заявок: {picked.length}
+                  </p>
+                </div>
+                <button onClick={() => setFieldDraft(null)} disabled={fieldBusy}
+                  className="p-2 hover:bg-black/10 rounded-xl text-slate-400 disabled:opacity-40">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-semibold text-[var(--text-muted)]">Поле</label>
+                <select
+                  value={fieldDraft.fieldId}
+                  onChange={e => {
+                    const f = fields.find((x: any) => x.id === e.target.value);
+                    setFieldDraft({ ...fieldDraft, fieldId: e.target.value, value: f?.type === 'checkbox' ? false : '' });
+                  }}
+                  className="w-full px-2.5 py-1.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-lg text-sm">
+                  <option value="">— выберите поле —</option>
+                  {fields.map((f: any) => <option key={f.id} value={f.id}>{f.label || f.id}</option>)}
+                </select>
+              </div>
+
+              {field && (
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-semibold text-[var(--text-muted)]">Новое значение для всех</label>
+                  {fieldInput(field, fieldDraft.value, v => setFieldDraft({ ...fieldDraft, value: v }))}
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Прежние значения сохранятся в истории каждой заявки.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button onClick={() => setFieldDraft(null)} disabled={fieldBusy}
+                  className="px-4 py-2 rounded-xl border border-[var(--border-color)] font-bold text-sm disabled:opacity-40">
+                  Отмена
+                </button>
+                <button
+                  onClick={() => void applyBulkField(picked)}
+                  disabled={fieldBusy || !field}
+                  className="px-5 py-2 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-500 disabled:opacity-40 inline-flex items-center gap-2">
+                  {fieldBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>Изменить у {picked.length}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Смена статуса с ответом заявителю: текст появится у него на
           странице отслеживания рядом с новым статусом. */}
       {statusDraft && (
@@ -1268,7 +1492,9 @@ export default function FormBuilder() {
               <div>
                 <h3 className="text-lg font-bold">Смена статуса</h3>
                 <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-                  {statusDraft.sub.applicantName || 'Без имени'} — {statusDraft.sub.formTitle || 'Заявка'}
+                  {statusDraft.subs.length === 1
+                    ? `${statusDraft.subs[0].applicantName || 'Без имени'} — ${statusDraft.subs[0].formTitle || 'Заявка'}`
+                    : `Выбрано заявок: ${statusDraft.subs.length}`}
                 </p>
               </div>
               <button onClick={() => setStatusDraft(null)} disabled={statusBusy}
@@ -1277,13 +1503,28 @@ export default function FormBuilder() {
               </button>
             </div>
 
-            <div className="flex items-center gap-2 text-sm">
-              <span className={`w-2 h-2 rounded-full ${STATUS_COLOR[(statusDraft.sub.status || 'new') as keyof typeof STATUS_COLOR]}`} />
-              <span className="text-[var(--text-muted)]">{STATUS_LABEL[(statusDraft.sub.status || 'new') as keyof typeof STATUS_LABEL]}</span>
-              <span className="text-[var(--text-muted)]">→</span>
-              <span className={`w-2 h-2 rounded-full ${STATUS_COLOR[statusDraft.status as keyof typeof STATUS_COLOR]}`} />
-              <span className="font-bold">{STATUS_LABEL[statusDraft.status as keyof typeof STATUS_LABEL]}</span>
-            </div>
+            {statusDraft.subs.length === 1 ? (
+              <div className="flex items-center gap-2 text-sm">
+                <span className={`w-2 h-2 rounded-full ${STATUS_COLOR[(statusDraft.subs[0].status || 'new') as keyof typeof STATUS_COLOR]}`} />
+                <span className="text-[var(--text-muted)]">{STATUS_LABEL[(statusDraft.subs[0].status || 'new') as keyof typeof STATUS_LABEL]}</span>
+                <span className="text-[var(--text-muted)]">→</span>
+                <span className={`w-2 h-2 rounded-full ${STATUS_COLOR[statusDraft.status as keyof typeof STATUS_COLOR]}`} />
+                <span className="font-bold">{STATUS_LABEL[statusDraft.status as keyof typeof STATUS_LABEL]}</span>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <label className="block text-[11px] font-semibold text-[var(--text-muted)]">Новый статус для всех выбранных</label>
+                <select
+                  value={statusDraft.status}
+                  onChange={e => setStatusDraft({ ...statusDraft, status: e.target.value })}
+                  className="w-full px-2.5 py-1.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-lg text-sm">
+                  {Object.entries(STATUS_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                </select>
+                <p className="text-[11px] text-[var(--text-muted)]">
+                  Заявки, которым этот статус не подходит по анкете, будут пропущены — покажем, какие и почему.
+                </p>
+              </div>
+            )}
 
             <label className="flex items-center gap-2.5 cursor-pointer select-none">
               <input type="checkbox" checked={statusDraft.withNote}
@@ -1334,42 +1575,99 @@ export default function FormBuilder() {
       )}
 
       {/* Окно с полной заявкой: в таблице видна только выжимка. */}
-      {subView && (
+      {subView && (() => {
+        // Окно держит живую версию: после правки или смены статуса снимок
+        // приходит через onSnapshot, и окно сразу показывает новое.
+        const liveSub = submissions.find(x => x.id === subView.id) || subView;
+        const form = forms.find(f => f.id === liveSub.formId);
+        const formFields: any[] = form?.fields || [];
+        const close = () => { if (!editBusy) { setSubView(null); setEditDraft(null); } };
+        return (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setSubView(null)}>
+          onClick={close}>
           <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-3xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6 space-y-4 shadow-2xl"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-start justify-between border-b border-[var(--border-color)] pb-3">
               <div>
-                <h3 className="text-lg font-bold">{subView.applicantName || 'Без имени'}</h3>
+                <h3 className="text-lg font-bold">{liveSub.applicantName || 'Без имени'}</h3>
                 <p className="text-[11px] text-[var(--text-muted)]">
-                  {subView.formTitle || 'Заявка'}
-                  {subView.createdAt?.seconds
-                    ? ` · ${new Date(subView.createdAt.seconds * 1000).toLocaleString('ru-RU')}`
+                  {liveSub.formTitle || 'Заявка'}
+                  {liveSub.createdAt?.seconds
+                    ? ` · ${new Date(liveSub.createdAt.seconds * 1000).toLocaleString('ru-RU')}`
                     : ''}
                 </p>
               </div>
-              <button onClick={() => setSubView(null)} className="p-2 hover:bg-black/10 rounded-xl text-slate-400">
+              <button onClick={close} className="p-2 hover:bg-black/10 rounded-xl text-slate-400">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="flex items-center gap-2 text-xs">
-              <span className={`w-2 h-2 rounded-full ${STATUS_COLOR[(subView.status || 'new') as keyof typeof STATUS_COLOR]}`} />
-              <span className="font-bold">{STATUS_LABEL[(subView.status || 'new') as keyof typeof STATUS_LABEL]}</span>
-              {subView.qrToken && <span className="ml-auto font-mono text-[var(--text-muted)]">{subView.qrToken}</span>}
+              <span className={`w-2 h-2 rounded-full ${STATUS_COLOR[(liveSub.status || 'new') as keyof typeof STATUS_COLOR]}`} />
+              <span className="font-bold">{STATUS_LABEL[(liveSub.status || 'new') as keyof typeof STATUS_LABEL]}</span>
+              {liveSub.qrToken && <span className="ml-auto font-mono text-[var(--text-muted)]">{liveSub.qrToken}</span>}
             </div>
 
-            {(subView.applicantPhone || subView.applicantEmail) && (
+            {(liveSub.applicantPhone || liveSub.applicantEmail) && (
               <div className="text-xs text-[var(--text-muted)]">
-                {[subView.applicantPhone, subView.applicantEmail].filter(Boolean).join(' · ')}
+                {[liveSub.applicantPhone, liveSub.applicantEmail].filter(Boolean).join(' · ')}
               </div>
             )}
 
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] font-semibold text-[var(--text-muted)]">Ответы</div>
+              {!liveSub.deleted && formFields.some(editableField) && !editDraft && (
+                <button
+                  onClick={() => {
+                    const draft: Record<string, any> = {};
+                    formFields.filter(editableField).forEach(f => { draft[f.id] = liveSub.data?.[f.id] ?? (f.type === 'checkbox' ? false : ''); });
+                    setEditDraft(draft);
+                  }}
+                  className="text-[11px] font-bold text-emerald-600 hover:underline">
+                  Изменить ответы
+                </button>
+              )}
+            </div>
+
+            {editDraft ? (
+              <div className="space-y-3">
+                {formFields.filter(editableField).map(f => (
+                  <div key={f.id} className="space-y-1">
+                    <label className="block text-[11px] font-semibold text-[var(--text-muted)]">{f.label || f.id}</label>
+                    {fieldInput(f, editDraft[f.id], v => setEditDraft({ ...editDraft, [f.id]: v }))}
+                  </div>
+                ))}
+                <p className="text-[11px] text-[var(--text-muted)]">
+                  Файлы и фото здесь не меняются. Прежние значения останутся в истории.
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setEditDraft(null)} disabled={editBusy}
+                    className="px-4 py-2 rounded-xl border border-[var(--border-color)] font-bold text-sm disabled:opacity-40">
+                    Отмена
+                  </button>
+                  <button onClick={() => {
+                      // Отправляем только изменённое: иначе каждое поле попадёт
+                      // в историю как «правка», хотя его никто не трогал.
+                      const changed: Record<string, any> = {};
+                      Object.entries(editDraft).forEach(([k, v]) => {
+                        const before = liveSub.data?.[k];
+                        if (String(before ?? '') !== String(v ?? '') && !(before == null && (v === '' || v === false))) changed[k] = v;
+                      });
+                      if (!Object.keys(changed).length) { setEditDraft(null); return; }
+                      void saveEdit(liveSub, changed);
+                    }}
+                    disabled={editBusy}
+                    className="px-5 py-2 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-500 disabled:opacity-40 inline-flex items-center gap-2">
+                    {editBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    <span>Сохранить</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
             <div className="space-y-2">
               {(() => {
-                const labels = labelsOf(subView.formId);
-                const entries = Object.entries(subView.data || {});
+                const labels = labelsOf(liveSub.formId);
+                const entries = Object.entries(liveSub.data || {});
                 if (!entries.length) return <p className="text-xs text-[var(--text-muted)]">Ответов нет.</p>;
                 return entries.map(([k, v]) => {
                   const value = String(v ?? '');
@@ -1389,23 +1687,53 @@ export default function FormBuilder() {
                 });
               })()}
             </div>
-
-            {Array.isArray(subView.history) && subView.history.length > 0 && (
-              <div className="pt-2">
-                <div className="text-[11px] font-semibold text-[var(--text-muted)] mb-1">Ход рассмотрения</div>
-                {subView.history.map((h: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between text-[11px] py-0.5">
-                    <span>{STATUS_LABEL[h.status as keyof typeof STATUS_LABEL] || h.status}</span>
-                    <span className="text-[var(--text-muted)] font-mono">
-                      {h.at?.seconds ? new Date(h.at.seconds * 1000).toLocaleDateString('ru-RU') : ''}
-                    </span>
-                  </div>
-                ))}
-              </div>
             )}
+
+            {(() => {
+              // Одна лента: смены статуса (с ответом заявителю) и правки
+              // ответов. Новое сверху; у каждой записи — кто и когда.
+              const ts = (x: any) => x?.seconds ? x.seconds * 1000 : (typeof x === 'string' ? Date.parse(x) : 0);
+              const show = (v: any) => v === true ? 'да' : v === false ? 'нет' : (v == null || v === '' ? '—' : String(v));
+              const items = [
+                ...(Array.isArray(liveSub.history) ? liveSub.history : []).map((h: any) => ({ kind: 'status', at: ts(h.at), by: h.by, h })),
+                ...(Array.isArray(liveSub.changes) ? liveSub.changes : []).map((c: any) => ({ kind: 'field', at: ts(c.at), by: c.by, c })),
+              ].sort((a, b) => b.at - a.at);
+              if (!items.length) return null;
+              return (
+                <div className="pt-2 space-y-1.5">
+                  <div className="text-[11px] font-semibold text-[var(--text-muted)]">История изменений</div>
+                  {items.map((it, i) => (
+                    <div key={i} className="text-[11px] border-l-2 border-[var(--border-color)] pl-2 py-0.5">
+                      <div className="flex items-center justify-between gap-2">
+                        {it.kind === 'status' ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_COLOR[it.h.status as keyof typeof STATUS_COLOR] || 'bg-slate-400'}`} />
+                            <span className="font-semibold">{STATUS_LABEL[it.h.status as keyof typeof STATUS_LABEL] || it.h.status}</span>
+                          </span>
+                        ) : (
+                          <span className="min-w-0">
+                            <span className="font-semibold">{it.c.label || it.c.field}:</span>{' '}
+                            <span className="text-[var(--text-muted)] line-through break-words">{show(it.c.from)}</span>
+                            {' → '}<span className="break-words">{show(it.c.to)}</span>
+                          </span>
+                        )}
+                        <span className="text-[var(--text-muted)] font-mono shrink-0">
+                          {it.at ? new Date(it.at).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) : ''}
+                        </span>
+                      </div>
+                      {it.kind === 'status' && it.h.note && (
+                        <div className="text-[var(--text-main)] whitespace-pre-wrap break-words mt-0.5">Ответ заявителю: {it.h.note}</div>
+                      )}
+                      {it.by && <div className="text-[var(--text-muted)]">{it.by}</div>}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         </div>
-      )}
+      );
+      })()}
 
       {/* Modal: Form Builder */}
       {isModalOpen && (

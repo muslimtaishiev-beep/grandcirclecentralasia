@@ -65,85 +65,112 @@ function columnName(index: number): string {
 }
 
 /**
- * Дописать заявку строкой в таблицу формы.
+ * Записать заявки в таблицу формы: существующие строки обновить, новые
+ * дописать вниз.
  *
  * Пишем на сервере, а не в кабинете: заявка приходит, когда кабинет может
  * быть ни у кого не открыт, и строка всё равно должна появиться.
  *
- * Только ДОПИСЫВАЕМ вниз, ничего не перезаписывая: в таблице люди ведут
- * свои пометки в соседних колонках, и перестройка листа стирала бы их
- * работу при каждой новой заявке.
+ * Пачка целиком — одно чтение и одна запись. Массовая смена статуса или
+ * правка поля у сотни заявок построчно означала бы сотню перезаписей
+ * одного документа, а Firestore держит около одной записи в секунду на
+ * документ: пачка стояла бы минуты и падала по таймауту функции.
+ *
+ * Внутри транзакции: если кто-то в эту же секунду правит таблицу руками,
+ * его правка не потеряется — транзакция перечитает лист и повторит.
+ *
+ * Строка заявки ищется по коду в колонке F. Найдена — обновляем её
+ * колонки (дата подачи остаётся прежней); нет — дописываем под последней
+ * занятой строкой. Раньше функция всегда дописывала в конец, и каждое
+ * обновление заявки через upsert/PATCH давало ещё одну строку: у хакатона
+ * 442 строки оказались 251 заявкой.
  *
  * Ошибку глотаем: таблица — удобство, а падение записи в неё не должно
- * оборачиваться для человека отказом в приёме заявки.
+ * оборачиваться отказом в приёме заявки или в смене статуса.
  */
-async function appendToSheet(form: any, formId: string, submission: Record<string, any>): Promise<void> {
+async function upsertSheetRows(form: any, submissions: Array<Record<string, any>>): Promise<void> {
   try {
     const tenantId = String(form?.tenantId || "");
     const sheetId = String(form?.sheetId || "");
-    if (!tenantId || !sheetId) return;
+    if (!tenantId || !sheetId || !submissions.length) return;
 
     const sheetRef = db().collection("tenants").doc(tenantId).collection("workspace_sheets").doc(sheetId);
-    const snap = await sheetRef.get();
-    if (!snap.exists) return;
+    const fields: any[] = (Array.isArray(form.fields) ? form.fields : []).filter((f: any) => f.type !== "file");
 
-    const sheet = snap.data() || {};
-    const cells: Record<string, any> = sheet.cells || {};
+    await db().runTransaction(async tx => {
+      const snap = await tx.get(sheetRef);
+      if (!snap.exists) return;
+      const sheet = snap.data() || {};
+      const cells: Record<string, any> = { ...(sheet.cells || {}) };
 
-    // Эта заявка уже в таблице? Тогда обновляем её строку, а не дописываем
-    // новую. Раньше функция всегда дописывала в конец, а маршруты
-    // upsert и PATCH вызывают её при каждом обновлении существующей
-    // заявки — каждое обновление давало ещё одну строку. У хакатона 442
-    // строки оказались 251 заявкой, а раздутая таблица упёрлась в лимит
-    // Firestore раньше, чем набралось настоящих заявок.
-    const code = String(submission.qrToken || "");
-    let existingRow = 0;
-    if (code) {
+      const rowByCode = new Map<string, number>();
+      let lastRow = 1;
       for (const [key, value] of Object.entries(cells)) {
-        if (/^F\d+$/.test(key) && String((value as any)?.rawValue || "") === code) {
-          existingRow = Number(key.slice(1));
-          break;
+        const row = Number((key.match(/\d+$/) || [])[0]);
+        if (Number.isFinite(row) && row > lastRow) lastRow = row;
+        if (/^F\d+$/.test(key)) {
+          const code = String((value as any)?.rawValue || "");
+          if (code && !rowByCode.has(code)) rowByCode.set(code, row);
         }
       }
-    }
 
-    // Куда писать новую: сразу под последней занятой строкой. Так строка
-    // встаёт в конец даже если кто-то дописывал свои строки руками.
-    let lastRow = 1;
-    for (const key of Object.keys(cells)) {
-      const row = Number((key.match(/\d+$/) || [])[0]);
-      if (Number.isFinite(row) && row > lastRow) lastRow = row;
-    }
-    const targetRow = existingRow || lastRow + 1;
+      for (const sub of submissions) {
+        const code = String(sub.qrToken || "");
+        const existingRow = code ? rowByCode.get(code) || 0 : 0;
+        const row = existingRow || ++lastRow;
+        if (!existingRow && code) rowByCode.set(code, row);
 
-    const fields: any[] = (Array.isArray(form.fields) ? form.fields : []).filter((f: any) => f.type !== "file");
-    // Дата — когда заявка ПОДАНА, а не когда её последний раз правили.
-    const submittedAt = submission.createdAt?.toDate ? submission.createdAt.toDate() : new Date();
-    const values = [
-      existingRow
-        ? String(cells[`A${existingRow}`]?.rawValue ?? submittedAt.toLocaleString("ru-RU"))
-        : submittedAt.toLocaleString("ru-RU"),
-      String(submission.applicantName || ""),
-      String(submission.applicantPhone || ""),
-      String(submission.applicantEmail || ""),
-      STATUS_LABEL[(submission.status || "new") as Status] || "",
-      String(submission.qrToken || ""),
-    ].concat(fields.map((f: any) => String(submission.data?.[f.id] ?? "")));
+        // Дата — когда заявка ПОДАНА, а не когда её последний раз правили.
+        const submittedAt = sub.createdAt?.toDate ? sub.createdAt.toDate() : new Date();
+        const values = [
+          existingRow
+            ? String(cells[`A${row}`]?.rawValue ?? submittedAt.toLocaleString("ru-RU"))
+            : submittedAt.toLocaleString("ru-RU"),
+          String(sub.applicantName || ""),
+          String(sub.applicantPhone || ""),
+          String(sub.applicantEmail || ""),
+          STATUS_LABEL[(STATUSES.includes(sub.status) ? sub.status : "new") as Status] || "",
+          code,
+        ].concat(fields.map((f: any) => String(sub.data?.[f.id] ?? "")));
 
-    const patch: Record<string, any> = {
-      updatedAt: Date.now(),
-      rowsCount: Math.max(Number(sheet.rowsCount) || 100, targetRow + 10),
-    };
-    // Пустой ответ записываем пустой ячейкой, а не пропускаем: пропуск
-    // оставлял в этом месте то, что лежало там раньше, и строка выглядела
-    // собранной из разных заявок.
-    values.forEach((value, i) => {
-      patch[`cells.${columnName(i)}${targetRow}`] = { rawValue: value, computedValue: value };
+        // Пустой ответ — пустой ячейкой, а не пропуском: пропуск оставлял на
+        // этом месте прежнее значение, и строка выглядела собранной из
+        // разных заявок.
+        values.forEach((value, i) => {
+          cells[`${columnName(i)}${row}`] = { rawValue: value, computedValue: value };
+        });
+      }
+
+      tx.update(sheetRef, {
+        cells,
+        updatedAt: Date.now(),
+        rowsCount: Math.max(Number(sheet.rowsCount) || 100, lastRow + 10),
+      });
     });
-    await sheetRef.update(patch);
   } catch (e: any) {
-    console.warn("[Forms/Sheet] Не удалось дописать заявку в таблицу:", e.message);
+    console.warn("[Forms/Sheet] Не удалось записать заявки в таблицу:", e.message);
   }
+}
+
+/**
+ * Дождаться записи, которую раньше запускали фоном, — но не дольше limitMs.
+ *
+ * Сервер работает на Vercel как функция: после ответа её могут заморозить,
+ * и всё, что было запущено «в фоне», не доделывается. На проде 2 из 20
+ * заявок не дошли до таблицы именно так. Поэтому запись в таблицу и
+ * отправка билета теперь часть ответа. Предел — чтобы медленная таблица
+ * не держала заявителя: не успели — таблицу чинит «Обновить таблицу».
+ */
+async function settle(work: Promise<unknown>, limitMs = 4000): Promise<void> {
+  await Promise.race([
+    work.catch(() => {}),
+    new Promise(resolve => setTimeout(resolve, limitMs)),
+  ]);
+}
+
+/** Одна заявка — частный случай пачки. */
+async function appendToSheet(form: any, _formId: string, submission: Record<string, any>): Promise<void> {
+  return upsertSheetRows(form, [submission]);
 }
 
 // ─────────────────────────── Публичная часть ───────────────────────────
@@ -534,14 +561,14 @@ router.post("/submit", async (req: any, res: any) => {
         });
 
         // Обновляем строку в таблице
-        void appendToSheet(form, String(formId), {
+        await settle(appendToSheet(form, String(formId), {
           applicantName: applicantName || existingData.applicantName,
           applicantPhone: applicantPhone || existingData.applicantPhone,
           applicantEmail: applicantEmail || existingData.applicantEmail,
           status: existingData.status || "new",
           qrToken: existingData.qrToken,
           data: mergedData,
-        });
+        }));
 
         return res.json({
           success: true,
@@ -571,10 +598,10 @@ router.post("/submit", async (req: any, res: any) => {
       updatedAt: admin.firestore.Timestamp.now(),
     });
 
-    void appendToSheet(form, String(formId), {
+    await settle(appendToSheet(form, String(formId), {
       applicantName, applicantPhone, applicantEmail,
       status: "new", qrToken, data: clean,
-    });
+    }));
 
     // ✉️ Автоматическая отправка электронного билета на почту, если указан e-mail
     if (applicantEmail && applicantEmail.includes("@")) {
@@ -582,13 +609,13 @@ router.post("/submit", async (req: any, res: any) => {
       if (participationFormat) emailDetails["Формат участия"] = participationFormat;
       if (teamName) emailDetails["Команда"] = teamName;
 
-      void sendFormTicketEmail({
+      await settle(sendFormTicketEmail({
         to: applicantEmail,
         applicantName: applicantName || "Участник",
         eventTitle: form.title || "Мероприятие",
         qrToken,
         details: emailDetails,
-      }).catch(err => console.warn("[Forms/Submit] Ticket email send notice:", err?.message));
+      }).catch(err => console.warn("[Forms/Submit] Ticket email send notice:", err?.message)));
     }
 
     return res.json({
@@ -1087,14 +1114,14 @@ router.post("/submissions/upsert", formsApiLimiter, authenticateFormApi, async (
 
       await existingRef.update(updatePayload);
 
-      void appendToSheet(form, formId, {
+      await settle(appendToSheet(form, formId, {
         applicantName: updatePayload.applicantName,
         applicantPhone: updatePayload.applicantPhone,
         applicantEmail: updatePayload.applicantEmail,
         status: validStatus || existingData.status || "new",
         qrToken: existingData.qrToken,
         data: mergedData,
-      });
+      }));
 
       void logApiAudit(req, "SUBMISSIONS_UPSERT", { formId, submissionId: existingDocSnap.id, action: "updated", tenantId: form.tenantId });
 
@@ -1127,10 +1154,10 @@ router.post("/submissions/upsert", formsApiLimiter, authenticateFormApi, async (
 
     await newRef.set(subDoc);
 
-    void appendToSheet(form, formId, {
+    await settle(appendToSheet(form, formId, {
       applicantName, applicantPhone, applicantEmail,
       status: validStatus || "new", qrToken: qrTokenVal, data: clean,
-    });
+    }));
 
     void logApiAudit(req, "SUBMISSIONS_UPSERT", { formId, submissionId: newRef.id, action: "created", tenantId: form.tenantId });
 
@@ -1266,14 +1293,14 @@ const patchSubmissionHandler = async (req: any, res: any) => {
     });
 
     if (form) {
-      void appendToSheet(form, String(formId), {
+      await settle(appendToSheet(form, String(formId), {
         applicantName: existingData.applicantName,
         applicantPhone: existingData.applicantPhone,
         applicantEmail: existingData.applicantEmail,
         status: existingData.status || "new",
         qrToken: existingData.qrToken,
         data: mergedFields,
-      });
+      }));
     }
 
     void logApiAudit(req, "SUBMISSIONS_PATCH", { submissionId, formId, tenantId: existingData.tenantId });
@@ -1528,6 +1555,10 @@ router.post("/status", requireFirebaseAuth, requireScreen("forms"), async (req: 
         by: req.user?.email || "", note: str(note, 300),
       }),
     });
+    // Колонка «Статус» в таблице должна совпадать с кабинетом.
+    if (subFormSnap.exists) {
+      await settle(upsertSheetRows({ ...subFormSnap.data(), id: subFormSnap.id }, [{ ...snap.data(), status }]));
+    }
     return res.json({ success: true, status, statusLabel: STATUS_LABEL[status as Status] });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
@@ -1781,6 +1812,236 @@ router.post("/purge", requireFirebaseAuth, requireScreen("forms"), async (req: a
 });
 
 /**
+ * Привести значение к типу поля анкеты.
+ *
+ * Правка из кабинета обязана соблюдать ту же анкету, что и подача:
+ * в списке — только его варианты, в галочке — да или нет, в дате — дата.
+ * Иначе выгрузка и фильтры начинают находить «tru» и «Бишкек » рядом с
+ * «true» и «Бишкек».
+ */
+// Плоский тип, а не размеченное объединение: проект собирается без
+// strictNullChecks, и `if (!c.ok)` там не сужает тип (как и у TenantGate).
+interface Coerced { ok: boolean; value?: any; error?: string }
+
+function coerceFieldValue(f: any, raw: unknown): Coerced {
+  const label = String(f?.label || f?.id || "поле");
+  switch (f?.type) {
+    case "file":
+      return { ok: false, error: `«${label}» — файл, его правят только повторной подачей.` };
+    case "checkbox":
+      return { ok: true, value: raw === true || String(raw).toLowerCase() === "true" };
+    case "select": {
+      const v = str(raw, 500);
+      const options: string[] = Array.isArray(f.options) ? f.options.map(String) : [];
+      if (v && !options.includes(v)) return { ok: false, error: `В «${label}» нет варианта «${v}».` };
+      return { ok: true, value: v };
+    }
+    case "date": {
+      const v = str(raw, 20);
+      if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return { ok: false, error: `«${label}» — нужна дата.` };
+      return { ok: true, value: v };
+    }
+    case "number": {
+      const v = str(raw, 50).replace(",", ".");
+      if (v && !Number.isFinite(Number(v))) return { ok: false, error: `«${label}» — нужно число.` };
+      return { ok: true, value: v };
+    }
+    default:
+      return { ok: true, value: str(raw, 2000) };
+  }
+}
+
+/** Имя, телефон и почта заявки — из полей анкеты, как при подаче. */
+function deriveContacts(fields: any[], data: Record<string, any>) {
+  const pick = (re: RegExp) => {
+    const f = fields.find((x: any) => re.test(String(x.label || "")) || re.test(String(x.id || "")));
+    return f ? str(data?.[f.id], 200) : undefined;
+  };
+  return {
+    applicantName: pick(/фамили|имя|фио|name/i),
+    applicantPhone: pick(/телефон|phone|моб/i),
+    applicantEmail: pick(/e-?mail|почт/i),
+  };
+}
+
+const sameValue = (a: unknown, b: unknown) =>
+  typeof a === "boolean" || typeof b === "boolean" ? Boolean(a) === Boolean(b) : String(a ?? "") === String(b ?? "");
+
+/** Запись в журнал правок — кто, когда, что было и что стало. */
+const changeEntry = (by: string, f: any, from: unknown, to: unknown) => ({
+  at: admin.firestore.Timestamp.now(),
+  by,
+  kind: "field",
+  field: String(f.id),
+  label: String(f.label || f.id),
+  from: from === undefined ? "" : from,
+  to,
+});
+
+/**
+ * POST /api/forms/edit — исправить ответы в одной заявке.
+ *
+ * Бывает, что человек ошибся в телефоне или выбрал не тот формат, и
+ * подавать заново ради одной опечатки — значит плодить дубли. Каждая
+ * правка пишется в журнал «было → стало» с автором и временем: заявку
+ * заполнял живой человек, и потом должно быть видно, что в ней меняли
+ * сотрудники, а что он написал сам.
+ *
+ * Журнал — отдельное поле changes, не history: history видит заявитель на
+ * странице отслеживания, а внутренние правки ему не адресованы.
+ */
+router.post("/edit", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
+  try {
+    const { tenantId, submissionId, data } = req.body || {};
+    if (!tenantId || !submissionId || !data || typeof data !== "object" || Array.isArray(data)) {
+      return res.status(400).json({ success: false, error: "Bad request" });
+    }
+    if (!(await canManageForms(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+
+    const ref = db().collection(SUBS).doc(String(submissionId));
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ success: false, error: "Заявка не найдена" });
+    const sub = snap.data()!;
+    if (sub.tenantId !== tenantId) return res.status(403).json({ success: false, error: "Заявка другой организации" });
+
+    const formSnap = await db().collection(FORMS).doc(String(sub.formId || "")).get();
+    if (!formSnap.exists) return res.status(404).json({ success: false, error: "Анкета этой заявки удалена" });
+    const form = { ...formSnap.data(), id: formSnap.id } as any;
+    const fields: any[] = Array.isArray(form.fields) ? form.fields : [];
+
+    const by = req.user?.email || req.user?.uid || "";
+    const merged: Record<string, any> = { ...(sub.data || {}) };
+    const entries: any[] = [];
+    for (const [fieldId, raw] of Object.entries(data as Record<string, unknown>)) {
+      const f = fields.find((x: any) => String(x.id) === fieldId);
+      if (!f) return res.status(400).json({ success: false, error: `В анкете нет поля «${fieldId}».` });
+      const c = coerceFieldValue(f, raw);
+      if (!c.ok) return res.status(400).json({ success: false, error: c.error });
+      if (sameValue(merged[fieldId], c.value)) continue;
+      entries.push(changeEntry(by, f, merged[fieldId], c.value));
+      merged[fieldId] = c.value;
+    }
+    if (!entries.length) return res.json({ success: true, changed: 0 });
+
+    const contacts = deriveContacts(fields, merged);
+    const patch: Record<string, any> = {
+      data: merged,
+      updatedAt: admin.firestore.Timestamp.now(),
+      changes: admin.firestore.FieldValue.arrayUnion(...entries),
+    };
+    for (const [k, v] of Object.entries(contacts)) if (v !== undefined) patch[k] = v;
+    await ref.update(patch);
+
+    await settle(upsertSheetRows(form, [{ ...sub, ...patch, data: merged }]));
+    return res.json({ success: true, changed: entries.length });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * POST /api/forms/bulk — одно действие сразу над многими заявками.
+ *
+ *   action: "status" — сменить статус (и при желании оставить заявителям
+ *           один и тот же ответ, он появится у каждого на странице заявки);
+ *   action: "field"  — поставить одно значение в одно поле.
+ *
+ * Заявки, к которым действие неприменимо, не роняют всю пачку: их
+ * пропускаем и возвращаем список с причиной — «Гость пришёл» нельзя
+ * поставить заявке на поступление, а поля «Команда» нет у заявок другой
+ * анкеты.
+ *
+ * Пишем пачками по 400 документов, а таблицу каждой анкеты обновляем
+ * одной записью — построчно сотня заявок упёрлась бы в лимит частоты
+ * записи одного документа.
+ */
+router.post("/bulk", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
+  try {
+    const { tenantId, submissionIds, action, status, note, fieldId, value } = req.body || {};
+    if (!tenantId || !Array.isArray(submissionIds) || !submissionIds.length) {
+      return res.status(400).json({ success: false, error: "Не выбрано ни одной заявки" });
+    }
+    const ids = [...new Set(submissionIds.map((x: unknown) => str(x, 200)).filter(Boolean))] as string[];
+    if (ids.length > 500) return res.status(400).json({ success: false, error: "За раз — не больше 500 заявок" });
+    if (action !== "status" && action !== "field") return res.status(400).json({ success: false, error: "Неизвестное действие" });
+    if (action === "status" && !isFormStatus(status)) return res.status(400).json({ success: false, error: "Неизвестный статус" });
+    if (action === "field" && !fieldId) return res.status(400).json({ success: false, error: "Не выбрано поле" });
+    if (!(await canManageForms(req.user, tenantId))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+
+    const by = req.user?.email || req.user?.uid || "";
+    const now = admin.firestore.Timestamp.now();
+    const forms = new Map<string, any>();
+    const loadForm = async (id: string) => {
+      if (!forms.has(id)) {
+        const f = await db().collection(FORMS).doc(id).get();
+        forms.set(id, f.exists ? { ...f.data(), id: f.id } : null);
+      }
+      return forms.get(id);
+    };
+
+    const skipped: Array<{ id: string; name: string; reason: string }> = [];
+    const updates: Array<{ ref: any; patch: Record<string, any>; after: Record<string, any>; formId: string }> = [];
+
+    for (let i = 0; i < ids.length; i += 100) {
+      const snaps = await db().getAll(...ids.slice(i, i + 100).map(id => db().collection(SUBS).doc(id)));
+      for (const snap of snaps) {
+        const sub: any = snap.data();
+        const name = String(sub?.applicantName || "без имени");
+        if (!snap.exists || sub.tenantId !== tenantId) { skipped.push({ id: snap.id, name, reason: "Заявка не найдена" }); continue; }
+        const form = await loadForm(String(sub.formId || ""));
+        if (!form) { skipped.push({ id: snap.id, name, reason: "Анкета удалена" }); continue; }
+
+        if (action === "status") {
+          if (!MODE_STATUSES[formMode(form)].includes(status)) {
+            skipped.push({ id: snap.id, name, reason: `«${STATUS_LABEL[status as Status]}» недоступен для анкеты «${form.title || ""}»` });
+            continue;
+          }
+          if (sub.status === status && !str(note, 300)) { skipped.push({ id: snap.id, name, reason: "Уже в этом статусе" }); continue; }
+          const patch = {
+            status, updatedAt: now,
+            history: admin.firestore.FieldValue.arrayUnion({ status, at: now, by, note: str(note, 300) }),
+          };
+          updates.push({ ref: snap.ref, patch, after: { ...sub, status }, formId: form.id });
+        } else {
+          const fields: any[] = Array.isArray(form.fields) ? form.fields : [];
+          const f = fields.find((x: any) => String(x.id) === String(fieldId));
+          if (!f) { skipped.push({ id: snap.id, name, reason: `В анкете «${form.title || ""}» нет этого поля` }); continue; }
+          const c = coerceFieldValue(f, value);
+          if (!c.ok) return res.status(400).json({ success: false, error: c.error });
+          if (sameValue(sub.data?.[f.id], c.value)) { skipped.push({ id: snap.id, name, reason: "Значение уже такое" }); continue; }
+          const merged = { ...(sub.data || {}), [f.id]: c.value };
+          const patch: Record<string, any> = {
+            data: merged, updatedAt: now,
+            changes: admin.firestore.FieldValue.arrayUnion(changeEntry(by, f, sub.data?.[f.id], c.value)),
+          };
+          for (const [k, v] of Object.entries(deriveContacts(fields, merged))) if (v !== undefined) patch[k] = v;
+          updates.push({ ref: snap.ref, patch, after: { ...sub, ...patch, data: merged }, formId: form.id });
+        }
+      }
+    }
+
+    for (let i = 0; i < updates.length; i += 400) {
+      const batch = db().batch();
+      updates.slice(i, i + 400).forEach(u => batch.update(u.ref, u.patch));
+      await batch.commit();
+    }
+
+    // Таблицы — по одной записи на анкету.
+    const byForm = new Map<string, any[]>();
+    updates.forEach(u => byForm.set(u.formId, [...(byForm.get(u.formId) || []), u.after]));
+    await settle(Promise.all([...byForm.entries()].map(([fid, subs]) => upsertSheetRows(forms.get(fid), subs))), 8000);
+
+    return res.json({ success: true, updated: updates.length, skipped });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
  * POST /api/forms/delete — убрать заявку из списка или вернуть обратно.
  *
  * В корзину, а не насовсем: заявку заполнял живой человек, и восстановить
@@ -1820,14 +2081,14 @@ router.post("/delete", requireFirebaseAuth, requireScreen("forms"), async (req: 
       });
       // Возвращённая заявка снова попадает в таблицу: из корзины она
       // выходит в общий список, и таблица должна это показывать.
-      if (form) void appendToSheet(form, String(sub.formId || ""), sub);
+      if (form) await settle(appendToSheet(form, String(sub.formId || ""), sub));
       return res.json({ success: true, restored: true });
     }
 
     await ref.update({ deleted: true, deletedAt: now, deletedBy: by, updatedAt: now });
     // Убранная заявка не должна оставаться в таблице рядом с действующими:
     // она в корзине, и в выгрузке ей не место.
-    if (form) void clearSheetRow(form, String(sub.qrToken || ""));
+    if (form) await settle(clearSheetRow(form, String(sub.qrToken || "")));
     return res.json({ success: true, deleted: true });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
