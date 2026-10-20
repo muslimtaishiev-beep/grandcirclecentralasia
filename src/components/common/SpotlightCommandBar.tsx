@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Search, FileText, FileSpreadsheet, CheckSquare, Briefcase, MessageSquare, X, ArrowRight, Plus, Users, Calendar, Video, Settings, LayoutTemplate, Zap, Loader2 } from 'lucide-react';
 import { searchGlobal, SearchResult } from '../../services/globalSearchService';
@@ -93,7 +94,9 @@ export default function SpotlightCommandBar({ isOpen, onClose }: SpotlightComman
 
   if (!isOpen) return null;
 
-  return (
+  // В body, а не на месте: шапка, откуда открывается поиск, лежит в своём
+  // слое под областью страницы, и окно оказывалось под содержимым.
+  return createPortal(
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-start justify-center pt-20 p-4 animate-fade-in" onClick={onClose}>
       <div 
         className="w-full max-w-2xl bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl shadow-2xl overflow-hidden flex flex-col text-[var(--text-main)]"
@@ -175,5 +178,5 @@ export default function SpotlightCommandBar({ isOpen, onClose }: SpotlightComman
 
       </div>
     </div>
-  );
+  , document.body);
 }

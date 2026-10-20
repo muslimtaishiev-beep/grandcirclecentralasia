@@ -196,7 +196,10 @@ export default function WorkspaceLayout() {
       <div className="absolute inset-0 bg-white/30 dark:bg-black/30 backdrop-blur-[2px] z-0 pointer-events-none"></div>
 
       {/* Top Navigation Bar */}
-      <div className="h-14 w-full flex items-center justify-between px-4 z-10 bg-[var(--bg-panel)] backdrop-blur-md border-b border-[var(--border-color)]">
+      {/* Фон и размытие шапки — слоем позади: с backdrop-filter на самой
+          шапке окно поиска (fixed) сжималось бы до её 56 пикселей. */}
+      <div className="relative h-14 w-full flex items-center justify-between px-4 z-10 border-b border-[var(--border-color)]">
+        <div aria-hidden className="absolute inset-0 -z-10 bg-[var(--bg-panel)] backdrop-blur-md pointer-events-none" />
         
         {/* Left: Logo & Menu Toggle */}
         <div className="flex items-center gap-4">
@@ -284,7 +287,8 @@ export default function WorkspaceLayout() {
       <div className="flex flex-1 overflow-hidden z-10">
         
         {/* Thin Left Sidebar (Icons Only) */}
-        <div className="w-16 bg-[var(--bg-panel)] backdrop-blur-md border-r border-[var(--border-color)] flex flex-col items-center py-4 gap-2">
+        <div className="relative z-0 w-16 border-r border-[var(--border-color)] flex flex-col items-center py-4 gap-2">
+          <div aria-hidden className="absolute inset-0 -z-10 bg-[var(--bg-panel)] backdrop-blur-md pointer-events-none" />
           {navItems.map((item) => {
             const isActive = location.pathname.includes(item.path);
             return (
@@ -320,8 +324,12 @@ export default function WorkspaceLayout() {
         </div>
 
         {/* Dynamic Outlet (The actual page content) */}
-        <div className="flex-1 overflow-hidden p-2 sm:p-4 md:p-6">
-          <div className="w-full h-full bg-[var(--bg-surface)]/80 backdrop-blur-xl border border-[var(--border-color)] rounded-2xl shadow-xl overflow-y-auto">
+        <div className="relative flex-1 overflow-hidden p-2 sm:p-4 md:p-6">
+          {/* Размытие — отдельным слоем позади, а не на самом контейнере:
+              backdrop-filter у предка делает его опорой для position: fixed,
+              и все попапы страниц встают в начало прокрутки, а не на экран. */}
+          <div aria-hidden className="absolute inset-2 sm:inset-4 md:inset-6 rounded-2xl backdrop-blur-xl pointer-events-none" />
+          <div className="relative w-full h-full bg-[var(--bg-surface)]/80 border border-[var(--border-color)] rounded-2xl shadow-xl overflow-y-auto">
             {/* Some pages (like Chat) have their own strict layouts, others have normal padding. 
                 For Chat specifically, we might want to override padding, but let's keep it clean for now. */}
             <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-[var(--bg-app)]">
