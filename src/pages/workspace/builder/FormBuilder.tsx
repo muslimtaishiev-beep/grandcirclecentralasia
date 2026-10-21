@@ -41,6 +41,78 @@ const humanError = (e: any): string =>
 /** Поле анкеты, которое можно править из кабинета (файлы — нет). */
 const editableField = (f: any) => f && f.type !== 'file';
 
+/**
+ * Как показать ссылку внутри кабинета. Сайты сами решают, пускать ли себя
+ * во фрейм, поэтому встраиваем только то, что точно открывается:
+ * файлы (PDF — просмотрщиком браузера, Office — через Microsoft),
+ * и сервисы презентаций в их режиме встраивания. 'resolve' — короткая
+ * ссылка, которую сначала раскрывает сервер. null — только новая вкладка.
+ */
+const OFFICE_EXT = /\.(pptx?|docx?|xlsx?)$/i;
+const fileNamesOf = (u: URL) => [u.pathname, ...[...u.searchParams.values()]];
+const isPdfLink = (raw: string) => { try { return fileNamesOf(new URL(raw)).some(n => /\.pdf$/i.test(n)); } catch { return false; } };
+export const embedFor = (raw: string): string | 'resolve' | null => {
+  let u: URL;
+  try { u = new URL(raw); } catch { return null; }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  // Имя файла бывает в пути (/deck.pdf) или в параметре (?key=…/deck.pdf).
+  const names = fileNamesOf(u);
+  if (names.some(n => /\.pdf$/i.test(n))) return u.toString();
+  if (names.some(n => OFFICE_EXT.test(n))) {
+    return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(u.toString())}`;
+  }
+  const host = u.hostname.toLowerCase();
+  const path = u.pathname;
+  let m: RegExpMatchArray | null;
+  if (host === 'drive.google.com' && (m = path.match(/^\/file\/d\/([\w-]+)/))) return `https://drive.google.com/file/d/${m[1]}/preview`;
+  if (host === 'docs.google.com' && (m = path.match(/^\/(presentation|document|spreadsheets)\/d\/([\w-]+)/))) {
+    return `https://docs.google.com/${m[1]}/d/${m[2]}/${m[1] === 'presentation' ? 'embed' : 'preview'}`;
+  }
+  if (host === 'www.canva.com' && (m = path.match(/^\/design\/([\w-]+)\/([\w-]+)/))) return `https://www.canva.com/design/${m[1]}/${m[2]}/view?embed`;
+  if (host === 'canva.link') return 'resolve';
+  if (host === 'gamma.app' && (m = path.match(/^\/(?:docs|public)\/(?:.*-)?([a-z0-9]{10,})$/i))) return `https://gamma.app/embed/${m[1]}`;
+  if (/(^|\.)(github\.io|figma\.site|netlify\.app|vercel\.app|pages\.dev)$/.test(host)) return u.toString();
+  return null;
+};
+
+/**
+ * Текст ответа со ссылками: http(s) и www. становятся кликабельными.
+ * Другие схемы (javascript:, data:) не превращаются в ссылку никогда —
+ * ответ пишет посторонний человек. Если ссылку можно показать внутри
+ * кабинета и передан onOpen, обычный клик открывает её здесь; клик с
+ * Cmd/Ctrl или колёсиком — как всегда, в новой вкладке.
+ */
+const URL_IN_TEXT = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/gi;
+const Linkified: React.FC<{ text: string; onOpen?: (url: string) => void }> = ({ text, onOpen }) => {
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  for (const m of text.matchAll(URL_IN_TEXT)) {
+    const start = m.index ?? 0;
+    // Точка или скобка в конце предложения — не часть адреса.
+    const raw = m[0].replace(/[.,;:!?)\]»"']+$/, '');
+    if (start > last) parts.push(text.slice(last, start));
+    const href = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    const inside = onOpen && embedFor(href) !== null;
+    parts.push(
+      <a key={start} href={href} target="_blank" rel="noopener noreferrer"
+        onClick={e => {
+          if (!inside || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+          e.preventDefault();
+          onOpen!(href);
+        }}
+        className="text-emerald-600 underline underline-offset-2 hover:text-emerald-500 break-all">
+        {raw}
+      </a>
+    );
+    if (inside) parts.push(
+      <span key={`${start}-tag`} className="ml-1.5 align-middle text-[10px] font-bold uppercase tracking-wide text-emerald-600/70">смотреть здесь</span>
+    );
+    last = start + raw.length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <>{parts}</>;
+};
+
 export default function FormBuilder() {
   const { activeTenant } = useOutletContext<any>() || {};
   const { orgId } = useParams();
@@ -769,6 +841,27 @@ export default function FormBuilder() {
       reportBulk(data);
     } catch (e: any) { alert(`Не удалось изменить: ${humanError(e)}`); }
     finally { setFieldBusy(false); }
+  };
+
+  /** Просмотр ссылки из ответа (презентации, файла) прямо в кабинете. */
+  const [viewer, setViewer] = useState<{ src: string; embed: string | null; loading: boolean } | null>(null);
+  const openViewer = async (src: string) => {
+    const e = embedFor(src);
+    if (e !== 'resolve') { setViewer({ src, embed: e, loading: false }); return; }
+    setViewer({ src, embed: null, loading: true });
+    try {
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+      const res = await fetch('/api/forms/resolve-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tenantId: currentOrgId, url: src }),
+      });
+      const data = await res.json();
+      const full = data.success ? embedFor(data.url) : null;
+      setViewer({ src, embed: full && full !== 'resolve' ? full : null, loading: false });
+    } catch {
+      setViewer({ src, embed: null, loading: false });
+    }
   };
 
   /** Правка ответов в одной заявке — черновик значений по id поля. */
@@ -1574,6 +1667,53 @@ export default function FormBuilder() {
         </div>
       )}
 
+      {/* Просмотр презентации/файла из ответа — поверх окна заявки. */}
+      {viewer && (
+        <div className="fixed inset-0 z-[70] bg-black/80 flex flex-col p-2 sm:p-4" onClick={() => setViewer(null)}>
+          <div className="flex items-center gap-2 pb-2 text-white" onClick={e => e.stopPropagation()}>
+            <span className="text-xs font-mono truncate opacity-80 flex-1 min-w-0">{viewer.src}</span>
+            <a href={viewer.src} target="_blank" rel="noopener noreferrer"
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-bold">
+              Открыть в новой вкладке
+            </a>
+            <button onClick={() => setViewer(null)} aria-label="Закрыть просмотр"
+              className="shrink-0 p-1.5 rounded-lg hover:bg-white/15">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          {viewer.embed?.startsWith('https://view.officeapps.live.com/') && (
+            <p className="pb-2 text-[11px] text-white/70" onClick={e => e.stopPropagation()}>
+              PowerPoint показывает просмотрщик Microsoft. Если вместо слайдов ошибка — сайт с файлом не пускает Microsoft;
+              нажмите «Открыть в новой вкладке», файл скачается.
+            </p>
+          )}
+          <div className="flex-1 min-h-0 rounded-xl overflow-hidden bg-white" onClick={e => e.stopPropagation()}>
+            {viewer.loading ? (
+              <div className="w-full h-full flex items-center justify-center text-slate-500 text-sm gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Открываем…
+              </div>
+            ) : viewer.embed ? (
+              <iframe key={viewer.embed} src={viewer.embed} title="Просмотр" className="w-full h-full border-0"
+                allow="fullscreen" allowFullScreen
+                referrerPolicy="no-referrer"
+                // Чужой сайт — в песочнице: он не сможет увести эту вкладку на
+                // свою страницу. PDF без неё: Chrome не рисует PDF в песочнице.
+                {...(viewer.embed === viewer.src && isPdfLink(viewer.src) ? {} : {
+                  sandbox: 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-presentation allow-downloads',
+                })} />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-slate-600 text-sm p-6 text-center">
+                <p>Этот сайт не разрешает показывать себя внутри других страниц.</p>
+                <a href={viewer.src} target="_blank" rel="noopener noreferrer"
+                  className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-500">
+                  Открыть в новой вкладке
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Окно с полной заявкой: в таблице видна только выжимка. */}
       {subView && (() => {
         // Окно держит живую версию: после правки или смены статуса снимок
@@ -1679,7 +1819,7 @@ export default function FormBuilder() {
                           className="mt-1 max-h-48 rounded-xl border border-[var(--border-color)]" />
                       ) : (
                         <div className="text-sm text-[var(--text-main)] whitespace-pre-wrap break-words">
-                          {value || '—'}
+                          {value ? <Linkified text={value} onOpen={openViewer} /> : '—'}
                         </div>
                       )}
                     </div>

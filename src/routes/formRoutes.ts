@@ -1890,6 +1890,32 @@ const changeEntry = (by: string, f: any, from: unknown, to: unknown) => ({
  * Журнал — отдельное поле changes, не history: history видит заявитель на
  * странице отслеживания, а внутренние правки ему не адресованы.
  */
+/**
+ * Раскрыть короткую ссылку Canva (canva.link/…) до адреса дизайна, чтобы
+ * кабинет мог показать презентацию внутри себя: браузер сам редирект
+ * прочитать не может (CORS). Ходим ТОЛЬКО на canva.link и отдаём ответ
+ * ТОЛЬКО если он ведёт на www.canva.com — иначе это был бы открытый прокси
+ * на любые адреса, включая внутренние.
+ */
+router.post("/resolve-link", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
+  let url: URL;
+  try { url = new URL(String(req.body?.url || "")); } catch { return res.status(400).json({ success: false, error: "Неверная ссылка" }); }
+  if (url.protocol !== "https:" || url.hostname !== "canva.link") {
+    return res.status(400).json({ success: false, error: "Раскрываются только ссылки canva.link" });
+  }
+  try {
+    const r = await fetch(url.toString(), { redirect: "manual", signal: AbortSignal.timeout(6000) });
+    const loc = r.headers.get("location") || "";
+    const target = new URL(loc, url);
+    if (target.protocol !== "https:" || target.hostname !== "www.canva.com") {
+      return res.status(422).json({ success: false, error: "Ссылка ведёт не на Canva" });
+    }
+    return res.json({ success: true, url: target.toString() });
+  } catch {
+    return res.status(502).json({ success: false, error: "Canva не ответила" });
+  }
+});
+
 router.post("/edit", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
   try {
     const { tenantId, submissionId, data } = req.body || {};
