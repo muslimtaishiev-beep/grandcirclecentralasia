@@ -5,20 +5,17 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import App from './App.tsx';
 import './index.css';
+import { isChunkLoadError, reloadForStaleBuild } from './lib/staleBuild';
 
-// Auto-reload on Vite chunk preload errors or stale deployment bundle mismatch
-window.addEventListener('vite:preloadError', () => {
-  window.location.reload();
+// Файлы прошлой сборки после выкатки — одна перезагрузка, без зацикливания.
+window.addEventListener('vite:preloadError', (e) => {
+  if (reloadForStaleBuild()) e.preventDefault();
 });
-
 window.addEventListener('error', (e) => {
-  if (e.message && (e.message.includes('MIME type') || e.message.includes('Loading chunk') || e.message.includes('Importing a module script failed'))) {
-    const hasReloaded = sessionStorage.getItem('chunk_mismatch_reload');
-    if (!hasReloaded) {
-      sessionStorage.setItem('chunk_mismatch_reload', 'true');
-      window.location.reload();
-    }
-  }
+  if (isChunkLoadError(e.message)) reloadForStaleBuild();
+});
+window.addEventListener('unhandledrejection', (e) => {
+  if (isChunkLoadError(e.reason)) reloadForStaleBuild();
 });
 
 // Mute Three.js THREE.Clock deprecation warning
