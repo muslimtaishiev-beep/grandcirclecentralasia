@@ -7,6 +7,7 @@ import {
   FORM_STATUSES, STATUS_LABEL, MODE_STATUSES, TICKET_ACTIVE,
   isFormStatus, type FormStatus, type FormMode,
 } from "../shared/formStatuses.js";
+import { checkFileValue, FILE_LIMITS } from "../shared/uploads.js";
 import { hasAnyPermission } from "../server/access.js";
 import { checkTenantOpen, requireScreen, loadTenant } from "../server/tenantAccess.js";
 import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
@@ -398,26 +399,26 @@ router.post("/submit", async (req: any, res: any) => {
     // допишет в заявку произвольные ключи, и они всплывут в кабинете.
     const clean: Record<string, any> = {};
     const missing: string[] = [];
+    let fileChars = 0;
     for (const f of fields) {
       const raw = (data as any)[f.id];
       let value: any;
       if (f.type === "checkbox") {
         value = Boolean(raw);
       } else if (f.type === "file") {
-        // Файл приходит сжатым data-URL с клиента.
+        // Файл приходит data-URL'ом с клиента. Принимаем любой формат, кроме
+        // установщиков и исполняемых файлов; проверяем и имя, и содержимое.
         value = String(raw ?? "");
-        if (value && !value.startsWith("data:image/")) {
-          return res.status(400).json({
-            success: false,
-            error: `Поле «${f.label}» принимает только изображение (JPG/PNG).`,
-          });
+        if (value) {
+          const check = checkFileValue(value);
+          if (!check.ok) {
+            return res.status(value.length > FILE_LIMITS.maxFieldChars ? 413 : 400).json({
+              success: false,
+              error: `Поле «${f.label}»: ${check.error}`,
+            });
+          }
         }
-        if (value.length > 400 * 1024) {
-          return res.status(413).json({
-            success: false,
-            error: `Файл в поле «${f.label}» слишком большой. Сфотографируйте документ ещё раз.`,
-          });
-        }
+        fileChars += value.length;
       } else {
         value = str(raw, 2000);
       }
@@ -431,6 +432,14 @@ router.post("/submit", async (req: any, res: any) => {
       return res.status(400).json({
         success: false,
         error: `Заполните обязательные поля: ${missing.join(", ")}`,
+      });
+    }
+    // Файлы лежат в самой заявке, а документ Firestore — 1 МБ: без общей
+    // границы два «разрешённых» файла вместе уронили бы запись ошибкой 500.
+    if (fileChars > FILE_LIMITS.maxTotalChars) {
+      return res.status(413).json({
+        success: false,
+        error: `Все приложенные файлы вместе больше ${FILE_LIMITS.maxFileKb} КБ. Приложите меньше или отправьте ссылкой.`,
       });
     }
 

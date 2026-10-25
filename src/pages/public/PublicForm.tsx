@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import FancyQr, { QR_THEMES, QrThemePicker, downloadQr, type QrTheme } from "../../components/forms/FancyQr";
 import { compressImageToDataUrl } from "../../lib/compressImage";
+import { buildFileValue, checkFileValue, fileInfo, formatSize, isFileValue, FILE_LIMITS } from "../../shared/uploads";
 
 /**
  * Публичная страница заявки — то, что открывается по ссылке из конструктора.
@@ -154,6 +155,49 @@ export default function PublicForm() {
   if (!form) return <Shell><div className="text-center text-slate-400 py-16">Форма недоступна.</div></Shell>;
 
   const set = (id: string, v: any) => setValues(p => ({ ...p, [id]: v }));
+
+  /**
+   * Приложить файл к полю. Фото сжимаем до JPEG, как раньше, — снимок с
+   * телефона весит мегабайты и в заявку не влезет. Остальное берём как есть,
+   * но то же правило, что и на сервере, применяем сразу: человек должен
+   * узнать про запрещённый формат или лишний вес до отправки.
+   */
+  const attachFile = async (fieldId: string, file: File, asPhoto: boolean) => {
+    setError(null);
+    try {
+      const isImage = file.type.startsWith("image/") && file.type !== "image/svg+xml";
+      let value = "";
+      if (isImage && (asPhoto || file.size > 300 * 1024)) {
+        const r = await compressImageToDataUrl(file);
+        if ("error" in r) {
+          if (asPhoto) { setError(r.error); return; }
+        } else {
+          const base = file.name.replace(/\.[^.]+$/, "") || "photo";
+          value = buildFileValue("image/jpeg", `${base}.jpg`, r.dataUrl.slice(r.dataUrl.indexOf(",") + 1));
+        }
+      }
+      if (!value) {
+        if (file.size > FILE_LIMITS.maxFileKb * 1024) {
+          setError(`Файл больше ${FILE_LIMITS.maxFileKb} КБ. Сожмите его или отправьте ссылкой (Google Drive, Canva) в текстовом поле.`);
+          return;
+        }
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let bin = "";
+        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        value = buildFileValue(file.type || "application/octet-stream", file.name || "file", btoa(bin));
+      }
+      const check = checkFileValue(value);
+      if (!check.ok) { setError(check.error || "Файл не подходит."); return; }
+      const others = Object.entries(values).filter(([id, v]) => id !== fieldId && isFileValue(v)).reduce((n, [, v]) => n + String(v).length, 0);
+      if (others + value.length > FILE_LIMITS.maxTotalChars) {
+        setError(`Все файлы вместе больше ${FILE_LIMITS.maxFileKb} КБ. Приложите меньше или отправьте ссылкой.`);
+        return;
+      }
+      set(fieldId, value);
+    } catch {
+      setError("Не удалось прочитать файл — попробуйте другой.");
+    }
+  };
   const base = "w-full border border-slate-300 rounded-xl p-3 bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition";
 
   return (
@@ -194,29 +238,52 @@ export default function PublicForm() {
                   <span className="text-sm text-slate-600">{f.placeholder || "Да"}</span>
                 </label>
               ) : f.type === "file" ? (
-                values[f.id] ? (
-                  <div className="flex items-center gap-3">
-                    <img src={values[f.id]} alt="Приложенный документ"
-                      className="w-24 h-24 object-cover rounded-xl border border-slate-200" />
-                    <button type="button" onClick={() => set(f.id, "")}
-                      className="text-sm text-blue-600 font-semibold">Заменить</button>
+                values[f.id] ? (() => {
+                  const info = fileInfo(String(values[f.id]));
+                  const isImg = !!info && /^image\/(png|jpeg|gif|webp|avif|bmp)$/.test(info.mime);
+                  return (
+                    <div className="flex items-center gap-3">
+                      {isImg ? (
+                        <img src={values[f.id]} alt="Приложенный файл"
+                          className="w-24 h-24 object-cover rounded-xl border border-slate-200" />
+                      ) : (
+                        <div className="flex items-center gap-2.5 min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">
+                          <span className="text-2xl">📎</span>
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-800 truncate">{info?.name}</div>
+                            <div className="text-xs text-slate-400">{info ? formatSize(info.size) : ""}</div>
+                          </div>
+                        </div>
+                      )}
+                      <button type="button" onClick={() => set(f.id, "")}
+                        className="text-sm text-blue-600 font-semibold shrink-0">Заменить</button>
+                    </div>
+                  );
+                })() : (
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <label className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-slate-300 rounded-xl p-5 cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition text-center">
+                      <span className="text-2xl">📷</span>
+                      <span className="text-sm font-semibold text-slate-700">Фото</span>
+                      <span className="text-xs text-slate-400">Камера или галерея, сожмётся само</span>
+                      <input type="file" accept="image/*" className="hidden"
+                        onChange={async e => {
+                          const file = e.target.files?.[0];
+                          e.target.value = "";
+                          if (file) await attachFile(f.id, file, true);
+                        }} />
+                    </label>
+                    <label className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-slate-300 rounded-xl p-5 cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition text-center">
+                      <span className="text-2xl">📎</span>
+                      <span className="text-sm font-semibold text-slate-700">Файл</span>
+                      <span className="text-xs text-slate-400">PDF, Word, PowerPoint, архив… до {FILE_LIMITS.maxFileKb} КБ</span>
+                      <input type="file" className="hidden"
+                        onChange={async e => {
+                          const file = e.target.files?.[0];
+                          e.target.value = "";
+                          if (file) await attachFile(f.id, file, false);
+                        }} />
+                    </label>
                   </div>
-                ) : (
-                  <label className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-slate-300 rounded-xl p-6 cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition">
-                    <span className="text-2xl">📷</span>
-                    <span className="text-sm font-semibold text-slate-700">Сфотографировать или выбрать файл</span>
-                    <span className="text-xs text-slate-400">JPG или PNG — сожмётся автоматически</span>
-                    <input type="file" accept="image/*" className="hidden"
-                      onChange={async e => {
-                        const file = e.target.files?.[0];
-                        e.target.value = "";
-                        if (!file) return;
-                        setError(null);
-                        const r = await compressImageToDataUrl(file);
-                        if ("error" in r) { setError(r.error); return; }
-                        set(f.id, r.dataUrl);
-                      }} />
-                  </label>
                 )
               ) : (
                 <input

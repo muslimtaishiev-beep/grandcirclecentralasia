@@ -26,6 +26,8 @@ import { db } from '../../../lib/firebase';
 import FancyQr, { QR_THEMES, QrThemePicker, downloadQr, type QrTheme } from '../../../components/forms/FancyQr';
 import { STATUS_LABEL, STATUS_COLOR, MODE_STATUSES, type FormMode } from '../../../shared/formStatuses';
 import { auth } from '../../../lib/firebase';
+import FileViewer, { type ViewerFile } from './FileViewer';
+import { isFileValue, fileLabel, fileInfo } from '../../../shared/uploads';
 import { useAuth } from '../../../contexts/AuthContext';
 
 /**
@@ -152,7 +154,7 @@ export default function FormBuilder() {
   const [formQr, setFormQr] = useState<any | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   // Просмотр приложенного документа (фото удостоверения из file-поля заявки).
-  const [docView, setDocView] = useState<{ name: string; src: string } | null>(null);
+  const [docView, setDocView] = useState<{ title: string; files: ViewerFile[] } | null>(null);
 
 
 
@@ -224,13 +226,15 @@ export default function FormBuilder() {
         const raw: any = d.data();
         // Снимки документов в списке не нужны: они открываются по клику,
         // а в памяти держать сотни картинок по 400 КБ нельзя.
+        // Вместо самого файла в списке — его имя и размер: так они видны в
+        // выжимке, фильтре и CSV, а мегабайты base64 в памяти не держатся.
         const data: Record<string, any> = {};
-        let hasFile = false;
+        const fileKeys: string[] = [];
         for (const [k, v] of Object.entries(raw.data || {})) {
-          if (typeof v === 'string' && v.startsWith('data:')) { hasFile = true; continue; }
+          if (isFileValue(v)) { fileKeys.push(k); data[k] = fileLabel(v); continue; }
           data[k] = v;
         }
-        list.push({ id: d.id, ...raw, data, hasFile });
+        list.push({ id: d.id, ...raw, data, hasFile: fileKeys.length > 0, fileKeys });
       });
       setSubmissions(list);
       setLoading(false);
@@ -399,16 +403,19 @@ export default function FormBuilder() {
    * означали бы, что кабинет не открывается вовсе. Читаем саму заявку в
    * момент, когда человек нажал «Документ».
    */
-  const openDocument = async (sub: any) => {
+  const openDocument = async (sub: any, onlyKey?: string) => {
     setBusySub(sub.id);
     try {
       const snap = await getDoc(doc(db, 'form_submissions', sub.id));
-      const data: any = snap.data()?.data || {};
-      const src = Object.values(data).find((v: any) => typeof v === 'string' && v.startsWith('data:'));
-      if (!src) { alert('Документ не найден.'); return; }
-      setDocView({ name: sub.applicantName || 'Документ', src: String(src) });
+      const data: Record<string, any> = snap.data()?.data || {};
+      const labels = labelsOf(sub.formId);
+      const files: ViewerFile[] = Object.entries(data)
+        .filter(([k, v]) => isFileValue(v) && (!onlyKey || k === onlyKey))
+        .map(([k, v]) => ({ label: labels[k] || '', value: String(v) }));
+      if (!files.length) { alert('Файл не найден.'); return; }
+      setDocView({ title: sub.applicantName || 'Заявка', files });
     } catch (e: any) {
-      alert(`Не удалось открыть документ: ${humanError(e)}`);
+      alert(`Не удалось открыть файл: ${humanError(e)}`);
     } finally {
       setBusySub(null);
     }
@@ -1410,7 +1417,13 @@ export default function FormBuilder() {
                           .filter(([, v]) => String(v ?? '').trim() && !String(v).startsWith('data:'));
                         if (!entries.length) return <span className="text-[var(--text-muted)] text-[11px]">—</span>;
                         const preview = entries.slice(0, 2)
-                          .map(([k, v]) => `${labels[k] || k}: ${String(v).slice(0, 28)}`).join(' · ');
+                          .map(([k, v]) => {
+                            // Файл показываем только именем: размер в скобках
+                            // обрезался бы посреди слова.
+                            const t = String(v);
+                            const shown = t.startsWith('[файл] ') ? `📎 ${t.slice(7).replace(/\s*\([^)]*\)$/, '')}` : t;
+                            return `${labels[k] || k}: ${shown.slice(0, 28)}`;
+                          }).join(' · ');
                         return (
                           <button onClick={() => setSubView(sub)}
                             className="text-left text-[11px] text-[var(--text-main)] hover:text-emerald-500 transition">
@@ -1451,7 +1464,7 @@ export default function FormBuilder() {
                           onClick={() => void openDocument(sub)}
                           disabled={busySub === sub.id}
                           className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 px-3 py-1 rounded-lg font-bold text-[11px] inline-flex items-center gap-1.5 transition cursor-pointer mr-2 disabled:opacity-50">
-                          📄 Документ
+                          📎 Файл
                         </button>
                       )}
                       <button 
@@ -1814,9 +1827,14 @@ export default function FormBuilder() {
                   return (
                     <div key={k} className="border-b border-[var(--border-color)] pb-2">
                       <div className="text-[11px] font-semibold text-[var(--text-muted)]">{labels[k] || k}</div>
-                      {value.startsWith('data:image/') ? (
-                        <img src={value} alt={labels[k] || k}
-                          className="mt-1 max-h-48 rounded-xl border border-[var(--border-color)]" />
+                      {(liveSub.fileKeys || []).includes(k) ? (
+                        <button type="button" onClick={() => void openDocument(liveSub, k)}
+                          disabled={busySub === liveSub.id}
+                          className="mt-1 inline-flex items-center gap-2 max-w-full rounded-xl border border-[var(--border-color)] bg-black/5 dark:bg-white/5 px-3 py-2 text-left hover:border-emerald-500 transition disabled:opacity-50">
+                          <span className="text-lg">📎</span>
+                          <span className="min-w-0 text-sm font-semibold truncate">{value.replace(/^\[файл\]\s*/, '') || 'Файл'}</span>
+                          <span className="shrink-0 text-[11px] font-bold text-emerald-600">Открыть</span>
+                        </button>
                       ) : (
                         <div className="text-sm text-[var(--text-main)] whitespace-pre-wrap break-words">
                           {value ? <Linkified text={value} onOpen={openViewer} /> : '—'}
@@ -2064,7 +2082,8 @@ export default function FormBuilder() {
                     })()}
                     {field.type === 'file' && (
                       <p className="text-[11px] text-[var(--text-muted)]">
-                        Гость приложит фото документа (JPG/PNG, сжимается автоматически). Подходит для удостоверения личности.
+                        Гость приложит фото (сожмётся автоматически) или файл любого формата до 650 КБ: PDF, Word, PowerPoint, архив.
+                        Установщики и исполняемые файлы (APK, EXE, скрипты) не принимаются. Файл открывается в кабинете прямо на странице.
                       </p>
                     )}
                   </div>
@@ -2083,21 +2102,8 @@ export default function FormBuilder() {
         </div>
       )}
 
-      {/* Просмотр приложенного документа */}
-      {docView && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setDocView(null)}>
-          <div onClick={e => e.stopPropagation()}
-            className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl max-w-lg w-full p-4 shadow-2xl relative">
-            <button onClick={() => setDocView(null)} className="absolute top-3 right-3 text-slate-400 hover:text-white">
-              <X className="w-5 h-5" />
-            </button>
-            <h3 className="text-sm font-bold text-[var(--text-main)] mb-3">{docView.name} — документ</h3>
-            <img src={docView.src} alt="Документ заявителя"
-              className="w-full rounded-xl border border-[var(--border-color)] max-h-[70vh] object-contain bg-black/30" />
-          </div>
-        </div>
-      )}
+      {/* Просмотр приложенных файлов: картинки, PDF, текст и медиа — на странице, остальное — скачать. */}
+      {docView && <FileViewer title={docView.title} files={docView.files} onClose={() => setDocView(null)} />}
 
       {/* QR на саму форму — его печатают и вешают на стенд, чтобы люди
           сканировали и заполняли заявку с телефона. */}
