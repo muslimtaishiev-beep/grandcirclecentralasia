@@ -4,9 +4,9 @@ import { requireFirebaseAuth } from "./authRoutes.js";
 import { callerPermissions } from "../server/access.js";
 import { requireScreen } from "../server/tenantAccess.js";
 import {
-  DISCIPLINE_CODE, QUESTION_ID, canonicalHeader, isQuestionType, normalizeLevels, parseSheetRow,
+  DISCIPLINE_CODE, QUESTION_ID, SET_ID, canonicalHeader, isQuestionType, normalizeLevels, normalizeSetIds, parseSheetRow,
   questionId, sanitizeContent, validateQuestion,
-  type BankQuestion, type Discipline, type Difficulty,
+  type BankQuestion, type Discipline, type Difficulty, type QuestionSet,
 } from "../shared/exams.js";
 
 /**
@@ -38,6 +38,7 @@ const access = (need: "view" | "edit") => async (req: any, res: any, next: any) 
 const checkParams = (req: any, res: any, next: any) => {
   if (req.params.code !== undefined && !DISCIPLINE_CODE.test(String(req.params.code))) return fail(res, 400, "Неверный код дисциплины");
   if (req.params.id !== undefined && !QUESTION_ID.test(String(req.params.id))) return fail(res, 400, "Неверный номер вопроса");
+  if (req.params.setId !== undefined && !SET_ID.test(String(req.params.setId))) return fail(res, 400, "Неверный набор");
   next();
 };
 export const view = [requireFirebaseAuth, requireScreen("exams", (req: any) => req.params.tenantId), access("view")];
@@ -107,6 +108,83 @@ router.delete("/:tenantId/disciplines/:code", ...edit, checkParams, async (req: 
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
+// ── Наборы ──────────────────────────────────────────────────────────────
+
+const newSetId = () => "set_" + Array.from({ length: 10 }, () => "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random() * 36)]).join("");
+/** Только наборы, которые есть в банке организации: чужой или удалённый id в вопрос не попадёт. */
+async function existingSets(t: string, ids: string[]): Promise<string[]> {
+  if (!ids.length) return [];
+  const snaps = await db().getAll(...ids.map(id => col(t, "exam_sets").doc(id)));
+  return snaps.filter(s => s.exists).map(s => s.id);
+}
+
+router.get("/:tenantId/sets", ...view, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId;
+    const [ss, qs] = await Promise.all([col(t, "exam_sets").get(), col(t, "exam_bank").select("sets").get()]);
+    const count = new Map<string, number>();
+    for (const d of qs.docs) for (const id of d.data().sets || []) count.set(id, (count.get(id) || 0) + 1);
+    const sets = ss.docs.map(d => ({ ...(d.data() as QuestionSet), id: d.id, count: count.get(d.id) || 0 }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    return res.json({ success: true, sets });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+router.post("/:tenantId/sets", ...edit, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId;
+    const name = str(req.body?.name, 80);
+    if (!name) return fail(res, 400, "Укажите название набора");
+    const dup = (await col(t, "exam_sets").get()).docs.some(d => String(d.data().name).toLowerCase() === name.toLowerCase());
+    if (dup) return fail(res, 409, `Набор «${name}» уже есть`);
+    const now = Date.now();
+    const set: QuestionSet = { id: newSetId(), name, description: str(req.body?.description, 300), createdAt: now, updatedAt: now };
+    await col(t, "exam_sets").doc(set.id).create(set);
+    return res.json({ success: true, set: { ...set, count: 0 } });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+router.put("/:tenantId/sets/:setId", ...edit, checkParams, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId;
+    const ref = col(t, "exam_sets").doc(String(req.params.setId));
+    const snap = await ref.get();
+    if (!snap.exists) return fail(res, 404, "Набор не найден");
+    const patch: Partial<QuestionSet> = { updatedAt: Date.now() };
+    if (req.body?.name !== undefined) {
+      const n = str(req.body.name, 80); if (!n) return fail(res, 400, "Название не может быть пустым");
+      const dup = (await col(t, "exam_sets").get()).docs.some(d => d.id !== snap.id && String(d.data().name).toLowerCase() === n.toLowerCase());
+      if (dup) return fail(res, 409, `Набор «${n}» уже есть`);
+      patch.name = n;
+    }
+    if (req.body?.description !== undefined) patch.description = str(req.body.description, 300);
+    await ref.update(patch);
+    return res.json({ success: true, set: { ...snap.data(), ...patch, id: snap.id } });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+/**
+ * Удаление набора снимает его с вопросов (сами вопросы остаются в банке).
+ * Если набор подключён к экзамену — отказ: экзамен молча начал бы брать
+ * вопросы из всей дисциплины, то есть смешивать их.
+ */
+router.delete("/:tenantId/sets/:setId", ...edit, checkParams, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const id = String(req.params.setId);
+    const exams = await col(t, "exams").select("title", "sections").get();
+    const used = exams.docs.filter(d => (d.data().sections || []).some((s: any) => s?.setId === id)).map(d => `«${d.data().title}»`);
+    if (used.length) return fail(res, 409, `Набор подключён к экзаменам: ${used.slice(0, 5).join(", ")}${used.length > 5 ? "…" : ""}. Сначала отключите его там`);
+    const qs = await col(t, "exam_bank").where("sets", "array-contains", id).get();
+    for (let i = 0; i < qs.docs.length; i += 400) {
+      const b = db().batch();
+      for (const d of qs.docs.slice(i, i + 400)) b.update(d.ref, { sets: admin.firestore.FieldValue.arrayRemove(id) });
+      await b.commit();
+    }
+    await col(t, "exam_sets").doc(id).delete();
+    return res.json({ success: true, released: qs.size });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
 // ── Вопросы ─────────────────────────────────────────────────────────────
 
 router.get("/:tenantId/questions", ...view, async (req: any, res: any) => {
@@ -157,9 +235,10 @@ router.post("/:tenantId/questions", ...edit, async (req: any, res: any) => {
     const t = req.params.tenantId; const code = str(req.body?.disciplineId, 8).toUpperCase();
     const { q, errors } = buildQuestion(req.body);
     if (errors.length) return fail(res, 400, errors.join("; "));
+    const sets = await existingSets(t, normalizeSetIds(req.body?.sets));
     const n = await allocate(t, code, 1);
     const now = Date.now();
-    const full: BankQuestion = { ...q, id: questionId(code, n), tenantId: t, disciplineId: code, number: n, createdAt: now, updatedAt: now, updatedBy: who(req) };
+    const full: BankQuestion = { ...q, id: questionId(code, n), tenantId: t, disciplineId: code, number: n, ...(sets.length ? { sets } : {}), createdAt: now, updatedAt: now, updatedBy: who(req) };
     // create, а не set: если номер почему-то занят, это ошибка, а не тихая перезапись чужого вопроса.
     await col(t, "exam_bank").doc(full.id).create(full);
     return res.json({ success: true, question: full });
@@ -176,13 +255,15 @@ router.put("/:tenantId/questions/:id", ...edit, checkParams, async (req: any, re
     const { q, errors } = buildQuestion(req.body);
     if (errors.length) return fail(res, 400, errors.join("; "));
     // Полная замена содержимого: поля прежнего типа не должны остаться висеть.
-    const full: BankQuestion = { ...q, id, tenantId: t, disciplineId: prev.disciplineId, number: prev.number, order: prev.order, source: prev.source, createdAt: prev.createdAt, updatedAt: Date.now(), updatedBy: who(req) };
+    // Наборы не прислали — остаются прежние.
+    const sets = req.body?.sets === undefined ? prev.sets || [] : await existingSets(t, normalizeSetIds(req.body.sets));
+    const full: BankQuestion = { ...q, id, tenantId: t, disciplineId: prev.disciplineId, number: prev.number, order: prev.order, source: prev.source, ...(sets.length ? { sets } : {}), createdAt: prev.createdAt, updatedAt: Date.now(), updatedBy: who(req) };
     await ref.set(JSON.parse(JSON.stringify(full)));
     return res.json({ success: true, question: full });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
-/** Массово: включить, выключить, удалить, задать классы или сложность. */
+/** Массово: включить, выключить, удалить, задать классы или сложность, добавить в набор или убрать из него. */
 router.post("/:tenantId/questions/bulk", ...edit, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
@@ -204,6 +285,12 @@ router.post("/:tenantId/questions/bulk", ...edit, async (req: any, res: any) => 
     else if (action === "deactivate") patch.active = false;
     else if (action === "levels") patch.levels = normalizeLevels(req.body?.levels);
     else if (action === "difficulty") { const d = Number(req.body?.difficulty); if (![1, 2, 3].includes(d)) return fail(res, 400, "Сложность — 1, 2 или 3"); patch.difficulty = d; }
+    else if (action === "addSet" || action === "removeSet") {
+      const setId = str(req.body?.setId, 40);
+      if (!SET_ID.test(setId) || !(await existingSets(t, [setId])).length) return fail(res, 400, "Набор не найден");
+      const F = admin.firestore.FieldValue;
+      patch.sets = action === "addSet" ? F.arrayUnion(setId) : F.arrayRemove(setId);
+    }
     else if (action !== "delete") return fail(res, 400, "Неизвестное действие");
     for (let i = 0; i < ids.length; i += 400) {
       const b = db().batch();
@@ -220,9 +307,12 @@ router.post("/:tenantId/questions/bulk", ...edit, async (req: any, res: any) => 
 // ── Импорт таблицей ─────────────────────────────────────────────────────
 
 /**
- * { header: string[], rows: string[][], commit?: boolean, createDisciplines?: {code,name}[] }
+ * { header: string[], rows: string[][], commit?: boolean, createDisciplines?: {code,name}[], setId?: string }
  * Без commit — только проверка: что создастся, что обновится, где ошибки.
  * Строка с номером обновляет свой вопрос, без номера — получает новый.
+ * Колонка «Наборы» — названия наборов (новые создаются при загрузке); без
+ * колонки наборы обновляемых вопросов не трогаются. setId — набор, в который
+ * дополнительно попадают все загруженные вопросы.
  */
 router.post("/:tenantId/import", ...edit, async (req: any, res: any) => {
   try {
@@ -233,7 +323,11 @@ router.post("/:tenantId/import", ...edit, async (req: any, res: any) => {
     if (!keys.includes("Вопрос") && !keys.includes("Данные (JSON)")) return fail(res, 400, "Не найдена колонка «Вопрос» — скачайте шаблон");
     if (!keys.includes("Дисциплина") && !keys.includes("Номер")) return fail(res, 400, "Не найдена колонка «Дисциплина»");
 
-    const [ds, existing] = await Promise.all([col(t, "exam_disciplines").get(), col(t, "exam_bank").select("disciplineId").get()]);
+    const [ds, existing, setSnap] = await Promise.all([col(t, "exam_disciplines").get(), col(t, "exam_bank").select("disciplineId").get(), col(t, "exam_sets").get()]);
+    const setByName = new Map(setSnap.docs.map(d => [String(d.data().name).toLowerCase(), d.id]));
+    const hasSetColumn = keys.includes("Наборы");
+    const extraSet = str(req.body?.setId, 40);
+    if (extraSet && !setSnap.docs.some(d => d.id === extraSet)) return fail(res, 400, "Набор для загрузки не найден");
     const known = new Set(ds.docs.map(d => d.id));
     const existingIds = new Set(existing.docs.map(d => d.id));
     const toCreate: Record<string, string> = {};
@@ -264,6 +358,7 @@ router.post("/:tenantId/import", ...edit, async (req: any, res: any) => {
       errors: parsed.filter(p => !p.question).length,
       warnings: ok.filter(p => p.issues.length).length,
       missingDisciplines: [...missing],
+      newSets: [...new Set(ok.flatMap(p => p.setNames).filter(n => !setByName.has(n.toLowerCase())))],
     };
     const report = parsed.filter(p => p.issues.length).slice(0, 300).map(p => ({ row: p.rowNumber, id: p.id, discipline: p.disciplineId, issues: p.issues }));
     if (!req.body?.commit) return res.json({ success: true, summary, report });
@@ -275,16 +370,30 @@ router.post("/:tenantId/import", ...edit, async (req: any, res: any) => {
       await col(t, "exam_disciplines").doc(code).create({ code, name, description: "", nextNumber: 1, createdAt: now, updatedAt: now })
         .catch((e: any) => { if (e?.code !== 6) throw e; });
     }
+    // Наборы из колонки, которых ещё нет, — создаём (одно название — один набор).
+    for (const name of summary.newSets) {
+      const key = name.toLowerCase();
+      if (setByName.has(key)) continue;
+      const id = newSetId();
+      await col(t, "exam_sets").doc(id).create({ id, name, description: "", createdAt: now, updatedAt: now });
+      setByName.set(key, id);
+    }
+    const setsOf = (p: (typeof ok)[number], old?: any): string[] => {
+      const base: string[] = hasSetColumn ? p.setNames.map(n => setByName.get(n.toLowerCase())!).filter(Boolean) : old?.sets || [];
+      return [...new Set([...base, ...(extraSet ? [extraSet] : [])])];
+    };
     // Номера для новых — пачкой на дисциплину.
     const newBy = new Map<string, number>();
     for (const p of ok) if (!p.id || !existingIds.has(p.id)) newBy.set(p.disciplineId, (newBy.get(p.disciplineId) || 0) + 1);
     const next = new Map<string, number>();
     for (const [code, n] of newBy) next.set(code, await allocate(t, code, n));
     const writes: BankQuestion[] = [];
+    const byId = new Map<string, (typeof ok)[number]>();
     for (const p of ok) {
       const update = !!p.id && existingIds.has(p.id);
       const number = update ? Number(p.id!.split("-")[1]) : next.get(p.disciplineId)!;
       if (!update) next.set(p.disciplineId, number + 1);
+      byId.set(update ? p.id! : questionId(p.disciplineId, number), p);
       writes.push({ ...p.question!, id: update ? p.id! : questionId(p.disciplineId, number), tenantId: t, disciplineId: p.disciplineId, number, createdAt: now, updatedAt: now, updatedBy: who(req) });
     }
     // При обновлении — полная замена (поля прежнего типа не остаются), но
@@ -299,7 +408,8 @@ router.post("/:tenantId/import", ...edit, async (req: any, res: any) => {
       const b = db().batch();
       for (const q of writes.slice(i, i + 400)) {
         const old = prev.get(q.id);
-        const doc = old ? { ...q, createdAt: old.createdAt ?? q.createdAt, order: old.order, source: old.source } : q;
+        const sets = setsOf(byId.get(q.id)!, old);
+        const doc = { ...(old ? { ...q, createdAt: old.createdAt ?? q.createdAt, order: old.order, source: old.source } : q), sets: sets.length ? sets : undefined };
         const ref = col(t, "exam_bank").doc(q.id);
         // Новые — только create: занятый номер не перезаписывается молча.
         if (old) b.set(ref, JSON.parse(JSON.stringify(doc))); else b.create(ref, JSON.parse(JSON.stringify(doc)));

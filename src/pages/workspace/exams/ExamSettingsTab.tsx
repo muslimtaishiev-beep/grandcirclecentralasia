@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { AlertTriangle, ArrowDown, ArrowUp, Loader2, Plus, Save, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, ListChecks, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { DIFFICULTY_LABEL, type Difficulty } from "../../../shared/exams";
 import { type Exam, type ExamSection, type ExamSettings, type ScaleBand } from "../../../shared/examRun";
 import { btn, btnPrimary, card, input, label } from "../journals/components/ui";
-import type { Api, DisciplineRow } from "./examApi";
+import type { Api, DisciplineRow, SetRow } from "./examApi";
+import QuestionPicker from "./QuestionPicker";
 
-type Plan = { pool: number; have: Record<Difficulty, number>; want: number; short: { difficulty: Difficulty; need: number; have: number }[] };
+type Plan = { pool: number; have: Record<Difficulty, number>; want: number; short: { difficulty: Difficulty; need: number; have: number }[]; missing?: number };
 
 /**
  * Конструктор экзамена: дисциплины из банка и все настройки, которые раньше
@@ -20,12 +21,18 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
   const [sections, setSections] = useState<ExamSection[]>(exam.sections);
   const [st, setSt] = useState<ExamSettings>(exam.settings);
   const [disciplines, setDisciplines] = useState<DisciplineRow[]>([]);
+  const [sets, setSets] = useState<SetRow[]>([]);
+  /** Раздел, вопросы которого сейчас отмечают. */
+  const [picking, setPicking] = useState<number | null>(null);
   const [plans, setPlans] = useState<Record<string, Plan>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  useEffect(() => { bankApi("/disciplines").then(j => setDisciplines(j.disciplines)).catch(() => {}); }, [bankApi]);
+  useEffect(() => {
+    bankApi("/disciplines").then(j => setDisciplines(j.disciplines)).catch(() => {});
+    bankApi("/sets").then(j => setSets(j.sets)).catch(() => {});
+  }, [bankApi]);
   // Сколько вопросов найдётся под каждый раздел — пересчёт при правке.
   useEffect(() => {
     const t = setTimeout(() => { api(`/exams/${exam.id}/plan`, { method: "POST", body: JSON.stringify({ sections }) }).then(j => setPlans(j.plans)).catch(() => {}); }, 400);
@@ -123,7 +130,7 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
             <div key={s.id} className={`${card} p-4 space-y-3`}>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-bold text-[var(--text-muted)] w-5">{i + 1}.</span>
-                <select className={`${input} !w-auto`} value={s.disciplineId} onChange={e => { const d = disciplines.find(x => x.code === e.target.value); upd(i, { disciplineId: e.target.value, title: d?.name || s.title, levels: [] }); }}>
+                <select className={`${input} !w-auto`} value={s.disciplineId} onChange={e => { const d = disciplines.find(x => x.code === e.target.value); upd(i, { disciplineId: e.target.value, title: d?.name || s.title, levels: [], questionIds: s.mode === "picked" ? [] : undefined }); }}>
                   {disciplines.map(d => <option key={d.code} value={d.code}>{d.code} · {d.name}</option>)}
                 </select>
                 <input className={`${input} flex-1 min-w-[160px]`} value={s.title} onChange={e => upd(i, { title: e.target.value })} placeholder="Название раздела для ученика" />
@@ -134,7 +141,17 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
                 <button className={btn} onClick={() => move(i, 1)} disabled={i === sections.length - 1}><ArrowDown className="w-4 h-4" /></button>
                 <button className={btn} onClick={() => setSections(xs => xs.filter((_, k) => k !== i))}><Trash2 className="w-4 h-4 text-rose-600" /></button>
               </div>
-              {disc && disc.levels.length > 0 && (
+              {s.mode !== "picked" && sets.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-[var(--text-main)]">Вопросы из</span>
+                  <select className={`${input} !w-auto`} value={s.setId || ""} onChange={e => upd(i, { setId: e.target.value || undefined })}>
+                    <option value="">всей дисциплины (все наборы)</option>
+                    {sets.map(x => <option key={x.id} value={x.id}>набора «{x.name}»</option>)}
+                  </select>
+                  {!s.setId && <span className="text-[11px] text-amber-700">вопросы разных экзаменов смешаются — лучше выбрать набор</span>}
+                </div>
+              )}
+              {s.mode !== "picked" && disc && disc.levels.length > 0 && (
                 <div>
                   <span className={label}>Классы (уровни) вопросов</span>
                   <div className="flex flex-wrap gap-1.5">
@@ -150,6 +167,7 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
               <div className="flex flex-wrap gap-4">
                 <label className="flex items-center gap-2 text-sm"><input type="radio" checked={s.mode === "all"} onChange={() => upd(i, { mode: "all" })} /> Все вопросы по порядку (фиксированный тест)</label>
                 <label className="flex items-center gap-2 text-sm"><input type="radio" checked={s.mode === "random"} onChange={() => upd(i, { mode: "random" })} /> Случайный вариант по сложности</label>
+                <label className="flex items-center gap-2 text-sm"><input type="radio" checked={s.mode === "picked"} onChange={() => upd(i, { mode: "picked", questionIds: s.questionIds || [] })} /> Только отмеченные вопросы</label>
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={s.shuffle} onChange={e => upd(i, { shuffle: e.target.checked })} /> Перемешать порядок</label>
                 {i > 0 && <label className="flex items-center gap-2 text-sm" title="Одна страница и один таймер с предыдущей дисциплиной; баллы — отдельно"><input type="checkbox" checked={!!s.joinPrev} onChange={e => upd(i, { joinPrev: e.target.checked })} /> Вместе с предыдущей (общий таймер)</label>}
               </div>
@@ -164,9 +182,16 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
                   ))}
                 </div>
               )}
+              {s.mode === "picked" && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" className={btnPrimary} onClick={() => setPicking(i)}><ListChecks className="w-4 h-4" /> {(s.questionIds || []).length ? `Отмечено ${(s.questionIds || []).length} — изменить` : "Отметить вопросы"}</button>
+                  <span className="text-[11px] text-[var(--text-muted)]">Ученик получит ровно эти вопросы, в выбранном порядке. Другие экзамены их не затрагивают.</span>
+                </div>
+              )}
               {plan && (
-                <div className={`text-xs ${plan.pool === 0 || plan.short.length ? "text-amber-700" : "text-[var(--text-muted)]"}`}>
+                <div className={`text-xs ${plan.pool === 0 || plan.short.length || plan.missing ? "text-amber-700" : "text-[var(--text-muted)]"}`}>
                   {plan.pool === 0 ? <><AlertTriangle className="inline w-3.5 h-3.5 -mt-0.5" /> Нет активных вопросов под эти условия</>
+                    : s.mode === "picked" ? <>Ученик получит {plan.want} вопр.{plan.missing ? ` · ${plan.missing} отмеченных выключены или удалены в банке — их не будет` : ""}</>
                     : <>Ученик получит {plan.want} вопр. из {plan.pool} подходящих{plan.short.map(x => ` · не хватает «${DIFFICULTY_LABEL[x.difficulty].toLowerCase()}»: нужно ${x.need}, есть ${x.have}`).join("")}</>}
                 </div>
               )}
@@ -249,6 +274,12 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
           <GroupsEditor groups={st.results.groups} onChange={groups => set("results", { groups })} />
         </section>
       </div>
+
+      {picking !== null && sections[picking] && (
+        <QuestionPicker bankApi={bankApi} disciplineId={sections[picking].disciplineId} title={sections[picking].title} sets={sets}
+          initial={sections[picking].questionIds || []} canEdit={canEdit}
+          onApply={ids => { upd(picking, { questionIds: ids }); setPicking(null); }} onClose={() => setPicking(null)} />
+      )}
 
       {canEdit && (
         <div className="fixed bottom-3 left-3 right-3 md:left-auto md:bottom-4 md:right-4 z-40 flex flex-col-reverse md:flex-row items-stretch md:items-center gap-2">

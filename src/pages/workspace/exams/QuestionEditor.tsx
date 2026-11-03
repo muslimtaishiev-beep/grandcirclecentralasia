@@ -7,6 +7,7 @@ import {
   type BankQuestion, type Difficulty, type DropdownItem, type QuestionType,
 } from "../../../shared/exams";
 import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui";
+import type { SetRow } from "./examApi";
 import { clickableToMarkup, inlineToMarkup, markupToClickable, markupToInline, shuffled } from "./markup";
 
 /**
@@ -20,19 +21,22 @@ import { clickableToMarkup, inlineToMarkup, markupToClickable, markupToInline, s
  */
 export type Draft = Partial<BankQuestion> & { type: QuestionType; disciplineId: string };
 
-const blank = (disciplineId: string, levels: string[] = []): Draft => ({
-  disciplineId, type: "multiple_choice", text: "", options: ["", ""], answer: "", levels, topic: "", difficulty: 2, points: 1, active: true,
+const blank = (disciplineId: string, levels: string[] = [], sets: string[] = []): Draft => ({
+  disciplineId, type: "multiple_choice", text: "", options: ["", ""], answer: "", levels, topic: "", difficulty: 2, points: 1, active: true, sets,
 });
 
-export default function QuestionEditor({ initial, disciplineId, defaultLevels, canEdit, onSave, onClose }: {
+export default function QuestionEditor({ initial, disciplineId, defaultLevels, defaultSets, allSets = [], canEdit, onSave, onClose }: {
   initial: BankQuestion | null;
   disciplineId: string;
   defaultLevels?: string[];
+  defaultSets?: string[];
+  /** Наборы банка — вопрос можно отметить в нескольких. */
+  allSets?: SetRow[];
   canEdit: boolean;
   onSave: (d: Draft) => Promise<void>;
   onClose: () => void;
 }) {
-  const [d, setD] = useState<Draft>(() => (initial ? JSON.parse(JSON.stringify(initial)) : blank(disciplineId, defaultLevels)));
+  const [d, setD] = useState<Draft>(() => (initial ? JSON.parse(JSON.stringify(initial)) : blank(disciplineId, defaultLevels, defaultSets)));
   const [levelsText, setLevelsText] = useState((initial?.levels || defaultLevels || []).join(", "));
   const [inlineMarkup, setInlineMarkup] = useState(() => inlineToMarkup(initial?.inlineSegments, initial?.answer));
   const [clickMarkup, setClickMarkup] = useState(() => clickableToMarkup(initial?.clickableSegments));
@@ -125,6 +129,24 @@ export default function QuestionEditor({ initial, disciplineId, defaultLevels, c
               <div><span className={label}>Баллы</span><input type="number" min={0.5} step={0.5} className={input} value={d.points ?? 1} onChange={e => set({ points: Number(e.target.value) })} /></div>
             </div>
           </div>
+
+          {allSets.length > 0 && (
+            <div>
+              <span className={label}>Наборы</span>
+              <div className="flex flex-wrap gap-1.5">
+                {allSets.map(x => {
+                  const on = (d.sets || []).includes(x.id);
+                  return (
+                    <button key={x.id} type="button" onClick={() => set({ sets: on ? (d.sets || []).filter(y => y !== x.id) : [...(d.sets || []), x.id] })}
+                      className={`px-3 py-1 rounded-full text-xs font-medium border ${on ? "bg-violet-600 border-violet-600 text-white" : "border-[var(--border-color)] text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]"}`}>
+                      {on ? "✓ " : ""}{x.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-[var(--text-muted)] mt-1">Экзамен, подключённый к набору, берёт только вопросы этого набора. Без набора вопрос попадёт лишь в экзамены, которые берут всю дисциплину.</p>
+            </div>
+          )}
 
           {d.type === "inline_inputs" ? (
             <div>

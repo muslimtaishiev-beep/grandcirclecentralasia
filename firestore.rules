@@ -102,6 +102,7 @@ service cloud.firestore {
       // Экзамены: банк с ключами ответов — только через сервер.
       match /exam_disciplines/{d}  { allow read, write: if false; }
       match /exam_bank/{d}         { allow read, write: if false; }
+      match /exam_sets/{d}         { allow read, write: if false; }
       match /exams/{d}             { allow read, write: if false; }
       match /exam_attempts/{d}     { allow read, write: if false; }
       match /exam_evidence/{d}     { allow read, write: if false; }

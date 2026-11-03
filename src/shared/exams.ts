@@ -76,10 +76,29 @@ export interface BankQuestion extends QuestionContent {
   /** Порядок в исходном тесте — для экзаменов с фиксированным набором. */
   order?: number;
   source?: { kind: string; ref?: string; levels?: string[] };
+  /** Наборы (отдельные банки), в которые входит вопрос: «Вступительный 2026», «Контрольная 1 четверть». */
+  sets?: string[];
   createdAt: number;
   updatedAt: number;
   updatedBy?: string;
 }
+
+/**
+ * Набор — отдельный банк внутри банка организации. Вопросы по-прежнему
+ * разложены по дисциплинам, а набор отвечает на вопрос «для чего»: экзамен
+ * подключает дисциплину из конкретного набора, и вопросы контрольной не
+ * попадают во вступительный тест того же класса.
+ */
+export interface QuestionSet {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+export const SET_ID = /^set_[a-z0-9]{4,24}$/;
+export const normalizeSetIds = (v: unknown): string[] =>
+  [...new Set((Array.isArray(v) ? v : []).map(x => String(x ?? "").trim()).filter(x => SET_ID.test(x)))].slice(0, 20);
 
 export interface Discipline {
   code: string;
@@ -286,7 +305,7 @@ export function plainText(q: QuestionContent): string {
  * заполняет выгрузка, руками её обычно не пишут.
  */
 export const SHEET_COLUMNS = [
-  "Номер", "Дисциплина", "Классы", "Тема", "Сложность", "Тип", "Баллы",
+  "Номер", "Дисциплина", "Наборы", "Классы", "Тема", "Сложность", "Тип", "Баллы",
   "Вопрос", "Инструкция", "Варианты", "Правильный ответ", "Активен", "Данные (JSON)",
 ] as const;
 
@@ -298,6 +317,7 @@ const HEADER_ALIASES: Record<string, (typeof SHEET_COLUMNS)[number]> = {
   "вопрос": "Вопрос", "текст": "Вопрос", "текст вопроса": "Вопрос",
   "инструкция": "Инструкция", "варианты": "Варианты", "варианты ответа": "Варианты",
   "правильный ответ": "Правильный ответ", "ответ": "Правильный ответ", "правильный": "Правильный ответ", "ключ": "Правильный ответ",
+  "наборы": "Наборы", "набор": "Наборы", "банк": "Наборы",
   "активен": "Активен", "активный": "Активен", "данные (json)": "Данные (JSON)", "данные": "Данные (JSON)", "json": "Данные (JSON)",
 };
 export const canonicalHeader = (h: string) => HEADER_ALIASES[String(h || "").trim().toLowerCase().replace(/\s+/g, " ")] || null;
@@ -315,6 +335,8 @@ export interface ImportedRow {
   rowNumber: number;
   id: string | null;
   disciplineId: string;
+  /** Названия наборов из колонки «Наборы» — сервер сопоставит их с наборами банка. */
+  setNames: string[];
   question: Omit<BankQuestion, "id" | "tenantId" | "disciplineId" | "number" | "createdAt" | "updatedAt"> | null;
   issues: QuestionIssue[];
 }
@@ -353,7 +375,8 @@ export function parseSheetRow(row: Record<string, string>, rowNumber: number): I
   const activeRaw = g("Активен").toLowerCase();
   const active = !["нет", "no", "0", "false", "выкл"].includes(activeRaw);
 
-  if (!type || issues.some(i => i.level === "error")) return { rowNumber, id, disciplineId, question: null, issues };
+  const setNames = [...new Set(g("Наборы").split(/[;\n]+/).map(x => x.trim().slice(0, 80)).filter(Boolean))].slice(0, 20);
+  if (!type || issues.some(i => i.level === "error")) return { rowNumber, id, disciplineId, setNames, question: null, issues };
   const content = sanitizeContent(type, rawContent);
   let answer = g("Правильный ответ") || derivedAnswer({ ...content, type }) || "";
   answer = letterToOption(answer, type === "multiple_choice" ? content.options : type === "inline_dropdown" ? content.inlineOptions : undefined);
@@ -366,7 +389,7 @@ export function parseSheetRow(row: Record<string, string>, rowNumber: number): I
     active,
   };
   issues.push(...validateQuestion(question));
-  return { rowNumber, id, disciplineId, question: issues.some(i => i.level === "error") ? null : question, issues };
+  return { rowNumber, id, disciplineId, setNames, question: issues.some(i => i.level === "error") ? null : question, issues };
 }
 
 /**
@@ -384,7 +407,7 @@ export function letterToOption(answer: string, options?: string[]): string {
 }
 
 /** Вопрос → строка таблицы для выгрузки. */
-export function questionToSheetRow(q: BankQuestion): string[] {
+export function questionToSheetRow(q: BankQuestion, setName: (id: string) => string = id => id): string[] {
   const simple = q.type === "multiple_choice" || q.type === "two_step" || q.type === "inline_dropdown" || q.type === "drag_and_drop";
   const list = q.type === "inline_dropdown" ? q.inlineOptions : q.type === "drag_and_drop" ? q.dragItems : q.options;
   const extra: any = {};
@@ -394,7 +417,7 @@ export function questionToSheetRow(q: BankQuestion): string[] {
     extra[k] = q[k];
   }
   return [
-    q.id, q.disciplineId, q.levels.join(";"), q.topic, String(q.difficulty), TYPE_LABEL[q.type], String(q.points),
+    q.id, q.disciplineId, (q.sets || []).map(setName).join(";"), q.levels.join(";"), q.topic, String(q.difficulty), TYPE_LABEL[q.type], String(q.points),
     q.text || "", q.instruction || "", simple ? (list || []).join("\n") : "", q.answer, q.active ? "да" : "нет",
     Object.keys(extra).length ? JSON.stringify(extra) : "",
   ];

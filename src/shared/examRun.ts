@@ -19,8 +19,17 @@ export interface ExamSection {
   disciplineId: string;
   title: string;
   minutes: number;
-  /** all — все активные вопросы дисциплины для уровней по порядку; random — выборка по сложности. */
-  mode: "all" | "random";
+  /**
+   * all — все активные вопросы дисциплины для уровней по порядку;
+   * random — выборка по сложности;
+   * picked — только вопросы, отмеченные в этом экзамене (questionIds): так
+   * вопросы одного экзамена не попадают в другой через общий банк.
+   */
+  mode: "all" | "random" | "picked";
+  /** Для picked — номера вопросов банка в порядке прохождения. */
+  questionIds?: string[];
+  /** Из какого набора брать вопросы (для all и random). Пусто — из всей дисциплины. */
+  setId?: string;
   /** Какие уровни (классы) брать. Пусто — все вопросы дисциплины. */
   levels: string[];
   counts: Record<Difficulty, number>;
@@ -134,7 +143,11 @@ export function sanitizeSections(raw: unknown): ExamSection[] {
       id, disciplineId,
       title: s(r?.title, 80) || disciplineId,
       minutes: Math.round(num(r?.minutes, 1, 600, 30)),
-      mode: r?.mode === "random" ? "random" : "all",
+      mode: r?.mode === "random" ? "random" : r?.mode === "picked" ? "picked" : "all",
+      // Только вопросы своей дисциплины, без повторов, не больше 500.
+      ...(r?.mode !== "picked" && /^set_[a-z0-9]{4,24}$/.test(String(r?.setId || "")) ? { setId: String(r.setId) } : {}),
+      ...(r?.mode === "picked" ? { questionIds: [...new Set<string>((Array.isArray(r?.questionIds) ? r.questionIds : []).map((x: unknown) => s(x, 20).toUpperCase())
+        .filter((x: string) => /^[A-Z][A-Z0-9]{1,7}-\d{4,6}$/.test(x) && x.startsWith(`${disciplineId}-`)))].slice(0, 500) } : {}),
       levels: (Array.isArray(r?.levels) ? r.levels : []).map((x: unknown) => s(x, 20)).filter(Boolean).slice(0, 30),
       counts: { 1: Math.round(num(c[1], 0, 500, 0)), 2: Math.round(num(c[2], 0, 500, 0)), 3: Math.round(num(c[3], 0, 500, 0)) },
       shuffle: b(r?.shuffle, false),
@@ -206,7 +219,13 @@ const levelOk = (q: Pick<BankQuestion, "levels">, levels: string[]) =>
 
 /** Вопросы банка, подходящие разделу, — для конструктора и сборки варианта. */
 export function sectionPool(section: ExamSection, bank: BankQuestion[]): BankQuestion[] {
-  return bank.filter(q => q.active && q.disciplineId === section.disciplineId && levelOk(q, section.levels))
+  if (section.mode === "picked") {
+    // Порядок — как отметили в экзамене; выключенные и удалённые выпадают.
+    const byId = new Map(bank.map(q => [q.id, q]));
+    return (section.questionIds || []).map(id => byId.get(id)).filter((q): q is BankQuestion => !!q && q.active);
+  }
+  return bank.filter(q => q.active && q.disciplineId === section.disciplineId && levelOk(q, section.levels)
+    && (!section.setId || (q.sets || []).includes(section.setId)))
     .sort((a, c) => (a.order ?? 1e9) - (c.order ?? 1e9) || a.number - c.number);
 }
 
@@ -215,11 +234,13 @@ export function sectionPlan(section: ExamSection, bank: BankQuestion[]) {
   const have = { 1: 0, 2: 0, 3: 0 } as Record<Difficulty, number>;
   for (const q of pool) have[q.difficulty]++;
   // Сколько ученик получит на деле: заказано больше, чем есть, — дадим сколько есть.
-  const want = section.mode === "all" ? pool.length : ([1, 2, 3] as Difficulty[]).reduce((n, d) => n + Math.min(section.counts[d], have[d]), 0);
+  const want = section.mode !== "random" ? pool.length : ([1, 2, 3] as Difficulty[]).reduce((n, d) => n + Math.min(section.counts[d], have[d]), 0);
+  // Отмечены, но выключены или удалены в банке — ученик их не получит.
+  const missing = section.mode === "picked" ? (section.questionIds || []).length - pool.length : 0;
   const short = section.mode === "random"
     ? ([1, 2, 3] as Difficulty[]).filter(d => section.counts[d] > have[d]).map(d => ({ difficulty: d, need: section.counts[d], have: have[d] }))
     : [];
-  return { pool: pool.length, have, want, short };
+  return { pool: pool.length, have, want, short, missing };
 }
 
 function shuffle<T>(a: T[], rnd: () => number = Math.random): T[] {
@@ -234,7 +255,7 @@ function shuffle<T>(a: T[], rnd: () => number = Math.random): T[] {
  */
 export function pickSectionQuestions(section: ExamSection, bank: BankQuestion[], rnd: () => number = Math.random): BankQuestion[] {
   const pool = sectionPool(section, bank);
-  if (section.mode === "all") return section.shuffle ? shuffle(pool, rnd) : pool;
+  if (section.mode !== "random") return section.shuffle ? shuffle(pool, rnd) : pool;
   const out: BankQuestion[] = [];
   for (const d of [1, 2, 3] as Difficulty[]) {
     const need = section.counts[d];

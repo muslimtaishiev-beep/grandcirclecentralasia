@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { AlertTriangle, CheckCircle2, FileDown, Loader2, Upload } from "lucide-react";
 import { Modal, btn, btnPrimary, input } from "../journals/components/ui";
-import type { DisciplineRow } from "./examApi";
+import type { DisciplineRow, SetRow } from "./examApi";
 import { downloadTemplate, readSheetFile } from "./bankSheets";
 
 type Api = (path: string, init?: RequestInit) => Promise<any>;
@@ -12,9 +12,10 @@ type Report = { row: number; id: string | null; discipline: string; issues: { le
  * обновится, где ошибки), потом запись. Дисциплину, которой нет, можно
  * создать прямо здесь — задав ей название.
  */
-export default function ImportModal({ api, disciplines, onClose, onDone }: {
-  api: Api; disciplines: DisciplineRow[]; onClose: () => void; onDone: () => void;
+export default function ImportModal({ api, disciplines, sets = [], defaultSet, onClose, onDone }: {
+  api: Api; disciplines: DisciplineRow[]; sets?: SetRow[]; defaultSet?: string; onClose: () => void; onDone: () => void;
 }) {
+  const [setId, setSetId] = useState(defaultSet || "");
   const [file, setFile] = useState<{ name: string; header: string[]; rows: string[][] } | null>(null);
   const [summary, setSummary] = useState<any>(null);
   const [report, setReport] = useState<Report>([]);
@@ -30,7 +31,7 @@ export default function ImportModal({ api, disciplines, onClose, onDone }: {
     setBusy(true); setError(null);
     try {
       const j = await api("/import", { method: "POST", body: JSON.stringify({
-        header: f.header, rows: f.rows,
+        header: f.header, rows: f.rows, setId: setId || undefined,
         createDisciplines: Object.entries(extraNames).filter(([, n]) => n.trim()).map(([code, name]) => ({ code, name })),
       }) });
       setSummary(j.summary); setReport(j.report || []);
@@ -55,7 +56,7 @@ export default function ImportModal({ api, disciplines, onClose, onDone }: {
     if (!file) return;
     setBusy(true); setError(null);
     try {
-      const j = await api("/import", { method: "POST", body: JSON.stringify({ header: file.header, rows: file.rows, commit: true, createDisciplines }) });
+      const j = await api("/import", { method: "POST", body: JSON.stringify({ header: file.header, rows: file.rows, commit: true, createDisciplines, setId: setId || undefined }) });
       setDone({ created: j.created, updated: j.updated });
     } catch (e: any) { setError(e.message); }
     finally { setBusy(false); }
@@ -86,6 +87,15 @@ export default function ImportModal({ api, disciplines, onClose, onDone }: {
             </label>
             {file && <span className="text-sm text-[var(--text-muted)] self-center">{file.name} · {file.rows.length} строк</span>}
           </div>
+          {sets.length > 0 && (
+            <label className="flex flex-wrap items-center gap-2 text-sm text-[var(--text-main)]">
+              Добавить все загруженные вопросы в набор
+              <select className={`${input} !w-auto`} value={setId} onChange={e => setSetId(e.target.value)}>
+                <option value="">— не добавлять —</option>
+                {sets.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+            </label>
+          )}
 
           {busy && !summary && <div className="py-6 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-[var(--text-muted)]" /></div>}
 
@@ -102,6 +112,9 @@ export default function ImportModal({ api, disciplines, onClose, onDone }: {
             </div>
           )}
 
+          {summary?.newSets?.length > 0 && (
+            <div className="text-sm text-violet-700">Будут созданы наборы из колонки «Наборы»: {summary.newSets.map((n: string) => `«${n}»`).join(", ")}</div>
+          )}
           {summary && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
               {[["Новых", summary.create, "text-emerald-600"], ["Обновится", summary.update, "text-sky-600"], ["С ошибками", summary.errors, "text-rose-600"], ["С замечаниями", summary.warnings, "text-amber-600"]].map(([t, v, c]) => (

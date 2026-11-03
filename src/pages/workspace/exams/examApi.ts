@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { auth } from "../../../lib/firebase";
-import type { Discipline } from "../../../shared/exams";
+import type { Discipline, QuestionSet } from "../../../shared/exams";
 
 /** Запросы к /api/exam-builder (банк) или /api/exam-admin (экзамены и работы). */
 export function useExamApi(tenantId: string, base: "exam-builder" | "exam-admin" = "exam-builder") {
@@ -16,6 +16,7 @@ export function useExamApi(tenantId: string, base: "exam-builder" | "exam-admin"
 }
 
 export type DisciplineRow = Discipline & { total: number; active: number; levels: string[] };
+export type SetRow = QuestionSet & { count: number };
 
 export type Api = (path: string, init?: RequestInit) => Promise<any>;
 
