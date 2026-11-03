@@ -16,7 +16,7 @@ export default function LegalDocPage({ title, build, kind }: { title: string; bu
     fetch(`/api/tenant/public?id=${encodeURIComponent(orgId)}`).then(r => r.json()).then(j => {
       if (!j.success) return;
       const t = j.tenant; const l = t.legal || {};
-      setOrg({ name: t.name, legalName: l.legalName, address: l.address, phone: l.phone, inn: l.inn, logoUrl: t.branding?.logoUrl || null });
+      setOrg({ name: t.name, legalName: l.legalName, address: l.address, phone: l.phone, inn: l.inn, email: t.workspaceConfig?.email?.replyTo || "", logoUrl: t.branding?.logoUrl || null });
     }).catch(() => {});
   }, [orgId]);
   const blocks = build(org);
@@ -54,7 +54,7 @@ export default function LegalDocPage({ title, build, kind }: { title: string; bu
             {org && (
               <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
                 <div className="font-semibold mb-2">Организация</div>
-                <dl className="space-y-1">{row("Название", org.legalName || org.name)}{row("Адрес", org.address)}{row("Телефон", org.phone)}{row("ИНН", org.inn)}</dl>
+                <dl className="space-y-1">{row("Название", org.legalName || org.name)}{row("Почта", org.email)}{row("Адрес", org.address)}{row("Телефон", org.phone)}{row("ИНН", org.inn)}</dl>
               </div>
             )}
             <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
