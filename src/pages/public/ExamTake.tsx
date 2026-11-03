@@ -55,6 +55,8 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   const [skew, setSkew] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [banner, setBanner] = useState<string | null>(null);
+  /** Работу закрыл не ученик (организатор или сервер) — показываем это на итоговом экране. */
+  const [endedBy, setEndedBy] = useState<null | "organizer" | "annulled">(null);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "offline">("saved");
   const pending = useRef<Record<string, string>>({});
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -99,6 +101,7 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
    * повторяется — повторять там нечего.
    */
   const inflight = useRef<Promise<boolean> | null>(null);
+  const syncStateRef = useRef<(() => Promise<void>) | null>(null);
   const flush = useCallback(async (): Promise<boolean> => {
     if (flushTimer.current) { clearTimeout(flushTimer.current); flushTimer.current = null; }
     if (inflight.current) await inflight.current;
@@ -109,7 +112,7 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
     const p = (async () => {
       try { await post("/answer", { token, answers: batch }); setSaveState("saved"); return true; }
       catch (e: any) {
-        if (/сдана|вышло/.test(String(e?.message))) { setSaveState("saved"); return false; }
+        if (/сдана|вышло/.test(String(e?.message))) { setSaveState("saved"); setTimeout(() => void syncStateRef.current?.(), 0); return false; }
         pending.current = { ...batch, ...pending.current }; setSaveState("offline");
         flushTimer.current = setTimeout(() => void flush(), 4000);
         return false;
@@ -229,6 +232,49 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   }, [timeUp]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (banner) { const t = setTimeout(() => setBanner(null), 6000); return () => clearTimeout(t); } }, [banner]);
 
+  /**
+   * Сверка с сервером во время экзамена — раз в 10 секунд и после любого
+   * отказа «работа уже сдана». Раньше страница узнавала о работе что-то
+   * новое, только когда ученик сам что-то отправлял: менеджер завершал или
+   * аннулировал работу, а ученик продолжал решать и видел идущий таймер.
+   */
+  const syncing = useRef(false);
+  const syncState = useCallback(async () => {
+    if (!token || syncing.current || finishing.current) return;
+    syncing.current = true;
+    try {
+      const j = await post("/state", { token });
+      const s: State = j.state;
+      if (s.status !== "in_progress") {
+        setEndedBy("organizer");
+        await sendReport();
+        applyState(s);
+      } else if (state?.section && s.section && s.section.id !== state.section.id) {
+        // Сервер досдал раздел по времени — переходим к следующему.
+        setBanner(`Время раздела вышло. Начался раздел «${s.section.title}»`);
+        applyState(s); window.scrollTo({ top: 0 });
+      } else if (s.section) {
+        setSkew(s.serverNow - Date.now());
+      }
+    } catch (e: any) {
+      if (/аннулирована/i.test(String(e?.message))) {
+        setEndedBy("annulled");
+        setState(st => (st ? { ...st, status: "annulled", section: null } : st));
+        setPhase("final");
+        localStorage.removeItem(storeKey);
+      }
+    } finally { syncing.current = false; }
+  }, [token, post, state, sendReport, applyState, storeKey]);
+  syncStateRef.current = syncState;
+  // Через ссылку: syncState пересоздаётся на каждой перерисовке (таймер —
+  // дважды в секунду), и интервал с ней в зависимостях перезапускался бы,
+  // не успевая сработать ни разу.
+  useEffect(() => {
+    if (phase !== "exam") return;
+    const t = setInterval(() => void syncStateRef.current?.(), 10000);
+    return () => clearInterval(t);
+  }, [phase]);
+
   const start = async () => {
     setBusy(true); setError(null);
     try {
@@ -252,7 +298,9 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
         <PublicBrand name={info.org.name} logoUrl={info.org.logoUrl} />
         <div className={`${box} p-8 text-center space-y-3`}>
           <div className="text-5xl">{state.status === "annulled" ? "⛔" : "✅"}</div>
-          <h1 className="text-xl font-bold">{state.status === "annulled" ? "Работа аннулирована" : "Работа сдана"}</h1>
+          <h1 className="text-xl font-bold">{state.status === "annulled" ? "Работа аннулирована" : endedBy === "organizer" ? "Работа завершена организатором" : "Работа сдана"}</h1>
+          {state.status === "annulled" && <p className="text-sm text-slate-500">Организатор аннулировал работу. Если считаете это ошибкой — обратитесь к нему.</p>}
+          {endedBy === "organizer" && state.status !== "annulled" && <p className="text-sm text-slate-500">Ответы, которые вы успели дать, сохранены и будут проверены.</p>}
           <p className="text-sm text-slate-500">Номер работы — сохраните его:</p>
           <div className="text-3xl font-mono font-black tracking-widest">{state.shortId}</div>
           {state.result ? <ResultCard r={state.result} /> : info.exam.resultsMode === "after_publish"
