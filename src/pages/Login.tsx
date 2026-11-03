@@ -82,16 +82,43 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
     }
   };
 
+  /**
+   * Ошибка входа человеческим языком. Раньше на экран шёл сырой текст
+   * Firebase («Firebase: Error (auth/invalid-credential).») — по нему
+   * сотрудник не мог понять, ошибся он в пароле или его заблокировали.
+   */
+  const loginErrorText = (code: string | undefined, l: string): string => {
+    const ru = l === 'ru';
+    switch (code) {
+      case 'auth/invalid-credential':
+      case 'auth/wrong-password':
+      case 'auth/user-not-found':
+        return ru ? 'Неверная почта или пароль. Проверьте раскладку и заглавные буквы — телефон мог сам сделать первую букву большой.' : 'Wrong email or password. Check keyboard layout and capital letters.';
+      case 'auth/invalid-email':
+        return ru ? 'Почта написана с ошибкой.' : 'The email address is not valid.';
+      case 'auth/too-many-requests':
+        return ru ? 'Слишком много неудачных попыток — вход временно заблокирован. Подождите 10–15 минут или восстановите пароль.' : 'Too many failed attempts. Wait 10–15 minutes or reset your password.';
+      case 'auth/user-disabled':
+        return ru ? 'Аккаунт отключён. Обратитесь к администратору организации.' : 'This account is disabled. Contact your administrator.';
+      case 'auth/network-request-failed':
+        return ru ? 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.' : 'Network error. Check your connection.';
+      default:
+        return '';
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       setError('');
       setLoading(true);
-      const cred = await signInWithEmailAndPassword(auth, email, password);
+      // Почта — без пробелов: автозаполнение на телефоне дописывает пробел
+      // в конце, и Firebase отвечает «неверная почта».
+      const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
       await redirectUserByRole(cred.user);
     } catch (err: any) {
       console.error("[Login Error]:", err);
-      setError(err.message || (lang === 'ru' ? 'Ошибка входа. Проверьте почту и пароль.' : 'Failed to sign in. Please check your credentials.'));
+      setError(loginErrorText(err?.code, lang) || err.message);
     } finally {
       setLoading(false);
     }
