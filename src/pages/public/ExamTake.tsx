@@ -24,6 +24,8 @@ type Info = {
     proctoring: { enabled: boolean; detectors: Record<string, boolean>; tabSwitch: boolean };
     sections: { title: string; minutes: number }[];
     resultsMode: "never" | "after_publish" | "immediately";
+    /** paged — по одному вопросу на экран, list — лентой. */
+    layout?: "paged" | "list";
   };
 };
 type State = {
@@ -61,6 +63,8 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   const pending = useRef<Record<string, string>>({});
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finishing = useRef(false);
+  /** Прокручиваемая область вопросов в режиме «по одному на экран». */
+  const scroller = useRef<HTMLDivElement | null>(null);
 
   const post = useCallback(async (path: string, body: object) => {
     const r = await fetch(`/api/exam-public/${C}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -216,7 +220,7 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
       const s: State = j.state;
       if (s.status !== "in_progress") await sendReport();
       else setBanner(`${auto ? "Время раздела вышло. " : ""}Начался раздел «${s.section?.title}» — ${s.sections[s.current].minutes} мин`);
-      applyState(s); window.scrollTo({ top: 0 });
+      applyState(s); window.scrollTo({ top: 0 }); scroller.current?.scrollTo({ top: 0 });
     } catch (e: any) { setError(e.message); }
     finally { finishing.current = false; setBusy(false); }
   }, [state, answers, flush, post, token, sendReport, applyState]);
@@ -252,7 +256,7 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
       } else if (state?.section && s.section && s.section.id !== state.section.id) {
         // Сервер досдал раздел по времени — переходим к следующему.
         setBanner(`Время раздела вышло. Начался раздел «${s.section.title}»`);
-        applyState(s); window.scrollTo({ top: 0 });
+        applyState(s); window.scrollTo({ top: 0 }); scroller.current?.scrollTo({ top: 0 });
       } else if (s.section) {
         setSkew(s.serverNow - Date.now());
       }
@@ -367,29 +371,48 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   const answered = sec.questions.filter(q => String(answers[q.id] ?? "").trim()).length;
   const mm = Math.max(0, Math.floor(leftMs / 60000)), ss = Math.max(0, Math.floor((leftMs % 60000) / 1000));
   const low = leftMs < 5 * 60000;
+  const paged = info.exam.layout !== "list";
+  const last = state!.current + 1 >= state!.sections.length;
+  const finishLabel = last ? "Сдать работу" : `Завершить раздел и перейти к «${state!.sections[state!.current + 1].title}»`;
+  const camera = proctorOn && (
+    <div className={`fixed right-3 z-30 w-28 rounded-xl overflow-hidden border-2 border-white shadow-lg bg-black ${paged ? "bottom-36" : "bottom-3"}`}>
+      <video ref={videoRef} muted playsInline className="w-full h-20 object-cover -scale-x-100" />
+      <canvas ref={canvasRef} className="hidden" />
+      {camFail && <div className="text-[10px] text-amber-200 p-1 text-center">Камера недоступна — работа будет без наблюдения</div>}
+    </div>
+  );
+  const header = (
+    <div className="shrink-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 sticky top-0">
+      <div className="max-w-3xl mx-auto px-4 py-2.5 flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] text-slate-500 truncate">{info.exam.title} · раздел {state!.current + 1} из {state!.sections.length}</div>
+          <div className="font-bold truncate">{sec.title}</div>
+        </div>
+        <div className="text-right">
+          <div className={`font-mono text-xl font-black tabular-nums ${low ? "text-rose-600" : ""}`}>{mm}:{String(ss).padStart(2, "0")}</div>
+          <div className="text-[10px] text-slate-500">{answered}/{sec.questions.length} · {saveState === "saved" ? "сохранено" : saveState === "saving" ? "сохраняем…" : "нет связи, повторим"}</div>
+        </div>
+      </div>
+      <div className="h-1 bg-slate-100"><div className="h-1 bg-blue-600 transition-all" style={{ width: `${(answered / Math.max(1, sec.questions.length)) * 100}%` }} /></div>
+    </div>
+  );
+  if (paged) {
+    return (
+      <div className="h-dvh flex flex-col bg-slate-50 text-slate-900">
+        {header}
+        {banner && <div className="shrink-0 max-w-3xl w-full mx-auto px-4 pt-3"><div className="rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-sm px-4 py-2.5">{banner}</div></div>}
+        {camera}
+        <ProctoringWarningOverlay events={proctor.events} isActive={proctorActive} />
+        <PagedQuestions key={sec.id} sec={sec} answers={answers} onAnswer={setAnswer} scroller={scroller}
+          busy={busy} error={error} finishLabel={finishLabel} last={last} onFinish={() => finishSection(false)} />
+      </div>
+    );
+  }
   return (
     <div className={shell}>
-      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200">
-        <div className="max-w-3xl mx-auto px-4 py-2.5 flex items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="text-[11px] text-slate-500 truncate">{info.exam.title} · раздел {state!.current + 1} из {state!.sections.length}</div>
-            <div className="font-bold truncate">{sec.title}</div>
-          </div>
-          <div className="text-right">
-            <div className={`font-mono text-xl font-black tabular-nums ${low ? "text-rose-600" : ""}`}>{mm}:{String(ss).padStart(2, "0")}</div>
-            <div className="text-[10px] text-slate-500">{answered}/{sec.questions.length} · {saveState === "saved" ? "сохранено" : saveState === "saving" ? "сохраняем…" : "нет связи, повторим"}</div>
-          </div>
-        </div>
-        <div className="h-1 bg-slate-100"><div className="h-1 bg-blue-600 transition-all" style={{ width: `${(answered / Math.max(1, sec.questions.length)) * 100}%` }} /></div>
-      </div>
+      {header}
       {banner && <div className="max-w-3xl mx-auto px-4 pt-3"><div className="rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-sm px-4 py-2.5">{banner}</div></div>}
-      {proctorOn && (
-        <div className="fixed bottom-3 right-3 z-30 w-28 rounded-xl overflow-hidden border-2 border-white shadow-lg bg-black">
-          <video ref={videoRef} muted playsInline className="w-full h-20 object-cover -scale-x-100" />
-          <canvas ref={canvasRef} className="hidden" />
-          {camFail && <div className="text-[10px] text-amber-200 p-1 text-center">Камера недоступна — работа будет без наблюдения</div>}
-        </div>
-      )}
+      {camera}
       <ProctoringWarningOverlay events={proctor.events} isActive={proctorActive} />
       <div className="max-w-3xl mx-auto px-4 py-4 space-y-4 pb-28">
         {sec.questions.map((q, i) => (
@@ -400,11 +423,96 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
           </div>
         ))}
         {error && <div className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{error}</div>}
-        <button className={primary} disabled={busy} onClick={() => finishSection(false)}>
-          {state!.current + 1 < state!.sections.length ? `Завершить раздел и перейти к «${state!.sections[state!.current + 1].title}»` : "Сдать работу"}
-        </button>
+        <button className={primary} disabled={busy} onClick={() => finishSection(false)}>{finishLabel}</button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Вопросы по одному на экран — как было во «Вступительном срезе»: вопрос в
+ * центре, прокрутка доводит до следующего (snap), внизу «Назад / Далее» и
+ * карта номеров — отвеченные закрашены, на любой можно вернуться.
+ */
+function PagedQuestions({ sec, answers, onAnswer, scroller, busy, error, finishLabel, last, onFinish }: {
+  sec: NonNullable<State["section"]>; answers: Record<string, string>; onAnswer: (id: string, v: any) => void;
+  scroller: React.MutableRefObject<HTMLDivElement | null>;
+  busy: boolean; error: string | null; finishLabel: string; last: boolean; onFinish: () => void;
+}) {
+  const qs = sec.questions;
+  const [cur, setCur] = useState(0);
+  const mapRef = useRef<HTMLDivElement | null>(null);
+  const done = (id: string) => !!String(answers[id] ?? "").trim();
+
+  // Текущий вопрос — тот, что занимает середину области прокрутки.
+  const onScroll = () => {
+    const el = scroller.current; if (!el) return;
+    const mid = el.scrollTop + el.clientHeight * 0.4;
+    const kids = el.querySelectorAll<HTMLElement>("[data-q]");
+    let i = 0;
+    kids.forEach((k, j) => { if (k.offsetTop <= mid) i = j; });
+    setCur(i);
+  };
+  useEffect(() => {
+    mapRef.current?.querySelector<HTMLElement>(`[data-m="${cur}"]`)?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+  }, [cur]);
+  const go = (i: number) => {
+    const el = scroller.current?.querySelector<HTMLElement>(`[data-q="${i}"]`);
+    if (el && scroller.current) scroller.current.scrollTo({ top: el.offsetTop, behavior: "smooth" });
+  };
+  const blockOf = (i: number) => { let t = ""; for (const b of sec.blocks || []) { const k = qs.findIndex(q => q.id === b.first); if (k >= 0 && k <= i) t = b.title; } return t; };
+  const left = qs.filter(q => !done(q.id)).length;
+
+  return (
+    <>
+      <div ref={scroller} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto snap-y snap-proximity overscroll-contain relative">
+        {qs.map((q, i) => {
+          const block = sec.blocks?.find(b => b.first === q.id);
+          return (
+            <section key={q.id} data-q={i} className="snap-start min-h-full flex flex-col justify-center px-4 py-8">
+              <div className="max-w-2xl w-full mx-auto">
+                {/* Предмет — у каждого вопроса: в общем блоке с таймером иначе непонятно, где ты. */}
+                {blockOf(i) && <div className={`text-sm font-bold uppercase tracking-wider mb-2 ${block ? "text-blue-600" : "text-slate-400"}`}>{blockOf(i)}</div>}
+                <div className="flex items-baseline gap-2 mb-3">
+                  <span className="text-3xl font-black tabular-nums text-slate-900">{i + 1}</span>
+                  <span className="text-sm text-slate-400">из {qs.length}</span>
+                  {q.points !== 1 && <span className="text-xs text-slate-500 bg-slate-100 rounded-full px-2 py-0.5">{q.points} балла</span>}
+                  {done(q.id) && <span className="ml-auto text-xs font-semibold text-emerald-600">✓ ответ сохранён</span>}
+                </div>
+                <QuestionFactory question={q} value={answers[q.id] ?? ""} onChange={v => onAnswer(q.id, v)} />
+                {i === qs.length - 1 && (
+                  <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 text-center space-y-3">
+                    <p className="text-sm text-slate-600">{left ? `Без ответа: ${left}. Номера без ответа — белые на карте внизу.` : "На все вопросы раздела есть ответ."}</p>
+                    {error && <div className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{error}</div>}
+                    <button className={`w-full py-3.5 rounded-xl font-semibold text-white disabled:opacity-40 transition ${last ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700"}`} disabled={busy} onClick={onFinish}>{busy ? "Отправляем…" : finishLabel}</button>
+                  </div>
+                )}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+
+      <div className="shrink-0 bg-white border-t border-slate-200 pb-[env(safe-area-inset-bottom)]">
+        <div className="max-w-3xl mx-auto px-3 pt-2.5 pb-3 space-y-2.5">
+          <div ref={mapRef} className="flex gap-1.5 overflow-x-auto hide-scrollbar py-0.5">
+            {qs.map((q, i) => (
+              <button key={q.id} data-m={i} onClick={() => go(i)} aria-label={`Вопрос ${i + 1}`}
+                className={`shrink-0 w-9 h-9 rounded-lg text-sm font-semibold tabular-nums border-2 transition ${
+                  i === cur ? "border-blue-600 text-blue-700 bg-white" : done(q.id) ? "bg-blue-600 border-blue-600 text-white" : "border-slate-200 text-slate-400 bg-white"}`}>
+                {i + 1}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button className="px-5 py-3 rounded-xl border border-slate-300 text-slate-700 font-semibold disabled:opacity-40" disabled={cur === 0} onClick={() => go(cur - 1)}>Назад</button>
+            {cur < qs.length - 1
+              ? <button className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold" onClick={() => go(cur + 1)}>Далее<span className="hidden sm:inline text-white/70 font-normal">{blockOf(cur + 1) !== blockOf(cur) ? ` · ${blockOf(cur + 1)}` : ""}</span></button>
+              : <button className={`flex-1 py-3 rounded-xl text-white font-semibold disabled:opacity-40 ${last ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700"}`} disabled={busy} onClick={onFinish}>{busy ? "Отправляем…" : last ? "Сдать работу" : "Завершить раздел"}</button>}
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 

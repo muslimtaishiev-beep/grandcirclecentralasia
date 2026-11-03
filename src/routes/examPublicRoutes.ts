@@ -197,6 +197,8 @@ router.get("/:code", async (req: any, res: any) => {
         proctoring: { enabled: exam.settings.proctoring.enabled, detectors: exam.settings.proctoring.detectors, tabSwitch: exam.settings.proctoring.tabSwitch },
         sections: exam.sections.map(s => ({ title: s.title, minutes: s.minutes })),
         resultsMode: exam.settings.results.showToStudent,
+        // У экзаменов, сохранённых до появления настройки, её нет — по умолчанию по одному.
+        layout: exam.settings.display?.layout === "list" ? "list" : "paged",
       },
     });
   } catch (e: any) { return oops(res, e); }

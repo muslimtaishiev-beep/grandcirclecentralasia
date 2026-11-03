@@ -80,6 +80,10 @@ export interface ExamSettings {
     /** Распределение по группам (классам): список групп. Пусто — выключено. */
     groups: string[];
   };
+  display: {
+    /** paged — один вопрос на экран, листается прокруткой и кнопками; list — все вопросы раздела лентой. */
+    layout: "paged" | "list";
+  };
 }
 
 export type ExamStatus = "draft" | "open" | "closed";
@@ -121,6 +125,7 @@ export const DEFAULT_SETTINGS: ExamSettings = {
     decisions: false,
     groups: [],
   },
+  display: { layout: "paged" },
 };
 
 const num = (v: unknown, min: number, max: number, def: number) => {
@@ -204,6 +209,7 @@ export function sanitizeSettings(raw: any): ExamSettings {
       decisions: b(r.results?.decisions, d.results.decisions),
       groups: [...new Set<string>((Array.isArray(r.results?.groups) ? r.results.groups : []).map((x: unknown) => s(x, 30)).filter(Boolean))].slice(0, 60),
     },
+    display: { layout: r.display?.layout === "list" ? "list" : d.display.layout },
   };
 }
 

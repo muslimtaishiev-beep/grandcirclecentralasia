@@ -220,6 +220,18 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
           <p className="text-[11px] text-[var(--text-muted)]">Повторную попытку сверх лимита разрешает менеджер в карточке работы.</p>
         </section>
 
+        <section className={`${card} p-4 space-y-3 lg:col-span-2`}>
+          <h3 className="font-bold text-[var(--text-main)]">Как ученик видит вопросы</h3>
+          <div className="grid sm:grid-cols-2 gap-2">
+            {([["paged", "По одному на экран", "Вопрос в центре экрана, прокрутка или «Далее» — к следующему. Внизу карта номеров: видно, что отвечено, можно вернуться."], ["list", "Все вопросы раздела списком", "Одна длинная страница, вопросы друг за другом."]] as const).map(([k, l, h]) => (
+              <label key={k} className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 cursor-pointer ${(st.display?.layout || "paged") === k ? "border-[var(--accent)] bg-[var(--accent)]/5" : "border-[var(--border-color)]"}`}>
+                <input type="radio" className="mt-1" checked={(st.display?.layout || "paged") === k} onChange={() => setSt(x => ({ ...x, display: { layout: k } }))} />
+                <span><span className="block text-sm font-medium text-[var(--text-main)]">{l}</span><span className="block text-[11px] text-[var(--text-muted)]">{h}</span></span>
+              </label>
+            ))}
+          </div>
+        </section>
+
         <section className={`${card} p-4 space-y-2`}>
           <h3 className="font-bold text-[var(--text-main)]">Регистрация ученика</h3>
           <p className="text-xs text-[var(--text-muted)]">Фамилия и имя — всегда.</p>
