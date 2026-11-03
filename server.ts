@@ -115,6 +115,18 @@ const intakePublicLimiter = rateLimit({
   validate: false,
 });
 app.use("/api/intake/public", intakePublicLimiter);
+
+// Подпись по QR в журналах открыта без входа: строгий отдельный лимит,
+// чтобы одноразовые ссылки нельзя было перебирать.
+const journalSignLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  message: { success: false, error: "Слишком много запросов подряд — подождите минуту." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+});
+app.use("/api/journals/sign", journalSignLimiter);
 app.use("/api/admin/login", authLimiter);
 app.use("/api/tenants/request", authLimiter);
 
@@ -231,6 +243,7 @@ import placementRoutes from "./src/routes/placementRoutes.js";
 import formRoutes from "./src/routes/formRoutes.js";
 import intakeRoutes from "./src/routes/intakeRoutes.js";
 import payrollRoutes from "./src/routes/payrollRoutes.js";
+import journalRoutes from "./src/routes/journalRoutes.js";
 import { sendTestResultEmail } from "./emailService.js";
 
 app.use("/api/auth", authRoutes);
@@ -240,6 +253,7 @@ app.use("/api/placement", placementRoutes);
 app.use("/api/forms", formRoutes);
 app.use("/api/intake", intakeRoutes);
 app.use("/api/payroll", payrollRoutes);
+app.use("/api/journals", journalRoutes);
 
 let memoryDbStore: any = null;
 

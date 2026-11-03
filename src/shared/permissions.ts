@@ -24,6 +24,8 @@ export type PermissionKey =
   | "crm:read" | "crm:manage"
   // Работа и общение
   | "chat:use" | "tasks:use" | "docs:use" | "sheets:use" | "tickets:check"
+  // Журналы делопроизводства
+  | "journals:manage"
   // Приём заявок и бронирование
   | "intake:manage"
   // Администрирование
@@ -55,6 +57,7 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: "docs:use", label: "Документы", description: "Совместные документы и шаблоны", category: "Работа" },
   { key: "sheets:use", label: "Таблицы", description: "Совместные таблицы", category: "Работа" },
   { key: "tickets:check", label: "Проверка билетов", description: "Сканер QR на входе — отметка гостей", category: "Работа" },
+  { key: "journals:manage", label: "Создание журналов", description: "Новые журналы из шаблонов; доступ к каждому журналу настраивается в нём самом", category: "Работа" },
 
   { key: "intake:manage", label: "Приём заявок и бронирование", description: "Потоки приёма с внешних сайтов, занимаемые ресурсы и брони", category: "CRM и продажи" },
 
@@ -79,7 +82,7 @@ export const PERMISSION_CODES: Record<PermissionKey, string> = {
   "tests:read": "tr", "tests:manage": "tm", "tests:review": "tv", "certificates:issue": "ci", "placement:manage": "pm",
   "edu:schedule": "es", "edu:payroll": "ep",
   "crm:read": "cr", "crm:manage": "cm", "intake:manage": "ik",
-  "chat:use": "ch", "tasks:use": "ta", "docs:use": "dc", "sheets:use": "sh", "tickets:check": "tk",
+  "chat:use": "ch", "tasks:use": "ta", "docs:use": "dc", "sheets:use": "sh", "tickets:check": "tk", "journals:manage": "jm",
   "team:manage": "tg", "settings:manage": "sg",
 };
 
@@ -157,6 +160,7 @@ export const WORKSPACE_SCREENS: { key: string; label: string; group: string }[] 
   { key: "tasks", label: "Задачи", group: "Основное" },
   { key: "docs", label: "Документы", group: "Основное" },
   { key: "sheets", label: "Таблицы", group: "Основное" },
+  { key: "journals", label: "Журналы", group: "Основное" },
 
   { key: "schedule", label: "Расписание", group: "Обучение" },
   { key: "attendance", label: "Журнал", group: "Обучение" },
@@ -191,6 +195,9 @@ export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | nu
   tickets: "tickets:check",
   docs: "docs:use",
   sheets: "sheets:use",
+  // Открыт всем сотрудникам: каждый видит только журналы, к которым ему
+  // дали доступ в настройках самого журнала.
+  journals: null,
   schedule: "edu:schedule",
   attendance: "edu:schedule",
   subscriptions: "edu:schedule",

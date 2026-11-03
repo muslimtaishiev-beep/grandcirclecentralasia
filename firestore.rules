@@ -96,6 +96,9 @@ service cloud.firestore {
       match /automation_rules/{d}  { allow read: if member(); allow write: if hasPerm(tenantId, 'sg'); }
       match /automation_logs/{d}   { allow read, write: if member(); }
       match /submissions/{d}       { allow read: if member(); allow write: if hasPerm(tenantId, 'tv'); }
+      // Журналы: доступ задаётся в самом журнале, проверяет его сервер.
+      match /journals/{d}          { allow read, write: if false; }
+      match /journal_entries/{d}   { allow read, write: if false; }
       match /members/{d}           { allow read: if member(); allow write: if isTenantAdmin(tenantId); }
       match /chat_channels/{d=**}      { allow read, write: if member(); }
       match /chat_messages/{d=**}      { allow read, write: if member(); }
@@ -184,6 +187,7 @@ service cloud.firestore {
     // бронирования, и любая прямая запись с клиента рассинхронизировала бы
     // его с бронями — на последнее место сели бы двое.
     match /intake_streams/{docId}     { allow read: if hasTenantAccess(); allow write: if false; }
+    match /journal_sign_tokens/{docId} { allow read, write: if false; }
     match /bookable_resources/{docId} { allow read: if hasTenantAccess(); allow write: if false; }
     match /resource_bookings/{docId}  { allow read: if hasTenantAccess(); allow write: if false; }
     // Заявки закрыты ПРАВОМ, а не одним лишь членством: в них лежит токен

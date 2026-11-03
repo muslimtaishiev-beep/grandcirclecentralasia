@@ -33,7 +33,8 @@ import {
   Settings2,
   GraduationCap,
   QrCode,
-  Sparkles
+  Sparkles,
+  BookOpen,
 } from "lucide-react";
 import GlobalNotifications from "../../components/workspace/GlobalNotifications";
 import QuickSetupWizard from "../../components/workspace/QuickSetupWizard";
@@ -153,6 +154,7 @@ export default function WorkspaceLayout() {
     ["dashboard", "Дашборд", "", LayoutDashboard],
     ["schedule", "Расписание", "/edu/schedule", Calendar],
     ["attendance", "Журнал", "/edu/attendance", UserCheck],
+    ["journals", "Журналы", "/journals", BookOpen],
     ["subscriptions", "Абонементы", "/edu/subscriptions", CreditCard],
     ["payroll", "Зарплаты", "/edu/payroll", DollarSign],
     ["chat", "Чаты", "/chat", MessageSquare],
