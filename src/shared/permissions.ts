@@ -46,7 +46,7 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: "certificates:issue", label: "Выдача сертификатов", description: "Регистрация и выгрузка PDF-сертификатов и справок", category: "Тесты и прокторинг" },
   { key: "placement:manage", label: "Вступительный срез", description: "Кабинет среза: варианты, результаты, распределение по классам", category: "Тесты и прокторинг" },
 
-  { key: "edu:schedule", label: "Расписание и посещаемость", description: "Сетка занятий, журнал, списание занятий", category: "Обучение и журнал" },
+  { key: "edu:schedule", label: "Расписание и посещаемость", description: "Сетка занятий, списание занятий", category: "Обучение и журнал" },
   { key: "edu:payroll", label: "Расчёт зарплат", description: "Ставки и выплаты за проведённые занятия", category: "Обучение и журнал" },
 
   { key: "crm:read", label: "Просмотр CRM", description: "Контакты, заявки, воронка — только чтение", category: "CRM и продажи" },
@@ -163,7 +163,6 @@ export const WORKSPACE_SCREENS: { key: string; label: string; group: string }[] 
   { key: "journals", label: "Журналы", group: "Основное" },
 
   { key: "schedule", label: "Расписание", group: "Обучение" },
-  { key: "attendance", label: "Журнал", group: "Обучение" },
   { key: "subscriptions", label: "Абонементы", group: "Обучение" },
   { key: "payroll", label: "Зарплаты", group: "Обучение" },
 
@@ -199,7 +198,6 @@ export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | nu
   // дали доступ в настройках самого журнала.
   journals: null,
   schedule: "edu:schedule",
-  attendance: "edu:schedule",
   subscriptions: "edu:schedule",
   payroll: "edu:payroll",
   crm: ["crm:read", "crm:manage"],
@@ -224,7 +222,7 @@ export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | nu
  * Выключенный модуль отнимает свои права у ВСЕХ, включая роли.
  */
 export const ORG_MODULES: { key: string; label: string; description: string; permissions: PermissionKey[]; screens: string[] }[] = [
-  { key: "mod_edu", label: "Обучение и расписание", description: "Занятия, журнал, абонементы, зарплаты", permissions: ["edu:schedule", "edu:payroll"], screens: ["schedule", "attendance", "subscriptions", "payroll"] },
+  { key: "mod_edu", label: "Обучение и расписание", description: "Занятия, абонементы, зарплаты", permissions: ["edu:schedule", "edu:payroll"], screens: ["schedule", "subscriptions", "payroll"] },
   { key: "mod_tests", label: "Тесты и экзамены", description: "Тесты, прокторинг, вступительный срез", permissions: ["tests:read", "tests:manage", "tests:review", "certificates:issue", "placement:manage"], screens: ["tests", "testsManage", "placement"] },
   { key: "mod_crm", label: "CRM и продажи", description: "Контакты, сделки, воронки", permissions: ["crm:read", "crm:manage"], screens: ["crm"] },
   { key: "mod_tickets", label: "Заявки и билеты", description: "Конструктор заявок, QR-билеты, проверка на входе", permissions: ["tickets:check"], screens: ["forms", "tickets"] },

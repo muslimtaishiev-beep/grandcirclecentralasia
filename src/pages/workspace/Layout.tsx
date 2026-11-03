@@ -22,7 +22,6 @@ import {
   Globe,
   Zap,
   Calendar,
-  UserCheck,
   CreditCard,
   DollarSign,
   ShieldCheck,
@@ -154,7 +153,6 @@ export default function WorkspaceLayout() {
   const navItems = activeTenant ? ([
     ["dashboard", "Дашборд", "", LayoutDashboard],
     ["schedule", "Расписание", "/edu/schedule", Calendar],
-    ["attendance", "Журнал", "/edu/attendance", UserCheck],
     ["journals", "Журналы", "/journals", BookOpen],
     ["subscriptions", "Абонементы", "/edu/subscriptions", CreditCard],
     ["payroll", "Зарплаты", "/edu/payroll", DollarSign],

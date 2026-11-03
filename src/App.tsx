@@ -68,7 +68,6 @@ const PublicPageEngine = lazy(() => import("./pages/public/PublicPageEngine"));
 const AutomationsDirectoryPage = lazy(() => import("./pages/workspace/automations/AutomationsDirectoryPage"));
 const AutomationLogsPage = lazy(() => import("./pages/workspace/automations/AutomationLogsPage"));
 const ScheduleGrid = lazy(() => import("./pages/workspace/edu/ScheduleCalendarPage"));
-const AttendanceJournal = lazy(() => import("./pages/workspace/edu/AttendanceJournalPage"));
 const SubscriptionsManager = lazy(() => import("./pages/workspace/edu/SubscriptionsDirectoryPage"));
 const TeacherPayroll = lazy(() => import("./pages/workspace/edu/TeacherPayrollPage"));
 const JournalsListPage = lazy(() => import("./pages/workspace/journals/JournalsListPage"));
@@ -332,7 +331,8 @@ export default function App() {
 
             {/* Educational Core Engine (Phase 2) */}
             <Route path=":orgId/edu/schedule" element={<RequirePermission navKey="schedule"><GracefulErrorBoundary fallbackTitle="Ошибка Расписания"><ScheduleGrid /></GracefulErrorBoundary></RequirePermission>} />
-            <Route path=":orgId/edu/attendance" element={<RequirePermission navKey="attendance"><GracefulErrorBoundary fallbackTitle="Ошибка Журнала"><AttendanceJournal /></GracefulErrorBoundary></RequirePermission>} />
+            {/* Журнал посещаемости удалён: не работал, данных ни у кого не было. Старые закладки — в журналы. */}
+            <Route path=":orgId/edu/attendance" element={<Navigate to="../../journals" relative="path" replace />} />
             <Route path=":orgId/edu/subscriptions" element={<RequirePermission navKey="subscriptions"><GracefulErrorBoundary fallbackTitle="Ошибка Абонементов"><SubscriptionsManager /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/edu/payroll" element={<RequirePermission navKey="payroll"><GracefulErrorBoundary fallbackTitle="Ошибка Зарплат"><TeacherPayroll /></GracefulErrorBoundary></RequirePermission>} />
           </Route>
