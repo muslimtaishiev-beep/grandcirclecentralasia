@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
+import PublicBrand from "../../components/public/PublicBrand";
 import FancyQr, { QR_THEMES, QrThemePicker, downloadQr, type QrTheme } from "../../components/forms/FancyQr";
 import { compressImageToDataUrl } from "../../lib/compressImage";
 import { buildFileValue, checkFileValue, fileInfo, formatSize, isFileValue, FILE_LIMITS } from "../../shared/uploads";
@@ -84,12 +85,12 @@ export default function PublicForm() {
   };
 
   if (loading) {
-    return <Shell><div className="text-center text-slate-400 py-16">Загружаем форму…</div></Shell>;
+    return <Shell org={org}><div className="text-center text-slate-400 py-16">Загружаем форму…</div></Shell>;
   }
 
   if (closed || (!form && error)) {
     return (
-      <Shell>
+      <Shell org={org}>
         <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
           <div className="text-4xl mb-3">{closed ? "🔒" : "🔍"}</div>
           <h1 className="text-xl font-bold text-slate-900 mb-2">
@@ -108,7 +109,7 @@ export default function PublicForm() {
   if (done && form) {
     const trackUrl = `${window.location.origin}${done.trackUrl}`;
     return (
-      <Shell>
+      <Shell org={org}>
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
           <div className="px-6 pt-7 pb-5 text-center border-b border-slate-100">
             <div className="text-4xl mb-2">🎉</div>
@@ -152,7 +153,7 @@ export default function PublicForm() {
     );
   }
 
-  if (!form) return <Shell><div className="text-center text-slate-400 py-16">Форма недоступна.</div></Shell>;
+  if (!form) return <Shell org={org}><div className="text-center text-slate-400 py-16">Форма недоступна.</div></Shell>;
 
   const set = (id: string, v: any) => setValues(p => ({ ...p, [id]: v }));
 
@@ -201,13 +202,14 @@ export default function PublicForm() {
   const base = "w-full border border-slate-300 rounded-xl p-3 bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition";
 
   return (
-    <Shell>
+    <Shell org={org}>
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
         <div className="px-6 pt-6 pb-4 border-b border-slate-100">
-          {(org?.name || org?.tickets?.publicTitle) && (
-            <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-              {org?.logoUrl && <img src={org.logoUrl} alt="" className="h-10 w-auto max-w-[180px] object-contain" />}
-              <span>{org?.tickets?.publicTitle || org?.name}</span>
+          {/* Логотип — крупно над карточкой; здесь только подпись, если логотипа нет
+              или у страницы своё название. */}
+          {(org?.tickets?.publicTitle || (!org?.logoUrl && org?.name)) && (
+            <div className="mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+              {org?.tickets?.publicTitle || org?.name}
             </div>
           )}
           <h1 className="text-2xl font-bold text-slate-900">{form.title}</h1>
@@ -316,10 +318,13 @@ export default function PublicForm() {
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children, org }: { children: React.ReactNode; org?: Org | null }) {
   return (
     <div className="min-h-screen bg-slate-50 flex items-start justify-center p-4 py-10">
-      <div className="w-full max-w-xl">{children}</div>
+      <div className="w-full max-w-xl">
+        <PublicBrand name={org?.name} logoUrl={org?.logoUrl} />
+        {children}
+      </div>
     </div>
   );
 }

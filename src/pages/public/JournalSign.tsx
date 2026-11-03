@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { compressImageToDataUrl } from "../../lib/compressImage";
+import PublicBrand from "../../components/public/PublicBrand";
 
 /**
  * Подпись в журнале по QR — открывается на телефоне подписывающего.
@@ -70,6 +71,7 @@ export default function JournalSign() {
   return (
     <div className="min-h-screen bg-slate-50 flex items-start justify-center p-4 py-10">
       <div className="w-full max-w-md">
+        <PublicBrand name={info?.org.name} logoUrl={info?.org.logoUrl} />
         {loading ? (
           <div className="text-center text-slate-400 py-16">Загружаем…</div>
         ) : done ? (
@@ -86,10 +88,9 @@ export default function JournalSign() {
         ) : (
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
             <div className="px-6 pt-6 pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                {info.org.logoUrl && <img src={info.org.logoUrl} alt="" className="h-10 w-auto max-w-[180px] object-contain" />}
-                <span>{info.org.name}</span>
-              </div>
+              {!info.org.logoUrl && (
+                <div className="mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">{info.org.name}</div>
+              )}
               <h1 className="text-xl font-bold text-slate-900">{info.column.label}</h1>
               <p className="text-sm text-slate-500">{info.journal.title}</p>
             </div>

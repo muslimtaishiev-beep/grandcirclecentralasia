@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { QrCode, CheckCircle2, Clock, ShieldCheck, AlertCircle, Building2, ArrowLeft, Loader2, Award, Calendar, FileText } from 'lucide-react';
 import FancyQr, { QR_THEMES } from '../../components/forms/FancyQr';
+import PublicBrand from '../../components/public/PublicBrand';
 
 
 /** Дата из Firestore Timestamp, который пришёл по сети как {_seconds}. */
@@ -76,15 +77,14 @@ export default function QrTracker() {
 
   return (
     <div className="min-h-dvh bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 font-sans">
+      <PublicBrand name={org?.name} logoUrl={org?.logoUrl} dark />
       
       <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl relative">
         
         {/* Top Header */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
           <div className="flex items-center gap-2">
-            {org?.logoUrl
-              ? <span className="bg-white rounded-lg px-1.5 py-1 shrink-0"><img src={org.logoUrl} alt="" className="h-7 w-auto max-w-[120px] object-contain" /></span>
-              : <Building2 className="w-5 h-5 text-emerald-500" />}
+            <Building2 className="w-5 h-5 text-emerald-500" />
             <span className="font-bold text-sm tracking-wide text-slate-200">{org?.tickets?.publicTitle || org?.name || "Проверка заявки"}</span>
           </div>
           <span className="text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full border border-emerald-500/30">
