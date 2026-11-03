@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from "react";
-import { computeStats, type Journal, type JournalEntry, type StatRow } from "../../../../shared/journals";
-import { card, input, label } from "./ui";
+import { Download, Loader2, Trophy } from "lucide-react";
+import { computeStats, leaderboard, noShowLabel, type Journal, type JournalEntry, type LeaderRow, type StatRow } from "../../../../shared/journals";
+import { exportStatsXlsx } from "../journalExcel";
+import { btnPrimary, card, input, label } from "./ui";
 
 /**
  * Статистика журнала. Считается в браузере по тем же записям, что и
@@ -23,17 +25,30 @@ export default function JournalStats({ journal, entries }: { journal: Journal; e
   const s = useMemo(() => computeStats(journal, scoped), [journal, scoped]);
   const person = journal.columns.find(c => c.id === journal.settings.personColumnId);
   const hasDone = journal.settings.doneColumnIds.length > 0;
-  const debtors = s.people.filter(p => p.open + p.overdue > 0).sort((a, b) => (b.open + b.overdue) - (a.open + a.overdue) || b.overdue - a.overdue);
+  const board = useMemo(() => leaderboard(journal, scoped).filter(r => r.unfinished > 0 || r.noShow > 0), [journal, scoped]);
+  const [exporting, setExporting] = useState(false);
+  const download = async () => {
+    setExporting(true);
+    try { await exportStatsXlsx(journal, scoped, { from, to }); }
+    catch (e: any) { alert(`Не удалось выгрузить: ${e.message}`); }
+    finally { setExporting(false); }
+  };
 
   return (
     <div className="space-y-4">
-      {dateCol && (
-        <div className={`${card} p-4 flex flex-wrap items-end gap-3`}>
-          <div><span className={label}>{dateCol.label}: с</span><input type="date" className={input} value={from} onChange={e => setFrom(e.target.value)} /></div>
-          <div><span className={label}>по</span><input type="date" className={input} value={to} onChange={e => setTo(e.target.value)} /></div>
-          {(from || to) && <button className="text-sm text-[var(--accent)] hover:underline pb-2" onClick={() => { setFrom(""); setTo(""); }}>За всё время</button>}
-        </div>
-      )}
+      <div className={`${card} p-4 flex flex-wrap items-end gap-3`}>
+        {dateCol && (
+          <>
+            <div className="flex-1 min-w-[140px] sm:flex-none"><span className={label}>{dateCol.label}: с</span><input type="date" className={input} value={from} onChange={e => setFrom(e.target.value)} /></div>
+            <div className="flex-1 min-w-[140px] sm:flex-none"><span className={label}>по</span><input type="date" className={input} value={to} onChange={e => setTo(e.target.value)} /></div>
+            {(from || to) && <button className="text-sm text-[var(--accent)] hover:underline pb-2" onClick={() => { setFrom(""); setTo(""); }}>За всё время</button>}
+          </>
+        )}
+        <button className={`${btnPrimary} w-full sm:w-auto sm:ml-auto justify-center`} onClick={download} disabled={exporting || !scoped.length}
+          title="Сводка, лидерборд, список не отработавших и все разбивки — каждый срез на своём листе">
+          {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Скачать статистику (Excel)
+        </button>
+      </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Tile title="Всего записей" value={s.total} />
@@ -44,10 +59,11 @@ export default function JournalStats({ journal, entries }: { journal: Journal; e
 
       {s.total === 0 && <div className={`${card} p-8 text-center text-sm text-[var(--text-muted)]`}>За выбранный период записей нет</div>}
 
+      {board.length > 0 && person && (
+        <Leaderboard rows={board} who={person.label} noShow={journal.columns.some(c => c.type === "checkbox") ? noShowLabel(journal) : null} />
+      )}
+
       <div className="grid lg:grid-cols-2 gap-4">
-        {hasDone && person && debtors.length > 0 && (
-          <Breakdown title={`Долги: ${person.label.toLowerCase()} с незакрытыми записями`} rows={debtors} metric={r => r.open + r.overdue} showStatus />
-        )}
         {person && s.people.length > 0 && <Breakdown title={`Чаще всего: ${person.label.toLowerCase()}`} rows={s.people} metric={r => r.total} showStatus={hasDone} />}
         {s.byGroup.length > 0 && <Breakdown title="По группам" rows={s.byGroup} metric={r => r.total} showStatus={hasDone} />}
         {s.byColumn.map(b => b.rows.length > 0 && (
@@ -75,6 +91,50 @@ export default function JournalStats({ journal, entries }: { journal: Journal; e
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Лидерборд не отработанных: кто больше всех не закрыл записей. */
+function Leaderboard({ rows, who, noShow }: { rows: LeaderRow[]; who: string; noShow: string | null }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? rows : rows.slice(0, 15);
+  const medal = (i: number) => (i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : String(i + 1));
+  return (
+    <div className={`${card} p-4`}>
+      <h4 className="font-semibold text-sm text-[var(--text-main)] mb-1 flex items-center gap-1.5"><Trophy className="w-4 h-4 text-amber-500" /> Лидерборд не отработанных</h4>
+      <p className="text-xs text-[var(--text-muted)] mb-3">Больше всего незакрытых записей, затем просроченных{noShow ? ` и «${noShow.toLowerCase()}»` : ""}. Всего: {rows.length}.</p>
+      <div className="overflow-x-auto -mx-4 px-4">
+        <table className="w-full text-sm min-w-[520px]">
+          <thead className="text-[11px] uppercase font-mono text-[var(--text-muted)]">
+            <tr>
+              <th className="py-2 pr-2 text-left w-10">#</th>
+              <th className="py-2 pr-2 text-left">{who}</th>
+              <th className="py-2 pr-2 text-left">Класс</th>
+              <th className="py-2 px-2 text-right">Не отработано</th>
+              <th className="py-2 px-2 text-right">Просрочено</th>
+              {noShow && <th className="py-2 px-2 text-right">{noShow}</th>}
+              <th className="py-2 pl-2 text-right">Всего</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((r, i) => (
+              <tr key={r.person} className="border-t border-[var(--border-color)]">
+                <td className="py-2 pr-2 tabular-nums text-[var(--text-muted)]">{medal(i)}</td>
+                <td className="py-2 pr-2 font-medium text-[var(--text-main)]">{r.person}</td>
+                <td className="py-2 pr-2 text-[var(--text-muted)]">{r.group || "—"}</td>
+                <td className="py-2 px-2 text-right tabular-nums font-bold text-[var(--text-main)]">{r.unfinished}</td>
+                <td className={`py-2 px-2 text-right tabular-nums ${r.overdue ? "text-rose-600 font-medium" : "text-[var(--text-muted)]"}`}>{r.overdue}</td>
+                {noShow && <td className={`py-2 px-2 text-right tabular-nums ${r.noShow ? "text-amber-600 font-medium" : "text-[var(--text-muted)]"}`}>{r.noShow}</td>}
+                <td className="py-2 pl-2 text-right tabular-nums text-[var(--text-muted)]">{r.total}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > 15 && (
+        <button className="mt-3 text-xs text-[var(--accent)] hover:underline" onClick={() => setAll(v => !v)}>{all ? "Свернуть" : `Показать всех (${rows.length})`}</button>
+      )}
     </div>
   );
 }

@@ -596,3 +596,51 @@ export const BLANK_TEMPLATE: JournalTemplate = {
   ],
   settings: { doneColumnIds: [], personColumnId: "person", dateColumnId: "date" },
 };
+
+// ── Лидерборд не отработанных ───────────────────────────────────────────
+
+export interface LeaderRow {
+  person: string;
+  group: string;
+  total: number;
+  done: number;
+  /** Не закрыто: открыто + просрочено. */
+  unfinished: number;
+  overdue: number;
+  /** Отметок «нет» в колонках да/нет — для отработок это «не пришёл». */
+  noShow: number;
+  /** Последняя дата по основной колонке даты. */
+  lastDate: string;
+}
+
+/**
+ * Кто чаще всего не закрывает записи. Сортировка: больше незакрытых,
+ * затем больше просроченных, затем больше неявок.
+ */
+export function leaderboard(j: Pick<Journal, "columns" | "settings">, entries: Pick<JournalEntry, "values">[], today = todayIso()): LeaderRow[] {
+  const person = j.columns.find(c => c.id === j.settings.personColumnId);
+  if (!person) return [];
+  const groupOf = new Map((person.options || []).map(o => [o.label, o.group || ""]));
+  const checks = j.columns.filter(c => c.type === "checkbox");
+  const dateCol = j.settings.dateColumnId;
+  const rows = new Map<string, LeaderRow>();
+  for (const e of entries) {
+    const name = displayValue(person, e.values?.[person.id]);
+    if (!name) continue;
+    const r = rows.get(name) || { person: name, group: groupOf.get(name) || "", total: 0, done: 0, unfinished: 0, overdue: 0, noShow: 0, lastDate: "" };
+    const st = entryStatus(j, e, today);
+    r.total++;
+    if (st === "done") r.done++; else r.unfinished++;
+    if (st === "overdue") r.overdue++;
+    if (checks.some(c => e.values?.[c.id] === false)) r.noShow++;
+    const d = dateCol ? e.values?.[dateCol] : "";
+    if (typeof d === "string" && d > r.lastDate) r.lastDate = d;
+    rows.set(name, r);
+  }
+  return [...rows.values()].sort((a, b) =>
+    b.unfinished - a.unfinished || b.overdue - a.overdue || b.noShow - a.noShow || b.total - a.total || a.person.localeCompare(b.person, "ru"));
+}
+
+/** Подпись «нет» первой колонки да/нет — заголовок для неявок. */
+export const noShowLabel = (j: Pick<Journal, "columns">) =>
+  j.columns.find(c => c.type === "checkbox")?.noLabel || "Отметка «нет»";

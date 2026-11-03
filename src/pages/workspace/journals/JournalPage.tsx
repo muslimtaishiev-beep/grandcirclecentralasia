@@ -8,6 +8,7 @@ import {
   type EntryStatus, type Journal, type JournalColumn, type JournalEntry, type JournalRole,
 } from "../../../shared/journals";
 import { useJournalApi } from "./journalApi";
+import { exportEntriesXlsx } from "./journalExcel";
 import { tenantLogos } from "../../../shared/legal";
 import EntryPanel from "./components/EntryPanel";
 import SignQrModal from "./components/SignQrModal";
@@ -44,7 +45,8 @@ export default function JournalPage() {
   const [tab, setTab] = useState<"entries" | "stats" | "settings">("entries");
 
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<"" | EntryStatus>("");
+  // "notdone" — открытые и просроченные вместе: «кто не отработал».
+  const [status, setStatus] = useState<"" | "notdone" | EntryStatus>("");
   const [filters, setFilters] = useState<Record<string, Filter>>({});
   const [showFilters, setShowFilters] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -78,7 +80,10 @@ export default function JournalPage() {
     if (!journal) return [];
     const q = search.trim().toLowerCase().replace(/ё/g, "е");
     return entries.filter(e => {
-      if (status && entryStatus(journal, e, today) !== status) return false;
+      if (status) {
+        const st = entryStatus(journal, e, today);
+        if (status === "notdone" ? st === "done" : st !== status) return false;
+      }
       for (const [cid, f] of Object.entries(filters)) {
         const c = journal.columns.find(x => x.id === cid);
         if (!c) continue;
@@ -102,25 +107,13 @@ export default function JournalPage() {
 
   const activeFilters = Object.values(filters).filter(f => f.op || f.from || f.to || (Array.isArray(f.value) ? f.value.length : f.value !== undefined && f.value !== "")).length;
 
-  const exportCsv = () => {
+  const [exporting, setExporting] = useState(false);
+  const exportXlsx = async () => {
     if (!journal) return;
-    const cell = (s: string) => `"${s.replace(/"/g, '""')}"`;
-    const head = [...journal.columns.map(c => c.label), "Статус", "Создано", "Кем"];
-    const rows = visible.map(e => [
-      ...journal.columns.map(c => {
-        const v = e.values?.[c.id];
-        if (c.type === "qr_sign" && v?.signedAt) return `подписано ${new Date(v.signedAt).toLocaleString("ru-RU")}`;
-        if (c.type === "name_sign" && v?.name) return `${v.name} (${new Date(v.at).toLocaleString("ru-RU")})`;
-        return displayValue(c, v);
-      }),
-      STATUS_LABEL[entryStatus(journal, e, today)], new Date(e.createdAt).toLocaleString("ru-RU"), e.createdByName,
-    ]);
-    const csv = "﻿" + [head, ...rows].map(r => r.map(x => cell(String(x ?? ""))).join(";")).join("\r\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    a.download = `${journal.title} — ${new Date().toLocaleDateString("ru-RU")}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    setExporting(true);
+    try { await exportEntriesXlsx(journal, visible, visible.length !== entries.length); }
+    catch (e: any) { alert(`Не удалось выгрузить: ${e.message}`); }
+    finally { setExporting(false); }
   };
 
   /** Быстрая отметка прямо в таблице — для «пришёл / не пришёл». */
@@ -144,6 +137,19 @@ export default function JournalPage() {
   const canEdit = roleAtLeast(role, "edit");
   const canManage = role === "manage";
   const tableCols = journal.columns;
+  const noShowCol = journal.columns.find(c => c.type === "checkbox");
+  const hasDone = journal.settings.doneColumnIds.length > 0;
+  // Быстрые отборы — то, что спрашивают чаще всего, одним нажатием.
+  const quick: { key: string; label: string; active: boolean; apply: () => void }[] = [
+    { key: "all", label: "Все", active: !status && !activeFilters, apply: () => { setStatus(""); setFilters({}); } },
+    ...(hasDone ? [{ key: "notdone", label: "Не отработали", active: status === "notdone" && !activeFilters, apply: () => { setStatus("notdone"); setFilters({}); } }] : []),
+    ...(journal.settings.deadlineColumnId ? [{ key: "overdue", label: "Просрочено", active: status === "overdue" && !activeFilters, apply: () => { setStatus("overdue"); setFilters({}); } }] : []),
+    ...(noShowCol ? [{
+      key: "noshow", label: noShowCol.noLabel || "Нет",
+      active: !status && activeFilters === 1 && filters[noShowCol.id]?.value === false,
+      apply: () => { setStatus(""); setFilters({ [noShowCol.id]: { value: false } }); },
+    }] : []),
+  ];
   const allChecked = visible.length > 0 && visible.every(e => selected.has(e.id));
 
   return (
@@ -182,14 +188,26 @@ export default function JournalPage() {
             </div>
             <select className={`${input} flex-1 sm:flex-none sm:!w-44`} value={status} onChange={e => setStatus(e.target.value as any)}>
               <option value="">Все статусы</option>
+              {hasDone && <option value="notdone">Не отработали (не закрыты)</option>}
               {(Object.keys(STATUS_LABEL) as EntryStatus[]).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
             </select>
             <button className={`${btn} ${activeFilters ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} onClick={() => setShowFilters(v => !v)}>
               <SlidersHorizontal className="w-4 h-4" /> Фильтры{activeFilters ? ` (${activeFilters})` : ""}
             </button>
-            <button className={btn} onClick={exportCsv} title="Выгрузить то, что сейчас видно"><Download className="w-4 h-4" /> CSV</button>
+            <button className={btn} onClick={exportXlsx} disabled={exporting || !visible.length} title="Скачать в Excel то, что сейчас отобрано">
+              {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Excel
+            </button>
             <button className={btn} onClick={load} title="Обновить"><RefreshCw className="w-4 h-4" /></button>
             <span className="w-full sm:w-auto text-xs text-[var(--text-muted)] sm:ml-auto">{visible.length === entries.length ? `${entries.length} записей` : `${visible.length} из ${entries.length}`}</span>
+          </div>
+
+          <div className="flex gap-1.5 overflow-x-auto hide-scrollbar -mt-1">
+            {quick.map(q => (
+              <button key={q.key} onClick={q.apply}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition ${q.active ? "bg-[var(--accent)] border-[var(--accent)] text-white" : "border-[var(--border-color)] text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]"}`}>
+                {q.label}
+              </button>
+            ))}
           </div>
 
           {showFilters && (
