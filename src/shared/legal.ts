@@ -38,7 +38,8 @@ export interface LegalProfile {
 const clean = (v: unknown, max = 200) => String(v ?? "").trim().slice(0, max);
 const cleanUrl = (v: unknown) => {
   const s = clean(v, 500);
-  return /^(https:\/\/|\/)[^\s"'<>]*$/.test(s) ? s : "";
+  // https:// или путь от корня сайта; «//чужой.сайт» и «/\чужой.сайт» — не путь.
+  return /^(https:\/\/|\/(?![\/\\]))[^\s"'<>]*$/.test(s) ? s : "";
 };
 const cleanColor = (v: unknown) => {
   const s = clean(v, 20);

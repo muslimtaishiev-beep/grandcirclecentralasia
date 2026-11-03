@@ -103,7 +103,8 @@ const strList = (v: unknown, max: number = LIMITS.options, len: number = LIMITS.
   (Array.isArray(v) ? v : []).map(x => str(x, len)).filter(Boolean).slice(0, max);
 
 export function normalizeLevels(v: unknown): string[] {
-  const raw = Array.isArray(v) ? v : String(v ?? "").split(/[;,\s]+/);
+  // Пробел — часть уровня («7 А»), разделители — только ; , и перенос строки.
+  const raw = Array.isArray(v) ? v : String(v ?? "").split(/[;,\n]+/);
   const out = raw.map(x => str(x, 20)).filter(Boolean);
   return [...new Set(out)].slice(0, LIMITS.levels).sort((a, b) => (Number(a) - Number(b)) || a.localeCompare(b, "ru"));
 }
@@ -167,10 +168,15 @@ export const CONTENT_KEYS: (keyof QuestionContent)[] = [
   "dropdownItems", "matrixRows", "matrixCols", "dragItems", "inlineSegments", "clickableSegments",
 ];
 
-/** Только то, что можно показать ученику: без ключа и служебных полей. */
+/**
+ * Только то, что можно показать ученику: без ключа и служебных полей.
+ * У «Расставить знаки» ключ спрятан и в разметке — флаг isTarget у мест
+ * для запятой; его тоже вырезаем, иначе ответ виден в инструментах браузера.
+ */
 export function studentView(q: BankQuestion): QuestionContent & { id: string; type: QuestionType; points: number } {
   const out: any = { id: q.id, type: q.type, points: q.points };
   for (const k of CONTENT_KEYS) if (q[k] !== undefined) out[k] = q[k];
+  if (out.clickableSegments) out.clickableSegments = out.clickableSegments.map(({ isTarget: _t, ...s }: ClickableSegment) => s);
   return out;
 }
 
@@ -370,6 +376,8 @@ export function parseSheetRow(row: Record<string, string>, rowNumber: number): I
 export function letterToOption(answer: string, options?: string[]): string {
   const a = answer.trim();
   if (!options?.length || a.length !== 1) return answer;
+  // Ключ уже совпадает с вариантом («a» среди «the / a / an») — это не буква варианта.
+  if (options.some(o => o.trim().toLowerCase() === a.toLowerCase())) return answer;
   if (options.some(o => /^\s*[A-Za-zА-Яа-яЁё][).]/.test(o))) return answer;
   const idx = ["АA", "БB", "ВCV", "ГDG", "ДEД", "ЕF"].findIndex(l => l.includes(a.toUpperCase()));
   return idx >= 0 && options[idx] ? options[idx] : answer;

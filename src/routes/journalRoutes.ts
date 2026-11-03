@@ -143,7 +143,7 @@ async function prepareValues(
   const values: Record<string, any> = {};
   const changes: JournalChange[] = [];
   const now = Date.now();
-  let employees: { name: string }[] | null = null;
+  let employees: { uid: string; name: string }[] | null = null;
   for (const [cid, raw] of Object.entries(input || {})) {
     const c = j.columns.find(x => x.id === cid);
     if (!c) continue;
@@ -159,9 +159,19 @@ async function prepareValues(
         next = null;
       } else {
         const typed = str(raw, 120);
-        const pool = [...(c.allowedNames || [])];
-        if (c.allowEmployees) { employees = employees || await listEmployees(t); pool.push(...employees.map(e => e.name)); }
-        const hit = matchName(typed, pool);
+        // Имя из списка журнала (у этих людей нет аккаунтов) — принимаем как
+        // есть, кто ввёл — записываем. Имя сотрудника — только своё: иначе
+        // любой ведущий записи мог подписаться за куратора.
+        let hit = matchName(typed, c.allowedNames || []);
+        if (!hit && c.allowEmployees) {
+          employees = employees || await listEmployees(t);
+          const emp = matchName(typed, employees.map(e => e.name));
+          if (emp) {
+            const owners = employees.filter(e => e.name === emp).map(e => e.uid);
+            if (!owners.includes(caller.uid) && !caller.full) return { error: `«${c.label}»: подписать именем сотрудника «${emp}» может только он сам` };
+            hit = emp;
+          }
+        }
         if (!hit) return { error: `«${c.label}»: имя «${typed}» не найдено среди разрешённых. Напишите фамилию и имя полностью.` };
         next = { name: hit, typed, by: caller.uid, byName: caller.name, at: now } as NameSignature;
       }
@@ -179,7 +189,13 @@ async function prepareValues(
   return { values, changes };
 }
 
-const sizeOk = (values: Record<string, any>) => JSON.stringify(values).length <= JOURNAL_LIMITS.maxEntryChars;
+/**
+ * Влезет ли документ записи в лимит Firestore (1 МиБ). Считаем байты UTF-8
+ * всего документа — с историей и подписями: кириллица весит 2 байта, и
+ * подсчёт символов одних значений пропускал записи, которые потом уже не
+ * сохранялись (в том числе подпись по QR).
+ */
+const sizeOk = (doc: object) => Buffer.byteLength(JSON.stringify(doc), "utf8") <= 950_000;
 
 // ── QR-подпись: публичная часть ─────────────────────────────────────────
 // Объявлена раньше кабинетных ручек: иначе /sign/:token совпал бы с
@@ -218,8 +234,14 @@ router.get("/sign/:token", async (req: any, res: any) => {
     if (got.error) return fail(res, got.status, got.error);
     const { tk, j, e, c, tenant } = got;
     tk.__id = String(req.params.token);
-    const summary = j.columns
-      .filter((x: JournalColumn) => ["text", "number", "date", "select", "checkbox"].includes(x.type))
+    // Что подписывающий видит о записи. Не показываем: колонку, с которой
+    // сверяется его ответ (иначе сверка ФИО бессмысленна), поля только для
+    // ответственного и свободный текст. После использования, истечения или
+    // замены ссылки — ничего: сфотографированный QR не должен открывать запись.
+    const closed = tokenState(tk, e, c);
+    const hidden = new Set((c.subfields || []).map((s: any) => s.matchColumnId).filter(Boolean));
+    const summary = closed ? [] : j.columns
+      .filter((x: JournalColumn) => ["number", "date", "select", "checkbox"].includes(x.type) && !x.managersOnly && !hidden.has(x.id))
       .map((x: JournalColumn) => ({ label: x.label, value: displayValue(x, e.values?.[x.id]) }))
       .filter((x: { value: string }) => x.value);
     return res.json({
@@ -228,7 +250,7 @@ router.get("/sign/:token", async (req: any, res: any) => {
       journal: { title: j.title },
       column: { label: c.label, subfields: (c.subfields || []).map(({ id, type, label, required }: any) => ({ id, type, label, required })) },
       summary,
-      closed: tokenState(tk, e, c),
+      closed,
       expiresAt: tk.expiresAt,
     });
   } catch (e: any) { return fail(res, 500, e.message); }
@@ -288,7 +310,7 @@ router.post("/sign/:token", async (req: any, res: any) => {
         },
       };
       const values = { ...e.values, [c.id]: sig };
-      if (!sizeOk(values)) return { status: 400, error: "Фото слишком большое" };
+      if (!sizeOk({ ...e, values })) return { status: 400, error: "Фото слишком большое" };
       const change: JournalChange = { at: now, by: "qr", byName: "Подпись по QR", columnId: c.id, from: "", to: displayValue(c, sig) };
       tx.update(eRef, {
         values, updatedAt: now,
@@ -417,7 +439,7 @@ router.post("/:tenantId/:journalId/entries", ...guard, async (req: any, res: any
     for (const input of list) {
       const r = await prepareValues(req.params.tenantId, got.j, got.role, req.caller, input);
       if ("error" in r) return fail(res, 400, r.error);
-      if (!sizeOk(r.values)) return fail(res, 400, "Запись слишком большая: уменьшите фото");
+      if (!sizeOk({ values: r.values })) return fail(res, 400, "Запись слишком большая: уменьшите фото");
       created.push({
         id: newId("e"), journalId: got.j.id, values: r.values,
         createdAt: now, createdBy: req.caller.uid, createdByName: req.caller.name, updatedAt: now,
@@ -448,16 +470,17 @@ router.patch("/:tenantId/:journalId/entries/:entryId", ...guard, async (req: any
   try {
     const got = await loadJournal(req, res, "edit"); if (!got) return;
     const ref = col(req.params.tenantId, "journal_entries").doc(String(req.params.entryId));
-    const pre = await ref.get();
-    const prevValues = (pre.data() as JournalEntry | undefined)?.values || {};
-    const r = await prepareValues(req.params.tenantId, got.j, got.role, req.caller, req.body?.values || {}, prevValues);
-    if ("error" in r) return fail(res, 400, r.error);
+    // Права и значения проверяются по записи, прочитанной в транзакции: иначе
+    // подпись, пришедшая между чтением и записью, затиралась бы — в том
+    // числе тем, кому снимать подписи нельзя.
     const out = await db().runTransaction(async tx => {
       const snap = await tx.get(ref);
       const e = snap.data() as JournalEntry | undefined;
       if (!e || e.journalId !== got.j.id || e.deleted) return { status: 404, error: "Запись не найдена" };
+      const r = await prepareValues(req.params.tenantId, got.j, got.role, req.caller, req.body?.values || {}, e.values || {});
+      if ("error" in r) return { status: 400, error: r.error };
       const values = { ...e.values, ...r.values };
-      if (!sizeOk(values)) return { status: 400, error: "Запись слишком большая: уменьшите фото" };
+      if (!sizeOk({ ...e, values })) return { status: 400, error: "Запись слишком большая: уменьшите фото" };
       const changes = [...(e.changes || []), ...r.changes].slice(-JOURNAL_LIMITS.maxChanges);
       const signedHash = { ...(e.signedHash || {}) };
       for (const [k, v] of Object.entries(r.values)) if (v === null) delete signedHash[k];
@@ -485,23 +508,36 @@ router.post("/:tenantId/:journalId/entries/bulk", ...guard, async (req: any, res
     const now = Date.now();
     const updated: JournalEntry[] = [];
     let batch = db().batch(); let n = 0;
+    if (action === "set") {
+      // Каждая запись — своей транзакцией по свежему снимку: пачка со старыми
+      // копиями затирала бы подпись, поставленную учеником в эту же минуту.
+      const cid = str(req.body?.columnId, 42);
+      for (const s0 of snaps) {
+        const out = await db().runTransaction(async tx => {
+          const s = await tx.get(s0.ref);
+          const e = s.data() as JournalEntry | undefined;
+          if (!e || e.journalId !== got.j.id || e.deleted) return null;
+          const r = await prepareValues(req.params.tenantId, got.j, got.role, req.caller, { [cid]: req.body?.value }, e.values || {});
+          if ("error" in r) return { error: r.error };
+          if (!r.changes.length) return null;
+          const next = { ...e, id: s.id, values: { ...e.values, ...r.values }, changes: [...(e.changes || []), ...r.changes].slice(-JOURNAL_LIMITS.maxChanges), updatedAt: now, updatedBy: req.caller.uid };
+          if (!sizeOk(next)) return null;
+          tx.set(s.ref, next);
+          return { entry: next };
+        });
+        if (out && "error" in out) return fail(res, 400, out.error as string);
+        if (out?.entry) updated.push(out.entry as JournalEntry);
+      }
+      return res.json({ success: true, count: updated.length, entries: updated.map(e => lighten(got.j, e)) });
+    }
     for (const s of snaps) {
       const e = s.data() as JournalEntry | undefined;
       if (!e || e.journalId !== got.j.id || e.deleted) continue;
-      if (action === "delete") {
-        batch.update(s.ref, { deleted: true, deletedAt: now, deletedBy: req.caller.uid });
-      } else {
-        const r = await prepareValues(req.params.tenantId, got.j, got.role, req.caller, { [str(req.body?.columnId, 42)]: req.body?.value }, e.values);
-        if ("error" in r) return fail(res, 400, r.error);
-        if (!r.changes.length) continue;
-        const next = { ...e, id: s.id, values: { ...e.values, ...r.values }, changes: [...(e.changes || []), ...r.changes].slice(-JOURNAL_LIMITS.maxChanges), updatedAt: now, updatedBy: req.caller.uid };
-        batch.set(s.ref, next);
-        updated.push(next);
-      }
+      batch.update(s.ref, { deleted: true, deletedAt: now, deletedBy: req.caller.uid });
       if (++n % 400 === 0) { await batch.commit(); batch = db().batch(); }
     }
     await batch.commit();
-    return res.json({ success: true, count: action === "delete" ? n : updated.length, entries: updated.map(e => lighten(got.j, e)) });
+    return res.json({ success: true, count: n, entries: [] });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 

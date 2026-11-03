@@ -160,36 +160,43 @@ export function isAnswerCorrect(userAnsRaw: any, targetAnsRaw: any): boolean {
     if (normTarget.length <= 2 && foldLookalikes(prefixNorm) === foldLookalikes(normTarget)) return true;
   }
 
-  // 3. Substring match — ТОЛЬКО для списковых ответов ("нн, н", матрицы,
-  // перетаскивание, несколько списков) и числовых (ученик дописал единицы:
-  // «60 мин»). Для одиночного выбора это давало ложные зачёты: ключ «lived»
-  // засчитывал «have lived», «who» — «whose», «worked» — все четыре варианта.
-  const listLike = /[,;]/.test(targetStr) || /[,;]/.test(userStr);
+  // 3. Число (в том числе «2,5»): ответ должен начинаться с того же числа,
+  // после него — только слова («60 мин»), но не другие числа. Раньше ответ
+  // с запятой («0,1,2,42») уходил в списковую ветку и засчитывался.
   const numericTarget = /^-?\d+(?:[.,]\d+)?$/.test(targetStr);
-  if (numericTarget && !listLike) {
+  if (numericTarget) {
     const lead = normUser.match(/^-?\d+(?:\.\d+)?/);
-    return Boolean(lead) && lead![0] === normTarget.replace(/,/g, ".");
-  }
-  if (listLike && (normUser.includes(normTarget) || normTarget.includes(normUser))) {
-    // If target is just a single character prefix like "1", "2", "a", "b",
-    // only match via prefix to avoid false positives on words containing 'a'
-    if (/^[a-z0-9а-я]$/i.test(normTarget)) {
-      return prefixMatch ? foldLookalikes(normalizeString(prefixMatch[1])) === foldLookalikes(normTarget) : normUser.startsWith(normTarget);
-    }
-    return true;
+    if (!lead || lead[0] !== normTarget) return false;
+    return !/\d/.test(normUser.slice(lead[0].length));
   }
 
-  // 4. Pair-by-pair match for matrix/grid responses (e.g. "Row-Col,Row-Col")
-  if (targetStr.includes(',') && targetStr.includes('-') && userStr.includes(',') && userStr.includes('-')) {
-    const targetPairs = targetStr.split(',').map(s => normalizeString(s)).filter(Boolean);
-    const userPairs = userStr.split(',').map(s => normalizeString(s)).filter(Boolean);
-
-    if (targetPairs.length > 0 && targetPairs.length === userPairs.length) {
-      const allPairsMatch = targetPairs.every(tPair => 
-        userPairs.some(uPair => uPair.includes(tPair) || tPair.includes(uPair))
-      );
-      if (allPairsMatch) return true;
+  // 4. Списки («нн, н», «1, 4», порядок, несколько списков, таблица) — только
+  // если списком является КЛЮЧ. Части сравниваются целиком и по порядку.
+  // Раньше хватало, чтобы одна строка содержалась в другой: ответ «,» или
+  // все варианты через запятую засчитывались на любом таком задании.
+  if (/[,;]/.test(targetStr)) {
+    const split = (x: string) => x.split(/[,;]/).map(p => normalizeString(p)).filter(Boolean);
+    const t = split(targetStr), u = split(userStr);
+    if (!t.length || t.length !== u.length) return false;
+    // Пара таблицы «Строка-Столбец»: в ключе столбец бывает записан коротко
+    // («Чёрная» для «Чёрная рубашка») — допускаем продолжение после ключа.
+    // Короткие части (буквы вариантов) — с учётом похожих латиницы и кириллицы.
+    const partOk = (up: string, tp: string) =>
+      up === tp
+      || (tp.includes("-") && up.startsWith(tp))
+      || (tp.length <= 2 && foldLookalikes(up) === foldLookalikes(tp));
+    if (t.every((tp, i) => partOk(u[i], tp))) return true;
+    // Пары таблицы — порядок строк не важен, но каждая часть ответа — один раз.
+    if (t.every(tp => tp.includes("-"))) {
+      const used = new Set<number>();
+      return t.every(tp => {
+        const i = u.findIndex((up, k) => !used.has(k) && partOk(up, tp));
+        if (i < 0) return false;
+        used.add(i);
+        return true;
+      });
     }
+    return false;
   }
 
   return false;

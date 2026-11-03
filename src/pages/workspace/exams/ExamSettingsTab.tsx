@@ -221,7 +221,8 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
 }
 
 function ScaleEditor({ scale, onChange }: { scale: ScaleBand[]; onChange: (s: ScaleBand[]) => void }) {
-  const rows = [...scale].sort((a, b) => b.minPercent - a.minPercent);
+  // Без пересортировки при наборе — строка не должна прыгать под курсором; порядок наводит сервер.
+  const rows = scale;
   return (
     <div>
       <span className={label}>Шкала уровней (необязательно)</span>

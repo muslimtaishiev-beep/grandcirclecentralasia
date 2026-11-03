@@ -34,6 +34,12 @@ const access = (need: "view" | "edit") => async (req: any, res: any, next: any) 
     next();
   } catch (e: any) { return fail(res, 500, e.message); }
 };
+/** Номер вопроса и код дисциплины в адресе — только по образцу: «%2F» в id давал бы вложенный путь Firestore. */
+const checkParams = (req: any, res: any, next: any) => {
+  if (req.params.code !== undefined && !DISCIPLINE_CODE.test(String(req.params.code))) return fail(res, 400, "Неверный код дисциплины");
+  if (req.params.id !== undefined && !QUESTION_ID.test(String(req.params.id))) return fail(res, 400, "Неверный номер вопроса");
+  next();
+};
 export const view = [requireFirebaseAuth, requireScreen("exams", (req: any) => req.params.tenantId), access("view")];
 export const edit = [requireFirebaseAuth, requireScreen("exams", (req: any) => req.params.tenantId), access("edit")];
 const who = (req: any) => str(req.user?.email || req.user?.uid, 120);
@@ -77,7 +83,7 @@ router.post("/:tenantId/disciplines", ...edit, async (req: any, res: any) => {
   } catch (e: any) { return fail(res, e.status || 500, e.message); }
 });
 
-router.put("/:tenantId/disciplines/:code", ...edit, async (req: any, res: any) => {
+router.put("/:tenantId/disciplines/:code", ...edit, checkParams, async (req: any, res: any) => {
   try {
     const ref = col(req.params.tenantId, "exam_disciplines").doc(String(req.params.code));
     const snap = await ref.get();
@@ -91,7 +97,7 @@ router.put("/:tenantId/disciplines/:code", ...edit, async (req: any, res: any) =
 });
 
 /** Удалить можно только пустую дисциплину: вопросы сначала удаляют или переносят. */
-router.delete("/:tenantId/disciplines/:code", ...edit, async (req: any, res: any) => {
+router.delete("/:tenantId/disciplines/:code", ...edit, checkParams, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const code = String(req.params.code);
     const left = await col(t, "exam_bank").where("disciplineId", "==", code).count().get();
@@ -154,12 +160,13 @@ router.post("/:tenantId/questions", ...edit, async (req: any, res: any) => {
     const n = await allocate(t, code, 1);
     const now = Date.now();
     const full: BankQuestion = { ...q, id: questionId(code, n), tenantId: t, disciplineId: code, number: n, createdAt: now, updatedAt: now, updatedBy: who(req) };
-    await col(t, "exam_bank").doc(full.id).set(full);
+    // create, а не set: если номер почему-то занят, это ошибка, а не тихая перезапись чужого вопроса.
+    await col(t, "exam_bank").doc(full.id).create(full);
     return res.json({ success: true, question: full });
   } catch (e: any) { return fail(res, e.status || 500, e.message); }
 });
 
-router.put("/:tenantId/questions/:id", ...edit, async (req: any, res: any) => {
+router.put("/:tenantId/questions/:id", ...edit, checkParams, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const id = String(req.params.id);
     const ref = col(t, "exam_bank").doc(id);
@@ -183,6 +190,15 @@ router.post("/:tenantId/questions/bulk", ...edit, async (req: any, res: any) => 
     const action = String(req.body?.action || "");
     if (!ids.length) return fail(res, 400, "Не выбраны вопросы");
     if (ids.length > 2000) return fail(res, 400, "Слишком много вопросов за раз");
+    // Несуществующие номера отбрасываем заранее: update по ним ронял бы
+    // пачку, и действие применялось бы частично.
+    const exist: string[] = [];
+    for (let i = 0; i < ids.length; i += 300) {
+      const snaps = await db().getAll(...ids.slice(i, i + 300).map(id => col(t, "exam_bank").doc(id)));
+      for (const sn of snaps) if (sn.exists) exist.push(sn.id);
+    }
+    ids.splice(0, ids.length, ...exist);
+    if (!ids.length) return fail(res, 404, "Выбранных вопросов нет в банке");
     const patch: Record<string, any> = { updatedAt: Date.now(), updatedBy: who(req) };
     if (action === "activate") patch.active = true;
     else if (action === "deactivate") patch.active = false;
@@ -255,7 +271,9 @@ router.post("/:tenantId/import", ...edit, async (req: any, res: any) => {
 
     const now = Date.now();
     for (const [code, name] of Object.entries(toCreate)) {
-      await col(t, "exam_disciplines").doc(code).set({ code, name, description: "", nextNumber: 1, createdAt: now, updatedAt: now });
+      // create: если дисциплину успел создать параллельный импорт, её счётчик не сбрасываем.
+      await col(t, "exam_disciplines").doc(code).create({ code, name, description: "", nextNumber: 1, createdAt: now, updatedAt: now })
+        .catch((e: any) => { if (e?.code !== 6) throw e; });
     }
     // Номера для новых — пачкой на дисциплину.
     const newBy = new Map<string, number>();
@@ -282,7 +300,9 @@ router.post("/:tenantId/import", ...edit, async (req: any, res: any) => {
       for (const q of writes.slice(i, i + 400)) {
         const old = prev.get(q.id);
         const doc = old ? { ...q, createdAt: old.createdAt ?? q.createdAt, order: old.order, source: old.source } : q;
-        b.set(col(t, "exam_bank").doc(q.id), JSON.parse(JSON.stringify(doc)));
+        const ref = col(t, "exam_bank").doc(q.id);
+        // Новые — только create: занятый номер не перезаписывается молча.
+        if (old) b.set(ref, JSON.parse(JSON.stringify(doc))); else b.create(ref, JSON.parse(JSON.stringify(doc)));
       }
       await b.commit();
     }

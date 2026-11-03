@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Check, Loader2, Plus, Shuffle, Trash2, X } from "lucide-react";
 import QuestionFactory from "../../../components/tests/QuestionFactory";
 import { isAnswerCorrect } from "../../../lib/scoringEngine";
@@ -46,19 +46,33 @@ export default function QuestionEditor({ initial, disciplineId, defaultLevels, c
   const [error, setError] = useState<string | null>(null);
   const set = (p: Partial<Draft>) => setD(x => ({ ...x, ...p }));
 
+  // Запасные ключи («||») редактор не показывает — при сохранении их не теряем,
+  // если основной ключ не менялся.
+  const keepAlts = (main: string) => {
+    const orig = initial?.answer || "";
+    return orig.includes("||") && orig.split("||")[0].trim() === main.trim() ? orig : main;
+  };
+  // Перемешанный порядок для ученика — один раз на набор элементов, а не на каждую клавишу.
+  const shuffleMemo = useRef<{ key: string; items: string[] } | null>(null);
+  const shuffledFor = (items: string[]) => {
+    const key = items.slice().sort().join("|");
+    if (shuffleMemo.current?.key !== key) shuffleMemo.current = { key, items: shuffled(items) };
+    return shuffleMemo.current.items;
+  };
+
   // Итоговый вопрос с ключом, собранным из отметок.
   const built: Draft = useMemo(() => {
     const q: Draft = { ...d, levels: normalizeLevels(levelsText) };
-    if (q.type === "inline_inputs") { const r = markupToInline(inlineMarkup); q.inlineSegments = r.segments; q.answer = r.answer; }
+    if (q.type === "inline_inputs") { const r = markupToInline(inlineMarkup); q.inlineSegments = r.segments; q.answer = keepAlts(r.answer); }
     if (q.type === "clickable_text") {
       q.clickableSegments = markupToClickable(clickMarkup);
-      q.answer = q.clickableSegments.filter(s => s.id && s.isTarget).map(s => s.id).join(", ");
+      q.answer = keepAlts(q.clickableSegments.filter(s => s.id && s.isTarget).map(s => s.id).join(", "));
     }
     if (q.type === "drag_and_drop") {
       const items = order.map(s => s.trim()).filter(Boolean);
-      q.answer = items.join(",");
+      q.answer = keepAlts(items.join(","));
       const same = (q.dragItems || []).slice().sort().join("|") === items.slice().sort().join("|");
-      q.dragItems = same && (q.dragItems || []).join("|") !== items.join("|") ? q.dragItems : shuffled(items);
+      q.dragItems = same && (q.dragItems || []).join("|") !== items.join("|") ? q.dragItems : shuffledFor(items);
     }
     for (const k of ["options", "inlineOptions", "matrixRows", "matrixCols"] as const) if (q[k]) q[k] = (q[k] as string[]).map(s => s.trim()).filter(Boolean);
     if (q.dropdownItems) q.dropdownItems = q.dropdownItems.map(i => ({ label: i.label.trim(), options: i.options.map(o => o.trim()).filter(Boolean) })).filter(i => i.label || i.options.length);
@@ -254,7 +268,13 @@ function TypeFields({ d, set, order, setOrder, clickMarkup, setClickMarkup }: {
     }
     case "logic_matrix": {
       const rows = d.matrixRows || []; const cols = d.matrixCols || [];
-      const map = new Map((d.answer || "").split(",").map(p => { const i = p.indexOf("-"); return [p.slice(0, i).trim(), p.slice(i + 1).trim()] as [string, string]; }));
+      // Строку ищем по известным названиям строк: в «Санкт-Петербург-Север» первый дефис — часть названия.
+      const map = new Map((d.answer || "").split("||")[0].split(",").map(p => {
+        const pair = p.trim();
+        const row = [...rows].sort((x, y) => y.length - x.length).find(r => r && pair.startsWith(`${r}-`));
+        if (row) return [row, pair.slice(row.length + 1).trim()] as [string, string];
+        const i = pair.indexOf("-"); return [pair.slice(0, i).trim(), pair.slice(i + 1).trim()] as [string, string];
+      }));
       const pick = (r: string, c: string) => { map.set(r, c); set({ answer: rows.filter(x => map.get(x)).map(x => `${x}-${map.get(x)}`).join(",") }); };
       // В старых ключах столбец записан коротко («Чёрная» для «Чёрная рубашка») —
       // показываем столбец, с которого ключ начинается, как это делает проверка.

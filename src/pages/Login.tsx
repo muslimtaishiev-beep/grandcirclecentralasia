@@ -88,7 +88,8 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
    * сотрудник не мог понять, ошибся он в пароле или его заблокировали.
    */
   const loginErrorText = (code: string | undefined, l: string): string => {
-    const ru = l === 'ru';
+    // Русский — для всех, кроме английского интерфейса (в том числе kg).
+    const ru = l !== 'en';
     switch (code) {
       case 'auth/invalid-credential':
       case 'auth/wrong-password':

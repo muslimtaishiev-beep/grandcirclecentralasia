@@ -70,7 +70,11 @@ export function loadQrLogo(url?: string | null): Promise<HTMLImageElement | null
   if (!url) return Promise.resolve(null);
   return new Promise(resolve => {
     const img = new Image();
-    if (/^https?:/i.test(url) && !url.startsWith(window.location.origin)) img.crossOrigin = "anonymous";
+    // Чужой домен — только с CORS. Сравниваем настоящий origin: «startsWith»
+    // пропускал site.com.evil.com и «//host».
+    let foreign = false;
+    try { foreign = new URL(url, window.location.href).origin !== window.location.origin; } catch { return resolve(null); }
+    if (foreign) img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null);
     img.src = url;
@@ -309,6 +313,8 @@ export function QrThemePicker({
 export async function downloadQr(value: string, theme: QrTheme, filename: string, size = 1024, logo?: string | null) {
   const canvas = document.createElement("canvas");
   drawFancyQr(canvas, value, theme, size, true, await loadQrLogo(logo));
+  // Если логотип всё же «испортил» холст (сервер без CORS), скачиваем код без него.
+  try { canvas.toDataURL(); } catch { drawFancyQr(canvas, value, theme, size, true, null); }
   canvas.toBlob(blob => {
     if (!blob) return;
     const url = URL.createObjectURL(blob);

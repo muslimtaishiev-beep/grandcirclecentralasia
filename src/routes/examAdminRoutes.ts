@@ -8,7 +8,7 @@ import {
   DEFAULT_SETTINGS, gradeAttempt, sanitizeSections, sanitizeSettings, sectionPlan,
   type Attempt, type AttemptRow, type Decision, type Exam,
 } from "../shared/examRun.js";
-import { finalizeIfExpired } from "./examPublicRoutes.js";
+import { finalizeIfExpired, supersedeOthers } from "./examPublicRoutes.js";
 
 /**
  * «Экзамены»: кабинет менеджера — конструктор, работы, проверка, решения.
@@ -23,6 +23,14 @@ const col = (t: string, name: string) => db().collection("tenants").doc(t).colle
 const str = (v: unknown, max = 200) => String(v ?? "").trim().slice(0, max);
 const fail = (res: any, status: number, error: string) => res.status(status).json({ success: false, error });
 const who = (req: any) => str(req.user?.email || req.user?.uid, 120);
+
+/** Идентификаторы в адресе — только по образцу (иначе «%2F» строит вложенный путь Firestore). */
+const SAFE_ID = /^[\w-]{1,64}$/;
+const checkIds = (req: any, res: any, next: any) => {
+  for (const k of ["id", "aid"]) if (req.params[k] !== undefined && !SAFE_ID.test(String(req.params[k]))) return fail(res, 400, "Неверный идентификатор");
+  next();
+};
+const own = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
 
 export const examPinKey = (tenantId: string, examId: string) => `${tenantId}:${examId}`;
 
@@ -94,6 +102,7 @@ router.post("/:tenantId/exams", ...edit, async (req: any, res: any) => {
     const now = Date.now();
     const ref = col(t, "exams").doc();
     const code = await newLinkCode();
+    const batch = db().batch();
     const exam: Exam = {
       id: ref.id, tenantId: t, code,
       title: str(req.body?.title, 120) || (src ? `${src.title} (копия)` : "Новый экзамен"),
@@ -104,13 +113,15 @@ router.post("/:tenantId/exams", ...edit, async (req: any, res: any) => {
       settings: src ? src.settings : DEFAULT_SETTINGS,
       createdAt: now, updatedAt: now, createdBy: who(req),
     };
-    await ref.set(exam);
-    await db().collection("exam_links").doc(code).set({ tenantId: t, examId: ref.id, createdAt: now });
+    // Экзамен и его ссылка — одной пачкой; ссылка через create: чужую не перезапишем.
+    batch.create(ref, exam);
+    batch.create(db().collection("exam_links").doc(code), { tenantId: t, examId: ref.id, createdAt: now });
+    await batch.commit();
     return res.json({ success: true, exam });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
-router.get("/:tenantId/exams/:id", ...view, async (req: any, res: any) => {
+router.get("/:tenantId/exams/:id", ...view, checkIds, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const exam = await loadExam(t, req.params.id);
@@ -122,7 +133,7 @@ router.get("/:tenantId/exams/:id", ...view, async (req: any, res: any) => {
 });
 
 /** Сколько вопросов найдётся под раздел — живой подсчёт для конструктора. */
-router.post("/:tenantId/exams/:id/plan", ...view, async (req: any, res: any) => {
+router.post("/:tenantId/exams/:id/plan", ...view, checkIds, async (req: any, res: any) => {
   try {
     const sections = sanitizeSections(req.body?.sections);
     const bank = await bankFor(req.params.tenantId, sections.map(s => s.disciplineId));
@@ -130,7 +141,7 @@ router.post("/:tenantId/exams/:id/plan", ...view, async (req: any, res: any) => 
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
-router.put("/:tenantId/exams/:id", ...edit, async (req: any, res: any) => {
+router.put("/:tenantId/exams/:id", ...edit, checkIds, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const exam = await loadExam(t, req.params.id);
@@ -162,19 +173,24 @@ router.put("/:tenantId/exams/:id", ...edit, async (req: any, res: any) => {
 });
 
 /** Без работ — удаляется; с работами — уходит в архив вместе с ними. */
-router.delete("/:tenantId/exams/:id", ...edit, async (req: any, res: any) => {
+router.delete("/:tenantId/exams/:id", ...edit, checkIds, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const exam = await loadExam(t, req.params.id);
     if (!exam) return fail(res, 404, "Экзамен не найден");
-    const has = await col(t, "exam_attempts").where("examId", "==", exam.id).limit(1).get();
-    if (has.empty) {
-      await col(t, "exams").doc(exam.id).delete();
-      await db().collection("exam_links").doc(exam.code).delete();
-    } else {
-      await col(t, "exams").doc(exam.id).update({ archived: true, status: "closed", updatedAt: Date.now() });
-    }
-    return res.json({ success: true, archived: !has.empty });
+    // Проверка и удаление — в одной транзакции: работа, начатая между ними,
+    // не должна остаться без экзамена.
+    const archived = await db().runTransaction(async tx => {
+      const has = await tx.get(col(t, "exam_attempts").where("examId", "==", exam.id).limit(1));
+      if (has.empty) {
+        tx.delete(col(t, "exams").doc(exam.id));
+        tx.delete(db().collection("exam_links").doc(exam.code));
+        return false;
+      }
+      tx.update(col(t, "exams").doc(exam.id), { archived: true, status: "closed", updatedAt: Date.now() });
+      return true;
+    });
+    return res.json({ success: true, archived });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
@@ -192,7 +208,7 @@ async function examAttempts(t: string, examId: string, exam: Exam): Promise<(Att
   return out.sort((a, b) => b.startedAt - a.startedAt);
 }
 
-router.get("/:tenantId/exams/:id/attempts", ...view, async (req: any, res: any) => {
+router.get("/:tenantId/exams/:id/attempts", ...view, checkIds, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const exam = await loadExam(t, req.params.id);
@@ -208,7 +224,7 @@ async function loadAttempt(t: string, id: string) {
   return s.exists ? ({ ...(s.data() as any), id: s.id } as Attempt & { questions: Record<string, any>; token: string }) : null;
 }
 
-router.get("/:tenantId/attempts/:aid", ...view, async (req: any, res: any) => {
+router.get("/:tenantId/attempts/:aid", ...view, checkIds, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const a = await loadAttempt(t, req.params.aid);
@@ -218,14 +234,14 @@ router.get("/:tenantId/attempts/:aid", ...view, async (req: any, res: any) => {
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
-router.get("/:tenantId/attempts/:aid/evidence", ...view, async (req: any, res: any) => {
+router.get("/:tenantId/attempts/:aid/evidence", ...view, checkIds, async (req: any, res: any) => {
   try {
     const s = await col(req.params.tenantId, "exam_evidence").doc(String(req.params.aid)).get();
     return res.json({ success: true, snapshots: s.exists ? s.data()?.snapshots || [] : [] });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
-router.get("/:tenantId/attempts/:aid/photo", ...view, async (req: any, res: any) => {
+router.get("/:tenantId/attempts/:aid/photo", ...view, checkIds, async (req: any, res: any) => {
   try {
     const s = await col(req.params.tenantId, "exam_photos").doc(String(req.params.aid)).get();
     return res.json({ success: true, photo: s.exists ? s.data()?.photo || null : null });
@@ -233,7 +249,7 @@ router.get("/:tenantId/attempts/:aid/photo", ...view, async (req: any, res: any)
 });
 
 /** Ручная проверка: баллы за вопросы и заметки; complete — проверка завершена. */
-router.post("/:tenantId/attempts/:aid/review", ...edit, async (req: any, res: any) => {
+router.post("/:tenantId/attempts/:aid/review", ...edit, checkIds, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const a = await loadAttempt(t, req.params.aid);
@@ -244,12 +260,12 @@ router.post("/:tenantId/attempts/:aid/review", ...edit, async (req: any, res: an
     const overrides: Record<string, number> = { ...(a.review?.overrides || {}) };
     const notes: Record<string, string> = { ...(a.review?.notes || {}) };
     for (const [qid, v] of Object.entries(req.body?.overrides || {})) {
-      if (!a.questions[qid]) continue;
+      if (!own(a.questions, qid)) continue;
       if (v === null) delete overrides[qid];
       else { const n = Number(v); if (Number.isFinite(n)) overrides[qid] = Math.max(0, Math.min(a.questions[qid].points, n)); }
     }
     for (const [qid, v] of Object.entries(req.body?.notes || {})) {
-      if (!a.questions[qid]) continue;
+      if (!own(a.questions, qid)) continue;
       const n = str(v, 500); if (n) notes[qid] = n; else delete notes[qid];
     }
     const result = gradeAttempt(a.sections, a.questions, a.answers, settings, overrides);
@@ -263,7 +279,7 @@ router.post("/:tenantId/attempts/:aid/review", ...edit, async (req: any, res: an
  * Действия над работой: publish / unpublish / annul / restore / allow_retake /
  * finish (досдать сейчас) / delete / decision / group.
  */
-router.post("/:tenantId/attempts/:aid/action", ...edit, async (req: any, res: any) => {
+router.post("/:tenantId/attempts/:aid/action", ...edit, checkIds, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const a = await loadAttempt(t, req.params.aid);
@@ -278,16 +294,26 @@ router.post("/:tenantId/attempts/:aid/action", ...edit, async (req: any, res: an
         if (exam?.settings.results.requireReview && a.review?.status !== "done") return fail(res, 409, "Сначала завершите проверку работы");
         await ref.update({ published: true, publishedAt: now }); break;
       case "unpublish": await ref.update({ published: false, publishedAt: null }); break;
-      case "annul": await ref.update({ status: "annulled", published: false, annulledAt: now, annulledBy: who(req), annulReason: str(req.body?.reason, 300) }); break;
+      case "annul": {
+        await ref.update({ status: "annulled", published: false, annulledAt: now, annulledBy: who(req), annulReason: str(req.body?.reason, 300) });
+        // Аннулировали пересдачу — в зачёт возвращается работа, которую она заменила.
+        const replaced = await col(t, "exam_attempts").where("examId", "==", a.examId).where("supersededBy", "==", a.id).get();
+        for (const d of replaced.docs) await d.ref.update({ superseded: false, supersededBy: admin.firestore.FieldValue.delete() });
+        break;
+      }
       case "restore":
         if (a.status !== "annulled") return fail(res, 409, "Работа не аннулирована");
-        await ref.update({ status: a.result ? "finished" : "in_progress" }); break;
+        await ref.update({ status: a.result ? "finished" : "in_progress" });
+        if (a.result) await supersedeOthers(t, { ...(a as any), status: "finished" });
+        break;
       case "allow_retake": await ref.update({ retakeAllowed: true }); break;
       case "finish": {
         if (a.status !== "in_progress" || !exam) return fail(res, 409, "Работа уже не идёт");
         const result = gradeAttempt(a.sections, a.questions, a.answers, exam.settings, a.review?.overrides || {});
         const sections = a.sections.map(s => ({ ...s, finishedAt: s.finishedAt || now }));
-        await ref.update({ status: "finished", finishedAt: now, sections, result, finishedBy: who(req) }); break;
+        await ref.update({ status: "finished", finishedAt: now, sections, result, finishedBy: who(req) });
+        await supersedeOthers(t, { ...(a as any), status: "finished" });
+        break;
       }
       case "decision": {
         const v = req.body?.value as Decision | null;
@@ -308,7 +334,7 @@ router.post("/:tenantId/attempts/:aid/action", ...edit, async (req: any, res: an
 });
 
 /** Опубликовать все сданные (и, если требуется, проверенные) работы экзамена. */
-router.post("/:tenantId/exams/:id/publish-all", ...edit, async (req: any, res: any) => {
+router.post("/:tenantId/exams/:id/publish-all", ...edit, checkIds, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const exam = await loadExam(t, req.params.id);
@@ -348,7 +374,7 @@ router.get("/:tenantId/archive", ...view, async (req: any, res: any) => {
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
-router.get("/:tenantId/archive/:id", ...view, async (req: any, res: any) => {
+router.get("/:tenantId/archive/:id", ...view, checkIds, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const s = await db().collection("submissions").doc(String(req.params.id)).get();
@@ -363,8 +389,11 @@ router.get("/:tenantId/archive/:id", ...view, async (req: any, res: any) => {
       const q = byRef.get(`${x.grade}:${oldId}`);
       return { oldId, answer: String(a ?? ""), question: q ? { id: q.id, disciplineId: q.disciplineId, text: q.text, html: q.html, type: q.type, answer: q.answer, topic: q.topic, points: q.points } : null };
     });
+    // Коллекция снимков общая, ключ — шестизначный номер: при совпадении
+    // номеров у двух организаций без этой проверки показались бы чужие кадры.
     const ev = await db().collection("proctoring_evidence").doc(`ev_${x.studentShortId}`).get();
-    return res.json({ success: true, submission: { id: s.id, ...x, answersJson: undefined }, items, snapshots: ev.exists ? ev.data()?.snapshots || [] : [] });
+    const evOk = ev.exists && ev.data()?.tenantId === t;
+    return res.json({ success: true, submission: { id: s.id, ...x, answersJson: undefined }, items, snapshots: evOk ? ev.data()?.snapshots || [] : [] });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 

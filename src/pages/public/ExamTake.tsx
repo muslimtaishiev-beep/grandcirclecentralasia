@@ -25,6 +25,7 @@ type Info = {
   };
 };
 type State = {
+  waitingStart?: boolean;
   shortId: string; status: "in_progress" | "finished" | "annulled"; student: { name: string }; current: number;
   sections: { id: string; title: string; minutes: number; count: number; finished: boolean }[];
   section: { id: string; title: string; deadline: number; questions: any[]; answers: Record<string, string> } | null;
@@ -77,7 +78,7 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
         setInfo(j);
         if (resultMode) { setPhase("final"); return; }
         if (token) {
-          try { const s = await post("/state", { token }); applyState(s.state); return; }
+          try { const s = await post("/state", { token }); if (s.state.waitingStart) { setState(s.state); setPhase("photo"); } else applyState(s.state); return; }
           catch (e: any) { if (e.reset) { localStorage.removeItem(storeKey); setToken(""); } }
         }
         setPhase("login");
@@ -88,14 +89,31 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 500); return () => clearInterval(t); }, []);
 
   // ── Ответы: пачкой, с повтором ──
-  const flush = useCallback(async () => {
+  /**
+   * Отправить накопленные ответы. true — всё сохранено. Отправка в пути
+   * дожидается (иначе «Завершить раздел» обгонял бы её, и сервер отбрасывал
+   * ответы уже закрытого раздела). Отказ «работа сдана / время вышло» не
+   * повторяется — повторять там нечего.
+   */
+  const inflight = useRef<Promise<boolean> | null>(null);
+  const flush = useCallback(async (): Promise<boolean> => {
     if (flushTimer.current) { clearTimeout(flushTimer.current); flushTimer.current = null; }
+    if (inflight.current) await inflight.current;
     const batch = pending.current;
-    if (!Object.keys(batch).length || !token) return;
+    if (!Object.keys(batch).length || !token) return true;
     pending.current = {};
     setSaveState("saving");
-    try { await post("/answer", { token, answers: batch }); setSaveState("saved"); }
-    catch { pending.current = { ...batch, ...pending.current }; setSaveState("offline"); flushTimer.current = setTimeout(() => void flush(), 4000); }
+    const p = (async () => {
+      try { await post("/answer", { token, answers: batch }); setSaveState("saved"); return true; }
+      catch (e: any) {
+        if (/сдана|вышло/.test(String(e?.message))) { setSaveState("saved"); return false; }
+        pending.current = { ...batch, ...pending.current }; setSaveState("offline");
+        flushTimer.current = setTimeout(() => void flush(), 4000);
+        return false;
+      }
+    })();
+    inflight.current = p;
+    try { return await p; } finally { if (inflight.current === p) inflight.current = null; }
   }, [post, token]);
   const setAnswer = (qid: string, v: any) => {
     const val = typeof v === "string" ? v : JSON.stringify(v);
@@ -138,6 +156,8 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
     })();
   }, [wantCam, camFail, info]);
   useEffect(() => { if (phase === "final" && streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; setCamOk(false); } }, [phase]);
+  // Уход со страницы — камера и микрофон освобождаются.
+  useEffect(() => () => { streamRef.current?.getTracks().forEach(t => t.stop()); }, []);
   const proctorActive = wantCam && camOk;
   const proctor = useProctoringEngine(videoRef, canvasRef, proctorActive, undefined, {
     detectors: info?.exam.proctoring.detectors as any,
@@ -180,9 +200,12 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
       const left = state.section.questions.filter(q => !String(answers[q.id] ?? "").trim()).length;
       if (!confirm(left ? `Без ответа: ${left}. Завершить раздел «${state.section.title}»? Вернуться к нему будет нельзя.` : `Завершить раздел «${state.section.title}»? Вернуться к нему будет нельзя.`)) return;
     }
-    finishing.current = true; setBusy(true);
+    finishing.current = true; setBusy(true); setError(null);
     try {
-      await flush();
+      // Ответы не сохранились — раздел не закрываем: иначе они пропадут. По
+      // таймеру всё равно закрываем — сервер примет только то, что дошло.
+      const saved = await flush();
+      if (!saved && !auto) { setError("Нет связи — последние ответы ещё не сохранены. Проверьте интернет и нажмите ещё раз."); return; }
       const j = await post("/finish-section", { token, sectionId: state.section.id });
       const s: State = j.state;
       if (s.status !== "in_progress") await sendReport();
@@ -193,7 +216,14 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   }, [state, answers, flush, post, token, sendReport, applyState]);
 
   const leftMs = state?.section ? state.section.deadline - (now + skew) : 0;
-  useEffect(() => { if (phase === "exam" && state?.section && leftMs <= 0) void finishSection(true); }, [phase, leftMs <= 0]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Время вышло — сдаём раздел; если не получилось (сеть), повторяем раз в 5 секунд.
+  const timeUp = phase === "exam" && !!state?.section && leftMs <= 0;
+  useEffect(() => {
+    if (!timeUp) return;
+    void finishSection(true);
+    const t = setInterval(() => void finishSection(true), 5000);
+    return () => clearInterval(t);
+  }, [timeUp]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (banner) { const t = setTimeout(() => setBanner(null), 6000); return () => clearTimeout(t); } }, [banner]);
 
   const start = async () => {
@@ -202,7 +232,7 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
       const j = await post("/start", form);
       localStorage.setItem(storeKey, JSON.stringify({ token: j.token, shortId: j.shortId }));
       setToken(j.token);
-      if (info?.exam.registration.photo) { setState(j.state); setPhase("photo"); }
+      if (j.state.waitingStart) { setState(j.state); setPhase("photo"); }
       else applyState(j.state);
     } catch (e: any) { setError(e.message); }
     finally { setBusy(false); }
@@ -233,7 +263,11 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   }
 
   if (phase === "photo" && state) {
-    return <PhotoStep info={info} onDone={async (photo) => { if (photo) await post("/photo", { token, photo }).catch(() => {}); applyState(state); }} />;
+    return <PhotoStep info={info} onDone={async (photo) => {
+      if (photo) await post("/photo", { token, photo }).catch(() => {});
+      // Таймер первого раздела запускается только сейчас — после фото.
+      try { const j = await post("/begin", { token }); applyState(j.state); } catch (e: any) { setError(e.message); }
+    }} />;
   }
 
   if (phase === "login") {

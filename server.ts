@@ -140,6 +140,13 @@ const examPublicLimiter = rateLimit({
   validate: false,
 });
 app.use("/api/exam-public", examPublicLimiter);
+// Старт отдельно и строже: без PIN («по одной ссылке») иначе можно засыпать
+// экзамен мусорными работами. 300 за 10 минут хватает на большой зал.
+app.use(/^\/api\/exam-public\/[^/]+\/start$/, rateLimit({
+  windowMs: 10 * 60 * 1000, max: 300,
+  message: { success: false, error: "Слишком много попыток начать экзамен — подождите несколько минут." },
+  standardHeaders: true, legacyHeaders: false, validate: false,
+}));
 app.use("/api/admin/login", authLimiter);
 app.use("/api/tenants/request", authLimiter);
 
@@ -998,6 +1005,11 @@ app.get("/api/exams/questions", async (req, res) => {
         delete safe.correct;
         delete safe.solution;
         delete safe.explanation;
+        // Ключ «расставить знаки» лежит в разметке: isTarget у мест для
+        // запятой. Без этого правильные места видны в ответе сервера.
+        if (Array.isArray(safe.clickableSegments)) {
+          safe.clickableSegments = safe.clickableSegments.map(({ isTarget: _t, ...seg }: any) => seg);
+        }
         return safe;
       });
     }

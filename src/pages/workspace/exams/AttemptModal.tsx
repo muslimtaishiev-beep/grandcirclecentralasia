@@ -116,7 +116,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
             {r && printData && <button className={btn} onClick={() => openPrint(reportHTML(printData)) || alert("Разрешите всплывающие окна")}><FileText className="w-4 h-4" /> Отчёт по темам</button>}
             {pr.enabled && <button className={btn} onClick={() => setDossier(true)}><ShieldAlert className="w-4 h-4" /> Досье прокторинга</button>}
             {a.status === "in_progress" && <button className={btn} disabled={!!busy} onClick={() => act("finish", {}, "Завершить работу сейчас и посчитать результат?")}><Square className="w-4 h-4" /> Завершить сейчас</button>}
-            {!a.retakeAllowed && a.status !== "in_progress" && <button className={btn} disabled={!!busy} onClick={() => act("allow_retake", {}, "Разрешить ещё одну попытку? Новая сданная работа заменит эту.")}><RotateCcw className="w-4 h-4" /> Разрешить пересдачу</button>}
+            {!a.retakeAllowed && a.status === "finished" && !a.superseded && <button className={btn} disabled={!!busy} onClick={() => act("allow_retake", {}, "Разрешить ещё одну попытку? Новая сданная работа заменит эту.")}><RotateCcw className="w-4 h-4" /> Разрешить пересдачу</button>}
             {a.status !== "annulled"
               ? <button className={`${btn} text-rose-600`} disabled={!!busy} onClick={() => { const reason = prompt("Причина аннулирования (увидят менеджеры):"); if (reason !== null) void act("annul", { reason }); }}><Ban className="w-4 h-4" /> Аннулировать</button>
               : <button className={btn} disabled={!!busy} onClick={() => act("restore")}><Undo2 className="w-4 h-4" /> Восстановить</button>}
@@ -131,7 +131,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
                 <span className={label}>Решение</span>
                 <div className="flex flex-wrap gap-1.5">
                   {(Object.keys(DECISION_LABEL) as Decision[]).map(d => (
-                    <button key={d} className={`${btn} ${a.decision?.value === d ? "!bg-[var(--accent)] !text-white !border-[var(--accent)]" : ""}`} onClick={() => act("decision", { value: a.decision?.value === d ? null : d, comment })}>{DECISION_LABEL[d]}</button>
+                    <button key={d} disabled={!!busy} className={`${btn} ${a.decision?.value === d ? "!bg-[var(--accent)] !text-white !border-[var(--accent)]" : ""}`} onClick={() => act("decision", { value: a.decision?.value === d ? null : d, comment })}>{DECISION_LABEL[d]}</button>
                   ))}
                 </div>
                 <input className={`${input} mt-2`} value={comment} onChange={e => setComment(e.target.value)} onBlur={() => a.decision && comment !== a.decision.comment && act("decision", { value: a.decision.value, comment })} placeholder="Комментарий к решению" />
