@@ -38,8 +38,17 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
   const move = (i: number, d: number) => setSections(xs => { const n = [...xs]; const j = i + d; if (j < 0 || j >= n.length) return xs; [n[i], n[j]] = [n[j], n[i]]; return n; });
   const addSection = () => {
     const d = disciplines.find(x => !sections.some(s => s.disciplineId === x.code)) || disciplines[0];
-    if (!d) return;
-    setSections(xs => [...xs, { id: `s${Date.now().toString(36)}`, disciplineId: d.code, title: d.name, minutes: 30, mode: "all", levels: [], counts: { 1: 0, 2: 0, 3: 0 }, shuffle: false }]);
+    if (d) include(d);
+  };
+  /** Подтянуть дисциплину из банка в экзамен — в конец порядка прохождения. */
+  const include = (d: DisciplineRow) =>
+    setSections(xs => [...xs, { id: `s${Date.now().toString(36)}${xs.length}`, disciplineId: d.code, title: d.name, minutes: 30, mode: "all", levels: [], counts: { 1: 0, 2: 0, 3: 0 }, shuffle: false }]);
+  /** Включить / выключить дисциплину одним нажатием. */
+  const toggle = (d: DisciplineRow) => {
+    if (sections.some(s => s.disciplineId === d.code)) {
+      if (!confirm(`Убрать «${d.name}» из экзамена? Её настройки (минуты, классы, сложность) сбросятся.`)) return;
+      setSections(xs => xs.filter(s => s.disciplineId !== d.code));
+    } else include(d);
   };
 
   const save = async () => {
@@ -68,15 +77,45 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
         <div className="sm:col-span-3"><span className={label}>Описание для ученика</span><textarea rows={2} className={input} value={description} onChange={e => setDescription(e.target.value)} placeholder="Что взять с собой, сколько длится, правила" /></div>
       </section>
 
+      {/* Дисциплины банка — нажал и включил в этот экзамен, нажал ещё раз — убрал.
+          Ничего не применяется ко всем экзаменам: у каждого свой набор. */}
+      <section className={`${card} p-4 space-y-3`}>
+        <div>
+          <h3 className="font-bold text-[var(--text-main)]">Дисциплины из банка</h3>
+          <p className="text-xs text-[var(--text-muted)]">Включите те, что нужны этому экзамену. Новую дисциплину или вопросы добавляют во вкладке «Банк вопросов».</p>
+        </div>
+        {!disciplines.length && <p className="text-sm text-[var(--text-muted)]">В банке пока нет дисциплин.</p>}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
+          {disciplines.map(d => {
+            const on = sections.some(s => s.disciplineId === d.code);
+            return (
+              <button key={d.code} type="button" onClick={() => toggle(d)} aria-pressed={on}
+                className={`text-left rounded-xl border-2 p-3 transition ${on ? "border-[var(--accent)] bg-[var(--accent)]/5" : "border-[var(--border-color)] hover:border-[var(--accent)]/50"}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${on ? "bg-[var(--accent)] text-white" : "bg-[var(--bg-surface-hover)] text-[var(--text-muted)]"}`}>{d.code}</span>
+                    <span className="font-semibold text-sm text-[var(--text-main)] truncate">{d.name}</span>
+                  </span>
+                  <span className={`relative w-9 h-5 rounded-full shrink-0 transition ${on ? "bg-[var(--accent)]" : "bg-[var(--border-color)]"}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${on ? "left-[18px]" : "left-0.5"}`} />
+                  </span>
+                </div>
+                <div className="text-[11px] text-[var(--text-muted)] mt-1">{d.active} вопр.{d.levels.length ? ` · кл. ${d.levels.join(", ")}` : ""}</div>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
       <section className="space-y-3">
         <div className="flex items-end justify-between gap-2">
           <div>
-            <h3 className="font-bold text-[var(--text-main)]">Дисциплины</h3>
-            <p className="text-xs text-[var(--text-muted)]">Идут по порядку, у каждой свой таймер. Всего: {totalMinutes} мин, {totalQuestions} вопросов.</p>
+            <h3 className="font-bold text-[var(--text-main)]">Порядок прохождения</h3>
+            <p className="text-xs text-[var(--text-muted)]">Ученик проходит дисциплины сверху вниз, у каждой свой таймер. Всего: {totalMinutes} мин, {totalQuestions} вопросов.</p>
           </div>
-          <button className={btn} onClick={addSection} disabled={!disciplines.length}><Plus className="w-4 h-4" /> Дисциплина</button>
+          <button className={btn} onClick={addSection} disabled={!disciplines.length} title="Ещё одна часть, например вторая часть той же дисциплины"><Plus className="w-4 h-4" /> Часть</button>
         </div>
-        {!sections.length && <div className={`${card} p-6 text-sm text-[var(--text-muted)] text-center`}>Добавьте дисциплины из банка вопросов.</div>}
+        {!sections.length && <div className={`${card} p-6 text-sm text-[var(--text-muted)] text-center`}>Включите дисциплины выше — они появятся здесь в порядке прохождения.</div>}
         {sections.map((s, i) => {
           const disc = disciplines.find(d => d.code === s.disciplineId);
           const plan = plans[s.id];
