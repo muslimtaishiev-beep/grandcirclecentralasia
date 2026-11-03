@@ -82,7 +82,9 @@ export default function QrTracker() {
         {/* Top Header */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
           <div className="flex items-center gap-2">
-            <Building2 className="w-5 h-5 text-emerald-500" />
+            {org?.logoUrl
+              ? <span className="bg-white rounded-lg px-1.5 py-1 shrink-0"><img src={org.logoUrl} alt="" className="h-7 w-auto max-w-[120px] object-contain" /></span>
+              : <Building2 className="w-5 h-5 text-emerald-500" />}
             <span className="font-bold text-sm tracking-wide text-slate-200">{org?.tickets?.publicTitle || org?.name || "Проверка заявки"}</span>
           </div>
           <span className="text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full border border-emerald-500/30">
@@ -140,7 +142,7 @@ export default function QrTracker() {
                     {submission.status === "checked_in" ? `${ticketWord} использован` : `Ваш ${ticketWord.toLowerCase()} — покажите на входе`}
                   </div>
                   <div className={`flex justify-center ${submission.status === "checked_in" ? "opacity-30 grayscale" : ""}`}>
-                    <FancyQr value={window.location.href} theme={QR_THEMES[0]} size={200} />
+                    <FancyQr value={window.location.href} theme={QR_THEMES[0]} size={200} logo={org?.markUrl} />
                   </div>
                   <div className="font-mono text-lg font-bold tracking-widest text-slate-900">{submission.code}</div>
                   {submission.status === "checked_in" && (

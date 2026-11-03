@@ -401,6 +401,7 @@ export default function WorkspaceSetupPage() {
             ["signatoryName", "ФИО подписанта", ""],
             ["stampUrl", "Печать (ссылка на изображение)", "https://… или /stamp.png"],
             ["logoUrl", "Логотип (ссылка)", "https://…"],
+            ["markUrl", "Значок для QR — квадратный (ссылка)", "https://… — без него в QR идёт логотип"],
             ["signatureUrl", "Факсимиле подписи (ссылка)", "https://…"],
             ["stampColor", "Цвет штампа", "#0C3674"],
           ] as const).map(([key, label, ph]) => (

@@ -58,7 +58,24 @@ type Props = {
   /** Волнистая цветная рамка вокруг кода. */
   wavy?: boolean;
   className?: string;
+  /** Значок организации в центре кода (вместо эмодзи темы). */
+  logo?: string | null;
 };
+
+/**
+ * Картинка для центра кода. С другого домена — только с CORS: иначе canvas
+ * «портится», и «Скачать картинкой» падает. Не загрузилась — рисуем без неё.
+ */
+export function loadQrLogo(url?: string | null): Promise<HTMLImageElement | null> {
+  if (!url) return Promise.resolve(null);
+  return new Promise(resolve => {
+    const img = new Image();
+    if (/^https?:/i.test(url) && !url.startsWith(window.location.origin)) img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
 
 /** Цвет точки: смешиваем палитру по диагонали, чтобы код переливался. */
 function pickColor(colors: string[], x: number, y: number, n: number): string {
@@ -87,6 +104,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 
 export function drawFancyQr(
   canvas: HTMLCanvasElement, value: string, theme: QrTheme, size: number, wavy: boolean,
+  logo?: HTMLImageElement | null,
 ) {
   // Уровень H: даже с картинкой в центре и цветными точками код читается.
   const qr = QRCode.create(value, { errorCorrectionLevel: "H" });
@@ -205,7 +223,21 @@ export function drawFancyQr(
 
   // Картинка в центре. 22% ширины — предел, при котором уровень H ещё
   // вытягивает потерянные модули.
-  if (theme.emoji) {
+  if (logo && logo.naturalWidth) {
+    // Значок организации — на белой скруглённой плашке, вписан с полями.
+    const side = size * 0.22, x = (size - side) / 2, y = (size - side) / 2;
+    ctx.fillStyle = "#ffffff";
+    roundRect(ctx, x, y, side, side, side * 0.22);
+    ctx.fill();
+    ctx.strokeStyle = theme.colors[0];
+    ctx.lineWidth = Math.max(1.5, size * 0.006);
+    ctx.stroke();
+    const box = side * 0.8;
+    const k = Math.min(box / logo.naturalWidth, box / logo.naturalHeight);
+    const w = logo.naturalWidth * k, h = logo.naturalHeight * k;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(logo, (size - w) / 2, (size - h) / 2, w, h);
+  } else if (theme.emoji) {
     const r = size * 0.11;
     ctx.fillStyle = theme.bg;
     ctx.beginPath();
@@ -222,20 +254,28 @@ export function drawFancyQr(
 }
 
 export default function FancyQr({
-  value, theme = QR_THEMES[0], size = 260, wavy = true, className = "",
+  value, theme = QR_THEMES[0], size = 260, wavy = true, className = "", logo,
 }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [img, setImg] = useState<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setImg(null);
+    void loadQrLogo(logo).then(i => { if (live) setImg(i); });
+    return () => { live = false; };
+  }, [logo]);
 
   useEffect(() => {
     if (!ref.current || !value) return;
     try {
-      drawFancyQr(ref.current, value, theme, size, wavy);
+      drawFancyQr(ref.current, value, theme, size, wavy, img);
       setError(null);
     } catch (e: any) {
       setError(e?.message || "Не удалось построить QR");
     }
-  }, [value, theme, size, wavy]);
+  }, [value, theme, size, wavy, img]);
 
   if (error) {
     return <div className="text-xs text-red-600 p-4 text-center">{error}</div>;
@@ -266,9 +306,9 @@ export function QrThemePicker({
 }
 
 /** Скачивание кода картинкой — то, что печатают и вешают на стену. */
-export function downloadQr(value: string, theme: QrTheme, filename: string, size = 1024) {
+export async function downloadQr(value: string, theme: QrTheme, filename: string, size = 1024, logo?: string | null) {
   const canvas = document.createElement("canvas");
-  drawFancyQr(canvas, value, theme, size, true);
+  drawFancyQr(canvas, value, theme, size, true, await loadQrLogo(logo));
   canvas.toBlob(blob => {
     if (!blob) return;
     const url = URL.createObjectURL(blob);

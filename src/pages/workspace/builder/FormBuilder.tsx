@@ -29,6 +29,7 @@ import { auth } from '../../../lib/firebase';
 import FileViewer, { type ViewerFile } from './FileViewer';
 import { isFileValue, fileLabel, fileInfo } from '../../../shared/uploads';
 import { useAuth } from '../../../contexts/AuthContext';
+import { tenantLogos } from '../../../shared/legal';
 
 /**
  * Обрыв сети браузеры называют по-своему: Safari — «Load failed», Chrome —
@@ -121,6 +122,7 @@ export default function FormBuilder() {
   // Без организации не подписываемся ни на что: подставной тенант означал
   // бы показать чужие заявки.
   const currentOrgId = activeTenant?.id || orgId || '';
+  const qrLogo = tenantLogos(activeTenant).markUrl;
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -2125,12 +2127,12 @@ export default function FormBuilder() {
             </div>
 
             <div className="flex flex-col items-center gap-3">
-              <FancyQr value={formUrl(formQr.id)} theme={qrTheme} size={230} />
+              <FancyQr value={formUrl(formQr.id)} theme={qrTheme} size={230} logo={qrLogo} />
               <QrThemePicker value={qrTheme.key} onChange={setQrTheme} />
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => downloadQr(formUrl(formQr.id), qrTheme, `QR-${formQr.title}.png`)}
+              <button onClick={() => downloadQr(formUrl(formQr.id), qrTheme, `QR-${formQr.title}.png`, 1024, qrLogo)}
                 className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2.5 rounded-xl transition">
                 Скачать
               </button>
@@ -2163,13 +2165,13 @@ export default function FormBuilder() {
             <div className="flex flex-col items-center gap-3">
               <FancyQr
                 value={`${window.location.origin}/track/${selectedSubmissionForQr.qrToken || selectedSubmissionForQr.id}`}
-                theme={qrTheme} size={220} />
+                theme={qrTheme} size={220} logo={qrLogo} />
               <QrThemePicker value={qrTheme.key} onChange={setQrTheme} />
               <button
                 onClick={() => downloadQr(
                   `${window.location.origin}/track/${selectedSubmissionForQr.qrToken || selectedSubmissionForQr.id}`,
                   qrTheme,
-                  `Заявка-${selectedSubmissionForQr.qrToken || selectedSubmissionForQr.id}.png`)}
+                  `Заявка-${selectedSubmissionForQr.qrToken || selectedSubmissionForQr.id}.png`, 1024, qrLogo)}
                 className="text-xs font-bold text-emerald-500 hover:text-emerald-400">
                 Скачать картинкой
               </button>

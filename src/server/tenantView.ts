@@ -7,7 +7,7 @@
  * только явный список полей.
  */
 import { normalizeTenantStatus } from "../shared/permissions.js";
-import { publicLegal } from "../shared/legal.js";
+import { publicLegal, tenantLogos } from "../shared/legal.js";
 export { normalizeTenantStatus };
 
 /** Публичное представление — для анонимных страниц (экзамен, лендинг, QR). */
@@ -21,7 +21,7 @@ export function publicTenantView(t: any) {
     subdomain: t.subdomain || "",
     status: normalizeTenantStatus(t.status),
     branding: {
-      logoUrl: b.logoUrl ?? null,
+      ...tenantLogos(t),
       primaryColor: b.primaryColor ?? null,
       loginMessage: b.loginMessage ?? null,
     },

@@ -12,6 +12,7 @@ import { hasAnyPermission } from "../server/access.js";
 import { checkTenantOpen, requireScreen, loadTenant } from "../server/tenantAccess.js";
 import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
 import { sendFormTicketEmail } from "../../emailService.js";
+import { tenantLogos } from "../shared/legal.js";
 
 /** Что о организации можно показать заявителю: название, брендинг, тексты билетов. */
 function publicOrg(t: any) {
@@ -19,7 +20,7 @@ function publicOrg(t: any) {
   const b = t.branding && typeof t.branding === "object" ? t.branding : {};
   return {
     id: t.id, name: String(t.name || ""),
-    logoUrl: b.logoUrl || null, primaryColor: b.primaryColor || null,
+    ...tenantLogos(t), primaryColor: b.primaryColor || null,
     tickets: resolveWorkspaceConfig(t.workspaceConfig).tickets,
   };
 }

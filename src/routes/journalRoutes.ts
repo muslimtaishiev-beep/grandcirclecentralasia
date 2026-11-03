@@ -5,6 +5,7 @@ import { requireFirebaseAuth } from "./authRoutes.js";
 import { activeMembership, membershipPermissions } from "../server/access.js";
 import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
 import { hasFullAccess } from "../shared/permissions.js";
+import { tenantLogos } from "../shared/legal.js";
 import {
   BLANK_TEMPLATE, JOURNAL_LIMITS, JOURNAL_TEMPLATES,
   displayValue, hashableValues, isPhotoValue, matchName, newId, normalizeValue, roleAtLeast,
@@ -223,7 +224,7 @@ router.get("/sign/:token", async (req: any, res: any) => {
       .filter((x: { value: string }) => x.value);
     return res.json({
       success: true,
-      org: { name: str(tenant?.name, 120), logoUrl: tenant?.logoUrl || null },
+      org: { name: str(tenant?.name, 120), ...tenantLogos(tenant) },
       journal: { title: j.title },
       column: { label: c.label, subfields: (c.subfields || []).map(({ id, type, label, required }: any) => ({ id, type, label, required })) },
       summary,

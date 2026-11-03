@@ -8,6 +8,7 @@ import {
   type EntryStatus, type Journal, type JournalColumn, type JournalEntry, type JournalRole,
 } from "../../../shared/journals";
 import { useJournalApi } from "./journalApi";
+import { tenantLogos } from "../../../shared/legal";
 import EntryPanel from "./components/EntryPanel";
 import SignQrModal from "./components/SignQrModal";
 import JournalStats from "./components/JournalStats";
@@ -288,7 +289,7 @@ export default function JournalPage() {
           onSaved={merge} onClose={() => setEditing(null)}
           onShowQr={(entry, column) => { setEditing(null); setQr({ entry, column }); }} />
       )}
-      {qr && <SignQrModal journal={journal} entry={qr.entry} column={qr.column} api={api} onSigned={onSigned} onClose={() => setQr(null)} />}
+      {qr && <SignQrModal journal={journal} entry={qr.entry} column={qr.column} api={api} onSigned={onSigned} onClose={() => setQr(null)} logo={tenantLogos(activeTenant).markUrl} />}
       {bulk && (
         <BulkModal journal={journal} role={role} count={selected.size} onClose={() => setBulk(false)}
           onApply={async (columnId, value) => {

@@ -27,7 +27,7 @@ type Form = {
 };
 /** Организация и её тексты для публичных страниц — из настроек воркспейса. */
 type Org = {
-  id: string; name: string; logoUrl?: string | null; primaryColor?: string | null;
+  id: string; name: string; logoUrl?: string | null; markUrl?: string | null; primaryColor?: string | null;
   tickets?: {
     publicTitle?: string; closedTitle?: string; closedMessage?: string;
     submitButtonLabel?: string; successTitle?: string; successMessage?: string;
@@ -121,7 +121,7 @@ export default function PublicForm() {
           </div>
 
           <div className="p-6 flex flex-col items-center gap-4">
-            <FancyQr value={trackUrl} theme={theme} size={260} />
+            <FancyQr value={trackUrl} theme={theme} size={260} logo={org?.markUrl} />
 
             <div className="text-center">
               <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">Код заявки</div>
@@ -131,7 +131,7 @@ export default function PublicForm() {
             <QrThemePicker value={theme.key} onChange={setTheme} />
 
             <div className="grid sm:grid-cols-2 gap-2 w-full pt-2">
-              <button onClick={() => downloadQr(trackUrl, theme, `Заявка-${done.qrToken}.png`)}
+              <button onClick={() => downloadQr(trackUrl, theme, `Заявка-${done.qrToken}.png`, 1024, org?.markUrl)}
                 className="py-3 rounded-xl font-semibold bg-slate-900 text-white hover:bg-slate-800">
                 Скачать код
               </button>
@@ -206,7 +206,7 @@ export default function PublicForm() {
         <div className="px-6 pt-6 pb-4 border-b border-slate-100">
           {(org?.name || org?.tickets?.publicTitle) && (
             <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-              {org?.logoUrl && <img src={org.logoUrl} alt="" className="h-6 w-auto" />}
+              {org?.logoUrl && <img src={org.logoUrl} alt="" className="h-10 w-auto max-w-[180px] object-contain" />}
               <span>{org?.tickets?.publicTitle || org?.name}</span>
             </div>
           )}

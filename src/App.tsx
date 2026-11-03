@@ -95,6 +95,9 @@ import { staticDb } from "./data/staticDb";
 
 import { GlobalTooltip } from "./components/ui/GlobalTooltip";
 
+/** Страницы, где нужен подвал сайта форума (LEAD+ Forum). */
+const FORUM_FOOTER_PATHS = new Set(["/", "/privacy", "/terms"]);
+
 export default function App() {
   const [lang, setLang] = useState<"ru" | "en" | "kg">("ru");
 
@@ -396,8 +399,10 @@ export default function App() {
         </Suspense>
       </main>
  
-      {/* Footer Branding Area (Hidden on Workspace App) */}
-      {!currentPath.startsWith('/workspace') && (
+      {/* Подвал сайта форума — только на страницах самого форума. Раньше он
+          был везде, кроме кабинета: на сканере билетов, входе, страницах
+          заявок, билетов и подписей организаций с чужим брендом. */}
+      {FORUM_FOOTER_PATHS.has(currentPath) && (
         <footer className="border-t border-[#E9D5FF]/80 py-12">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             

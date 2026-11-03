@@ -11,7 +11,7 @@ import { compressImageToDataUrl } from "../../lib/compressImage";
  */
 type Sub = { id: string; type: "checkbox" | "text" | "photo"; label: string; required: boolean };
 type Info = {
-  org: { name: string; logoUrl: string | null };
+  org: { name: string; logoUrl: string | null; markUrl: string | null };
   journal: { title: string };
   column: { label: string; subfields: Sub[] };
   summary: { label: string; value: string }[];
@@ -87,7 +87,7 @@ export default function JournalSign() {
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
             <div className="px-6 pt-6 pb-4 border-b border-slate-100">
               <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                {info.org.logoUrl && <img src={info.org.logoUrl} alt="" className="h-6 w-auto" />}
+                {info.org.logoUrl && <img src={info.org.logoUrl} alt="" className="h-10 w-auto max-w-[180px] object-contain" />}
                 <span>{info.org.name}</span>
               </div>
               <h1 className="text-xl font-bold text-slate-900">{info.column.label}</h1>

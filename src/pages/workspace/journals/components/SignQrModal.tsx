@@ -10,8 +10,8 @@ type Api = (path: string, init?: RequestInit) => Promise<any>;
  * QR для подписи одной записи. Сотрудник держит экран, человек сканирует
  * своим телефоном и подтверждает — окно само видит подпись и закрывается.
  */
-export default function SignQrModal({ journal, entry, column, api, onSigned, onClose }: {
-  journal: Journal; entry: JournalEntry; column: JournalColumn; api: Api;
+export default function SignQrModal({ journal, entry, column, api, onSigned, onClose, logo }: {
+  journal: Journal; entry: JournalEntry; column: JournalColumn; api: Api; logo?: string | null;
   onSigned: (e: JournalEntry) => void; onClose: () => void;
 }) {
   const [url, setUrl] = useState("");
@@ -63,7 +63,7 @@ export default function SignQrModal({ journal, entry, column, api, onSigned, onC
           <div className="py-16"><Loader2 className="w-6 h-6 animate-spin text-[var(--text-muted)]" /></div>
         ) : (
           <>
-            <div className="bg-white rounded-2xl p-3"><FancyQr value={url} size={260} /></div>
+            <div className="bg-white rounded-2xl p-3"><FancyQr value={url} size={260} logo={logo} /></div>
             <p className="text-sm text-[var(--text-muted)] max-w-xs">Пусть отсканирует камерой телефона и подтвердит. Окно обновится само.</p>
             <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]"><Loader2 className="w-3 h-3 animate-spin" /> Ждём подпись · ссылка действует до {new Date(expiresAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</div>
             <div className="flex gap-2">
