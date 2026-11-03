@@ -6,6 +6,7 @@ import { pinMatches } from "../shared/pin.js";
 import { tenantLogos } from "../shared/legal.js";
 import { resolveLegalProfile } from "../shared/legal.js";
 import { studentView, type BankQuestion } from "../shared/exams.js";
+import { LEGAL_VERSION } from "../shared/legalDocs.js";
 import {
   DECISION_LABEL, gradeAttempt, isWindowOpen, pickSectionQuestions,
   type Attempt, type AttemptSection, type Exam, type FrozenQuestion,
@@ -43,7 +44,7 @@ async function resolve(code: string): Promise<{ tenant: any; exam: Exam } | { er
   return { tenant: gate.tenant, exam: { ...(s.data() as Exam), id: s.id } };
 }
 
-const orgView = (t: any) => ({ name: str(t?.name, 120), ...tenantLogos(t) });
+const orgView = (t: any) => ({ id: str(t?.id, 80), name: str(t?.name, 120), consentText: str(t?.workspaceConfig?.registration?.consentText, 1200), ...tenantLogos(t) });
 
 async function byToken(t: string, token: string): Promise<Full | null> {
   if (!/^[\w-]{20,60}$/.test(token)) return null;
@@ -215,6 +216,7 @@ router.post("/:code/start", async (req: any, res: any) => {
     if (reg.phone && digits(student.phone).length < 9) return fail(res, 400, "Укажите номер телефона");
     if (reg.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(student.email)) return fail(res, 400, "Укажите почту");
     if (reg.level && !student.level) return fail(res, 400, `Укажите: ${reg.levelLabel.toLowerCase()}`);
+    if (req.body?.consent !== true) return fail(res, 400, "Нужно согласие на обработку персональных данных");
     const acc = exam.settings.access;
     const pin = str(req.body?.pin, 12).replace(/\D/g, "");
     const pinKey = `pin:${exam.id}:${req.ip}`;
@@ -254,13 +256,15 @@ router.post("/:code/start", async (req: any, res: any) => {
     }
     const token = randomBytes(24).toString("base64url");
     const ref = col(t, "exam_attempts").doc();
-    const attempt: Full & { identity: string } = {
+    const attempt: Full & { identity: string; consent: object } = {
       id: ref.id, tenantId: t, examId: exam.id, examTitle: exam.title, shortId, token, identity,
       student, status: "in_progress", startedAt: now, finishedAt: null, current: 0, sections, questions,
       answers: {}, result: null, review: { status: "none", overrides: {}, notes: {} },
       proctoring: { enabled: exam.settings.proctoring.enabled },
       published: false, decision: null, group: null, retakeAllowed: false, superseded: false, hasPhoto: false,
       meta: { ip: str(req.ip, 64), userAgent: str(req.headers["user-agent"], 300) },
+      // Согласие — с редакцией документов и временем: доказательство для Организации.
+      consent: { at: now, version: LEGAL_VERSION, ip: str(req.ip, 64), custom: !!str(tenant?.workspaceConfig?.registration?.consentText, 10) },
     };
     // Проверка попыток и создание — одной транзакцией: два параллельных
     // «Начать» не создадут две работы и не потратят одно разрешение дважды.

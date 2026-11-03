@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { compressImageToDataUrl } from "../../lib/compressImage";
 import PublicBrand from "../../components/public/PublicBrand";
+import { SIGN_NOTICE, privacyHref } from "../../shared/legalDocs";
 
 /**
  * Подпись в журнале по QR — открывается на телефоне подписывающего.
@@ -134,7 +135,7 @@ export default function JournalSign() {
                   className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-40 transition">
                   {busy ? "Отправляем…" : "Подписать"}
                 </button>
-                <p className="text-[11px] text-slate-400 text-center">Вместе с подписью сохраняются время и сведения об устройстве.</p>
+                <p className="text-[11px] text-slate-400 text-center">{SIGN_NOTICE.replace(" (Политика конфиденциальности).", "")} — <a href={privacyHref()} target="_blank" rel="noreferrer" className="underline">Политика конфиденциальности</a>.</p>
               </div>
             )}
           </div>

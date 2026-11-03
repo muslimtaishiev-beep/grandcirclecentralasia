@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import PublicBrand from "../../components/public/PublicBrand";
+import LegalLinks from "../../components/public/LegalLinks";
 import FancyQr, { QR_THEMES, QrThemePicker, downloadQr, type QrTheme } from "../../components/forms/FancyQr";
 import { compressImageToDataUrl } from "../../lib/compressImage";
 import { buildFileValue, checkFileValue, fileInfo, formatSize, isFileValue, FILE_LIMITS } from "../../shared/uploads";
@@ -324,6 +325,7 @@ function Shell({ children, org }: { children: React.ReactNode; org?: Org | null 
       <div className="w-full max-w-xl">
         <PublicBrand name={org?.name} logoUrl={org?.logoUrl} />
         {children}
+        <LegalLinks orgId={org?.id} />
       </div>
     </div>
   );

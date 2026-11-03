@@ -3,6 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import QuestionFactory from "../../components/tests/QuestionFactory";
 import ProctoringWarningOverlay from "../../components/ProctoringWarningOverlay";
 import PublicBrand from "../../components/public/PublicBrand";
+import LegalLinks from "../../components/public/LegalLinks";
+import { GUARDIAN_NOTE, examConsentText, privacyHref, termsHref } from "../../shared/legalDocs";
 import { useProctoringEngine } from "../../lib/useProctoringEngine";
 import { certificateHTML, openPrint, reportHTML, type PrintData } from "../../lib/examPrint";
 
@@ -15,7 +17,7 @@ import { certificateHTML, openPrint, reportHTML, type PrintData } from "../../li
  * Работа продолжается после перезагрузки — токен лежит в localStorage.
  */
 type Info = {
-  org: { name: string; logoUrl: string | null; markUrl: string | null };
+  org: { id?: string; name: string; logoUrl: string | null; markUrl: string | null; consentText?: string };
   exam: {
     title: string; description: string; open: boolean; status: string; opensAt: number | null; closesAt: number | null; needPin: boolean;
     registration: { phone: boolean; email: boolean; level: boolean; levelLabel: string; photo: boolean };
@@ -47,6 +49,7 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   const [token, setToken] = useState<string>(() => { try { return JSON.parse(localStorage.getItem(`exam_${code.toUpperCase()}`) || "{}").token || ""; } catch { return ""; } });
   const [phase, setPhase] = useState<"loading" | "login" | "photo" | "exam" | "final">("loading");
   const [form, setForm] = useState({ name: "", phone: "", email: "", level: "", pin: "" });
+  const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [skew, setSkew] = useState(0);
@@ -229,7 +232,7 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   const start = async () => {
     setBusy(true); setError(null);
     try {
-      const j = await post("/start", form);
+      const j = await post("/start", { ...form, consent });
       localStorage.setItem(storeKey, JSON.stringify({ token: j.token, shortId: j.shortId }));
       setToken(j.token);
       if (j.state.waitingStart) { setState(j.state); setPhase("photo"); }
@@ -292,8 +295,17 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
               {reg.level && <Field l={reg.levelLabel}><input className={inp} value={form.level} onChange={e => setForm({ ...form, level: e.target.value })} /></Field>}
               {info.exam.needPin && <Field l="PIN аудитории"><input className={`${inp} text-center text-2xl tracking-[0.4em] font-mono`} inputMode="numeric" value={form.pin} onChange={e => setForm({ ...form, pin: e.target.value.replace(/\D/g, "").slice(0, 8) })} placeholder="••••" /></Field>}
               {info.exam.proctoring.enabled && <p className="text-xs text-slate-500 bg-slate-50 rounded-xl p-3">Во время экзамена ведётся наблюдение через камеру: браузер попросит доступ. Нарушения фиксируются со временем и снимком.</p>}
+              <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/50">
+                <input type="checkbox" className="mt-1 w-5 h-5 shrink-0" checked={consent} onChange={e => setConsent(e.target.checked)} />
+                <span className="text-sm text-slate-700 leading-relaxed">
+                  {examConsentText(info.org.name, info.org.consentText)}{" "}
+                  <a href={privacyHref(info.org.id)} target="_blank" rel="noreferrer" className="text-blue-600 underline">Политика конфиденциальности</a> ·{" "}
+                  <a href={termsHref(info.org.id)} target="_blank" rel="noreferrer" className="text-blue-600 underline">Соглашение</a>
+                  <span className="block text-xs text-slate-500 mt-1.5">{GUARDIAN_NOTE}</span>
+                </span>
+              </label>
               {error && <div className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{error}</div>}
-              <button className={primary} disabled={busy || !form.name.trim()} onClick={start}>{busy ? "Начинаем…" : "Начать экзамен"}</button>
+              <button className={primary} disabled={busy || !form.name.trim() || !consent} onClick={start}>{busy ? "Начинаем…" : "Начать экзамен"}</button>
               <div className="text-center"><Link className="text-blue-600 text-sm" to={`/exam/${C}/result`}>Узнать результат</Link></div>
             </div>
           )}
@@ -348,7 +360,7 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
 }
 
 function Center({ children }: { children: React.ReactNode }) {
-  return <div className={`${shell} flex items-start justify-center p-4 py-10`}><div className="w-full max-w-xl">{children}</div></div>;
+  return <div className={`${shell} flex items-start justify-center p-4 py-10`}><div className="w-full max-w-xl">{children}<LegalLinks /></div></div>;
 }
 function Field({ l, children }: { l: string; children: React.ReactNode }) {
   return <label className="block"><span className="block text-sm font-medium text-slate-700 mb-1.5">{l}</span>{children}</label>;
