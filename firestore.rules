@@ -99,6 +99,9 @@ service cloud.firestore {
       // Журналы: доступ задаётся в самом журнале, проверяет его сервер.
       match /journals/{d}          { allow read, write: if false; }
       match /journal_entries/{d}   { allow read, write: if false; }
+      // Экзамены: банк с ключами ответов — только через сервер.
+      match /exam_disciplines/{d}  { allow read, write: if false; }
+      match /exam_bank/{d}         { allow read, write: if false; }
       match /members/{d}           { allow read: if member(); allow write: if isTenantAdmin(tenantId); }
       match /chat_channels/{d=**}      { allow read, write: if member(); }
       match /chat_messages/{d=**}      { allow read, write: if member(); }

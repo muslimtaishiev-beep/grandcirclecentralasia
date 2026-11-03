@@ -244,6 +244,7 @@ import formRoutes from "./src/routes/formRoutes.js";
 import intakeRoutes from "./src/routes/intakeRoutes.js";
 import payrollRoutes from "./src/routes/payrollRoutes.js";
 import journalRoutes from "./src/routes/journalRoutes.js";
+import examRoutes from "./src/routes/examRoutes.js";
 import { sendTestResultEmail } from "./emailService.js";
 
 app.use("/api/auth", authRoutes);
@@ -254,6 +255,7 @@ app.use("/api/forms", formRoutes);
 app.use("/api/intake", intakeRoutes);
 app.use("/api/payroll", payrollRoutes);
 app.use("/api/journals", journalRoutes);
+app.use("/api/exam-builder", examRoutes);
 
 let memoryDbStore: any = null;
 

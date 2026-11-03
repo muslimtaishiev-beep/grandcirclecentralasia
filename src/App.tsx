@@ -70,6 +70,7 @@ const AutomationLogsPage = lazy(() => import("./pages/workspace/automations/Auto
 const ScheduleGrid = lazy(() => import("./pages/workspace/edu/ScheduleCalendarPage"));
 const SubscriptionsManager = lazy(() => import("./pages/workspace/edu/SubscriptionsDirectoryPage"));
 const TeacherPayroll = lazy(() => import("./pages/workspace/edu/TeacherPayrollPage"));
+const ExamsPage = lazy(() => import("./pages/workspace/exams/ExamsPage"));
 const JournalsListPage = lazy(() => import("./pages/workspace/journals/JournalsListPage"));
 const JournalPage = lazy(() => import("./pages/workspace/journals/JournalPage"));
 const JournalSign = lazy(() => import("./pages/public/JournalSign"));
@@ -298,6 +299,7 @@ export default function App() {
             <Route path=":orgId/settings/templates" element={<GracefulErrorBoundary fallbackTitle="Ошибка Шаблонов"><DocumentTemplates /></GracefulErrorBoundary>} />
             <Route path=":orgId/builder" element={<GracefulErrorBoundary fallbackTitle="Ошибка Конструктора"><WorkspaceBuilder /></GracefulErrorBoundary>} />
             <Route path=":orgId/builder/forms" element={<RequirePermission navKey="forms"><GracefulErrorBoundary fallbackTitle="Ошибка Конструктора Заявок"><FormBuilder /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/exams" element={<RequirePermission navKey="exams"><GracefulErrorBoundary fallbackTitle="Ошибка Экзаменов"><ExamsPage /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/journals" element={<RequirePermission navKey="journals"><GracefulErrorBoundary fallbackTitle="Ошибка Журналов"><JournalsListPage /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/journals/:journalId" element={<RequirePermission navKey="journals"><GracefulErrorBoundary fallbackTitle="Ошибка Журнала"><JournalPage /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/tickets" element={<RequirePermission navKey="tickets"><GracefulErrorBoundary fallbackTitle="Ошибка Сканера Билетов"><TicketScanner /></GracefulErrorBoundary></RequirePermission>} />

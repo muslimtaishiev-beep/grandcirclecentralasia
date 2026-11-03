@@ -1,0 +1,143 @@
+import React, { useState } from "react";
+import { AlertTriangle, CheckCircle2, FileDown, Loader2, Upload } from "lucide-react";
+import { Modal, btn, btnPrimary, input } from "../journals/components/ui";
+import type { DisciplineRow } from "./examApi";
+import { downloadTemplate, readSheetFile } from "./bankSheets";
+
+type Api = (path: string, init?: RequestInit) => Promise<any>;
+type Report = { row: number; id: string | null; discipline: string; issues: { level: "error" | "warning"; message: string }[] }[];
+
+/**
+ * Загрузка вопросов таблицей: сначала проверка (что создастся, что
+ * обновится, где ошибки), потом запись. Дисциплину, которой нет, можно
+ * создать прямо здесь — задав ей название.
+ */
+export default function ImportModal({ api, disciplines, onClose, onDone }: {
+  api: Api; disciplines: DisciplineRow[]; onClose: () => void; onDone: () => void;
+}) {
+  const [file, setFile] = useState<{ name: string; header: string[]; rows: string[][] } | null>(null);
+  const [summary, setSummary] = useState<any>(null);
+  const [report, setReport] = useState<Report>([]);
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<{ created: number; updated: number } | null>(null);
+
+  const createDisciplines = Object.entries(names).filter(([, n]) => n.trim()).map(([code, name]) => ({ code, name }));
+
+  const check = async (f = file, extraNames = names) => {
+    if (!f) return;
+    setBusy(true); setError(null);
+    try {
+      const j = await api("/import", { method: "POST", body: JSON.stringify({
+        header: f.header, rows: f.rows,
+        createDisciplines: Object.entries(extraNames).filter(([, n]) => n.trim()).map(([code, name]) => ({ code, name })),
+      }) });
+      setSummary(j.summary); setReport(j.report || []);
+      setNames(n => { const m = { ...n }; for (const c of j.summary.missingDisciplines) if (!(c in m)) m[c] = ""; return m; });
+    } catch (e: any) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const pick = async (fl?: File) => {
+    if (!fl) return;
+    setError(null); setSummary(null); setReport([]); setNames({});
+    try {
+      const r = await readSheetFile(fl);
+      if (!r.rows.length) { setError("В файле нет строк с вопросами"); return; }
+      const f = { name: fl.name, ...r };
+      setFile(f);
+      await check(f, {});
+    } catch (e: any) { setError(`Не удалось прочитать файл: ${e.message}`); }
+  };
+
+  const commit = async () => {
+    if (!file) return;
+    setBusy(true); setError(null);
+    try {
+      const j = await api("/import", { method: "POST", body: JSON.stringify({ header: file.header, rows: file.rows, commit: true, createDisciplines }) });
+      setDone({ created: j.created, updated: j.updated });
+    } catch (e: any) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const missing = Object.keys(names);
+  const errorsLeft = summary ? summary.errors : 0;
+
+  return (
+    <Modal title="Загрузить вопросы таблицей" onClose={done ? onDone : onClose} wide>
+      {done ? (
+        <div className="py-8 text-center space-y-3">
+          <CheckCircle2 className="w-12 h-12 mx-auto text-emerald-600" />
+          <div className="font-semibold text-[var(--text-main)]">Загружено: новых {done.created}, обновлено {done.updated}</div>
+          <button className={btnPrimary} onClick={onDone}>Готово</button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="text-sm text-[var(--text-muted)] space-y-1">
+            <p>Excel (.xlsx) или CSV. Обязательные колонки — <b>Дисциплина</b> (код: {disciplines.map(d => d.code).join(", ") || "MAT, ENG…"}), <b>Вопрос</b> и <b>Правильный ответ</b>.</p>
+            <p>Строка с <b>номером</b> (MAT-0042) обновит этот вопрос; без номера — создаст новый. Выгрузка банка в Excel — готовый образец для правки.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button className={btn} onClick={() => downloadTemplate(disciplines[0]?.code)}><FileDown className="w-4 h-4" /> Шаблон</button>
+            <label className={btnPrimary}>
+              <Upload className="w-4 h-4" /> {file ? "Другой файл" : "Выбрать файл"}
+              <input type="file" accept=".xlsx,.csv,.tsv,.txt" className="hidden" onChange={e => { void pick(e.target.files?.[0]); e.target.value = ""; }} />
+            </label>
+            {file && <span className="text-sm text-[var(--text-muted)] self-center">{file.name} · {file.rows.length} строк</span>}
+          </div>
+
+          {busy && !summary && <div className="py-6 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-[var(--text-muted)]" /></div>}
+
+          {missing.length > 0 && (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 space-y-2">
+              <div className="text-sm font-semibold text-amber-700">В таблице есть дисциплины, которых нет в банке. Дайте им названия — они будут созданы:</div>
+              {missing.map(c => (
+                <div key={c} className="flex items-center gap-2">
+                  <span className="font-mono text-sm w-16">{c}</span>
+                  <input className={`${input} flex-1`} value={names[c]} onChange={e => setNames(n => ({ ...n, [c]: e.target.value }))} placeholder="Название, например «Физика»" />
+                </div>
+              ))}
+              <button className={btn} disabled={busy} onClick={() => check()}>Проверить ещё раз</button>
+            </div>
+          )}
+
+          {summary && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+              {[["Новых", summary.create, "text-emerald-600"], ["Обновится", summary.update, "text-sky-600"], ["С ошибками", summary.errors, "text-rose-600"], ["С замечаниями", summary.warnings, "text-amber-600"]].map(([t, v, c]) => (
+                <div key={t as string} className="rounded-lg border border-[var(--border-color)] p-2">
+                  <div className={`text-2xl font-bold tabular-nums ${c}`}>{v as number}</div>
+                  <div className="text-[11px] text-[var(--text-muted)]">{t as string}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {report.length > 0 && (
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-[var(--border-color)] divide-y divide-[var(--border-color)]">
+              {report.map(r => (
+                <div key={r.row} className="px-3 py-2 text-xs">
+                  <span className="font-mono text-[var(--text-muted)]">строка {r.row}{r.id ? ` · ${r.id}` : ""}</span>
+                  {r.issues.map((i, k) => (
+                    <div key={k} className={i.level === "error" ? "text-rose-600" : "text-amber-600"}>
+                      <AlertTriangle className="inline w-3 h-3 mr-1 -mt-0.5" />{i.message}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {error && <div className="text-sm text-rose-600">{error}</div>}
+          <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border-color)]">
+            <button className={btn} onClick={onClose}>Отмена</button>
+            <button className={btnPrimary} disabled={busy || !summary || errorsLeft > 0 || (summary.create + summary.update) === 0} onClick={commit}
+              title={errorsLeft ? "Исправьте строки с ошибками в файле" : ""}>
+              {busy && <Loader2 className="w-4 h-4 animate-spin" />} Загрузить {summary ? summary.create + summary.update : ""}
+            </button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}

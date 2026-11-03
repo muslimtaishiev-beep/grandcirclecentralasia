@@ -166,6 +166,7 @@ export const WORKSPACE_SCREENS: { key: string; label: string; group: string }[] 
   { key: "subscriptions", label: "Абонементы", group: "Обучение" },
   { key: "payroll", label: "Зарплаты", group: "Обучение" },
 
+  { key: "exams", label: "Экзамены", group: "Тесты и приём" },
   { key: "tests", label: "Тесты", group: "Тесты и приём" },
   { key: "testsManage", label: "Проверка и прокторинг", group: "Тесты и приём" },
   { key: "placement", label: "Вступительный срез", group: "Тесты и приём" },
@@ -201,6 +202,8 @@ export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | nu
   subscriptions: "edu:schedule",
   payroll: "edu:payroll",
   crm: ["crm:read", "crm:manage"],
+  // Экзамены: банк вопросов, конструктор, проверка. Права — прежние тестовые.
+  exams: ["tests:manage", "placement:manage", "tests:review"],
   tests: ["tests:read", "tests:manage"],
   testsManage: ["tests:review", "tests:manage"],
   // Срез: своё право (раньше — роль с подстрокой «завуч» в названии).
@@ -223,7 +226,7 @@ export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | nu
  */
 export const ORG_MODULES: { key: string; label: string; description: string; permissions: PermissionKey[]; screens: string[] }[] = [
   { key: "mod_edu", label: "Обучение и расписание", description: "Занятия, абонементы, зарплаты", permissions: ["edu:schedule", "edu:payroll"], screens: ["schedule", "subscriptions", "payroll"] },
-  { key: "mod_tests", label: "Тесты и экзамены", description: "Тесты, прокторинг, вступительный срез", permissions: ["tests:read", "tests:manage", "tests:review", "certificates:issue", "placement:manage"], screens: ["tests", "testsManage", "placement"] },
+  { key: "mod_tests", label: "Тесты и экзамены", description: "Тесты, прокторинг, вступительный срез", permissions: ["tests:read", "tests:manage", "tests:review", "certificates:issue", "placement:manage"], screens: ["exams", "tests", "testsManage", "placement"] },
   { key: "mod_crm", label: "CRM и продажи", description: "Контакты, сделки, воронки", permissions: ["crm:read", "crm:manage"], screens: ["crm"] },
   { key: "mod_tickets", label: "Заявки и билеты", description: "Конструктор заявок, QR-билеты, проверка на входе", permissions: ["tickets:check"], screens: ["forms", "tickets"] },
   { key: "mod_intake", label: "Приём и бронирование", description: "Заявки с внешних сайтов, занимаемые ресурсы, брони", permissions: ["intake:manage"], screens: ["intake"] },

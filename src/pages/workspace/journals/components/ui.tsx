@@ -9,7 +9,7 @@ export const label = "block text-[11px] uppercase font-mono font-bold text-[var(
 export const btn = "inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-[var(--border-color)] text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)] transition disabled:opacity-50 cursor-pointer";
 export const btnPrimary = "inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white transition disabled:opacity-50 cursor-pointer";
 
-export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+export function Modal({ title, onClose, children, wide, xwide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean; xwide?: boolean }) {
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", k);
@@ -18,7 +18,7 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
   return (
     <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 sm:p-3 overflow-y-auto" onMouseDown={onClose}>
       {/* Телефон — на весь экран: окно с отступами по краям там лишь отнимает место. */}
-      <div className={`${card} w-full min-h-dvh sm:min-h-0 rounded-none sm:rounded-2xl ${wide ? "max-w-3xl" : "max-w-lg"} sm:my-6`} onMouseDown={e => e.stopPropagation()}>
+      <div className={`${card} w-full min-h-dvh sm:min-h-0 rounded-none sm:rounded-2xl ${xwide ? "max-w-6xl" : wide ? "max-w-3xl" : "max-w-lg"} sm:my-6`} onMouseDown={e => e.stopPropagation()}>
         <div className="sticky top-0 z-10 bg-[var(--bg-surface)] flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-[var(--border-color)] sm:rounded-t-2xl">
           <h3 className="font-bold text-[var(--text-main)] truncate">{title}</h3>
           <button onClick={onClose} className="p-2 -mr-1 rounded hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)]" title="Закрыть"><X className="w-4 h-4" /></button>

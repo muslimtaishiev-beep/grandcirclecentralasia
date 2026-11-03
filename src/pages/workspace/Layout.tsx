@@ -34,6 +34,7 @@ import {
   QrCode,
   Sparkles,
   BookOpen,
+  ClipboardList,
   X,
 } from "lucide-react";
 import GlobalNotifications from "../../components/workspace/GlobalNotifications";
@@ -160,6 +161,7 @@ export default function WorkspaceLayout() {
     ["tasks", "Задачи", "/tasks", CheckSquare],
     ["tickets", "Проверка билетов", "/tickets", QrCode],
     ["crm", "CRM", "/crm/contacts", Briefcase],
+    ["exams", "Экзамены", "/exams", ClipboardList],
     ["tests", "Тесты", "/tests", FileQuestion],
     ["testsManage", "Проверка и прокторинг", "/tests/manage", ShieldCheck],
     ["placement", "Вступительный срез", "/placement", GraduationCap],
