@@ -602,6 +602,38 @@ export function useProctoringEngine(
   const lastSilentLipEvent = useRef<number>(0);
   const EVENT_COOLDOWN = 3000;
 
+  /**
+   * Эпизоды вместо «раз в 3 секунды».
+   *
+   * Раньше нарушение повторялось каждые 3 секунды, пока длилась ситуация:
+   * минута над черновиком давала 20 одинаковых записей, 20 всплывающих
+   * предупреждений и −80 к индексу честности. Ещё хуже было дрожание
+   * детектора: лицо пропало на 1,6 с, мелькнуло на кадр, снова пропало —
+   * два нарушения.
+   *
+   * Теперь одна ситуация — одно нарушение: оно фиксируется, когда состояние
+   * держится `after` мс; пока оно длится, напоминание не чаще `repeat` мс;
+   * пропадание короче `grace` мс эпизод не разрывает.
+   */
+  const episodesRef = useRef(new Map<string, { start: number | null; fired: boolean; lastFire: number; lastSeen: number }>());
+  const episode = (key: string, active: boolean, now: number, cfg: { after: number; grace?: number; repeat?: number }, fire: (durationMs: number) => void): boolean => {
+    const ep = episodesRef.current.get(key) || { start: null, fired: false, lastFire: 0, lastSeen: 0 };
+    if (active) {
+      ep.lastSeen = now;
+      if (ep.start === null) ep.start = now;
+      const dur = now - ep.start;
+      if (!ep.fired && dur >= cfg.after) { fire(dur); ep.fired = true; ep.lastFire = now; }
+      else if (ep.fired && cfg.repeat && now - ep.lastFire >= cfg.repeat) { fire(dur); ep.lastFire = now; }
+    } else if (ep.start !== null && now - ep.lastSeen > (cfg.grace ?? 1000)) {
+      ep.start = null; ep.fired = false;
+    }
+    episodesRef.current.set(key, ep);
+    return ep.start !== null && now - ep.start >= cfg.after;
+  };
+  const sec = (ms: number) => Math.round(ms / 1000);
+  /** Голова опущена к листу — последний вычисленный признак (лицо и руки обрабатываются в разных кадрах). */
+  const draftWorkRef = useRef(false);
+
   // Hand tracking
   const previousWristX = useRef<number | null>(null);
   const swipeConfirmCount = useRef<number>(0);
@@ -661,6 +693,10 @@ export function useProctoringEngine(
   // Speech Recognition & AudioContext
   useEffect(() => {
     if (!isActive) return;
+    // Анализ звука выключен — микрофон и распознавание речи не запускаем
+    // вовсе. Раньше флаг лишь скрывал нарушения, а звук всё равно уходил в
+    // сервис распознавания браузера (в Chrome — на серверы Google).
+    if (optionsRef.current?.detectors?.audioAnalysis === false) return;
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
@@ -692,10 +728,12 @@ export function useProctoringEngine(
             // 75, not 60: the classifier's mid band is where innocent thinking
             // aloud lands, and a false accusation of cheating is far costlier
             // here than a missed whisper.
-            if (probability >= 75 && Date.now() - lastSpeechEvent.current > EVENT_COOLDOWN) {
+            // 80 и не чаще раза в 30 с: размышления вслух и чтение вопроса
+            // вполголоса — не подсказка. Грубое — только почти уверенное.
+            if (probability >= 80 && Date.now() - lastSpeechEvent.current > 30000) {
               addEventRef.current({
                 type: 'SPEECH_CHEAT_DETECTED',
-                severity: probability >= 85 ? 'HIGH' : 'MEDIUM',
+                severity: probability >= 92 ? 'HIGH' : 'MEDIUM',
                 description: `🗣 [${intentCategory}] ${reasoning}: "${currentTranscript.slice(0, 55)}..." (${probability}%)`
               });
               lastSpeechEvent.current = Date.now();
@@ -936,30 +974,15 @@ export function useProctoringEngine(
         updates.facesDetected = facesDetected;
         faceLandmarksRef.current = faceResult.faceLandmarks;
 
-        if (facesDetected > 1) {
-          if (now - lastExtraFaceEvent.current > EVENT_COOLDOWN) {
-            addEventRef.current({
-              type: 'EXTRA_FACE',
-              severity: 'HIGH',
-              description: `Обнаружено ${facesDetected} лица в кадре!`
-            });
-            lastExtraFaceEvent.current = now;
-          }
-          isViolatingThisFrame = true;
-        } else if (facesDetected === 0) {
-          if (!faceLostStart.current) faceLostStart.current = now;
-          else if (now - faceLostStart.current > 1500) {
-            if (now - lastFaceLostEvent.current > EVENT_COOLDOWN) {
-              addEventRef.current({
-                type: 'FACE_LOST',
-                severity: 'HIGH',
-                description: 'Ученик покинул кадр (лицо не обнаружено > 1.5с).'
-              });
-              lastFaceLostEvent.current = now;
-            }
-            isViolatingThisFrame = true;
-          }
-        } else {
+        // Второе лицо — только если держится 1,5 с: на одном кадре детектор
+        // находит лицо на плакате, фотографии или в отражении экрана.
+        if (episode('extraFace', facesDetected > 1, now, { after: 1500, grace: 800, repeat: 60000 }, () =>
+          addEventRef.current({ type: 'EXTRA_FACE', severity: 'HIGH', description: `В кадре ${facesDetected} лица дольше 1,5 с` }))) isViolatingThisFrame = true;
+        // Нет лица 6 с: наклонился к черновику, потянулся за ручкой — не
+        // нарушение; ушёл из-за стола — нарушение. 1,5 с ловили первое.
+        if (episode('faceLost', facesDetected === 0, now, { after: 6000, grace: 1200, repeat: 60000 }, (d) =>
+          addEventRef.current({ type: 'FACE_LOST', severity: d >= 30000 ? 'HIGH' : 'MEDIUM', description: `Лица нет в кадре ${sec(d)} с` }))) isViolatingThisFrame = true;
+        if (facesDetected === 1) {
           faceLostStart.current = null;
           
           const landmarks = faceResult.faceLandmarks[0];
@@ -973,25 +996,18 @@ export function useProctoringEngine(
             
             updates.headPose = { pitch, yaw, roll };
             updates.isDraftWork = pitch >= -40 && pitch <= -15;
+            draftWorkRef.current = updates.isDraftWork;
 
-            if (Math.abs(yaw) > 20) {
-              if (!gazeViolationStart.current) gazeViolationStart.current = now;
-              else if (now - gazeViolationStart.current > 2000) {
-                if (now - lastGazeEvent.current > EVENT_COOLDOWN) {
-                  const dirText = yaw > 0 ? 'вправо' : 'влево';
-                  const type = yaw > 0 ? 'GAZE_RIGHT' : 'GAZE_LEFT';
-                  addEventRef.current({
-                    type,
-                    severity: 'MEDIUM',
-                    description: `Взгляд отвлёкся ${dirText} (угол ${Math.abs(yaw).toFixed(0)}°)`
-                  });
-                  lastGazeEvent.current = now;
-                }
-                isViolatingThisFrame = true;
-              }
-            } else {
-              gazeViolationStart.current = null;
-            }
+            // Поворот головы больше 30° дольше 4 с — и не над черновиком.
+            // 20° на 2 с — это обычное чтение вопроса на широком мониторе;
+            // голова, опущенная к листу (isDraftWork), — разрешённая работа.
+            const turned = Math.abs(yaw) > 30 && !updates.isDraftWork;
+            if (episode('gaze', turned, now, { after: 4000, grace: 800, repeat: 60000 }, (d) =>
+              addEventRef.current({
+                type: yaw > 0 ? 'GAZE_RIGHT' : 'GAZE_LEFT',
+                severity: 'MEDIUM',
+                description: `Голова повёрнута ${yaw > 0 ? 'вправо' : 'влево'} (${Math.abs(yaw).toFixed(0)}°) ${sec(d)} с`,
+              }))) isViolatingThisFrame = true;
           }
 
           if (landmarks[468] && landmarks[33] && landmarks[133]) {
@@ -1137,8 +1153,8 @@ export function useProctoringEngine(
           updates.handStatus = 'NO_HANDS';
           updates.currentGesture = { gesture: 'NONE', label: 'Нет жеста', extendedFingers: 0 };
           updates.decodedGestureOption = '';
-          handBelowStart.current = null;
           previousWristX.current = null;
+          episode('handBelow', false, now, { after: 20000, grace: 2000 }, () => {});
         } else {
           let isBelow = false;
           let activeGesture: HandGestureResult = { gesture: 'NONE', label: 'Ладонь', extendedFingers: 0 };
@@ -1166,7 +1182,7 @@ export function useProctoringEngine(
                 if (!gestureHoldStart.current || activeGestureNameRef.current !== gestureRes.gesture) {
                   gestureHoldStart.current = now;
                   activeGestureNameRef.current = gestureRes.gesture;
-                } else if (now - gestureHoldStart.current >= 1500) {
+                } else if (now - gestureHoldStart.current >= 3000) {
                   const lastStreamOpt = gestureStreamHistoryRef.current[gestureStreamHistoryRef.current.length - 1];
                   if (gestureRes.signaledOption && lastStreamOpt !== gestureRes.signaledOption) {
                     gestureStreamHistoryRef.current.push(gestureRes.signaledOption);
@@ -1174,11 +1190,13 @@ export function useProctoringEngine(
                   }
                   updates.decodedGestureStream = gestureStreamHistoryRef.current.join(' ➔ ');
 
-                  if (now - lastGestureEvent.current > EVENT_COOLDOWN) {
+                  // 3 с вместо 1,5 и не чаще раза в минуту: ручка в пальцах на
+                  // доли секунды складывается в «три пальца».
+                  if (now - lastGestureEvent.current > 60000) {
                     addEventRef.current({
                       type: 'GESTURE_SIGNAL_DETECTED',
-                      severity: 'HIGH',
-                      description: `✋ Удержание жеста (1.5с): Передан сигнал "${optText}" (${gestureRes.label})`
+                      severity: 'MEDIUM',
+                      description: `Жест удерживается 3 с: похоже на сигнал «${optText}» (${gestureRes.label})`
                     });
                     lastGestureEvent.current = now;
                   }
@@ -1206,11 +1224,13 @@ export function useProctoringEngine(
                 } else {
                   swipeConfirmCount.current = 0;
                 }
-                if (swipeConfirmCount.current >= 2 && now - lastSwipeEvent.current > EVENT_COOLDOWN) {
+                // Три кадра подряд и не чаще раза в 30 с: потянуться за мышью
+                // или поправить волосы — тоже быстрое движение руки.
+                if (swipeConfirmCount.current >= 3 && now - lastSwipeEvent.current > 30000) {
                   addEventRef.current({
                     type: 'SWIPE',
-                    severity: 'HIGH',
-                    description: 'Резкий свайп-жест рукой (переключение на смартфоне).'
+                    severity: 'MEDIUM',
+                    description: 'Несколько резких движений рукой подряд (похоже на свайп по телефону).'
                   });
                   lastSwipeEvent.current = now;
                   swipeConfirmCount.current = 0;
@@ -1224,24 +1244,12 @@ export function useProctoringEngine(
 
           updates.currentGesture = activeGesture;
 
-          if (isBelow) {
-            updates.handStatus = 'BELOW_DESK';
-            if (!handBelowStart.current) handBelowStart.current = now;
-            else if (now - handBelowStart.current > 3000) {
-              if (now - lastHandBelowEvent.current > EVENT_COOLDOWN) {
-                addEventRef.current({
-                  type: 'HAND_BELOW',
-                  severity: 'MEDIUM',
-                  description: 'Руки ушли под стол (подозрение на работу с телефоном).'
-                });
-                lastHandBelowEvent.current = now;
-              }
-              isViolatingThisFrame = true;
-            }
-          } else {
-            updates.handStatus = 'IN_FRAME';
-            handBelowStart.current = null;
-          }
+          updates.handStatus = isBelow ? 'BELOW_DESK' : 'IN_FRAME';
+          // Рука у нижнего края — так выглядит письмо в черновике. Отмечаем
+          // только долгое (20 с), когда голова НЕ опущена к листу, и как
+          // незначительное: само по себе это не доказательство телефона.
+          if (episode('handBelow', isBelow && !draftWorkRef.current, now, { after: 20000, grace: 2000, repeat: 120000 }, (d) =>
+            addEventRef.current({ type: 'HAND_BELOW', severity: 'LOW', description: `Руки у нижнего края кадра ${sec(d)} с, голова не над листом` }))) isViolatingThisFrame = true;
         }
       } catch (e) {
         console.warn('Hand landmarker error:', e);
@@ -1283,26 +1291,30 @@ export function useProctoringEngine(
               hasPhone = true;
               // 55% уверенности и три кадра подряд: настоящий телефон в руке
               // держится в кадре секундами, случайная тень — нет.
-              phoneStreak.current = cat.score >= 0.55 ? phoneStreak.current + 1 : 0;
-              if (phoneStreak.current >= 3 && now - lastPhoneEvent.current > EVENT_COOLDOWN) {
+              // 60% и ~1,5 с подряд (6 кадров), затем не чаще раза в минуту:
+              // настоящий телефон в руке держится в кадре секундами.
+              phoneStreak.current = cat.score >= 0.6 ? phoneStreak.current + 1 : 0;
+              if (phoneStreak.current >= 6 && now - lastPhoneEvent.current > 60000) {
                 addEventRef.current({
                   type: 'PHONE_DETECTED',
                   severity: 'HIGH',
-                  description: `В КАДРЕ ОБНАРУЖЕН МОБИЛЬНЫЙ ТЕЛЕФОН (${Math.round(cat.score * 100)}% уверенность)!`
+                  description: `В кадре телефон (уверенность ${Math.round(cat.score * 100)}%, держится 1,5 с)`
                 });
                 lastPhoneEvent.current = now;
               }
-              isViolatingThisFrame = true;
+              if (phoneStreak.current >= 6) isViolatingThisFrame = true;
             } else if (label.includes('book') || label.includes('binder') || label.includes('paper')) {
               hasBook = true;
               // То же для конспекта: на срезе перед человеком лежит черновик,
               // и белый лист бумаги не должен становиться обвинением.
-              bookStreak.current = cat.score >= 0.55 ? bookStreak.current + 1 : 0;
-              if (bookStreak.current >= 3 && now - lastBookEvent.current > EVENT_COOLDOWN) {
+              // Лист черновика разрешён — книга отмечается как незначительное,
+              // только уверенно (70%), 3 с подряд и не чаще раза в 2 минуты.
+              bookStreak.current = cat.score >= 0.7 ? bookStreak.current + 1 : 0;
+              if (bookStreak.current >= 12 && now - lastBookEvent.current > 120000) {
                 addEventRef.current({
                   type: 'BOOK_DETECTED',
-                  severity: 'MEDIUM',
-                  description: `В кадре обнаружена книга/конспект (${Math.round(cat.score * 100)}% уверенность).`
+                  severity: 'LOW',
+                  description: `В кадре похоже на книгу или конспект (уверенность ${Math.round(cat.score * 100)}%)`
                 });
                 lastBookEvent.current = now;
               }
@@ -1349,19 +1361,30 @@ export function useProctoringEngine(
       }
     };
 
+    // Потеря фокуса окна — нарушение, только если длится 3 с: короткую
+    // вызывают системные уведомления, окно разрешения камеры, клавиатура.
+    let blurTimer: ReturnType<typeof setTimeout> | null = null;
     const handleBlur = () => {
-      if (Date.now() - lastTabEvent > 2000) {
-        lastTabEvent = Date.now();
-        addEvent({ type: 'TAB_SWITCH', severity: 'HIGH', description: 'Окно браузера потеряло фокус.' });
-      }
+      if (blurTimer) clearTimeout(blurTimer);
+      blurTimer = setTimeout(() => {
+        if (document.hasFocus() || document.hidden) return; // вернулся или уже учтено как смена вкладки
+        if (Date.now() - lastTabEvent > 5000) {
+          lastTabEvent = Date.now();
+          addEvent({ type: 'TAB_SWITCH', severity: 'MEDIUM', description: 'Окно экзамена не в фокусе дольше 3 с.' });
+        }
+      }, 3000);
     };
+    const handleFocus = () => { if (blurTimer) { clearTimeout(blurTimer); blurTimer = null; } };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleBlur);
+    window.addEventListener('focus', handleFocus);
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('focus', handleFocus);
+      if (blurTimer) clearTimeout(blurTimer);
     };
   }, [isActive, addEvent]);
 
