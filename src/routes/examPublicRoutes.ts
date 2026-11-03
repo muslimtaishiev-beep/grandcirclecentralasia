@@ -156,6 +156,7 @@ function studentState(exam: Exam, a: Full) {
     sections: a.sections.map(s => ({ id: s.id, title: s.title, minutes: s.minutes, count: s.questionIds.length, finished: !!s.finishedAt })),
     section: cur ? {
       id: cur.id, title: cur.title, deadline: cur.deadline,
+      blocks: (cur.blocks || []).map(b => ({ title: b.title, first: b.questionIds[0] })),
       questions: cur.questionIds.map(id => a.questions[id]).filter(Boolean).map(q => studentView(q as unknown as BankQuestion)),
       answers: Object.fromEntries(cur.questionIds.filter(id => a.answers[id] !== undefined).map(id => [id, a.answers[id]])),
     } : null,
@@ -234,14 +235,28 @@ router.post("/:code/start", async (req: any, res: any) => {
     }
     const now = Date.now();
     const questions: Record<string, FrozenQuestion> = {};
-    const sections: AttemptSection[] = exam.sections.map((s, i) => {
+    const parts: AttemptSection[] = exam.sections.map((s, i) => {
       const qs = pickSectionQuestions(s, bank);
       for (const q of qs) { const { tenantId: _t, source: _s, createdAt: _c, updatedAt: _u, updatedBy: _b, ...frozen } = q as any; questions[q.id] = frozen; }
       return {
         id: s.id, title: s.title, disciplineId: s.disciplineId, minutes: s.minutes, questionIds: qs.map(q => q.id),
         startedAt: i === 0 ? now : null, deadline: i === 0 ? now + s.minutes * 60_000 : null, finishedAt: null,
       };
-    }).filter(s => s.questionIds.length);
+    });
+    // Дисциплины «с общим таймером» сливаются с предыдущей в одну часть:
+    // одна страница, один таймер, но блоки — для заголовков и баллов.
+    const sections: AttemptSection[] = [];
+    exam.sections.forEach((s, i) => {
+      const p = parts[i];
+      if (!p.questionIds.length) return;
+      const block = { id: p.id, title: p.title, disciplineId: p.disciplineId, questionIds: p.questionIds };
+      const last = sections[sections.length - 1];
+      if (s.joinPrev && last) {
+        last.blocks = [...(last.blocks || [{ id: last.id, title: last.title, disciplineId: last.disciplineId, questionIds: last.questionIds }]), block];
+        last.questionIds = [...last.questionIds, ...p.questionIds];
+        last.title = last.blocks.map(x => x.title).join(", ");
+      } else sections.push({ ...p });
+    });
     if (!sections.length) return fail(res, 503, "Для экзамена нет вопросов — сообщите организатору");
     // С фото таймер первого раздела запускается после снимка (/begin), иначе
     // время на фотографию съедало бы время экзамена.

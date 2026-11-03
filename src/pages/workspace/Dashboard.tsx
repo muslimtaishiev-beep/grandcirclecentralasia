@@ -223,26 +223,26 @@ export default function WorkspaceDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           
           <Link 
-            to={`/workspace/${orgId}/tests/manage`}
+            to={`/workspace/${orgId}/exams`}
             className="bg-emerald-950/30 border border-emerald-800/60 p-5 rounded-xl hover:border-emerald-500 transition group flex items-center justify-between"
           >
             <div>
               <div className="font-bold text-emerald-400 group-hover:text-emerald-300 transition flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4" />
-                <span>Проверка Тестов Менеджером</span>
+                <span>Экзамены</span>
               </div>
-              <div className="text-xs text-[var(--text-muted)] mt-1">Ответы абитуриентов, видео прокторинга и PDF отчеты</div>
+              <div className="text-xs text-[var(--text-muted)] mt-1">Кто сдаёт сейчас, проверка работ, прокторинг и аналитика</div>
             </div>
             <ArrowRight className="w-5 h-5 text-emerald-400 group-hover:translate-x-1 transition" />
           </Link>
 
           <Link 
-            to={`/workspace/${orgId}/tests`}
+            to={`/workspace/${orgId}/exams?tab=bank`}
             className="bg-[var(--bg-surface)] border border-[var(--border-color)] p-5 rounded-xl hover:border-[var(--accent)] transition group flex items-center justify-between"
           >
             <div>
-              <div className="font-bold text-[var(--text-main)] group-hover:text-[var(--accent)] transition">Все Тесты и Экзамены</div>
-              <div className="text-xs text-[var(--text-muted)] mt-1">Создание тестов, банк вопросов и прокторинг</div>
+              <div className="font-bold text-[var(--text-main)] group-hover:text-[var(--accent)] transition">Банк вопросов</div>
+              <div className="text-xs text-[var(--text-muted)] mt-1">Дисциплины, вопросы, загрузка из Excel</div>
             </div>
             <ArrowRight className="w-5 h-5 text-[var(--text-muted)] group-hover:text-[var(--accent)] group-hover:translate-x-1 transition" />
           </Link>

@@ -15,7 +15,7 @@ const AdminCMS = lazy(() => import("./components/AdminCMS"));
 const SubscriptionBillingDashboard = React.lazy(() => import('./pages/workspace/billing/SubscriptionBillingDashboard'));
 const GlobalWatermarks = lazy(() => import("./components/GlobalWatermarks"));
 const MetricsCarousel = lazy(() => import("./components/MetricsCarousel").then(m => ({ default: m.MetricsCarousel })));
-import { Routes, Route, useLocation, useNavigate, Link, Navigate } from "react-router-dom";
+import { Routes, Route, useLocation, useNavigate, useParams, Link, Navigate } from "react-router-dom";
 
 // New Pages
 const Login = lazy(() => import("./pages/Login"));
@@ -23,14 +23,7 @@ const Signup = lazy(() => import("./pages/Signup"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Decision = lazy(() => import("./pages/Decision"));
 const Landing = lazy(() => import("./pages/Landing"));
-const Testing = lazy(() => import("./pages/Testing"));
-const PlacementExam = lazy(() => import("./pages/PlacementExam"));
-const PlacementCabinet = lazy(() => import("./pages/PlacementCabinet"));
-const PlacementResultPortal = lazy(() => import("./pages/PlacementResultPortal"));
-const ManagerForm = lazy(() => import("./pages/ManagerForm"));
-const ManagerDashboard = lazy(() => import("./pages/ManagerDashboard"));
 const Receipt = lazy(() => import("./pages/Receipt"));
-const PsychologistForm = lazy(() => import("./pages/PsychologistForm"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsOfUse = lazy(() => import("./pages/TermsOfUse"));
 const ProctorSandbox = lazy(() => import("./pages/ProctorSandbox"));
@@ -58,7 +51,6 @@ const SheetsListPage = lazy(() => import("./pages/workspace/sheets/SheetsListPag
 const SheetSpreadsheetPage = lazy(() => import("./pages/workspace/sheets/SheetSpreadsheetPage"));
 const CrmContacts = lazy(() => import("./pages/workspace/crm/ContactsDirectoryPage"));
 const CrmDeals = lazy(() => import("./pages/workspace/crm/DealsKanbanPage"));
-const TestList = lazy(() => import("./pages/workspace/tests/TestList"));
 const TaskBoard = lazy(() => import("./pages/workspace/tasks/TasksBoardPage"));
 const TaskList = lazy(() => import("./pages/workspace/tasks/TasksListPage"));
 const ChatLayout = lazy(() => import("./pages/workspace/chat/ChatLayout"));
@@ -72,6 +64,7 @@ const SubscriptionsManager = lazy(() => import("./pages/workspace/edu/Subscripti
 const TeacherPayroll = lazy(() => import("./pages/workspace/edu/TeacherPayrollPage"));
 const ExamsPage = lazy(() => import("./pages/workspace/exams/ExamsPage"));
 const ExamDetailPage = lazy(() => import("./pages/workspace/exams/ExamDetailPage"));
+const LegacyMoved = lazy(() => import("./pages/public/LegacyMoved"));
 const ExamTake = lazy(() => import("./pages/public/ExamTake"));
 const JournalsListPage = lazy(() => import("./pages/workspace/journals/JournalsListPage"));
 const JournalPage = lazy(() => import("./pages/workspace/journals/JournalPage"));
@@ -79,7 +72,7 @@ const JournalSign = lazy(() => import("./pages/public/JournalSign"));
 
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { GracefulErrorBoundary } from "./components/ui/GracefulErrorBoundary";
-import ExamErrorBoundary from "./components/ExamErrorBoundary";
+
 import { TenantProvider } from './context/TenantContext';
 import DashboardSkeleton from "./components/skeletons/DashboardSkeleton";
 import CrmSkeleton from "./components/skeletons/CrmSkeleton";
@@ -99,6 +92,12 @@ import { GlobalTooltip } from "./components/ui/GlobalTooltip";
 
 /** Страницы, где нужен подвал сайта форума (LEAD+ Forum). */
 const FORUM_FOOTER_PATHS = new Set(["/", "/privacy", "/terms"]);
+
+/** Старые адреса тестов и среза в кабинете → «Экзамены» этой организации. */
+function ToExams() {
+  const { orgId } = useParams();
+  return <Navigate to={`/workspace/${orgId}/exams`} replace />;
+}
 
 export default function App() {
   const [lang, setLang] = useState<"ru" | "en" | "kg">("ru");
@@ -249,11 +248,12 @@ export default function App() {
               unmounted the tree and left the student on a blank grey page
               mid-exam, with no way back. */}
           {/* Вступительный срез — тенантный маршрут, как и остальные экзамены. */}
-          <Route path="/:orgSlug/placement" element={<ExamErrorBoundary><PlacementExam /></ExamErrorBoundary>} />
+          {/* Прежние тест и срез перенесены в «Экзамены» — старые адреса объясняют это. */}
+          <Route path="/:orgSlug/placement" element={<LegacyMoved />} />
           {/* Портал результатов — ученики ищут себя по номеру работы и фамилии. */}
-          <Route path="/:orgSlug/results" element={<ExamErrorBoundary><PlacementResultPortal /></ExamErrorBoundary>} />
-          <Route path="/:orgSlug/test" element={<ExamErrorBoundary><Testing /></ExamErrorBoundary>} />
-          <Route path="/:orgSlug/test/:testId" element={<ExamErrorBoundary><Testing /></ExamErrorBoundary>} />
+          <Route path="/:orgSlug/results" element={<LegacyMoved />} />
+          <Route path="/:orgSlug/test" element={<LegacyMoved />} />
+          <Route path="/:orgSlug/test/:testId" element={<LegacyMoved />} />
           <Route path="/login" element={<Login lang={lang} />} />
           <Route path="/register" element={<Signup lang={lang} />} />
           <Route path="/dashboard" element={
@@ -271,7 +271,6 @@ export default function App() {
           <Route path="/manager/form" element={<Navigate to="/workspace" replace />} />
           <Route path="/manager-dashboard" element={<Navigate to="/workspace" replace />} />
           <Route path="/receipt/:shortId" element={<Receipt />} />
-          <Route path="/psychologist/:shortId" element={<ProtectedRoute><PsychologistForm /></ProtectedRoute>} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/terms" element={<TermsOfUse />} />
 
@@ -322,14 +321,10 @@ export default function App() {
             <Route path=":orgId/crm/contacts" element={<RequirePermission navKey="crm"><GracefulErrorBoundary fallbackTitle="Ошибка CRM Контактов"><Suspense fallback={<CrmSkeleton />}><CrmContacts /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/crm/deals" element={<RequirePermission navKey="crm"><GracefulErrorBoundary fallbackTitle="Ошибка CRM Сделок"><Suspense fallback={<CrmSkeleton />}><CrmDeals /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             
-            {/* Multi-Tenant Testing & Evaluation Routes */}
-            <Route path=":orgId/tests" element={<RequirePermission navKey="tests"><GracefulErrorBoundary fallbackTitle="Ошибка Тестов"><TestList /></GracefulErrorBoundary></RequirePermission>} />
-            <Route path=":orgId/placement" element={<RequirePermission navKey="placement"><GracefulErrorBoundary fallbackTitle="Ошибка Кабинета Завуча"><PlacementCabinet /></GracefulErrorBoundary></RequirePermission>} />
-            <Route path=":orgId/tests/manage" element={<RequirePermission navKey="testsManage"><GracefulErrorBoundary fallbackTitle="Ошибка Проверки Менеджера"><ManagerDashboard /></GracefulErrorBoundary></RequirePermission>} />
-            <Route path=":orgId/tests/check" element={<RequirePermission navKey="testsManage"><GracefulErrorBoundary fallbackTitle="Ошибка Формы Оценки"><ManagerForm /></GracefulErrorBoundary></RequirePermission>} />
-            <Route path=":orgId/tests/check/:shortId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Формы Оценки"><ManagerForm /></GracefulErrorBoundary>} />
-            <Route path=":orgId/tests/psychology/:shortId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Формы Психолога"><PsychologistForm /></GracefulErrorBoundary>} />
-            <Route path=":orgId/take-test/:testId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Прохождения Теста"><Testing /></GracefulErrorBoundary>} />
+            {/* «Тесты», «Проверка и прокторинг» и «Вступительный срез» собраны в «Экзамены». */}
+            <Route path=":orgId/tests/*" element={<ToExams />} />
+            <Route path=":orgId/placement" element={<ToExams />} />
+            <Route path=":orgId/take-test/:testId" element={<ToExams />} />
 
             <Route path=":orgId/tasks" element={<GracefulErrorBoundary fallbackTitle="Ошибка Задач"><Suspense fallback={<TaskSkeleton />}><TaskList /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId/tasks/list" element={<GracefulErrorBoundary fallbackTitle="Ошибка Задач"><Suspense fallback={<TaskSkeleton />}><TaskList /></Suspense></GracefulErrorBoundary>} />

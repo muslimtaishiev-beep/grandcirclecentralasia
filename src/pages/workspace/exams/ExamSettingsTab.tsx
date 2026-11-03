@@ -61,7 +61,7 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
     finally { setBusy(false); }
   };
 
-  const totalMinutes = sections.reduce((n, s) => n + s.minutes, 0);
+  const totalMinutes = sections.reduce((n, s, i) => n + (i > 0 && s.joinPrev ? 0 : s.minutes), 0);
   const totalQuestions = sections.reduce((n, s) => n + (plans[s.id]?.want ?? 0), 0);
   const toLocal = (ms: number | null) => (ms ? new Date(ms - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "");
   const fromLocal = (v: string) => (v ? new Date(v).getTime() : null);
@@ -127,7 +127,9 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
                   {disciplines.map(d => <option key={d.code} value={d.code}>{d.code} · {d.name}</option>)}
                 </select>
                 <input className={`${input} flex-1 min-w-[160px]`} value={s.title} onChange={e => upd(i, { title: e.target.value })} placeholder="Название раздела для ученика" />
-                <div className="flex items-center gap-1"><input type="number" min={1} className={`${input} !w-20`} value={s.minutes} onChange={e => upd(i, { minutes: Number(e.target.value) || 1 })} /><span className="text-xs text-[var(--text-muted)]">мин</span></div>
+                {i > 0 && s.joinPrev
+                  ? <span className="text-xs text-[var(--text-muted)] px-2">общий таймер</span>
+                  : <div className="flex items-center gap-1"><input type="number" min={1} className={`${input} !w-20`} value={s.minutes} onChange={e => upd(i, { minutes: Number(e.target.value) || 1 })} /><span className="text-xs text-[var(--text-muted)]">мин</span></div>}
                 <button className={btn} onClick={() => move(i, -1)} disabled={i === 0}><ArrowUp className="w-4 h-4" /></button>
                 <button className={btn} onClick={() => move(i, 1)} disabled={i === sections.length - 1}><ArrowDown className="w-4 h-4" /></button>
                 <button className={btn} onClick={() => setSections(xs => xs.filter((_, k) => k !== i))}><Trash2 className="w-4 h-4 text-rose-600" /></button>
@@ -149,6 +151,7 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
                 <label className="flex items-center gap-2 text-sm"><input type="radio" checked={s.mode === "all"} onChange={() => upd(i, { mode: "all" })} /> Все вопросы по порядку (фиксированный тест)</label>
                 <label className="flex items-center gap-2 text-sm"><input type="radio" checked={s.mode === "random"} onChange={() => upd(i, { mode: "random" })} /> Случайный вариант по сложности</label>
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={s.shuffle} onChange={e => upd(i, { shuffle: e.target.checked })} /> Перемешать порядок</label>
+                {i > 0 && <label className="flex items-center gap-2 text-sm" title="Одна страница и один таймер с предыдущей дисциплиной; баллы — отдельно"><input type="checkbox" checked={!!s.joinPrev} onChange={e => upd(i, { joinPrev: e.target.checked })} /> Вместе с предыдущей (общий таймер)</label>}
               </div>
               {s.mode === "random" && (
                 <div className="grid grid-cols-3 gap-2 max-w-md">

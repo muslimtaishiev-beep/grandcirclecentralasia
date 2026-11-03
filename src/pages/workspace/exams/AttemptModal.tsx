@@ -162,7 +162,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
                 {canEdit && a.review?.status !== "done" && <button className={btnPrimary} disabled={!!busy} onClick={() => review({}, {}, true)}><CheckCircle2 className="w-4 h-4" /> Проверка завершена</button>}
               </div>
             </div>
-            {a.sections.map(sec => (
+            {a.sections.flatMap(s => (s.blocks?.length ? s.blocks : [s])).map(sec => (
               <div key={sec.id}>
                 <div className="text-[11px] uppercase font-mono font-bold text-[var(--text-muted)] mb-1.5">{sec.title}</div>
                 <ol className="space-y-2">

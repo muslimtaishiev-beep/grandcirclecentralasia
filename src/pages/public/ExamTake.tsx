@@ -30,7 +30,7 @@ type State = {
   waitingStart?: boolean;
   shortId: string; status: "in_progress" | "finished" | "annulled"; student: { name: string }; current: number;
   sections: { id: string; title: string; minutes: number; count: number; finished: boolean }[];
-  section: { id: string; title: string; deadline: number; questions: any[]; answers: Record<string, string> } | null;
+  section: { id: string; title: string; deadline: number; questions: any[]; answers: Record<string, string>; blocks?: { title: string; first: string }[] } | null;
   result: any; serverNow: number;
 };
 
@@ -346,6 +346,7 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
       <div className="max-w-3xl mx-auto px-4 py-4 space-y-4 pb-28">
         {sec.questions.map((q, i) => (
           <div key={q.id} id={`q-${q.id}`} className="scroll-mt-24">
+            {sec.blocks?.find(b => b.first === q.id) && <h2 className="text-xl font-bold text-blue-700 mt-4 mb-3">{sec.blocks.find(b => b.first === q.id)!.title}</h2>}
             <div className="text-xs font-semibold text-slate-400 mb-1.5">Вопрос {i + 1} из {sec.questions.length}{q.points !== 1 ? ` · ${q.points} балла` : ""}</div>
             <QuestionFactory question={q} value={answers[q.id] ?? ""} onChange={v => setAnswer(q.id, v)} />
           </div>

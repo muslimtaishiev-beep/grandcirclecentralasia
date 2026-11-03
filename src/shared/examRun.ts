@@ -25,6 +25,13 @@ export interface ExamSection {
   levels: string[];
   counts: Record<Difficulty, number>;
   shuffle: boolean;
+  /**
+   * Идёт вместе с предыдущей дисциплиной: одна страница и общий таймер
+   * (минуты берутся у первой в группе). Баллы — по-прежнему по каждой
+   * дисциплине. Так был устроен прежний вступительный тест: русский,
+   * математика и логика — одной частью на 90 минут.
+   */
+  joinPrev?: boolean;
 }
 
 export interface ScaleBand { minPercent: number; label: string }
@@ -131,6 +138,7 @@ export function sanitizeSections(raw: unknown): ExamSection[] {
       levels: (Array.isArray(r?.levels) ? r.levels : []).map((x: unknown) => s(x, 20)).filter(Boolean).slice(0, 30),
       counts: { 1: Math.round(num(c[1], 0, 500, 0)), 2: Math.round(num(c[2], 0, 500, 0)), 3: Math.round(num(c[3], 0, 500, 0)) },
       shuffle: b(r?.shuffle, false),
+      ...(out.length && r?.joinPrev === true ? { joinPrev: true } : {}),
     });
   }
   return out;
@@ -299,7 +307,7 @@ export function scaleOf(percent: number, scale: ScaleBand[]): string | null {
  * она сильнее автоматической.
  */
 export function gradeAttempt(
-  sections: { id: string; title: string; questionIds: string[] }[],
+  sections: { id: string; title: string; questionIds: string[]; blocks?: { id: string; title: string; questionIds: string[] }[] }[],
   questions: Record<string, FrozenQuestion>,
   answers: Record<string, unknown>,
   settings: ExamSettings,
@@ -308,7 +316,9 @@ export function gradeAttempt(
   const items: ResultItem[] = [];
   const secRes: SectionResult[] = [];
   const topics = new Map<string, { earned: number; max: number }>();
-  for (const sec of sections) {
+  // Часть с общим таймером состоит из блоков-дисциплин — считаем по блокам.
+  const units = sections.flatMap(s => (s.blocks?.length ? s.blocks : [s]));
+  for (const sec of units) {
     let e = 0, m = 0, c = 0;
     for (const qid of sec.questionIds) {
       const q = questions[qid]; if (!q) continue;
@@ -344,6 +354,8 @@ export function gradeAttempt(
 export interface AttemptSection {
   id: string; title: string; disciplineId: string; minutes: number; questionIds: string[];
   startedAt: number | null; deadline: number | null; finishedAt: number | null;
+  /** Дисциплины части с общим таймером — для заголовков и баллов по предметам. */
+  blocks?: { id: string; title: string; disciplineId: string; questionIds: string[] }[];
 }
 export type Decision = "accepted" | "reserve" | "rejected";
 export const DECISION_LABEL: Record<Decision, string> = { accepted: "Принят", reserve: "Резерв", rejected: "Не принят" };
