@@ -1,10 +1,13 @@
 import React, { useState } from "react";
-import { AlertTriangle, CheckCircle2, FileDown, Loader2, Upload } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileDown, Loader2, PlayCircle, Upload } from "lucide-react";
+import ImportGuide from "./ImportGuide";
 import { Modal, btn, btnPrimary, input } from "../journals/components/ui";
 import type { DisciplineRow, SetRow } from "./examApi";
+import { TYPE_LABEL, type QuestionType } from "../../../shared/exams";
 import { downloadTemplate, readSheetFile } from "./bankSheets";
 
 type Api = (path: string, init?: RequestInit) => Promise<any>;
+type PreviewRow = { row: number; id: string | null; discipline: string; ok: boolean; type: QuestionType | null; text: string; options: number; answer: string; levels: string[]; sets: string[] };
 type Report = { row: number; id: string | null; discipline: string; issues: { level: "error" | "warning"; message: string }[] }[];
 
 /**
@@ -16,9 +19,12 @@ export default function ImportModal({ api, disciplines, sets = [], defaultSet, o
   api: Api; disciplines: DisciplineRow[]; sets?: SetRow[]; defaultSet?: string; onClose: () => void; onDone: () => void;
 }) {
   const [setId, setSetId] = useState(defaultSet || "");
+  const [guide, setGuide] = useState(false);
   const [file, setFile] = useState<{ name: string; header: string[]; rows: string[][] } | null>(null);
   const [summary, setSummary] = useState<any>(null);
   const [report, setReport] = useState<Report>([]);
+  const [preview, setPreview] = useState<PreviewRow[]>([]);
+  const [tab, setTab] = useState<"table" | "issues">("table");
   const [names, setNames] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +40,8 @@ export default function ImportModal({ api, disciplines, sets = [], defaultSet, o
         header: f.header, rows: f.rows, setId: setId || undefined,
         createDisciplines: Object.entries(extraNames).filter(([, n]) => n.trim()).map(([code, name]) => ({ code, name })),
       }) });
-      setSummary(j.summary); setReport(j.report || []);
+      setSummary(j.summary); setReport(j.report || []); setPreview(j.preview || []);
+      setTab(j.summary.errors ? "issues" : "table");
       setNames(n => { const m = { ...n }; for (const c of j.summary.missingDisciplines) if (!(c in m)) m[c] = ""; return m; });
     } catch (e: any) { setError(e.message); }
     finally { setBusy(false); }
@@ -42,7 +49,7 @@ export default function ImportModal({ api, disciplines, sets = [], defaultSet, o
 
   const pick = async (fl?: File) => {
     if (!fl) return;
-    setError(null); setSummary(null); setReport([]); setNames({});
+    setError(null); setSummary(null); setReport([]); setPreview([]); setNames({});
     try {
       const r = await readSheetFile(fl);
       if (!r.rows.length) { setError("В файле нет строк с вопросами"); return; }
@@ -81,6 +88,7 @@ export default function ImportModal({ api, disciplines, sets = [], defaultSet, o
           </div>
           <div className="flex flex-wrap gap-2">
             <button className={btn} onClick={() => downloadTemplate(disciplines[0]?.code)}><FileDown className="w-4 h-4" /> Шаблон</button>
+            <button className={`${btn} text-blue-600`} onClick={() => setGuide(true)}><PlayCircle className="w-4 h-4" /> Инструкция</button>
             <label className={btnPrimary}>
               <Upload className="w-4 h-4" /> {file ? "Другой файл" : "Выбрать файл"}
               <input type="file" accept=".xlsx,.csv,.tsv,.txt" className="hidden" onChange={e => { void pick(e.target.files?.[0]); e.target.value = ""; }} />
@@ -126,7 +134,38 @@ export default function ImportModal({ api, disciplines, sets = [], defaultSet, o
             </div>
           )}
 
-          {report.length > 0 && (
+          {preview.length > 0 && (
+            <div className="flex gap-1.5">
+              <button className={`px-3 py-1.5 rounded-full text-xs font-medium border ${tab === "table" ? "bg-[var(--accent)] border-[var(--accent)] text-white" : "border-[var(--border-color)]"}`} onClick={() => setTab("table")}>Как прочитались вопросы</button>
+              {report.length > 0 && <button className={`px-3 py-1.5 rounded-full text-xs font-medium border ${tab === "issues" ? "bg-[var(--accent)] border-[var(--accent)] text-white" : "border-[var(--border-color)]"}`} onClick={() => setTab("issues")}>Ошибки и замечания ({report.length})</button>}
+            </div>
+          )}
+          {tab === "table" && preview.length > 0 && (
+            <div className="max-h-72 overflow-auto rounded-lg border border-[var(--border-color)]">
+              <table className="w-full text-xs min-w-[720px]">
+                <thead className="sticky top-0 bg-[var(--bg-panel)] text-[10px] uppercase font-mono text-[var(--text-muted)]">
+                  <tr>{["Стр.", "Номер", "Дисц.", "Тип", "Вопрос", "Вар.", "Ответ", "Классы"].map(h => <th key={h} className="px-2 py-1.5 text-left">{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {preview.map(r => (
+                    <tr key={r.row} className={`border-t border-[var(--border-color)] ${r.ok ? "" : "bg-rose-500/5 text-rose-700"}`}>
+                      <td className="px-2 py-1.5 tabular-nums text-[var(--text-muted)]">{r.row}</td>
+                      <td className="px-2 py-1.5 font-mono whitespace-nowrap">{r.id || <span className="text-emerald-700">новый</span>}</td>
+                      <td className="px-2 py-1.5 font-mono">{r.discipline}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{r.type ? TYPE_LABEL[r.type] : "—"}</td>
+                      <td className="px-2 py-1.5 max-w-[280px]"><div className="line-clamp-2">{r.text || "—"}</div></td>
+                      <td className="px-2 py-1.5 tabular-nums text-center">{r.options || ""}</td>
+                      <td className="px-2 py-1.5 max-w-[140px] truncate text-emerald-700">{r.ok ? r.answer : "ошибка"}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{r.levels.join(", ")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {summary && summary.rows > preview.length && <div className="px-3 py-2 text-[11px] text-[var(--text-muted)]">Показаны первые {preview.length} из {summary.rows} строк</div>}
+            </div>
+          )}
+
+          {tab === "issues" && report.length > 0 && (
             <div className="max-h-64 overflow-y-auto rounded-lg border border-[var(--border-color)] divide-y divide-[var(--border-color)]">
               {report.map(r => (
                 <div key={r.row} className="px-3 py-2 text-xs">
@@ -151,6 +190,7 @@ export default function ImportModal({ api, disciplines, sets = [], defaultSet, o
           </div>
         </div>
       )}
+      {guide && <ImportGuide disciplineCode={disciplines[0]?.code} onClose={() => setGuide(false)} />}
     </Modal>
   );
 }

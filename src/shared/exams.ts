@@ -321,11 +321,23 @@ const HEADER_ALIASES: Record<string, (typeof SHEET_COLUMNS)[number]> = {
   "активен": "Активен", "активный": "Активен", "данные (json)": "Данные (JSON)", "данные": "Данные (JSON)", "json": "Данные (JSON)",
 };
 export const canonicalHeader = (h: string) => HEADER_ALIASES[String(h || "").trim().toLowerCase().replace(/\s+/g, " ")] || null;
+/**
+ * Варианты в отдельных колонках — как в старом шаблоне среза: «вариант_А»,
+ * «Вариант Б», «Вариант 3». Возвращает порядковый номер варианта (0…) или null.
+ */
+export function optionColumn(h: string): number | null {
+  const m = String(h || "").trim().toLowerCase().match(/^(?:вариант|ответ|option)[\s_№-]*([а-яёa-z]|\d{1,2})$/);
+  if (!m) return null;
+  const k = m[1];
+  if (/\d/.test(k)) return Number(k) >= 1 && Number(k) <= 12 ? Number(k) - 1 : null;
+  const ru = "абвгдежзик".indexOf(k), en = "abcdefghij".indexOf(k);
+  return ru >= 0 ? ru : en >= 0 ? en : null;
+}
 
 const TYPE_ALIASES: Record<string, QuestionType> = Object.fromEntries([
   ...QUESTION_TYPES.map(t => [t.key, t.key]),
   ...QUESTION_TYPES.map(t => [t.label.toLowerCase(), t.key]),
-  ["выбор", "multiple_choice"], ["тест", "multiple_choice"], ["text_input", "free_text"], ["текст", "free_text"],
+  ["выбор", "multiple_choice"], ["тест", "multiple_choice"], ["вписать", "free_text"], ["ввод", "free_text"], ["открытый", "free_text"], ["text_input", "free_text"], ["текст", "free_text"],
   ["число", "number_input"], ["пропуск", "inline_dropdown"], ["таблица", "logic_matrix"], ["порядок", "drag_and_drop"],
 ]);
 

@@ -4,7 +4,7 @@ import { requireFirebaseAuth } from "./authRoutes.js";
 import { callerPermissions } from "../server/access.js";
 import { requireScreen } from "../server/tenantAccess.js";
 import {
-  DISCIPLINE_CODE, QUESTION_ID, SET_ID, canonicalHeader, isQuestionType, normalizeLevels, normalizeSetIds, parseSheetRow,
+  DISCIPLINE_CODE, QUESTION_ID, SET_ID, canonicalHeader, optionColumn, plainText, isQuestionType, normalizeLevels, normalizeSetIds, parseSheetRow,
   questionId, sanitizeContent, validateQuestion,
   type BankQuestion, type Discipline, type Difficulty, type QuestionSet,
 } from "../shared/exams.js";
@@ -320,6 +320,7 @@ router.post("/:tenantId/import", ...edit, async (req: any, res: any) => {
     const header: string[] = Array.isArray(req.body?.header) ? req.body.header.map(String) : [];
     const rows: string[][] = Array.isArray(req.body?.rows) ? req.body.rows.slice(0, 5000) : [];
     const keys = header.map(h => canonicalHeader(h));
+    const optCols = header.map(h => optionColumn(h));
     if (!keys.includes("Вопрос") && !keys.includes("Данные (JSON)")) return fail(res, 400, "Не найдена колонка «Вопрос» — скачайте шаблон");
     if (!keys.includes("Дисциплина") && !keys.includes("Номер")) return fail(res, 400, "Не найдена колонка «Дисциплина»");
 
@@ -329,6 +330,14 @@ router.post("/:tenantId/import", ...edit, async (req: any, res: any) => {
     const extraSet = str(req.body?.setId, 40);
     if (extraSet && !setSnap.docs.some(d => d.id === extraSet)) return fail(res, 400, "Набор для загрузки не найден");
     const known = new Set(ds.docs.map(d => d.id));
+    // Предмет можно написать словом: «математика», «Английский» → код дисциплины по названию.
+    const byName = ds.docs.map(d => ({ code: d.id, name: String(d.data().name || "").toLowerCase() }));
+    const disciplineCode = (v: string) => {
+      const t = v.trim().toLowerCase();
+      if (!t || known.has(t.toUpperCase())) return v;
+      const hit = byName.find(d => d.name === t) || byName.find(d => d.name.startsWith(t) || t.startsWith(d.name));
+      return hit ? hit.code : v;
+    };
     const existingIds = new Set(existing.docs.map(d => d.id));
     const toCreate: Record<string, string> = {};
     for (const d of Array.isArray(req.body?.createDisciplines) ? req.body.createDisciplines : []) {
@@ -339,6 +348,13 @@ router.post("/:tenantId/import", ...edit, async (req: any, res: any) => {
     const parsed = rows.map((r, i) => {
       const obj: Record<string, string> = {};
       keys.forEach((k, j) => { if (k) obj[k] = String(r?.[j] ?? ""); });
+      if (obj["Дисциплина"]) obj["Дисциплина"] = disciplineCode(obj["Дисциплина"]);
+      // Варианты по колонкам («вариант_А», «вариант_Б»…) — собираем в один список.
+      if (!String(obj["Варианты"] || "").trim()) {
+        const opts: string[] = [];
+        optCols.forEach((n, j) => { const v = String(r?.[j] ?? "").trim(); if (n !== null && v) opts[n] = v; });
+        if (opts.length) obj["Варианты"] = opts.filter(Boolean).join("\n");
+      }
       return parseSheetRow(obj, i + 2);
     }).filter(p => p.question || p.issues.length);
     const missing = new Set<string>();
@@ -361,7 +377,14 @@ router.post("/:tenantId/import", ...edit, async (req: any, res: any) => {
       newSets: [...new Set(ok.flatMap(p => p.setNames).filter(n => !setByName.has(n.toLowerCase())))],
     };
     const report = parsed.filter(p => p.issues.length).slice(0, 300).map(p => ({ row: p.rowNumber, id: p.id, discipline: p.disciplineId, issues: p.issues }));
-    if (!req.body?.commit) return res.json({ success: true, summary, report });
+    // Как вопросы прочитались — таблицей, чтобы до записи было видно, что сайт понял файл правильно.
+    const preview = parsed.slice(0, 200).map(p => ({
+      row: p.rowNumber, id: p.id, discipline: p.disciplineId, ok: !!p.question,
+      type: p.question?.type || null, text: p.question ? plainText(p.question as any).slice(0, 200) : "",
+      options: (p.question as any)?.options?.length || 0, answer: String(p.question?.answer || "").slice(0, 80),
+      levels: p.question?.levels || [], sets: p.setNames,
+    }));
+    if (!req.body?.commit) return res.json({ success: true, summary, report, preview });
     if (summary.errors) return fail(res, 400, "В таблице есть строки с ошибками — исправьте их или уберите");
 
     const now = Date.now();

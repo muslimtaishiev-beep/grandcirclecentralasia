@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, FileSpreadsheet, Layers, Loader2, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
+import { Download, FileSpreadsheet, Info, Layers, Loader2, Pencil, PlayCircle, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import {
   DIFFICULTY_LABEL, QUESTION_TYPES, TYPE_LABEL, plainText,
   type BankQuestion, type Difficulty, type QuestionType,
@@ -8,6 +8,7 @@ import { Modal, btn, btnPrimary, card, input, label } from "../journals/componen
 import type { DisciplineRow, SetRow } from "./examApi";
 import QuestionEditor, { type Draft } from "./QuestionEditor";
 import ImportModal from "./ImportModal";
+import ImportGuide from "./ImportGuide";
 import { exportBankXlsx } from "./bankSheets";
 
 type Api = (path: string, init?: RequestInit) => Promise<any>;
@@ -45,6 +46,7 @@ export default function BankTab({ api }: { api: Api }) {
   const [editing, setEditing] = useState<BankQuestion | "new" | null>(null);
   const [discModal, setDiscModal] = useState<DisciplineRow | "new" | null>(null);
   const [importing, setImporting] = useState(false);
+  const [guide, setGuide] = useState(false);
   const [bulkLevels, setBulkLevels] = useState<string | null>(null);
 
   const loadDisciplines = useCallback(async () => {
@@ -115,9 +117,16 @@ export default function BankTab({ api }: { api: Api }) {
   const allChecked = visible.length > 0 && visible.slice(0, limit).every(q => selected.has(q.id));
 
   return (
-    <div className="grid lg:grid-cols-[260px_1fr] gap-4 items-start">
+    <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[260px_minmax(0,1fr)] gap-4 items-start">
+      {/* Плашка-подсказка: как загрузить много вопросов разом */}
+      <button onClick={() => setGuide(true)}
+        className="lg:col-span-2 flex items-center gap-3 text-left rounded-2xl border border-blue-500/30 bg-blue-500/5 hover:bg-blue-500/10 px-4 py-2.5 transition">
+        <Info className="w-5 h-5 text-blue-600 shrink-0" />
+        <span className="flex-1 min-w-0 text-sm text-[var(--text-main)]"><b>Как загрузить много вопросов сразу?</b> <span className="text-[var(--text-muted)] hidden sm:inline">Таблицей Excel — короткая инструкция с показом, куда нажимать.</span></span>
+        <span className="shrink-0 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600"><PlayCircle className="w-4 h-4" /> Смотреть</span>
+      </button>
       {/* Дисциплины */}
-      <aside className={`${card} p-2`}>
+      <aside className={`${card} p-2 min-w-0`}>
         <div className="flex items-center justify-between px-2 py-1.5">
           <span className="text-[11px] uppercase font-mono font-bold text-[var(--text-muted)]">Дисциплины</span>
           {canEdit && <button className="p-1 rounded hover:bg-[var(--bg-surface-hover)] text-[var(--accent)]" title="Новая дисциплина" onClick={() => setDiscModal("new")}><Plus className="w-4 h-4" /></button>}
@@ -297,6 +306,7 @@ export default function BankTab({ api }: { api: Api }) {
           onDone={async (id) => { setSetModal(null); await loadSets(); if (id !== undefined) setSetFilter(id); }}
           onClose={() => setSetModal(null)} />
       )}
+      {guide && <ImportGuide disciplineCode={code || undefined} onClose={() => setGuide(false)} onImport={canEdit ? () => { setGuide(false); setImporting(true); } : undefined} />}
       {importing && <ImportModal api={api} disciplines={disciplines} sets={sets} defaultSet={curSet?.id} onClose={() => setImporting(false)} onDone={async () => { setImporting(false); await refreshAll(); }} />}
       {bulkLevels !== null && (
         <Modal title={`Классы для ${selected.size} вопросов`} onClose={() => setBulkLevels(null)}>
