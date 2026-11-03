@@ -46,7 +46,7 @@ app.use(helmet({
 // целиком — после чего сканер волонтёра получал отказ на каждый скан до
 // конца минуты. В имитации входа заблокированными оказались все пять
 // сканов подряд.
-const SEPARATE_BUCKET = ["/api/forms/checkin", "/api/forms/track/"];
+const SEPARATE_BUCKET = ["/api/forms/checkin", "/api/forms/track/", "/api/exam-public/"];
 
 const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
@@ -127,6 +127,19 @@ const journalSignLimiter = rateLimit({
   validate: false,
 });
 app.use("/api/journals/sign", journalSignLimiter);
+
+// Экзамен: весь класс сдаёт с одного Wi-Fi, и автосохранение ответов идёт
+// от каждого ученика. Общий лимит (500 в минуту на адрес) класс из сотни
+// человек выбирал бы за минуту — свой счётчик, просторный, но конечный.
+const examPublicLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 3000,
+  message: { success: false, error: "Слишком много запросов подряд — подождите минуту." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+});
+app.use("/api/exam-public", examPublicLimiter);
 app.use("/api/admin/login", authLimiter);
 app.use("/api/tenants/request", authLimiter);
 
@@ -245,6 +258,8 @@ import intakeRoutes from "./src/routes/intakeRoutes.js";
 import payrollRoutes from "./src/routes/payrollRoutes.js";
 import journalRoutes from "./src/routes/journalRoutes.js";
 import examRoutes from "./src/routes/examRoutes.js";
+import examAdminRoutes from "./src/routes/examAdminRoutes.js";
+import examPublicRoutes from "./src/routes/examPublicRoutes.js";
 import { sendTestResultEmail } from "./emailService.js";
 
 app.use("/api/auth", authRoutes);
@@ -256,6 +271,8 @@ app.use("/api/intake", intakeRoutes);
 app.use("/api/payroll", payrollRoutes);
 app.use("/api/journals", journalRoutes);
 app.use("/api/exam-builder", examRoutes);
+app.use("/api/exam-admin", examAdminRoutes);
+app.use("/api/exam-public", examPublicRoutes);
 
 let memoryDbStore: any = null;
 

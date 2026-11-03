@@ -35,7 +35,7 @@ export interface ProctoringReport {
   snapshotCount?: number;
 }
 
-interface EvidenceSnapshot {
+export interface EvidenceSnapshot {
   type?: string;
   // The server stores the offset as `atMs` (see /api/exams/proctoring-report);
   // `timestamp` is only accepted for older evidence documents.
@@ -51,6 +51,8 @@ interface Props {
   grade?: string;
   report: ProctoringReport;
   onClose: () => void;
+  /** Свой источник снимков (раздел «Экзамены» отдаёт их через сервер). */
+  loadSnapshots?: () => Promise<EvidenceSnapshot[]>;
 }
 
 const SEVERITY_LABEL: Record<string, string> = {
@@ -118,7 +120,7 @@ function formatDuration(startedAt?: number | null, endedAt?: number | null): str
   return h > 0 ? `${h} ч ${m} мин ${s} с` : `${m} мин ${s} с`;
 }
 
-export default function ProctoringDossier({ shortId, studentName, grade, report, onClose }: Props) {
+export default function ProctoringDossier({ shortId, studentName, grade, report, onClose, loadSnapshots }: Props) {
   const [snapshots, setSnapshots] = useState<EvidenceSnapshot[]>([]);
   const [loadingEvidence, setLoadingEvidence] = useState(false);
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
@@ -130,6 +132,11 @@ export default function ProctoringDossier({ shortId, studentName, grade, report,
     setLoadingEvidence(true);
     (async () => {
       try {
+        if (loadSnapshots) {
+          const list = await loadSnapshots();
+          if (!cancelled) setSnapshots(list);
+          return;
+        }
         const snap = await getDoc(doc(collection(db, 'proctoring_evidence'), `ev_${shortId}`));
         if (cancelled) return;
         const data = snap.exists() ? snap.data() : null;
@@ -141,7 +148,7 @@ export default function ProctoringDossier({ shortId, studentName, grade, report,
       }
     })();
     return () => { cancelled = true; };
-  }, [shortId, report.snapshotCount]);
+  }, [shortId, report.snapshotCount, loadSnapshots]);
 
   const violations = report.violations || [];
 

@@ -11,7 +11,6 @@ import {
   FileSpreadsheet,
   LayoutTemplate,
   Briefcase,
-  FileQuestion,
   CheckSquare,
   MessageSquare,
   Search,
@@ -24,13 +23,11 @@ import {
   Calendar,
   CreditCard,
   DollarSign,
-  ShieldCheck,
   Shield,
   FolderTree,
   FileCheck2,
   Sliders,
   Settings2,
-  GraduationCap,
   QrCode,
   Sparkles,
   BookOpen,
@@ -162,9 +159,9 @@ export default function WorkspaceLayout() {
     ["tickets", "Проверка билетов", "/tickets", QrCode],
     ["crm", "CRM", "/crm/contacts", Briefcase],
     ["exams", "Экзамены", "/exams", ClipboardList],
-    ["tests", "Тесты", "/tests", FileQuestion],
-    ["testsManage", "Проверка и прокторинг", "/tests/manage", ShieldCheck],
-    ["placement", "Вступительный срез", "/placement", GraduationCap],
+    // «Тесты», «Проверка и прокторинг» и «Вступительный срез» собраны в
+    // «Экзамены»; их страницы и старые ссылки учеников продолжают работать,
+    // но в меню их больше нет.
     ["forms", "Заявки и QR", "/builder/forms", FileCheck2],
     ["functions", "Конструктор функций", "/functions/studio", Settings2],
     ["departments", "Оргструктура и отделы", "/settings/departments", FolderTree],
@@ -234,7 +231,7 @@ export default function WorkspaceLayout() {
             {canSee('chat') && <Link to={`/workspace/${orgId}/chat`} className="hover:text-[var(--accent)] transition">Чаты</Link>}
             {canSee('tasks') && <Link to={`/workspace/${orgId}/tasks`} className="hover:text-[var(--accent)] transition">Задачи</Link>}
             {canSee('crm') && <Link to={`/workspace/${orgId}/crm/deals`} className="hover:text-[var(--accent)] transition">CRM</Link>}
-            {canSee('tests') && <Link to={`/workspace/${orgId}/tests`} className="hover:text-[var(--accent)] transition">Тесты</Link>}
+            {canSee('exams') && <Link to={`/workspace/${orgId}/exams`} className="hover:text-[var(--accent)] transition">Экзамены</Link>}
           </div>
 
           <div className="flex-1 relative cursor-pointer" onClick={() => setIsSearchOpen(true)}>

@@ -34,8 +34,8 @@ const access = (need: "view" | "edit") => async (req: any, res: any, next: any) 
     next();
   } catch (e: any) { return fail(res, 500, e.message); }
 };
-const view = [requireFirebaseAuth, requireScreen("exams", (req: any) => req.params.tenantId), access("view")];
-const edit = [requireFirebaseAuth, requireScreen("exams", (req: any) => req.params.tenantId), access("edit")];
+export const view = [requireFirebaseAuth, requireScreen("exams", (req: any) => req.params.tenantId), access("view")];
+export const edit = [requireFirebaseAuth, requireScreen("exams", (req: any) => req.params.tenantId), access("edit")];
 const who = (req: any) => str(req.user?.email || req.user?.uid, 120);
 
 // ── Дисциплины ──────────────────────────────────────────────────────────

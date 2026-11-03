@@ -65,6 +65,7 @@ function QuestionFactoryInner({ question, value, onChange }: Props) {
   const isDropdown = rawType === 'dropdownmultiple' || rawType === 'inlinedropdown' || rawType === 'dropdown';
   const isInlineInputs = rawType === 'inlineinputs';
   const isClickableText = rawType === 'clickabletext';
+  const isTwoStep = rawType === 'twostep';
 
   return (
     <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
@@ -158,12 +159,15 @@ function QuestionFactoryInner({ question, value, onChange }: Props) {
 
         return (
           <div className="overflow-x-auto pt-2">
-            <table className="w-full text-left border-collapse min-w-[500px]">
+            {/* Без жёсткой минимальной ширины: на телефоне таблица 3×3 должна
+                помещаться целиком — прокрутку вбок ученик не замечает и не видит
+                крайний столбец. Широкие таблицы по-прежнему прокручиваются. */}
+            <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b-2 border-slate-200 bg-slate-50/80">
-                  <th className="p-3 text-xs font-bold uppercase tracking-wider text-slate-500">Элемент</th>
+                  <th className="p-2 sm:p-3 text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-500"><span className="hidden sm:inline">Элемент</span></th>
                   {cols.map((col: string, idx: number) => (
-                    <th key={idx} className="p-3 text-xs font-bold uppercase tracking-wider text-center text-slate-700">
+                    <th key={idx} className="p-1.5 sm:p-3 text-[10px] sm:text-xs font-bold uppercase sm:tracking-wider text-center text-slate-700 break-words hyphens-auto align-bottom" lang="ru">
                       {col}
                     </th>
                   ))}
@@ -174,16 +178,16 @@ function QuestionFactoryInner({ question, value, onChange }: Props) {
                   const rowLabel = typeof row === 'string' ? row : (row.label || row.name || `Элемент ${rIdx + 1}`);
                   return (
                     <tr key={rIdx} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-3.5 text-sm font-semibold text-slate-800">{rowLabel}</td>
+                      <td className="p-2 sm:p-3.5 text-sm font-semibold text-slate-800 break-words">{rowLabel}</td>
                       {cols.map((col: string, cIdx: number) => {
                         const cellVal = currentMap[rowLabel] || '';
                         const isSelected = cellVal === col || (cellVal && col.startsWith(cellVal)) || (col && cellVal.startsWith(col));
                         return (
-                          <td key={cIdx} className="p-3 text-center align-middle">
+                          <td key={cIdx} className="p-1.5 sm:p-3 text-center align-middle">
                             <button
                               type="button"
                               onClick={() => handleCellClick(rowLabel, col)}
-                              className={`w-6 h-6 rounded-full border-2 mx-auto flex items-center justify-center transition-all cursor-pointer ${
+                              className={`w-7 h-7 sm:w-6 sm:h-6 rounded-full border-2 mx-auto flex items-center justify-center transition-all cursor-pointer ${
                                 isSelected ? 'border-purple-600 bg-purple-600' : 'border-slate-300 hover:border-purple-400'
                               }`}
                             >
@@ -431,8 +435,29 @@ function QuestionFactoryInner({ question, value, onChange }: Props) {
         );
       })()}
 
+      {/* 8. TWO STEP: найти предложение с ошибкой и вписать исправление */}
+      {isTwoStep && (
+        <div className="space-y-3 pt-2">
+          <ol className="space-y-2">
+            {(question.options || question.content?.options || []).map((opt: string, idx: number) => (
+              <li key={idx} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm leading-relaxed">{opt}</li>
+            ))}
+          </ol>
+          {(question.step2Text || question.content?.step2Text) && (
+            <p className="text-sm font-semibold text-slate-600">{question.step2Text || question.content?.step2Text}</p>
+          )}
+          <input
+            type="text"
+            className="w-full border-b-2 border-slate-300 bg-slate-50/50 text-xl py-3 px-4 rounded-t-xl focus:outline-none focus:border-purple-600 focus:bg-white transition-all font-mono text-slate-900"
+            placeholder="Введите ваш ответ..."
+            value={value || ''}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        </div>
+      )}
+
       {/* Fallback for unrecognized types */}
-      {!isMultipleChoice && !isTextInput && !isMatrix && !isOrdering && !isDropdown && !isInlineInputs && !isClickableText && (
+      {!isMultipleChoice && !isTextInput && !isMatrix && !isOrdering && !isDropdown && !isInlineInputs && !isClickableText && !isTwoStep && (
         <div className="p-4 bg-amber-50 text-amber-800 rounded-2xl border border-amber-200 text-sm font-medium">
           Вопрос типа <b>{question.type}</b>:
           <div className="mt-2">

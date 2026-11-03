@@ -16,9 +16,11 @@ export function Modal({ title, onClose, children, wide, xwide }: { title: string
     return () => window.removeEventListener("keydown", k);
   }, [onClose]);
   return (
-    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 sm:p-3 overflow-y-auto" onMouseDown={onClose}>
-      {/* Телефон — на весь экран: окно с отступами по краям там лишь отнимает место. */}
-      <div className={`${card} w-full min-h-dvh sm:min-h-0 rounded-none sm:rounded-2xl ${xwide ? "max-w-6xl" : wide ? "max-w-3xl" : "max-w-lg"} sm:my-6`} onMouseDown={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 sm:p-3 overflow-y-auto" onMouseDown={onClose}>
+      {/* Телефон — на весь экран: окно с отступами по краям там лишь отнимает место.
+          По вертикали — my-auto, а не items-center: высокое окно с items-center
+          срезалось сверху, и до шапки с кнопками было не долистать. */}
+      <div className={`${card} w-full min-h-dvh sm:min-h-0 rounded-none sm:rounded-2xl ${xwide ? "max-w-6xl" : wide ? "max-w-3xl" : "max-w-lg"} sm:my-auto`} onMouseDown={e => e.stopPropagation()}>
         <div className="sticky top-0 z-10 bg-[var(--bg-surface)] flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-[var(--border-color)] sm:rounded-t-2xl">
           <h3 className="font-bold text-[var(--text-main)] truncate">{title}</h3>
           <button onClick={onClose} className="p-2 -mr-1 rounded hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)]" title="Закрыть"><X className="w-4 h-4" /></button>

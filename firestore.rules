@@ -102,6 +102,10 @@ service cloud.firestore {
       // Экзамены: банк с ключами ответов — только через сервер.
       match /exam_disciplines/{d}  { allow read, write: if false; }
       match /exam_bank/{d}         { allow read, write: if false; }
+      match /exams/{d}             { allow read, write: if false; }
+      match /exam_attempts/{d}     { allow read, write: if false; }
+      match /exam_evidence/{d}     { allow read, write: if false; }
+      match /exam_photos/{d}       { allow read, write: if false; }
       match /members/{d}           { allow read: if member(); allow write: if isTenantAdmin(tenantId); }
       match /chat_channels/{d=**}      { allow read, write: if member(); }
       match /chat_messages/{d=**}      { allow read, write: if member(); }
@@ -191,6 +195,7 @@ service cloud.firestore {
     // его с бронями — на последнее место сели бы двое.
     match /intake_streams/{docId}     { allow read: if hasTenantAccess(); allow write: if false; }
     match /journal_sign_tokens/{docId} { allow read, write: if false; }
+    match /exam_links/{docId} { allow read, write: if false; }
     match /bookable_resources/{docId} { allow read: if hasTenantAccess(); allow write: if false; }
     match /resource_bookings/{docId}  { allow read: if hasTenantAccess(); allow write: if false; }
     // Заявки закрыты ПРАВОМ, а не одним лишь членством: в них лежит токен
