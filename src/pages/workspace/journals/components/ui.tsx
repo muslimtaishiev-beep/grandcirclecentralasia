@@ -49,12 +49,20 @@ export function OptionPicker({
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const box = useRef<HTMLDivElement>(null);
+  const field = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!open) return;
-    const h = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
+    const h = (e: PointerEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("pointerdown", h);
+    return () => document.removeEventListener("pointerdown", h);
   }, [open]);
+
+  /**
+   * Закрыть список и снять фокус с поля. Без blur на iPhone поле остаётся
+   * в фокусе (Safari не переводит его на нажатую кнопку), клавиатура
+   * висит, а повторное нажатие на поле уже не открывает список.
+   */
+  const close = () => { setOpen(false); setQ(""); field.current?.blur(); };
 
   const chosen = new Set(multiple ? values || [] : value ? [value] : []);
   const hits = useMemo(() => {
@@ -66,15 +74,16 @@ export function OptionPicker({
     return list.slice(0, 80);
   }, [options, q]);
 
+  // После выбора список закрывается и в режиме «несколько»: открытый, он
+  // закрывал собой остальную форму. Ещё одного — снова нажать на поле.
   const pick = (label: string) => {
     if (multiple) {
       const next = chosen.has(label) ? [...chosen].filter(x => x !== label) : [...chosen, label];
       onChangeMany?.(next);
-      setQ("");
     } else {
       onChange?.(label);
-      setOpen(false); setQ("");
     }
+    close();
   };
 
   // Группа целиком — для «опоздал весь 7А».
@@ -87,7 +96,7 @@ export function OptionPicker({
           {[...chosen].map(c => (
             <span key={c} className="inline-flex items-center gap-1 text-xs bg-[var(--accent)]/10 text-[var(--accent)] rounded-full pl-2 pr-1 py-0.5">
               {c}
-              <button type="button" onClick={() => pick(c)} className="hover:bg-[var(--accent)]/20 rounded-full p-0.5"><X className="w-3 h-3" /></button>
+              <button type="button" onClick={() => onChangeMany?.([...chosen].filter(x => x !== c))} className="hover:bg-[var(--accent)]/20 rounded-full p-0.5" aria-label={`Убрать ${c}`}><X className="w-3 h-3" /></button>
             </span>
           ))}
         </div>
@@ -98,8 +107,11 @@ export function OptionPicker({
           className={`${input} pl-8 ${!multiple && value ? "font-medium" : ""}`}
           placeholder={!multiple && value ? value : placeholder}
           value={open ? q : (!multiple && value) || ""}
+          ref={field}
           onFocus={() => { setOpen(true); setQ(""); }}
+          onClick={() => setOpen(true)}
           onChange={e => { setQ(e.target.value); setOpen(true); }}
+          onKeyDown={e => { if (e.key === "Escape" && open) { e.stopPropagation(); close(); } }}
           disabled={disabled}
         />
         {!multiple && value && !disabled && (
@@ -110,7 +122,7 @@ export function OptionPicker({
         <div className="absolute z-30 mt-1 w-full max-h-64 overflow-y-auto rounded-lg border border-[var(--border-color)] bg-[var(--bg-surface)] shadow-lg">
           {groupHit.length > 0 && (
             <button type="button" className="w-full text-left px-3 py-2 text-sm font-semibold text-[var(--accent)] hover:bg-[var(--bg-surface-hover)] border-b border-[var(--border-color)]"
-              onClick={() => { onChangeMany?.([...new Set([...chosen, ...groupHit.map(o => o.label)])]); setQ(""); }}>
+              onClick={() => { onChangeMany?.([...new Set([...chosen, ...groupHit.map(o => o.label)])]); close(); }}>
               Добавить всю группу «{groupHit[0].group}» ({groupHit.length})
             </button>
           )}

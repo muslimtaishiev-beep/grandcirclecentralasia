@@ -120,7 +120,7 @@ export default function EntryPanel({
           return (
             <>
               <OptionPicker options={c.options || []} multiple values={people} onChangeMany={setPeople} placeholder="Поиск по имени или классу…" />
-              <p className="text-[11px] text-[var(--text-muted)] mt-1">Можно выбрать несколько — создастся по записи на каждого. Введите класс, чтобы добавить его целиком.</p>
+              <p className="text-[11px] text-[var(--text-muted)] mt-1">Чтобы добавить ещё ученика, снова нажмите на поле — создастся по записи на каждого. Введите класс (например 8А), чтобы добавить его целиком.</p>
             </>
           );
         }
