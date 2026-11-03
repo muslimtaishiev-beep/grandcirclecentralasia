@@ -32,6 +32,15 @@ export default function JournalSettingsTab({ journal, api, onSaved, onArchived }
 
   useEffect(() => { api("/employees").then(j => setEmployees(j.employees || [])).catch(() => {}); }, [api]);
 
+  const dirty = JSON.stringify({ title, description, columns, settings, access })
+    !== JSON.stringify({ title: journal.title, description: journal.description, columns: journal.columns, settings: journal.settings, access: journal.access });
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
   const upd = (id: string, patch: Partial<JournalColumn>) => setColumns(cs => cs.map(c => (c.id === id ? { ...c, ...patch } : c)));
   const move = (i: number, d: number) => setColumns(cs => {
     const n = [...cs]; const j = i + d;
@@ -185,7 +194,7 @@ export default function JournalSettingsTab({ journal, api, onSaved, onArchived }
             {memberRows.map(([uid, r]) => (
               <div key={uid} className="flex flex-wrap items-center gap-2">
                 <span className="flex-1 min-w-[160px] text-sm text-[var(--text-main)]">{empName(uid)}</span>
-                <select className={`${input} w-auto`} value={r} onChange={e => setAccess(a => ({ ...a, members: { ...a.members, [uid]: e.target.value as JournalRole } }))}>
+                <select className={`${input} !w-auto`} value={r} onChange={e => setAccess(a => ({ ...a, members: { ...a.members, [uid]: e.target.value as JournalRole } }))}>
                   {(Object.keys(ROLE_LABEL) as JournalRole[]).map(x => <option key={x} value={x}>{ROLE_LABEL[x]}</option>)}
                 </select>
                 <button className={btn} onClick={() => setAccess(a => { const m = { ...a.members }; delete m[uid]; return { ...a, members: m }; })}><Trash2 className="w-4 h-4" /></button>
@@ -203,10 +212,11 @@ export default function JournalSettingsTab({ journal, api, onSaved, onArchived }
 
       <button className={`${btn} text-rose-600`} onClick={archive}><Archive className="w-4 h-4" /> Убрать журнал в архив</button>
 
-      <div className="fixed bottom-4 right-4 z-40 flex items-center gap-3">
-        {error && <div className="text-sm text-rose-600 bg-[var(--bg-surface)] border border-rose-500/30 rounded-lg px-3 py-2 shadow max-w-md">{error}</div>}
+      <div className="fixed bottom-3 left-3 right-3 md:left-auto md:bottom-4 md:right-4 z-40 flex flex-col-reverse md:flex-row items-stretch md:items-center gap-2 md:gap-3">
+        {error && <div className="text-sm text-rose-600 bg-[var(--bg-surface)] border border-rose-500/30 rounded-lg px-3 py-2 shadow md:max-w-md">{error}</div>}
         {notice && <div className="text-sm text-emerald-600 bg-[var(--bg-surface)] border border-emerald-500/30 rounded-lg px-3 py-2 shadow">{notice}</div>}
-        <button className={`${btnPrimary} shadow-lg px-5 py-3`} onClick={save} disabled={busy}>
+        {dirty && !notice && <div className="text-sm text-amber-600 bg-[var(--bg-surface)] border border-amber-500/30 rounded-lg px-3 py-2 shadow">Есть несохранённые изменения</div>}
+        <button className={`${btnPrimary} shadow-lg px-5 py-3 justify-center`} onClick={save} disabled={busy}>
           {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Сохранить настройки
         </button>
       </div>
@@ -237,22 +247,27 @@ function ColSelect({ title, value, cols, onChange }: { title: string; value?: st
   );
 }
 
-/** Варианты списка: вставка из таблицы или загрузка CSV. */
+/**
+ * Варианты списка: вставка из таблицы или загрузка CSV.
+ *
+ * Вставленное применяется сразу, без отдельной кнопки: раньше список
+ * попадал в журнал только по «Применить», и после «Сохранить настройки»
+ * вставленные ученики молча терялись.
+ */
 function OptionsEditor({ column, onChange }: { column: JournalColumn; onChange: (o: JournalColumn["options"]) => void }) {
   const [text, setText] = useState(() => optionsToTable(column.options));
+  const [initial] = useState(() => column.options || []);
   const [open, setOpen] = useState(false);
   const opts = column.options || [];
   const groups = new Set(opts.map(o => o.group).filter(Boolean));
-  const apply = (t: string, mode: "replace" | "add") => {
-    const parsed = parseOptionsTable(t);
-    const next = mode === "replace" ? parsed : [...opts, ...parsed.filter(p => !opts.some(o => o.label.toLowerCase() === p.label.toLowerCase()))];
-    onChange(next);
-    setText(optionsToTable(next));
-  };
+  const edit = (t: string) => { setText(t); onChange(parseOptionsTable(t)); };
   const readFile = async (f?: File) => {
     if (!f) return;
-    const t = await f.text();
-    apply(t, "add");
+    const added = parseOptionsTable(await f.text()).filter(p => !opts.some(o => o.label.toLowerCase() === p.label.toLowerCase()));
+    const next = [...opts, ...added];
+    onChange(next);
+    setText(optionsToTable(next));
+    setOpen(true);
   };
   return (
     <div className="rounded-lg bg-[var(--bg-app)] border border-[var(--border-color)] p-3 space-y-2">
@@ -261,19 +276,16 @@ function OptionsEditor({ column, onChange }: { column: JournalColumn; onChange: 
         <span className="text-[var(--text-muted)] truncate max-w-full">{opts.slice(0, 5).map(o => o.label).join(", ")}{opts.length > 5 ? "…" : ""}</span>
         <div className="flex-1" />
         <button className={btn} onClick={() => setOpen(v => !v)}>{open ? "Свернуть" : "Изменить список"}</button>
-        <label className={btn}><Upload className="w-4 h-4" /> Из файла CSV<input type="file" accept=".csv,.txt,.tsv" className="hidden" onChange={e => readFile(e.target.files?.[0])} /></label>
+        <label className={btn}><Upload className="w-4 h-4" /> Из файла CSV<input type="file" accept=".csv,.txt,.tsv" className="hidden" onChange={e => { void readFile(e.target.files?.[0]); e.target.value = ""; }} /></label>
       </div>
       {open && (
         <>
           <p className="text-[11px] text-[var(--text-muted)]">
-            Скопируйте столбцы из Excel или Google Таблиц и вставьте сюда. Первый столбец — вариант, второй (необязательно) — группа, например класс ученика: по группам строится статистика.
+            Скопируйте столбцы из Excel или Google Таблиц и вставьте сюда. Первый столбец — вариант, второй (необязательно) — группа, например класс ученика: по группам строится статистика. Не забудьте «Сохранить настройки».
           </p>
-          <textarea rows={8} className={`${input} font-mono text-xs`} value={text} onChange={e => setText(e.target.value)}
+          <textarea rows={8} className={`${input} font-mono text-xs`} value={text} onChange={e => edit(e.target.value)}
             placeholder={"Иванов Иван\t7А\nПетрова Мария\t7А\nСидоров Пётр\t8Б"} />
-          <div className="flex gap-2">
-            <button className={btnPrimary} onClick={() => apply(text, "replace")}>Применить ({parseOptionsTable(text).length})</button>
-            <button className={btn} onClick={() => { setText(optionsToTable(opts)); }}>Отменить правку</button>
-          </div>
+          <button className={btn} onClick={() => { onChange(initial); setText(optionsToTable(initial)); }}>Вернуть как было</button>
         </>
       )}
     </div>
@@ -290,10 +302,10 @@ function SubfieldsEditor({ column, columns, onChange }: { column: JournalColumn;
       <div className="text-sm font-semibold text-[var(--text-main)]">Что видит человек после сканирования</div>
       {subs.map(s => (
         <div key={s.id} className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-mono uppercase text-[var(--text-muted)] w-28">{SUB_LABEL[s.type]}</span>
+          <span className="text-[11px] font-mono uppercase text-[var(--text-muted)] w-full sm:w-28">{SUB_LABEL[s.type]}</span>
           <input className={`${input} flex-1 min-w-[180px]`} value={s.label} onChange={e => set(s.id, { label: e.target.value })} />
           {s.type === "text" && (
-            <select className={`${input} w-auto`} value={s.matchColumnId || ""} onChange={e => set(s.id, { matchColumnId: e.target.value || undefined })} title="Сверка с записью">
+            <select className={`${input} !w-auto`} value={s.matchColumnId || ""} onChange={e => set(s.id, { matchColumnId: e.target.value || undefined })} title="Сверка с записью">
               <option value="">Без сверки</option>
               {matchable.map(c => <option key={c.id} value={c.id}>Сверять с «{c.label}»</option>)}
             </select>
@@ -310,7 +322,7 @@ function SubfieldsEditor({ column, columns, onChange }: { column: JournalColumn;
         ))}
         <div className="flex-1" />
         <span className="text-xs text-[var(--text-muted)]">QR действует, ч:</span>
-        <input type="number" min={1} max={336} className={`${input} w-20`} value={column.tokenTtlHours || 24} onChange={e => onChange({ tokenTtlHours: Number(e.target.value) || 24 })} />
+        <input type="number" min={1} max={336} className={`${input} !w-20`} value={column.tokenTtlHours || 24} onChange={e => onChange({ tokenTtlHours: Number(e.target.value) || 24 })} />
       </div>
       <p className="text-[11px] text-[var(--text-muted)]">При сверке человек должен написать то же имя, что в записи: так подпись нельзя поставить за другого, просто отсканировав чужой QR.</p>
     </div>

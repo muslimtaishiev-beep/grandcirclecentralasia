@@ -381,9 +381,10 @@ router.put("/:tenantId/:journalId", ...guard, async (req: any, res: any) => {
     if (!req.caller.full && got.j.createdBy !== req.caller.uid && patch.access!.members[req.caller.uid] !== "manage") {
       patch.access!.members[req.caller.uid] = "manage";
     }
-    await col(req.params.tenantId, "journals").doc(got.j.id).set(patch, { merge: true });
-    // merge не удаляет ключи из словаря members — перезаписываем его целиком.
-    await col(req.params.tenantId, "journals").doc(got.j.id).update({ "access.members": patch.access!.members });
+    // update, а не set с merge: merge сливает вложенные словари и не удаляет
+    // из них ключи — убранный «Срок» или снятый с доступа сотрудник
+    // оставались в базе. update заменяет каждое поле верхнего уровня целиком.
+    await col(req.params.tenantId, "journals").doc(got.j.id).update(patch);
     return res.json({ success: true, journal: { ...got.j, ...patch } });
   } catch (e: any) { return fail(res, 500, e.message); }
 });

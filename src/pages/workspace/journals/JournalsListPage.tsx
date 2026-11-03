@@ -27,13 +27,13 @@ export default function JournalsListPage() {
   useEffect(() => { void load(); }, [load]);
 
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
+    <div className="max-w-5xl mx-auto space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1">
-          <h1 className="text-2xl font-bold text-[var(--text-main)]">Журналы</h1>
+          <h1 className="text-xl md:text-2xl font-bold text-[var(--text-main)]">Журналы</h1>
           <p className="text-sm text-[var(--text-muted)]">Отработки, инструктажи, выдача имущества — в одном месте, с подписями по QR и статистикой</p>
         </div>
-        {canCreate && <button className={btnPrimary} onClick={() => setCreating(true)}><Plus className="w-4 h-4" /> Новый журнал</button>}
+        {canCreate && <button className={`${btnPrimary} w-full sm:w-auto justify-center`} onClick={() => setCreating(true)}><Plus className="w-4 h-4" /> Новый журнал</button>}
       </div>
 
       {loading && <div className="py-10 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--text-muted)]" /></div>}

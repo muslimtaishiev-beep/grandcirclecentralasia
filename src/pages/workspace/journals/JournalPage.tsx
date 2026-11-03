@@ -146,36 +146,40 @@ export default function JournalPage() {
   const allChecked = visible.length > 0 && visible.every(e => selected.has(e.id));
 
   return (
-    <div className="p-4 md:p-6 space-y-4 max-w-[1600px] mx-auto">
+    <div className="space-y-4 max-w-[1600px] mx-auto">
       <div className="flex flex-wrap items-center gap-3">
-        <Link to={`/workspace/${tenantId}/journals`} className="p-2 rounded-lg hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)]" title="К журналам"><ArrowLeft className="w-5 h-5" /></Link>
+        <Link to={`/workspace/${tenantId}/journals`} className="p-2 -ml-2 rounded-lg hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)]" title="К журналам"><ArrowLeft className="w-5 h-5" /></Link>
         <div className="flex-1 min-w-0">
-          <h1 className="text-xl md:text-2xl font-bold text-[var(--text-main)] truncate">{journal.title}</h1>
-          {journal.description && <p className="text-sm text-[var(--text-muted)] truncate">{journal.description}</p>}
+          <h1 className="text-lg md:text-2xl font-bold text-[var(--text-main)] truncate">{journal.title}</h1>
+          {journal.description && <p className="hidden sm:block text-sm text-[var(--text-muted)] truncate">{journal.description}</p>}
         </div>
-        {canEdit && tab === "entries" && <button className={btnPrimary} onClick={() => setEditing("new")}><Plus className="w-4 h-4" /> Новая запись</button>}
+        {canEdit && tab === "entries" && <button className={`${btnPrimary} w-full sm:w-auto justify-center`} onClick={() => setEditing("new")}><Plus className="w-4 h-4" /> Новая запись</button>}
       </div>
 
-      <div className="flex gap-1 border-b border-[var(--border-color)]">
+      <div className="flex gap-1 border-b border-[var(--border-color)] overflow-x-auto hide-scrollbar">
         {([["entries", `Записи (${entries.length})`], ["stats", "Статистика"], ...(canManage ? [["settings", "Настройки"]] : [])] as [typeof tab, string][]).map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${tab === k ? "border-[var(--accent)] text-[var(--accent)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-main)]"}`}>{t}</button>
+            className={`px-3 sm:px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition ${tab === k ? "border-[var(--accent)] text-[var(--accent)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-main)]"}`}>{t}</button>
         ))}
       </div>
 
       {tab === "stats" && <JournalStats journal={journal} entries={entries} />}
-      {tab === "settings" && canManage && (
-        <JournalSettingsTab journal={journal} api={api} onSaved={setJournal} onArchived={() => navigate(`/workspace/${tenantId}/journals`)} />
+      {/* Настройки не размонтируются при смене вкладки: иначе несохранённые
+          правки пропадали, стоило заглянуть в записи. */}
+      {canManage && (
+        <div className={tab === "settings" ? "" : "hidden"}>
+          <JournalSettingsTab journal={journal} api={api} onSaved={setJournal} onArchived={() => navigate(`/workspace/${tenantId}/journals`)} />
+        </div>
       )}
 
       {tab === "entries" && (
         <>
           <div className={`${card} p-3 flex flex-wrap items-center gap-2`}>
-            <div className="relative flex-1 min-w-[200px]">
+            <div className="relative w-full sm:w-auto sm:flex-1 sm:min-w-[200px]">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
               <input className={`${input} pl-9`} placeholder="Поиск по всем колонкам" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            <select className={`${input} w-auto`} value={status} onChange={e => setStatus(e.target.value as any)}>
+            <select className={`${input} flex-1 sm:flex-none sm:!w-44`} value={status} onChange={e => setStatus(e.target.value as any)}>
               <option value="">Все статусы</option>
               {(Object.keys(STATUS_LABEL) as EntryStatus[]).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
             </select>
@@ -184,7 +188,7 @@ export default function JournalPage() {
             </button>
             <button className={btn} onClick={exportCsv} title="Выгрузить то, что сейчас видно"><Download className="w-4 h-4" /> CSV</button>
             <button className={btn} onClick={load} title="Обновить"><RefreshCw className="w-4 h-4" /></button>
-            <span className="text-xs text-[var(--text-muted)] ml-auto">{visible.length === entries.length ? `${entries.length} записей` : `${visible.length} из ${entries.length}`}</span>
+            <span className="w-full sm:w-auto text-xs text-[var(--text-muted)] sm:ml-auto">{visible.length === entries.length ? `${entries.length} записей` : `${visible.length} из ${entries.length}`}</span>
           </div>
 
           {showFilters && (
@@ -195,7 +199,7 @@ export default function JournalPage() {
           )}
 
           {selected.size > 0 && canEdit && (
-            <div className={`${card} p-3 flex flex-wrap items-center gap-2 border-[var(--accent)]`}>
+            <div className={`${card} p-3 flex flex-wrap items-center gap-2 border-[var(--accent)] sticky top-0 z-20`}>
               <b className="text-sm text-[var(--text-main)]">Выбрано: {selected.size}</b>
               <button className={btnPrimary} onClick={() => setBulk(true)}>Заполнить колонку у всех</button>
               {canManage && (
@@ -211,7 +215,31 @@ export default function JournalPage() {
             </div>
           )}
 
-          <div className={`${card} overflow-x-auto`}>
+          {/* Телефон: карточки. Девять колонок таблицы на узком экране — это
+              горизонтальная прокрутка, в которой теряется, чья это строка. */}
+          <div className="md:hidden space-y-2">
+            {visible.length === 0 && (
+              <div className={`${card} px-4 py-10 text-center text-sm text-[var(--text-muted)]`}>
+                {entries.length ? "Ничего не найдено — измените поиск или фильтры" : canEdit ? "Записей пока нет — нажмите «Новая запись»" : "Записей пока нет"}
+              </div>
+            )}
+            {visible.length > 0 && canEdit && (
+              <label className="flex items-center gap-2 px-1 text-xs text-[var(--text-muted)]">
+                <input type="checkbox" checked={allChecked} onChange={e => setSelected(e.target.checked ? new Set(visible.map(x => x.id)) : new Set())} /> Выбрать все ({visible.length})
+              </label>
+            )}
+            {visible.map(e => (
+              <EntryCard key={e.id} journal={journal} entry={e} status={entryStatus(journal, e, today)}
+                canEdit={canEdit} canManage={canManage}
+                checked={selected.has(e.id)}
+                onCheck={on => setSelected(p => { const n = new Set(p); if (on) n.add(e.id); else n.delete(e.id); return n; })}
+                onOpen={() => setEditing(e)}
+                onQuick={(c, v) => quickSet(e, c, v)}
+                onQr={c => setQr({ entry: e, column: c })} />
+            ))}
+          </div>
+
+          <div className={`${card} overflow-x-auto hidden md:block`}>
             <table className="w-full text-sm">
               <thead className="bg-[var(--bg-panel)] text-[11px] uppercase font-mono text-[var(--text-muted)]">
                 <tr>
@@ -269,6 +297,45 @@ export default function JournalPage() {
             setBulk(false); setSelected(new Set());
           }} />
       )}
+    </div>
+  );
+}
+
+/** Запись карточкой: главное сверху, быстрые отметки — прямо в карточке. */
+function EntryCard({ journal, entry, status, canEdit, canManage, checked, onCheck, onOpen, onQuick, onQr }: {
+  journal: Journal; entry: JournalEntry; status: EntryStatus; canEdit: boolean; canManage: boolean;
+  checked: boolean; onCheck: (on: boolean) => void; onOpen: () => void;
+  onQuick: (c: JournalColumn, v: any) => void; onQr: (c: JournalColumn) => void;
+}) {
+  const head = journal.columns.find(c => c.id === journal.settings.personColumnId) || journal.columns[0];
+  const rest = journal.columns.filter(c => c.id !== head?.id);
+  const interactive = (c: JournalColumn) => c.type === "checkbox" || c.type === "qr_sign";
+  return (
+    <div className={`${card} p-3 active:bg-[var(--bg-surface-hover)]`} onClick={onOpen}>
+      <div className="flex items-start gap-2">
+        {canEdit && (
+          <input type="checkbox" className="mt-1 w-4 h-4 shrink-0" checked={checked}
+            onClick={ev => ev.stopPropagation()} onChange={ev => onCheck(ev.target.checked)} />
+        )}
+        <div className="flex-1 min-w-0 font-semibold text-[var(--text-main)] break-words">
+          {head ? (displayValue(head, entry.values?.[head.id]) || "—") : "Запись"}
+        </div>
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap shrink-0 ${STATUS_TONE[status]}`}>{STATUS_LABEL[status]}</span>
+      </div>
+      <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm items-center">
+        {rest.map(c => {
+          const v = entry.values?.[c.id];
+          if (!interactive(c) && !isFilled(c, v) && c.type !== "name_sign") return null;
+          return (
+            <React.Fragment key={c.id}>
+              <dt className="text-xs text-[var(--text-muted)]">{c.label}</dt>
+              <dd className="min-w-0">
+                <Cell column={c} entry={entry} canEdit={canEdit && (!c.managersOnly || canManage)} onQuick={v2 => onQuick(c, v2)} onQr={() => onQr(c)} />
+              </dd>
+            </React.Fragment>
+          );
+        })}
+      </dl>
     </div>
   );
 }

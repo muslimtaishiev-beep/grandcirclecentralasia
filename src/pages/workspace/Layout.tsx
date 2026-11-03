@@ -35,6 +35,7 @@ import {
   QrCode,
   Sparkles,
   BookOpen,
+  X,
 } from "lucide-react";
 import GlobalNotifications from "../../components/workspace/GlobalNotifications";
 import QuickSetupWizard from "../../components/workspace/QuickSetupWizard";
@@ -200,11 +201,11 @@ export default function WorkspaceLayout() {
       {/* Top Navigation Bar */}
       {/* Фон и размытие шапки — слоем позади: с backdrop-filter на самой
           шапке окно поиска (fixed) сжималось бы до её 56 пикселей. */}
-      <div className="relative h-14 w-full flex items-center justify-between px-4 z-10 border-b border-[var(--border-color)]">
+      <div className="relative h-14 shrink-0 w-full flex items-center justify-between gap-2 px-2 sm:px-4 z-10 border-b border-[var(--border-color)]">
         <div aria-hidden className="absolute inset-0 -z-10 bg-[var(--bg-panel)] backdrop-blur-md pointer-events-none" />
         
         {/* Left: Logo & Menu Toggle */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
           <button 
             onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
             className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg text-[var(--text-main)] transition cursor-pointer"
@@ -213,11 +214,11 @@ export default function WorkspaceLayout() {
             <Menu className="w-5 h-5" />
           </button>
           
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded bg-[var(--accent)] flex items-center justify-center">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 shrink-0 rounded bg-[var(--accent)] flex items-center justify-center">
               <Building className="w-4 h-4 text-white" />
             </div>
-            <span className="font-bold text-[var(--text-main)] hidden sm:block">
+            <span className="font-bold text-[var(--text-main)] truncate text-sm sm:text-base">
               {activeTenant?.name && !activeTenant.name.startsWith("org_") ? activeTenant.name : "Воркспейс"}
             </span>
           </div>
@@ -250,7 +251,7 @@ export default function WorkspaceLayout() {
         <SpotlightCommandBar isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
 
         {/* Right: User Profile & Tools */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1 sm:gap-3 shrink-0">
           <button 
             onClick={() => setIsSearchOpen(true)} 
             className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full text-[var(--text-main)] transition cursor-pointer"
@@ -266,7 +267,7 @@ export default function WorkspaceLayout() {
           {/* Profile Button / Link to Settings */}
           <button 
             onClick={() => navigate(`/workspace/${orgId}/settings/roles`)}
-            className="flex items-center gap-2 pl-2 border-l border-[var(--border-color)] cursor-pointer hover:opacity-80 transition"
+            className="hidden sm:flex items-center gap-2 pl-2 border-l border-[var(--border-color)] cursor-pointer hover:opacity-80 transition"
             title="Роли и доступы"
           >
             <div className="w-8 h-8 rounded-full bg-[var(--accent)] flex items-center justify-center font-bold text-white text-xs">
@@ -288,8 +289,51 @@ export default function WorkspaceLayout() {
       {/* Main Content Area */}
       <div className="flex flex-1 overflow-hidden z-10">
         
-        {/* Thin Left Sidebar (Icons Only) */}
-        <div className="relative z-0 w-16 border-r border-[var(--border-color)] flex flex-col items-center py-4 gap-2">
+        {/* Меню на телефоне — выезжающая панель с подписями. Узкая колонка
+            из двух десятков иконок на телефоне не помещалась по высоте и не
+            прокручивалась: нижние разделы и «Выйти» были недостижимы, а
+            ширину отнимала у страницы. */}
+        {isMobileSidebarOpen && (
+          <div className="md:hidden fixed inset-0 z-50 flex" role="dialog" aria-label="Меню">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setIsMobileSidebarOpen(false)} />
+            <nav className="relative w-72 max-w-[85vw] h-full bg-[var(--bg-surface)] border-r border-[var(--border-color)] shadow-2xl flex flex-col">
+              <div className="flex items-center justify-between px-4 h-14 border-b border-[var(--border-color)] shrink-0">
+                <span className="font-bold text-[var(--text-main)] truncate">
+                  {activeTenant?.name && !activeTenant.name.startsWith("org_") ? activeTenant.name : "Воркспейс"}
+                </span>
+                <button onClick={() => setIsMobileSidebarOpen(false)} className="p-2 -mr-2 rounded-lg text-[var(--text-muted)]" aria-label="Закрыть меню"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+                {navItems.map(item => {
+                  const isActive = location.pathname.includes(item.path);
+                  return (
+                    <Link key={item.name} to={item.path} onClick={() => setIsMobileSidebarOpen(false)}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition ${
+                        isActive ? "bg-[var(--accent)] text-white" : "text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]"
+                      }`}>
+                      <item.icon className="w-5 h-5 shrink-0" />
+                      <span className="truncate">{item.name}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+              <div className="p-2 border-t border-[var(--border-color)] shrink-0 space-y-0.5">
+                <button onClick={() => { setIsMobileSidebarOpen(false); navigate(`/workspace/${orgId}/settings/roles`); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]">
+                  <span className="w-5 h-5 rounded-full bg-[var(--accent)] text-white text-[10px] font-bold flex items-center justify-center">{user?.email?.[0]?.toUpperCase() || "M"}</span>
+                  <span className="truncate">{user?.email || "Профиль"}</span>
+                </button>
+                <button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-red-500 hover:bg-red-500/10">
+                  <LogOut className="w-5 h-5" /> Выйти
+                </button>
+              </div>
+            </nav>
+          </div>
+        )}
+
+        {/* Левая колонка — с планшета и шире. Прокручивается, если разделов
+            больше, чем помещается по высоте; кнопка меню раскрывает подписи. */}
+        <div className={`relative z-0 hidden md:flex ${isMobileSidebarOpen ? "w-56 items-stretch px-2" : "w-16 items-center"} shrink-0 border-r border-[var(--border-color)] flex-col py-4 gap-2 overflow-y-auto hide-scrollbar transition-[width]`}>
           <div aria-hidden className="absolute inset-0 -z-10 bg-[var(--bg-panel)] backdrop-blur-md pointer-events-none" />
           {navItems.map((item) => {
             const isActive = location.pathname.includes(item.path);
@@ -298,15 +342,16 @@ export default function WorkspaceLayout() {
                 key={item.name}
                 to={item.path}
                 title={item.name}
-                data-tooltip={item.name}
+                data-tooltip={isMobileSidebarOpen ? undefined : item.name}
                 data-tooltip-pos="right"
-                className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all group relative ${
+                className={`${isMobileSidebarOpen ? "h-11 px-3 gap-3 justify-start" : "w-12 h-12 justify-center"} shrink-0 rounded-xl flex items-center transition-all group relative ${
                   isActive 
                     ? 'bg-[var(--accent)] text-white shadow-md' 
                     : 'text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/5 hover:text-[var(--text-main)]'
                 }`}
               >
-                <item.icon className={`w-5 h-5 ${isActive ? 'scale-110' : 'group-hover:scale-110 transition-transform'}`} />
+                <item.icon className={`w-5 h-5 shrink-0 ${isActive ? 'scale-110' : 'group-hover:scale-110 transition-transform'}`} />
+                {isMobileSidebarOpen && <span className="text-sm font-medium truncate">{item.name}</span>}
                 {isActive && (
                   <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-white rounded-r-full shadow-[0_0_8px_rgba(255,255,255,0.8)]"></div>
                 )}
@@ -314,7 +359,7 @@ export default function WorkspaceLayout() {
             )
           })}
 
-          <div className="mt-auto">
+          <div className="mt-auto shrink-0">
             <button 
               onClick={logout}
               className="w-12 h-12 rounded-xl flex items-center justify-center text-[var(--text-muted)] hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 transition-colors"
@@ -326,15 +371,16 @@ export default function WorkspaceLayout() {
         </div>
 
         {/* Dynamic Outlet (The actual page content) */}
-        <div className="relative flex-1 overflow-hidden p-2 sm:p-4 md:p-6">
+        <div className="relative flex-1 min-w-0 overflow-hidden md:p-4 lg:p-6">
           {/* Размытие — отдельным слоем позади, а не на самом контейнере:
               backdrop-filter у предка делает его опорой для position: fixed,
               и все попапы страниц встают в начало прокрутки, а не на экран. */}
-          <div aria-hidden className="absolute inset-2 sm:inset-4 md:inset-6 rounded-2xl backdrop-blur-xl pointer-events-none" />
-          <div className="relative w-full h-full bg-[var(--bg-surface)]/80 border border-[var(--border-color)] rounded-2xl shadow-xl overflow-y-auto">
+          <div aria-hidden className="absolute inset-0 md:inset-4 lg:inset-6 md:rounded-2xl backdrop-blur-xl pointer-events-none" />
+          {/* На телефоне — без рамки и отступов вокруг: каждый пиксель ширины у страницы. */}
+          <div className="relative w-full h-full bg-[var(--bg-surface)]/80 md:border border-[var(--border-color)] md:rounded-2xl md:shadow-xl overflow-y-auto">
             {/* Some pages (like Chat) have their own strict layouts, others have normal padding. 
                 For Chat specifically, we might want to override padding, but let's keep it clean for now. */}
-            <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-[var(--bg-app)]">
+            <main className="flex-1 min-h-full p-3 md:p-6 bg-[var(--bg-app)]">
                {suspended && isSuperadmin && (
                  <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700" data-testid="suspended-banner">
                    Организация приостановлена. Сотрудники не могут войти; вы видите её как суперадмин.

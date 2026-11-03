@@ -16,13 +16,14 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
     return () => window.removeEventListener("keydown", k);
   }, [onClose]);
   return (
-    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 p-3 overflow-y-auto" onMouseDown={onClose}>
-      <div className={`${card} w-full ${wide ? "max-w-3xl" : "max-w-lg"} my-6`} onMouseDown={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-color)]">
-          <h3 className="font-bold text-[var(--text-main)]">{title}</h3>
-          <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)]" title="Закрыть"><X className="w-4 h-4" /></button>
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 sm:p-3 overflow-y-auto" onMouseDown={onClose}>
+      {/* Телефон — на весь экран: окно с отступами по краям там лишь отнимает место. */}
+      <div className={`${card} w-full min-h-dvh sm:min-h-0 rounded-none sm:rounded-2xl ${wide ? "max-w-3xl" : "max-w-lg"} sm:my-6`} onMouseDown={e => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 bg-[var(--bg-surface)] flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-[var(--border-color)] sm:rounded-t-2xl">
+          <h3 className="font-bold text-[var(--text-main)] truncate">{title}</h3>
+          <button onClick={onClose} className="p-2 -mr-1 rounded hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)]" title="Закрыть"><X className="w-4 h-4" /></button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="p-4 sm:p-5">{children}</div>
       </div>
     </div>
   );
@@ -142,7 +143,7 @@ export function TriToggle({ value, yes, no, onChange, disabled, compact }: {
   value: boolean | null | undefined; yes: string; no: string; onChange: (v: boolean | null) => void; disabled?: boolean; compact?: boolean;
 }) {
   const b = (active: boolean, tone: string) =>
-    `${compact ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm"} rounded-md font-medium border transition disabled:opacity-50 ${active ? tone : "border-[var(--border-color)] text-[var(--text-muted)] hover:bg-[var(--bg-surface-hover)]"}`;
+    `${compact ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm"} whitespace-nowrap rounded-md font-medium border transition disabled:opacity-50 ${active ? tone : "border-[var(--border-color)] text-[var(--text-muted)] hover:bg-[var(--bg-surface-hover)]"}`;
   return (
     <div className="inline-flex gap-1">
       <button type="button" disabled={disabled} onClick={() => onChange(value === true ? null : true)}
