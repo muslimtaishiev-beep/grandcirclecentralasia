@@ -13,7 +13,7 @@ import type { PresentationAccessMode, PresentationFace, PresentationSlide } from
  */
 type Data = {
   org: { name: string; logoUrl: string | null };
-  presentation: { title: string; description: string; kind: "slides" | "html"; slides: PresentationSlide[]; faces: Record<string, PresentationFace>; code: string; accessMode: PresentationAccessMode };
+  presentation: { title: string; description: string; kind: "slides" | "html"; slides: PresentationSlide[]; faces: Record<string, PresentationFace>; code: string; accessMode: PresentationAccessMode; tenantId: string };
   assets: Record<string, string>;
   canManage: boolean;
 };
@@ -39,9 +39,14 @@ export default function ShowPresentation() {
   }, [code]);
 
   if (data) {
-    const brand = data.org.logoUrl
+    // Тому, кто управляет, — путь к доступу и ссылке прямо из показа.
+    const manage = data.canManage && (
+      <a href={`/workspace/${data.presentation.tenantId}/presentations`} className="shrink-0 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold">Доступ и управление</a>
+    );
+    const brand0 = data.org.logoUrl
       ? <img src={data.org.logoUrl} alt={data.org.name} className="h-7 w-auto max-w-[140px] object-contain rounded bg-white/90 px-1.5 py-0.5" />
       : <span className="text-xs font-semibold text-white/60 truncate max-w-[160px]">{data.org.name}</span>;
+    const brand = <>{brand0}{manage}</>;
     if (data.presentation.kind === "html") {
       return (
         <div className="h-dvh flex flex-col bg-[#0b0d12]">

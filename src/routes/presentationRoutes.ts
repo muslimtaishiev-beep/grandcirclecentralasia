@@ -272,7 +272,7 @@ router.get("/show/:code", optionalAuth, async (req: any, res: any) => {
     res.set("Cache-Control", "private, no-store");
     return res.json({
       success: true, org,
-      presentation: { title: p.title, description: p.description, kind: p.kind, slides: p.slides, faces: p.faces, code: p.code, accessMode: p.access.mode },
+      presentation: { title: p.title, description: p.description, kind: p.kind, slides: p.slides, faces: p.faces, code: p.code, accessMode: p.access.mode, tenantId: t },
       assets: await signedAssets(t, p),
       canManage: canManage(p, c),
     });
