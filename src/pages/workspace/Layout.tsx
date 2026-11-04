@@ -32,6 +32,7 @@ import {
   Sparkles,
   BookOpen,
   ClipboardList,
+  MonitorPlay,
   X,
 } from "lucide-react";
 import GlobalNotifications from "../../components/workspace/GlobalNotifications";
@@ -152,6 +153,7 @@ export default function WorkspaceLayout() {
     ["dashboard", "Дашборд", "", LayoutDashboard],
     ["schedule", "Расписание", "/edu/schedule", Calendar],
     ["journals", "Журналы", "/journals", BookOpen],
+    ["presentations", "Презентации", "/presentations", MonitorPlay],
     ["subscriptions", "Абонементы", "/edu/subscriptions", CreditCard],
     ["payroll", "Зарплаты", "/edu/payroll", DollarSign],
     ["chat", "Чаты", "/chat", MessageSquare],

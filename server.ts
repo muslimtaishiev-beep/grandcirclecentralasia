@@ -265,6 +265,7 @@ import intakeRoutes from "./src/routes/intakeRoutes.js";
 import payrollRoutes from "./src/routes/payrollRoutes.js";
 import journalRoutes from "./src/routes/journalRoutes.js";
 import examRoutes from "./src/routes/examRoutes.js";
+import presentationRoutes from "./src/routes/presentationRoutes.js";
 import examAdminRoutes from "./src/routes/examAdminRoutes.js";
 import examPublicRoutes from "./src/routes/examPublicRoutes.js";
 import { sendTestResultEmail } from "./emailService.js";
@@ -278,6 +279,7 @@ app.use("/api/intake", intakeRoutes);
 app.use("/api/payroll", payrollRoutes);
 app.use("/api/journals", journalRoutes);
 app.use("/api/exam-builder", examRoutes);
+app.use("/api/presentations", presentationRoutes);
 app.use("/api/exam-admin", examAdminRoutes);
 app.use("/api/exam-public", examPublicRoutes);
 

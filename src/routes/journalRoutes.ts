@@ -80,7 +80,7 @@ async function loadJournal(req: any, res: any, need: JournalRole): Promise<{ j: 
 // ── Сотрудники ──────────────────────────────────────────────────────────
 
 const employeesCache = new Map<string, { at: number; list: { uid: string; name: string; email: string }[] }>();
-async function listEmployees(t: string) {
+export async function listEmployees(t: string) {
   const hit = employeesCache.get(t);
   if (hit && Date.now() - hit.at < 60_000) return hit.list;
   const ms = await db().collection("memberships").where("tenantId", "==", t).where("status", "==", "active").get();

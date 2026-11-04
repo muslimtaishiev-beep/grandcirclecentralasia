@@ -50,6 +50,13 @@ const Login: React.FC<LoginProps> = ({ lang = "ru" }) => {
 
   const redirectUserByRole = async (userRecord?: any) => {
     const loggedUser = userRecord || auth.currentUser;
+    // Пришли со страницы, куда нужен вход (например презентация по ссылке), —
+    // возвращаем туда. Только адрес этого сайта: «//чужой.сайт» не пропускаем.
+    const back = searchParams.get('next') || '';
+    if (loggedUser && /^\/(?![\/\\])/.test(back)) {
+      navigate(back);
+      return;
+    }
 
     try {
       const idTokenResult = await loggedUser?.getIdTokenResult();

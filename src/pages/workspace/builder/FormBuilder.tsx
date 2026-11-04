@@ -58,6 +58,8 @@ export const embedFor = (raw: string): string | 'resolve' | null => {
   let u: URL;
   try { u = new URL(raw); } catch { return null; }
   if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  // Наша презентация (/show/КОД) — открывается здесь же нашим плеером.
+  if (typeof window !== 'undefined' && u.origin === window.location.origin && /^\/show\/[A-Z0-9]{8}$/.test(u.pathname)) return u.toString();
   // Имя файла бывает в пути (/deck.pdf) или в параметре (?key=…/deck.pdf).
   const names = fileNamesOf(u);
   if (names.some(n => /\.pdf$/i.test(n))) return u.toString();
