@@ -3,7 +3,7 @@ import { Award, Ban, CheckCircle2, Eye, EyeOff, FileText, Loader2, RotateCcw, Sh
 import DOMPurify from "dompurify";
 import ProctoringDossier from "../../../components/ProctoringDossier";
 import { TYPE_LABEL, plainText } from "../../../shared/exams";
-import { DECISION_LABEL, type Attempt, type Decision, type Exam, type FrozenQuestion } from "../../../shared/examRun";
+import { DECISION_LABEL, partResults, type Attempt, type Decision, type Exam, type FrozenQuestion } from "../../../shared/examRun";
 import { certificateHTML, openPrint, reportHTML, type PrintData } from "../../../lib/examPrint";
 import { tenantLogos, resolveLegalProfile } from "../../../shared/legal";
 import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui";
@@ -57,7 +57,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
       orgName: tenant?.name || "", logoUrl: tenantLogos(tenant).logoUrl,
       school: { legalName: legal.legalName, signatoryTitle: legal.signatoryTitle, signatoryName: legal.signatoryName, stampUrl: legal.stampUrl || null },
       photo,
-      result: { ...a.result, group: exam.settings.results.groups.length ? a.group : null, decision: exam.settings.results.decisions && a.decision ? DECISION_LABEL[a.decision.value] : null, finishedAt: a.finishedAt },
+      result: { ...a.result, parts: partResults(a.result.sections, exam.settings.scoring), hideTotal: !!exam.settings.scoring.parts?.length && !!exam.settings.scoring.hideTotal, group: exam.settings.results.groups.length ? a.group : null, decision: exam.settings.results.decisions && a.decision ? DECISION_LABEL[a.decision.value] : null, finishedAt: a.finishedAt },
     };
   }, [a, exam, tenant, photo]);
 
@@ -66,6 +66,8 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
   const r = a.result;
   const items = new Map((r?.items || []).map(i => [i.qid, i]));
   const s = exam.settings;
+  const parts = r ? partResults(r.sections, s.scoring) : [];
+  const hideTotal = parts.length > 0 && !!s.scoring.hideTotal;
   const pr = a.proctoring || { enabled: false };
 
   return (
@@ -87,10 +89,13 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
           </div>
           {r && (
             <div className="flex gap-2 flex-wrap">
+              {parts.map(p => <Stat key={p.id} t={p.title} v={p.value} sub={p.kind === "points" ? `${fmt(p.percent)}%` : `${fmt(p.earned)} / ${fmt(p.max)}`} />)}
+              {!hideTotal && <>
               <Stat t="Результат" v={`${fmt(r.percent)}%`} sub={`${fmt(r.earned)} / ${fmt(r.max)}`} />
               {r.mark != null && <Stat t="Отметка" v={String(r.mark)} />}
               {r.band != null && <Stat t="Балл 1–5" v={r.band.toFixed(1).replace(".", ",")} />}
               {r.scaleLabel && <Stat t="Уровень" v={r.scaleLabel} />}
+              </>}
             </div>
           )}
         </div>

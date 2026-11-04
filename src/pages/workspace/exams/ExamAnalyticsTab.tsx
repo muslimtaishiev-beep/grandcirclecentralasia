@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { examAnalytics, type Attempt, type Exam } from "../../../shared/examRun";
+import { examAnalytics, partResults, type Attempt, type Exam } from "../../../shared/examRun";
 import { card, input, label } from "../journals/components/ui";
 import type { Api } from "./examApi";
 
@@ -18,6 +18,20 @@ export default function ExamAnalyticsTab({ exam, api, onOpen }: { exam: Exam; ap
   const levels = useMemo(() => [...new Set((attempts || []).map(a => a.student.level).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru", { numeric: true })), [attempts]);
   const an = useMemo(() => attempts && examAnalytics(attempts.filter(a => !level || a.student.level === level), exam.settings, Object.fromEntries(exam.sections.map(s => [s.id, s.title]))), [attempts, level, exam]);
 
+  // Части оценки: средний процент и сколько учеников получили каждый итог.
+  const partStats = useMemo(() => {
+    const done = (attempts || []).filter(a => a.status === "finished" && !a.superseded && a.result && (!level || a.student.level === level));
+    return (exam.settings.scoring.parts || []).map(p => {
+      const rs = done.map(a => partResults(a.result!.sections, { ...exam.settings.scoring, parts: [p] })[0]).filter(r => r.max > 0);
+      const counts = new Map<string, number>();
+      for (const r of rs) counts.set(r.value, (counts.get(r.value) || 0) + 1);
+      const order = p.kind === "labels" ? (p.bands || []).map(b => b.label) : [];
+      const dist = [...counts].sort((a, b) => (order.length ? order.indexOf(a[0]) - order.indexOf(b[0]) : b[1] - a[1]));
+      return { p, n: rs.length, avg: rs.length ? Math.round(rs.reduce((x, r) => x + r.percent, 0) / rs.length * 10) / 10 : 0, dist: p.kind === "points" || p.kind === "percent" ? [] : dist };
+    });
+  }, [attempts, level, exam]);
+  const hideTotal = partStats.length > 0 && !!exam.settings.scoring.hideTotal;
+
   if (error) return <div className="text-sm text-rose-600">{error}</div>;
   if (!an) return <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--text-muted)]" /></div>;
   if (!an.finished) return <div className={`${card} p-10 text-center text-sm text-[var(--text-muted)]`}>Пока нет сданных работ{an.inProgress ? ` — сейчас сдают ${an.inProgress}` : ""}.</div>;
@@ -34,14 +48,16 @@ export default function ExamAnalyticsTab({ exam, api, onOpen }: { exam: Exam; ap
       )}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         <Tile t="Сдали" v={an.finished} sub={an.inProgress ? `ещё сдают: ${an.inProgress}` : ""} />
-        <Tile t="Средний результат" v={`${an.avgPercent}%`} sub={`медиана ${an.medianPercent}%`} />
-        {an.passRate != null && <Tile t="Успеваемость" v={`${an.passRate}%`} sub="отметка 3 и выше" />}
-        {an.qualityRate != null && <Tile t="Качество" v={`${an.qualityRate}%`} sub="отметки 4 и 5" />}
+        {partStats.map(x => <Tile key={x.p.id} t={x.p.title} v={`${x.avg}%`} sub="средний процент" />)}
+        {!hideTotal && <Tile t="Средний результат" v={`${an.avgPercent}%`} sub={`медиана ${an.medianPercent}%`} />}
+        {!hideTotal && an.passRate != null && <Tile t="Успеваемость" v={`${an.passRate}%`} sub="отметка 3 и выше" />}
+        {!hideTotal && an.qualityRate != null && <Tile t="Качество" v={`${an.qualityRate}%`} sub="отметки 4 и 5" />}
         {s.proctoring.enabled && <Tile t="Честность" v={an.honesty.avg != null ? `${an.honesty.avg}/100` : "—"} sub={`с нарушениями: ${an.honesty.flagged}${an.honesty.noCamera ? ` · без камеры: ${an.honesty.noCamera}` : ""}`} />}
       </div>
 
       <div className="grid lg:grid-cols-2 gap-4">
-        <Panel title="Распределение результатов">
+        {partStats.filter(x => x.dist.length).map(x => <Panel key={x.p.id} title={x.p.title}>{x.dist.map(([v, c]) => <Bar key={v} label={v} value={c} max={x.n} />)}</Panel>)}
+        {!hideTotal && <Panel title="Распределение результатов">
           <div className="flex items-end gap-1 h-36">
             {an.histogram.map(h => (
               <div key={h.from} className="flex-1 flex flex-col items-center justify-end h-full" title={`${h.from}–${Math.floor(h.to)}%: ${h.count}`}>
@@ -51,10 +67,10 @@ export default function ExamAnalyticsTab({ exam, api, onOpen }: { exam: Exam; ap
             ))}
           </div>
           <div className="flex gap-1 mt-1">{an.histogram.map(h => <span key={h.from} className="flex-1 text-center text-[10px] text-[var(--text-muted)]">{h.from}</span>)}</div>
-        </Panel>
+        </Panel>}
         <Panel title="По разделам">{an.sections.map(x => <Bar key={x.id} label={x.title} value={x.avgPercent} suffix="%" />)}</Panel>
-        {an.marks.length > 0 && <Panel title="Отметки">{an.marks.map(m => <Bar key={m.mark} label={`«${m.mark}»`} value={m.count} max={an.finished} />)}</Panel>}
-        {an.scale.length > 0 && s.scoring.scale.length > 0 && <Panel title="Уровни по шкале">{an.scale.map(x => <Bar key={x.label} label={x.label} value={x.count} max={an.finished} />)}</Panel>}
+        {!hideTotal && an.marks.length > 0 && <Panel title="Отметки">{an.marks.map(m => <Bar key={m.mark} label={`«${m.mark}»`} value={m.count} max={an.finished} />)}</Panel>}
+        {!hideTotal && an.scale.length > 0 && s.scoring.scale.length > 0 && <Panel title="Уровни по шкале">{an.scale.map(x => <Bar key={x.label} label={x.label} value={x.count} max={an.finished} />)}</Panel>}
         {an.levels.length > 1 && !level && <Panel title={`По ${s.registration.levelLabel.toLowerCase()}ам`}>{an.levels.map(x => <Bar key={x.level} label={`${x.level} (${x.count})`} value={x.avgPercent} suffix="%" />)}</Panel>}
         {s.results.groups.length > 0 && <Panel title="Распределение по группам">{an.groups.map(x => <Bar key={x.group} label={x.group} value={x.count} max={an.finished} />)}</Panel>}
         {s.results.decisions && <Panel title="Решения">{an.decisions.map(x => <Bar key={x.decision} label={x.decision} value={x.count} max={an.finished} />)}</Panel>}

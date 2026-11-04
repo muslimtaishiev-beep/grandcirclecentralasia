@@ -13,6 +13,9 @@ export interface PrintResult {
   topics?: { topic: string; percent: number; earned: number; max: number }[];
   mark?: number | null; band?: number | null; scaleLabel?: string | null; group?: string | null; decision?: string | null;
   finishedAt?: number | null;
+  /** Части оценки — каждая своим итогом; hideTotal — общий итог не печатаем. */
+  parts?: { title: string; value: string }[];
+  hideTotal?: boolean;
 }
 export interface PrintData {
   title: string;
@@ -77,7 +80,9 @@ function head(d: PrintData, doctype: string) {
 }
 
 function tiles(r: PrintResult) {
-  const t: string[] = [`<div class="tile"><b>${n1(r.percent)}%</b><span>результат</span></div>`, `<div class="tile"><b>${n1(r.earned)} / ${n1(r.max)}</b><span>баллов</span></div>`];
+  const t: string[] = r.hideTotal ? [] : [`<div class="tile"><b>${n1(r.percent)}%</b><span>результат</span></div>`, `<div class="tile"><b>${n1(r.earned)} / ${n1(r.max)}</b><span>баллов</span></div>`];
+  for (const p of r.parts || []) t.push(`<div class="tile"><b style="font-size:${p.value.length > 8 ? 13 : 17}pt">${esc(p.value)}</b><span>${esc(p.title)}</span></div>`);
+  if (r.hideTotal) { if (r.group) t.push(`<div class="tile"><b style="font-size:15pt">${esc(r.group)}</b><span>группа</span></div>`); return `<div class="overall">${t.join("")}</div>`; }
   if (r.band != null) t.push(`<div class="tile"><b>${r.band.toFixed(1).replace(".", ",")}</b><span>балл 1–5</span></div>`);
   if (r.mark != null) t.push(`<div class="tile"><b>${r.mark}</b><span>отметка</span></div>`);
   if (r.scaleLabel) t.push(`<div class="tile"><b style="font-size:13pt">${esc(r.scaleLabel)}</b><span>уровень</span></div>`);

@@ -8,7 +8,7 @@ import { resolveLegalProfile } from "../shared/legal.js";
 import { studentView, type BankQuestion } from "../shared/exams.js";
 import { LEGAL_VERSION } from "../shared/legalDocs.js";
 import {
-  DECISION_LABEL, gradeAttempt, isWindowOpen, pickSectionQuestions,
+  DECISION_LABEL, gradeAttempt, isWindowOpen, partResults, pickSectionQuestions,
   type Attempt, type AttemptSection, type Exam, type FrozenQuestion,
 } from "../shared/examRun.js";
 
@@ -167,9 +167,13 @@ function studentState(exam: Exam, a: Full) {
 
 function publicResult(exam: Exam, a: Attempt) {
   const r = a.result!;
+  const parts = partResults(r.sections, exam.settings.scoring);
+  // Части нельзя смешивать — общий итог ученику не показываем вовсе.
+  const hideTotal = parts.length > 0 && !!exam.settings.scoring.hideTotal;
   return {
     percent: r.percent, earned: r.earned, max: r.max, correct: r.correct, total: r.total,
-    sections: r.sections, mark: r.mark, band: r.band, scaleLabel: r.scaleLabel,
+    sections: r.sections, mark: hideTotal ? null : r.mark, band: hideTotal ? null : r.band, scaleLabel: hideTotal ? null : r.scaleLabel,
+    parts: parts.map(p => ({ title: p.title, value: p.value })), hideTotal,
     topics: r.topics.slice(0, 30),
     group: exam.settings.results.groups.length ? a.group || null : null,
     decision: exam.settings.results.decisions && a.decision ? DECISION_LABEL[a.decision.value] : null,

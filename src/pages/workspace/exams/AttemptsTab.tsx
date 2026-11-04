@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, Loader2, Radio, RefreshCw, Search, Send, ShieldAlert } from "lucide-react";
-import { DECISION_LABEL, type AttemptRow, type Exam } from "../../../shared/examRun";
+import { DECISION_LABEL, partResults, type AttemptRow, type Exam } from "../../../shared/examRun";
 import { btn, btnPrimary, card, input } from "../journals/components/ui";
 import type { Api } from "./examApi";
 import AttemptModal from "./AttemptModal";
@@ -21,6 +21,8 @@ export default function AttemptsTab({ exam, api, tenant, canEdit }: { exam: Exam
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const s = exam.settings;
+  const parts = s.scoring.parts || [];
+  const hideTotal = parts.length > 0 && !!s.scoring.hideTotal;
 
   const load = useCallback(async () => {
     try { const j = await api(`/exams/${exam.id}/attempts`); setRows(j.attempts); setSkew(j.serverNow - Date.now()); setError(null); }
@@ -106,9 +108,10 @@ export default function AttemptsTab({ exam, api, tenant, canEdit }: { exam: Exam
               <th className="px-3 py-2.5 text-left">Ученик</th>
               {s.registration.level && <th className="px-3 py-2.5 text-left">{s.registration.levelLabel}</th>}
               <th className="px-3 py-2.5 text-left">Статус</th>
-              <th className="px-3 py-2.5 text-right">Итог</th>
+              {parts.map(p => <th key={p.id} className="px-3 py-2.5 text-right whitespace-nowrap">{p.title}</th>)}
+              {!hideTotal && <th className="px-3 py-2.5 text-right">Итог</th>}
               {exam.sections.map(x => <th key={x.id} className="px-3 py-2.5 text-right whitespace-nowrap">{x.title}</th>)}
-              {(s.scoring.marks.enabled || s.scoring.scale.length > 0) && <th className="px-3 py-2.5 text-left">Оценка</th>}
+              {!hideTotal && (s.scoring.marks.enabled || s.scoring.scale.length > 0) && <th className="px-3 py-2.5 text-left">Оценка</th>}
               {s.proctoring.enabled && <th className="px-3 py-2.5 text-center">Наблюдение</th>}
               {(s.results.decisions || s.results.groups.length > 0) && <th className="px-3 py-2.5 text-left">Решение</th>}
             </tr>
@@ -126,9 +129,10 @@ export default function AttemptsTab({ exam, api, tenant, canEdit }: { exam: Exam
                       : r.status === "annulled" ? <span className="text-xs text-rose-600">аннулирована</span>
                       : <span className="text-xs text-[var(--text-muted)]">{r.review?.status === "done" ? "проверено" : "сдано"}{r.published ? " · опубл." : ""}</span>}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums font-bold text-[var(--text-main)]">{r.result ? `${r.result.percent}%` : "—"}</td>
+                  {r.result ? partResults(r.result.sections, s.scoring).map(p => <td key={p.id} className="px-3 py-2 text-right tabular-nums font-bold text-[var(--text-main)] whitespace-nowrap">{p.value}</td>) : parts.map(p => <td key={p.id} className="px-3 py-2 text-right">—</td>)}
+                  {!hideTotal && <td className="px-3 py-2 text-right tabular-nums font-bold text-[var(--text-main)]">{r.result ? `${r.result.percent}%` : "—"}</td>}
                   {exam.sections.map(x => <td key={x.id} className="px-3 py-2 text-right tabular-nums text-[var(--text-muted)]">{r.result?.sections.find(y => y.id === x.id)?.percent ?? "—"}{r.result ? "%" : ""}</td>)}
-                  {(s.scoring.marks.enabled || s.scoring.scale.length > 0) && <td className="px-3 py-2 text-xs">{[r.result?.mark, r.result?.scaleLabel].filter(x => x != null && x !== "").join(" · ")}</td>}
+                  {!hideTotal && (s.scoring.marks.enabled || s.scoring.scale.length > 0) && <td className="px-3 py-2 text-xs">{[r.result?.mark, r.result?.scaleLabel].filter(x => x != null && x !== "").join(" · ")}</td>}
                   {s.proctoring.enabled && (
                     <td className="px-3 py-2 text-center text-xs">
                       {r.proctoring?.unavailable ? <span className="text-amber-700">без камеры</span>

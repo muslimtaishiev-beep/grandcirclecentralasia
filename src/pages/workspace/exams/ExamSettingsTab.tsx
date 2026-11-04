@@ -5,6 +5,7 @@ import { type Exam, type ExamSection, type ExamSettings, type ScaleBand } from "
 import { btn, btnPrimary, card, input, label } from "../journals/components/ui";
 import type { Api, DisciplineRow, SetRow } from "./examApi";
 import QuestionPicker from "./QuestionPicker";
+import GradePartsEditor from "./GradePartsEditor";
 
 type Plan = { pool: number; have: Record<Difficulty, number>; want: number; short: { difficulty: Difficulty; need: number; have: number }[]; missing?: number };
 
@@ -256,8 +257,11 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
           )}
         </section>
 
-        <section className={`${card} p-4 space-y-3`}>
+        <section className={`${card} p-4 space-y-3 lg:col-span-2`}>
           <h3 className="font-bold text-[var(--text-main)]">Оценка</h3>
+          <GradePartsEditor parts={st.scoring.parts || []} sections={sections} onChange={parts => set("scoring", { parts })} />
+          {(st.scoring.parts || []).length > 0 && <Check checked={!st.scoring.hideTotal} onChange={v => set("scoring", { hideTotal: !v })}>Общий итог по всем дисциплинам</Check>}
+          {!((st.scoring.parts || []).length > 0 && st.scoring.hideTotal) && (<>
           <Check checked={st.scoring.marks.enabled} onChange={v => set("scoring", { marks: { ...st.scoring.marks, enabled: v } })}>Отметка 2–5 по процентам</Check>
           {st.scoring.marks.enabled && (
             <div className="ml-6 grid grid-cols-3 gap-2 max-w-sm">
@@ -268,6 +272,7 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
           )}
           <Check checked={st.scoring.band} onChange={v => set("scoring", { band: v })}>Балл 1,0–5,0 с половинками (как в IELTS)</Check>
           <ScaleEditor scale={st.scoring.scale} onChange={scale => set("scoring", { scale })} />
+          </>)}
         </section>
 
         <section className={`${card} p-4 space-y-3 lg:col-span-2`}>

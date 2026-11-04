@@ -45,6 +45,26 @@ export interface ExamSection {
 
 export interface ScaleBand { minPercent: number; label: string }
 
+/**
+ * Часть оценки: свои дисциплины и свой вид итога. Так основная часть
+ * (русский, математика, логика) получает баллы, а английский — уровень, и
+ * они не смешиваются в один процент.
+ * - percent — процент; points — «набрано / из»;
+ * - mark5 — отметка 2–5 по порогам; band — 1,0–5,0 с половинками;
+ * - labels — свои слова по порогам процента: «Молодец», A–F, «+ / −», 1–9, уровни.
+ */
+export type GradeKind = "percent" | "points" | "mark5" | "band" | "labels";
+export interface GradePart {
+  id: string;
+  title: string;
+  /** id разделов (дисциплин) экзамена, которые входят в часть. */
+  sections: string[];
+  kind: GradeKind;
+  marks?: { pass: number; good: number; excellent: number };
+  bands?: ScaleBand[];
+}
+export interface PartResult { id: string; title: string; kind: GradeKind; earned: number; max: number; percent: number; value: string }
+
 export interface ExamSettings {
   registration: { phone: boolean; email: boolean; level: boolean; levelLabel: string; photo: boolean };
   access: {
@@ -68,6 +88,10 @@ export interface ExamSettings {
     band: boolean;
     /** Шкала результата: от процента — подпись (уровень, рекомендация). */
     scale: ScaleBand[];
+    /** Части оценки, каждая со своим итогом. Пусто — только общий итог. */
+    parts?: GradePart[];
+    /** Не показывать общий итог по всем дисциплинам — когда части нельзя смешивать. */
+    hideTotal?: boolean;
   };
   results: {
     showToStudent: "never" | "after_publish" | "immediately";
@@ -162,6 +186,28 @@ export function sanitizeSections(raw: unknown): ExamSection[] {
   return out;
 }
 
+const KINDS: GradeKind[] = ["percent", "points", "mark5", "band", "labels"];
+function sanitizeBands(v: unknown): ScaleBand[] {
+  return (Array.isArray(v) ? v : [])
+    .map((x: any) => ({ minPercent: Math.round(num(x?.minPercent, 0, 100, 0)), label: s(x?.label, 60) }))
+    .filter((x: ScaleBand) => x.label).slice(0, 20)
+    .sort((a: ScaleBand, c: ScaleBand) => c.minPercent - a.minPercent);
+}
+export function sanitizeParts(v: unknown): GradePart[] {
+  return (Array.isArray(v) ? v : []).slice(0, 12).map((p: any, i: number) => {
+    const kind: GradeKind = KINDS.includes(p?.kind) ? p.kind : "percent";
+    const m = p?.marks || {};
+    return {
+      id: /^[A-Za-z0-9_-]{1,40}$/.test(String(p?.id)) ? String(p.id) : `p${i + 1}`,
+      title: s(p?.title, 60) || `Часть ${i + 1}`,
+      sections: [...new Set<string>((Array.isArray(p?.sections) ? p.sections : []).map((x: unknown) => s(x, 60)).filter(Boolean))].slice(0, 50),
+      kind,
+      ...(kind === "mark5" ? { marks: { pass: Math.round(num(m.pass, 0, 100, 50)), good: Math.round(num(m.good, 0, 100, 65)), excellent: Math.round(num(m.excellent, 0, 100, 85)) } } : {}),
+      ...(kind === "labels" ? { bands: sanitizeBands(p?.bands) } : {}),
+    };
+  });
+}
+
 export function sanitizeSettings(raw: any): ExamSettings {
   const d = DEFAULT_SETTINGS;
   const r = raw || {};
@@ -200,6 +246,8 @@ export function sanitizeSettings(raw: any): ExamSettings {
       },
       band: b(r.scoring?.band, d.scoring.band),
       scale,
+      parts: sanitizeParts(r.scoring?.parts),
+      hideTotal: b(r.scoring?.hideTotal, false),
     },
     results: {
       showToStudent: ["never", "after_publish", "immediately"].includes(r.results?.showToStudent) ? r.results.showToStudent : d.results.showToStudent,
@@ -328,6 +376,42 @@ export function bandOf(percent: number): number {
 export function scaleOf(percent: number, scale: ScaleBand[]): string | null {
   return [...scale].sort((a, c) => c.minPercent - a.minPercent).find(x => percent >= x.minPercent)?.label || null;
 }
+
+const num1 = (n: number) => String(Math.round(n * 10) / 10).replace(".", ",");
+/**
+ * Итоги частей из баллов по дисциплинам. Считается при показе, а не
+ * хранится: поменяли части в настройках — все работы, и сданные раньше,
+ * сразу показываются по-новому.
+ */
+export function partResults(sections: SectionResult[], scoring: ExamSettings["scoring"]): PartResult[] {
+  return (scoring.parts || []).map(p => {
+    const own = sections.filter(x => p.sections.includes(x.id));
+    const earned = own.reduce((n, x) => n + x.earned, 0), max = own.reduce((n, x) => n + x.max, 0);
+    const percent = pct(earned, max);
+    const value = !max ? "—"
+      : p.kind === "points" ? `${num1(earned)} / ${num1(max)}`
+      : p.kind === "mark5" ? String(markOf(percent, { enabled: true, pass: 50, good: 65, excellent: 85, ...p.marks }))
+      : p.kind === "band" ? bandOf(percent).toFixed(1).replace(".", ",")
+      : p.kind === "labels" ? scaleOf(percent, p.bands || []) || "—"
+      : `${num1(percent)}%`;
+    return { id: p.id, title: p.title, kind: p.kind, earned, max, percent, value };
+  });
+}
+
+/** Готовые шкалы для «своих слов» — кнопками в настройках. */
+export const BAND_PRESETS: { label: string; bands: ScaleBand[] }[] = [
+  { label: "Слова", bands: [{ minPercent: 85, label: "Отлично" }, { minPercent: 65, label: "Молодец" }, { minPercent: 45, label: "Неплохо" }, { minPercent: 0, label: "Нужно подтянуть" }] },
+  { label: "A–F", bands: [{ minPercent: 90, label: "A" }, { minPercent: 80, label: "B" }, { minPercent: 70, label: "C" }, { minPercent: 60, label: "D" }, { minPercent: 50, label: "E" }, { minPercent: 0, label: "F" }] },
+  { label: "+ / −", bands: [{ minPercent: 50, label: "+" }, { minPercent: 0, label: "−" }] },
+  { label: "1–9", bands: [9, 8, 7, 6, 5, 4, 3, 2].map((n, i) => ({ minPercent: 90 - i * 10, label: String(n) })).concat([{ minPercent: 0, label: "1" }]) },
+  { label: "Зачёт", bands: [{ minPercent: 50, label: "Зачтено" }, { minPercent: 0, label: "Не зачтено" }] },
+  // Уровень английского по тесту своего уровня: ниже 30% — на два шага ниже
+  // уровня теста, 31–55% — на шаг ниже, 56–85% — уровень теста, выше 85% —
+  // готов к следующему. Пороги — прежние, из вступительного теста.
+  { label: "Англ.: тест Pre-Intermediate (8 кл.)", bands: [{ minPercent: 86, label: "Intermediate (B1)" }, { minPercent: 56, label: "Pre-Intermediate (A2+)" }, { minPercent: 31, label: "Elementary (A2)" }, { minPercent: 0, label: "Beginner (A1)" }] },
+  { label: "Англ.: тест Intermediate (9 кл.)", bands: [{ minPercent: 86, label: "Upper-Intermediate (B2)" }, { minPercent: 56, label: "Intermediate (B1)" }, { minPercent: 31, label: "Pre-Intermediate (A2+)" }, { minPercent: 0, label: "Elementary (A2)" }] },
+  { label: "Англ.: тест Upper-Intermediate (10–11 кл.)", bands: [{ minPercent: 86, label: "Advanced (C1)" }, { minPercent: 56, label: "Upper-Intermediate (B2)" }, { minPercent: 31, label: "Intermediate (B1)" }, { minPercent: 0, label: "Pre-Intermediate (A2+)" }] },
+];
 
 /**
  * Работа → результат. overrides — ручная оценка менеджера (баллы за вопрос);

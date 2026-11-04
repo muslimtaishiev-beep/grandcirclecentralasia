@@ -529,8 +529,9 @@ function ResultCard({ r }: { r: any }) {
   return (
     <div className="text-left space-y-3 pt-2">
       <div className="flex flex-wrap gap-2 justify-center">
-        <Pill t="Результат" v={`${num(r.percent)}%`} />
-        <Pill t="Баллы" v={`${num(r.earned)} / ${num(r.max)}`} />
+        {(r.parts || []).map((p: any) => <Pill key={p.title} t={p.title} v={p.value} />)}
+        {!r.hideTotal && <Pill t="Результат" v={`${num(r.percent)}%`} />}
+        {!r.hideTotal && <Pill t="Баллы" v={`${num(r.earned)} / ${num(r.max)}`} />}
         {r.mark != null && <Pill t="Отметка" v={String(r.mark)} />}
         {r.band != null && <Pill t="Балл 1–5" v={Number(r.band).toFixed(1).replace(".", ",")} />}
         {r.scaleLabel && <Pill t="Уровень" v={r.scaleLabel} />}

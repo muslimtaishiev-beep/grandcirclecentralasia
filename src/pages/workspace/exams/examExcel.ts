@@ -1,4 +1,4 @@
-import { DECISION_LABEL, examAnalytics, type Attempt, type Exam } from "../../../shared/examRun";
+import { DECISION_LABEL, examAnalytics, partResults, type Attempt, type Exam } from "../../../shared/examRun";
 
 /**
  * Результаты экзамена в Excel: строка на ученика, матрица ответов,
@@ -23,12 +23,16 @@ export async function exportExamXlsx(exam: Exam, attempts: Attempt[]) {
   };
   const s = exam.settings;
   const list = attempts.filter(a => !a.superseded);
+  const parts = s.scoring.parts || [];
+  const total = !(parts.length && s.scoring.hideTotal);
 
   add("Результаты", [
     "№ работы", "ФИО", ...(s.registration.phone ? ["Телефон"] : []), ...(s.registration.email ? ["Почта"] : []), ...(s.registration.level ? [s.registration.levelLabel] : []),
-    "Статус", "Начало", "Окончание", "Минут", "Баллы", "Из", "%",
+    "Статус", "Начало", "Окончание", "Минут",
+    ...parts.flatMap(p => [p.title, `${p.title}, %`]),
+    ...(total ? ["Баллы", "Из", "%"] : []),
     ...exam.sections.map(x => `${x.title}, %`),
-    ...(s.scoring.marks.enabled ? ["Отметка"] : []), ...(s.scoring.band ? ["Балл 1–5"] : []), ...(s.scoring.scale.length ? ["Уровень"] : []),
+    ...(total ? [...(s.scoring.marks.enabled ? ["Отметка"] : []), ...(s.scoring.band ? ["Балл 1–5"] : []), ...(s.scoring.scale.length ? ["Уровень"] : [])] : []),
     ...(s.results.groups.length ? ["Группа"] : []), ...(s.results.decisions ? ["Решение", "Комментарий"] : []),
     "Проверка", "Опубликовано", ...(s.proctoring.enabled ? ["Индекс честности", "Грубых нарушений", "Всего нарушений"] : []),
   ], list.map(a => {
@@ -36,9 +40,10 @@ export async function exportExamXlsx(exam: Exam, attempts: Attempt[]) {
     return [
       a.shortId, a.student.name, ...(s.registration.phone ? [a.student.phone] : []), ...(s.registration.email ? [a.student.email] : []), ...(s.registration.level ? [a.student.level] : []),
       STATUS[a.status], dt(a.startedAt), dt(a.finishedAt), a.finishedAt ? Math.round((a.finishedAt - a.startedAt) / 60000) : null,
-      r?.earned ?? null, r?.max ?? null, r?.percent ?? null,
+      ...(r ? partResults(r.sections, s.scoring).flatMap(p => [p.value, p.percent]) : parts.flatMap(() => [null, null])),
+      ...(total ? [r?.earned ?? null, r?.max ?? null, r?.percent ?? null] : []),
       ...exam.sections.map(x => r?.sections.find(y => y.id === x.id)?.percent ?? null),
-      ...(s.scoring.marks.enabled ? [r?.mark ?? null] : []), ...(s.scoring.band ? [r?.band ?? null] : []), ...(s.scoring.scale.length ? [r?.scaleLabel ?? ""] : []),
+      ...(total ? [...(s.scoring.marks.enabled ? [r?.mark ?? null] : []), ...(s.scoring.band ? [r?.band ?? null] : []), ...(s.scoring.scale.length ? [r?.scaleLabel ?? ""] : [])] : []),
       ...(s.results.groups.length ? [a.group || ""] : []), ...(s.results.decisions ? [a.decision ? DECISION_LABEL[a.decision.value] : "", a.decision?.comment || ""] : []),
       a.review?.status === "done" ? "проверено" : "", a.published ? "да" : "",
       ...(s.proctoring.enabled ? [a.proctoring?.unavailable ? "нет камеры" : a.proctoring?.honestyIndex ?? "", a.proctoring?.bySeverity?.HIGH ?? 0, a.proctoring?.totalViolations ?? 0] : []),
