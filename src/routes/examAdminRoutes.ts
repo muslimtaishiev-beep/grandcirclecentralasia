@@ -248,6 +248,33 @@ router.get("/:tenantId/attempts/:aid/photo", ...view, checkIds, async (req: any,
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
+/**
+ * Перепроверка: ключи и баллы вопросов — из банка сейчас (если ключ
+ * исправили после экзамена), ответы ученика и ручные оценки — прежние.
+ * Вопрос, которого в банке уже нет, проверяется по старому ключу.
+ */
+type WithQuestions = Attempt & { questions: Record<string, any> };
+async function recheck(t: string, a: WithQuestions, settings: any, bank?: Map<string, any>) {
+  const ids = Object.keys(a.questions || {});
+  if (!bank) {
+    bank = new Map();
+    for (let i = 0; i < ids.length; i += 300) {
+      const snaps = await db().getAll(...ids.slice(i, i + 300).map(id => col(t, "exam_bank").doc(id)));
+      for (const sn of snaps) if (sn.exists) bank.set(sn.id, sn.data());
+    }
+  }
+  let keys = 0;
+  const questions: Record<string, any> = {};
+  for (const [id, q] of Object.entries(a.questions)) {
+    const b = bank.get(id);
+    const next: any = b ? { ...(q as any), answer: String(b.answer ?? q.answer), points: Number(b.points) > 0 ? Number(b.points) : q.points } : q;
+    if (next.answer !== q.answer || next.points !== q.points) keys++;
+    questions[id] = next;
+  }
+  const result = gradeAttempt(a.sections, questions, a.answers, settings, a.review?.overrides || {});
+  return { questions, result, keys, before: a.result?.percent ?? 0, after: result.percent };
+}
+
 /** Ручная проверка: баллы за вопросы и заметки; complete — проверка завершена. */
 router.post("/:tenantId/attempts/:aid/review", ...edit, checkIds, async (req: any, res: any) => {
   try {
@@ -321,6 +348,13 @@ router.post("/:tenantId/attempts/:aid/action", ...edit, checkIds, async (req: an
         await ref.update({ decision: v ? { value: v, comment: str(req.body?.comment, 1000), by: who(req), at: now } : null }); break;
       }
       case "group": await ref.update({ group: str(req.body?.value, 30) || null }); break;
+      case "recheck": {
+        if (a.status !== "finished") return fail(res, 409, "Перепроверить можно только сданную работу");
+        const r = await recheck(t, a, exam?.settings || DEFAULT_SETTINGS);
+        await ref.update({ questions: r.questions, result: r.result, recheckedAt: now, recheckedBy: who(req) });
+        const fresh = await loadAttempt(t, a.id);
+        return res.json({ success: true, attempt: fresh ? toRow(fresh) : null, recheck: { keys: r.keys, before: r.before, after: r.after } });
+      }
       case "delete":
         await ref.delete();
         await col(t, "exam_evidence").doc(a.id).delete().catch(() => {});
@@ -330,6 +364,36 @@ router.post("/:tenantId/attempts/:aid/action", ...edit, checkIds, async (req: an
     }
     const fresh = await loadAttempt(t, a.id);
     return res.json({ success: true, attempt: fresh ? toRow(fresh) : null });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+/** Перепроверить все сданные работы экзамена по текущим ключам банка. */
+router.post("/:tenantId/exams/:id/recheck-all", ...edit, checkIds, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId;
+    const exam = await loadExam(t, req.params.id);
+    if (!exam) return fail(res, 404, "Экзамен не найден");
+    const snap = await col(t, "exam_attempts").where("examId", "==", exam.id).where("status", "==", "finished").get();
+    const all = snap.docs.map(d => ({ ...(d.data() as WithQuestions), id: d.id }));
+    const ids = [...new Set(all.flatMap(a => Object.keys(a.questions || {})))];
+    const bank = new Map<string, any>();
+    for (let i = 0; i < ids.length; i += 300) {
+      const snaps = await db().getAll(...ids.slice(i, i + 300).map(id => col(t, "exam_bank").doc(id)));
+      for (const sn of snaps) if (sn.exists) bank.set(sn.id, sn.data());
+    }
+    let changed = 0, keys = 0;
+    const now = Date.now();
+    for (let i = 0; i < all.length; i += 200) {
+      const b = db().batch();
+      for (const a of all.slice(i, i + 200)) {
+        const r = await recheck(t, a, exam.settings, bank);
+        if (r.keys) keys++;
+        if (r.after !== r.before) changed++;
+        b.update(col(t, "exam_attempts").doc(a.id), { questions: r.questions, result: r.result, recheckedAt: now, recheckedBy: who(req) });
+      }
+      await b.commit();
+    }
+    return res.json({ success: true, total: all.length, changed, withNewKeys: keys });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 

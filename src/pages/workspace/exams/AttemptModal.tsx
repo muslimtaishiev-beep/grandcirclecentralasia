@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Award, Ban, CheckCircle2, Eye, EyeOff, FileText, Loader2, RotateCcw, ShieldAlert, Square, Trash2, Undo2 } from "lucide-react";
+import { Award, Ban, CheckCircle2, RefreshCw, Eye, EyeOff, FileText, Loader2, RotateCcw, ShieldAlert, Square, Trash2, Undo2 } from "lucide-react";
 import DOMPurify from "dompurify";
 import ProctoringDossier from "../../../components/ProctoringDossier";
 import { TYPE_LABEL, plainText } from "../../../shared/exams";
@@ -37,6 +37,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
       const j = await api(`/attempts/${attemptId}/action`, { method: "POST", body: JSON.stringify({ action, ...extra }) });
       onChanged();
       if (j.deleted) { onClose(); return; }
+      if (j.recheck) alert(j.recheck.keys ? `Перепроверено по новым ключам: изменились ${j.recheck.keys} вопр. Было ${j.recheck.before}%, стало ${j.recheck.after}%.` : `Ключи не менялись — результат прежний: ${j.recheck.after}%.`);
       await load();
     } catch (e: any) { setError(e.message); }
     finally { setBusy(null); }
@@ -121,6 +122,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
             {r && printData && <button className={btn} onClick={() => openPrint(reportHTML(printData)) || alert("Разрешите всплывающие окна")}><FileText className="w-4 h-4" /> Отчёт по темам</button>}
             {pr.enabled && <button className={btn} onClick={() => setDossier(true)}><ShieldAlert className="w-4 h-4" /> Досье прокторинга</button>}
             {a.status === "in_progress" && <button className={btn} disabled={!!busy} onClick={() => act("finish", {}, "Завершить работу сейчас и посчитать результат?")}><Square className="w-4 h-4" /> Завершить сейчас</button>}
+            {a.status === "finished" && <button className={btn} disabled={!!busy} onClick={() => act("recheck")}>{busy === "recheck" ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Перепроверить</button>}
             {!a.retakeAllowed && a.status === "finished" && !a.superseded && <button className={btn} disabled={!!busy} onClick={() => act("allow_retake", {}, "Разрешить ещё одну попытку? Новая сданная работа заменит эту.")}><RotateCcw className="w-4 h-4" /> Разрешить пересдачу</button>}
             {a.status !== "annulled"
               ? <button className={`${btn} text-rose-600`} disabled={!!busy} onClick={() => { const reason = prompt("Причина аннулирования (увидят менеджеры):"); if (reason !== null) void act("annul", { reason }); }}><Ban className="w-4 h-4" /> Аннулировать</button>

@@ -67,6 +67,16 @@ export default function AttemptsTab({ exam, api, tenant, canEdit }: { exam: Exam
     } catch (e: any) { alert(e.message); }
     finally { setBusy(false); }
   };
+  const recheckAll = async () => {
+    if (!confirm("Перепроверить все сданные работы по текущим ключам банка? Ручные оценки сохранятся.")) return;
+    setBusy(true);
+    try {
+      const j = await api(`/exams/${exam.id}/recheck-all`, { method: "POST" });
+      alert(`Перепроверено работ: ${j.total}. Изменился результат: ${j.changed}.`);
+      await load();
+    } catch (e: any) { alert(e.message); }
+    finally { setBusy(false); }
+  };
   const excel = async () => {
     setBusy(true);
     try { const j = await api(`/exams/${exam.id}/attempts?full=1`); await exportExamXlsx(exam, j.attempts); }
@@ -87,6 +97,7 @@ export default function AttemptsTab({ exam, api, tenant, canEdit }: { exam: Exam
           <input className={`${input} pl-9`} placeholder="ФИО, номер работы, телефон" value={q} onChange={e => setQ(e.target.value)} />
         </div>
         {canEdit && s.results.showToStudent === "after_publish" && <button className={btnPrimary} disabled={busy} onClick={publishAll}><Send className="w-4 h-4" /> Опубликовать готовые</button>}
+        {canEdit && <button className={btn} disabled={busy || !done} onClick={recheckAll} title="Заново проверить ответы по текущим ключам банка"><RefreshCw className="w-4 h-4" /> Перепроверить все</button>}
         <button className={btn} disabled={busy || !rows.length} onClick={excel}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Excel</button>
         <button className={btn} onClick={load} title="Обновить"><RefreshCw className="w-4 h-4" /></button>
       </div>
