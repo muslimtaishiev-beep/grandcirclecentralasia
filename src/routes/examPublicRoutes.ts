@@ -1,4 +1,4 @@
-import { syncReferral } from "./admissionRoutes.js";
+import { notifyTested, syncReferral } from "./admissionRoutes.js";
 import { Router } from "express";
 import admin from "firebase-admin";
 import { randomBytes, randomInt } from "crypto";
@@ -42,6 +42,7 @@ async function resolve(code: string): Promise<{ tenant: any; exam: Exam } | { er
   if (!gate.ok) return { error: gate.error || "Экзамен недоступен", status: gate.status || 403 };
   const s = await col(tenantId, "exams").doc(examId).get();
   if (!s.exists || s.data()?.archived) return { error: "Экзамен не найден", status: 404 };
+  if (s.data()?.settings?.paper === true) return { error: "Этот тест пишут на бумаге в школе — онлайн он не открывается", status: 409 };
   return { tenant: gate.tenant, exam: { ...(s.data() as Exam), id: s.id } };
 }
 
@@ -87,6 +88,7 @@ async function advance(t: string, exam: Exam, attemptId: string, expected: numbe
   });
   // Ученик сдал повторную попытку — прежняя больше не считается.
   if (out.finished) await supersedeOthers(t, out.a);
+  if (out.finished) await notifyTested(t, out.a, exam);
   return out.a;
 }
 

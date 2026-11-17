@@ -1,20 +1,20 @@
 import { Router } from "express";
 import admin from "firebase-admin";
-import { randomBytes } from "crypto";
+import { randomBytes, randomInt } from "crypto";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { hasPerm, membersWith, optionalAuth, requirePerm, staffCaller, type StaffCaller } from "../server/access.js";
 import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
 import { tenantLogos } from "../shared/legal.js";
 import { LEGAL_VERSION } from "../shared/legalDocs.js";
-import { DECISION_LABEL, partResults, sanitizeSettings, type Decision, type Exam } from "../shared/examRun.js";
+import { DECISION_LABEL, paperResult, partResults, sanitizeSections, sanitizeSettings, type Decision, type Exam, type ExamResult } from "../shared/examRun.js";
 import { DEFAULT_TEMPLATES } from "../shared/admissionTemplates.js";
 import {
   gradeOf, missingFor, outcomeOf, sanitizeAnswers, sanitizeTemplate,
   type QAnswers, type QBind, type QTemplate,
 } from "../shared/questionnaires.js";
 import {
-  admittedByStages, examForApplicant, stageOf,
-  type Applicant, type ApplicantForm, type LinkPurpose, type StageSummary,
+  admittedByStages, candidateOf, CANDIDATE_DECISION_LABEL, examForApplicant, sanitizeCandidate, stageOf, subjectLevel,
+  type Applicant, type ApplicantForm, type CandidateInfo, type LinkPurpose, type StageSummary,
 } from "../shared/admissions.js";
 import type { PermissionKey } from "../shared/permissions.js";
 
@@ -62,22 +62,31 @@ const seesAcademic = (c: StaffCaller) => hasPerm(c, "admission:manage", "tests:m
 const meOf = (c: StaffCaller) => ({
   admission: hasPerm(c, "admission:manage"), psych: hasPerm(c, "psych:conduct"), psychView: hasPerm(c, "psych:view"), academic: seesAcademic(c), name: c.name,
 });
+const LEVEL_WORD = ["Низкий", "Средний", "Отличный"] as const;
+
 // ── Уведомления администрации ───────────────────────────────────────────
 
-type AdmissionEvent = "new" | "session" | "done";
+type AdmissionEvent = "new" | "session" | "done" | "tested" | "results";
+const EVENT_TITLE: Record<AdmissionEvent, string> = {
+  new: "Новый поступающий", session: "Новая сессия у психолога", done: "Сессия завершена — бланк готов",
+  tested: "Тест сдан", results: "Результаты теста внесены",
+};
 /**
  * Ход приёма — в колокольчик сотрудникам с правом приёма (кроме автора).
  * Одна запись на ребёнка и адресата: показывает последний шаг, а не копит
  * десяток строк про одного ученика. Ошибка рассылки не ломает сохранение.
  */
-async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEvent, c: StaffCaller, o: { tid?: string; outcome?: string; referral?: boolean } = {}) {
+async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEvent, c: { uid: string; name: string }, o: { tid?: string; outcome?: string; referral?: boolean; summary?: string } = {}) {
   try {
     const to = (await membersWith(db(), t, ["admission:manage"])).filter(x => x.uid !== c.uid);
     if (!to.length) return;
     const who = `${a.child.name}, ${a.child.grade} класс`;
-    const title = ev === "new" ? "Новый поступающий" : ev === "session" ? "Новая сессия у психолога" : "Сессия завершена — бланк готов";
-    const body = ev === "done" ? [who, o.outcome, o.referral ? "направление выдано" : ""].filter(Boolean).join(" · ") : `${who} · ${c.name}`;
-    const url = `/workspace/${t}/exams?side=psych&open=${a.id}&ctab=${ev === "new" ? "profile" : o.tid || "psych"}`;
+    const title = EVENT_TITLE[ev];
+    const body = ev === "done" ? [who, o.outcome, o.referral ? "направление выдано" : ""].filter(Boolean).join(" · ")
+      : ev === "tested" || ev === "results" ? [who, o.summary, ev === "results" ? c.name : ""].filter(Boolean).join(" · ")
+      : `${who} · ${c.name}`;
+    const tab = ev === "new" ? "profile" : ev === "tested" || ev === "results" ? "test" : o.tid || "psych";
+    const url = `/workspace/${t}/exams?side=psych&open=${a.id}&ctab=${tab}`;
     const batch = db().batch();
     for (const r of to) batch.set(db().collection("notifications").doc(`adm_${a.id}_${r.uid}`), {
       tenantId: t, userId: r.uid, type: "admission", title, body, actionUrl: url, applicantId: a.id, read: false,
@@ -87,8 +96,22 @@ async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEvent, c: S
   } catch (e) { console.error("[admissions] notify:", e); }
 }
 
+/** Итог теста одной строкой — для уведомления. */
+const resultSummary = (exam: Pick<Exam, "settings">, r: Pick<ExamResult, "sections" | "percent"> | null | undefined) => {
+  if (!r) return "";
+  const parts = partResults(r.sections, exam.settings.scoring);
+  return parts.length ? parts.map(p => `${p.title}: ${p.value}`).join(" · ") : `${r.percent}%`;
+};
+
+/** Ученик сдал тест по направлению — сообщить администрации. */
+export async function notifyTested(t: string, x: { applicantId?: string; result?: ExamResult | null }, exam: Exam) {
+  if (!x.applicantId) return;
+  const a = await loadApplicant(t, x.applicantId).catch(() => null);
+  if (a) await notifyAdmission(t, a, "tested", { uid: "", name: "" }, { summary: resultSummary(exam, x.result) });
+}
+
 /** Карточка без академической части: этап — не дальше направления. */
-const withoutAcademic = (a: Applicant): Applicant => ({ ...a, decision: null, paperResults: [] });
+const withoutAcademic = (a: Applicant): Applicant => ({ ...a, decision: null, candidate: null, paperResults: [] });
 
 // ── Данные ──────────────────────────────────────────────────────────────
 
@@ -195,15 +218,21 @@ export async function syncAllReferrals(t: string) {
 async function attemptsOf(t: string, applicantIds?: string[]) {
   let q: FirebaseFirestore.Query = col(t, "exam_attempts");
   q = applicantIds?.length === 1 ? q.where("applicantId", "==", applicantIds[0]) : q.where("applicantId", "!=", null);
-  const snap = await q.select("applicantId", "examId", "examTitle", "status", "shortId", "startedAt", "finishedAt", "result.sections", "result.percent", "decision", "superseded").get();
+  const snap = await q.select("applicantId", "examId", "examTitle", "status", "shortId", "startedAt", "finishedAt", "result.sections", "result.percent", "result.topics", "decision", "superseded", "paper", "student.extra").get();
   const exams = new Map((await tenantExams(t)).map(e => [e.id, e]));
   return snap.docs.map(d => {
     const x: any = d.data(); const e = exams.get(x.examId);
-    const parts = x.result?.sections && e ? partResults(x.result.sections, e.settings.scoring).map(p => ({ title: p.title, value: p.value })) : [];
+    const parts = x.result?.sections && e ? partResults(x.result.sections, e.settings.scoring)
+      .map(p => ({ title: p.title, value: p.value, kind: p.kind, sections: e.settings.scoring.parts?.find(q => q.id === p.id)?.sections || [] })) : [];
     return {
       id: d.id, applicantId: x.applicantId, examId: x.examId, examTitle: x.examTitle, status: x.status, shortId: x.shortId,
-      startedAt: x.startedAt, finishedAt: x.finishedAt, superseded: !!x.superseded,
+      startedAt: x.startedAt, finishedAt: x.finishedAt, superseded: !!x.superseded, paper: !!x.paper,
       parts, percent: e && parts.length && e.settings.scoring.hideTotal ? null : x.result?.percent ?? null,
+      // Для анкеты кандидата: предметы, разбор по темам и пороги уровней экзамена.
+      sections: (x.result?.sections || []).map((s: any) => ({ id: s.id, title: s.title, percent: s.percent, correct: s.correct, total: s.total })),
+      topics: (x.result?.topics || []).filter((q: any) => q.topic && q.topic !== "—").map((q: any) => ({ topic: q.topic, percent: q.percent })),
+      levels: e?.settings.admission?.levels || { mid: 50, high: 77 },
+      studentPhone: x.student?.extra?.studentPhone || "",
       decision: x.decision ? DECISION_LABEL[x.decision.value as Decision] : null,
     };
   });
@@ -216,7 +245,8 @@ function row(a: Applicant, attempts: any[], academic: boolean) {
   return {
     id: a.id, refNo: a.refNo, child: a.child, parent: a.parent, parentForm: a.parentForm, stages: a.stages,
     referral: a.referral ? { examTitle: a.referral.examTitle, manual: a.referral.manual, issuedAt: a.referral.issuedAt } : null,
-    attempt: mine[0] || null, paperResults: a.paperResults.length, decision: a.decision ? DECISION_LABEL[a.decision.value] : null,
+    attempt: mine[0] || null, paperResults: a.paperResults.length,
+    decision: (d => (d ? CANDIDATE_DECISION_LABEL[d] : null))(candidateOf(a)?.decision),
     stage: stageOf(a, mine[0] || null), createdAt: a.createdAt, updatedAt: a.updatedAt,
   };
 }
@@ -345,7 +375,12 @@ router.get("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
     const canFillMap = Object.fromEntries(templates.map(x => [x.id, canFill(c, x)]));
     const canSeeMap = Object.fromEntries(templates.map(x => [x.id, canSee(c, x)]));
     return res.json({
-      success: true, applicant: academic ? a : withoutAcademic(a), forms, attempts, audit: auditLog,
+      success: true, applicant: academic ? { ...a, candidate: candidateOf(a) } : withoutAcademic(a), forms, attempts, audit: auditLog,
+      // Тест ребёнка по направлению: если на бумаге — администрация вносит правильные ответы.
+      testExam: academic ? await (async () => {
+        const e = a.referral?.examId ? (await tenantExams(t)).find(x => x.id === a.referral!.examId) : null;
+        return e ? { id: e.id, title: e.title, paper: !!e.settings.paper, sections: e.sections.map(x => ({ id: x.id, title: x.title, tasks: x.tasks || 0 })) } : null;
+      })() : null,
       templates: templates.filter(x => !x.archived), canFill: canFillMap, canSee: canSeeMap,
       me: meOf(c),
     });
@@ -515,18 +550,80 @@ router.delete("/:tenantId/applicants/:id/paper/:pid", ...staff, async (req: any,
   } catch (e: any) { return oops(res, e); }
 });
 
-router.post("/:tenantId/applicants/:id/decision", ...staff, async (req: any, res: any) => {
+/**
+ * Анкета кандидата: заключение, обратная связь родителю, решение и условия
+ * (пункты 3–5 бланка). «Обратная связь: да» открывает ученику результаты по QR.
+ */
+router.put("/:tenantId/applicants/:id/candidate", ...staff, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const c: StaffCaller = req.caller;
-    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Решение принимает приёмная или администрация");
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Анкету кандидата заполняет администрация");
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
-    const v = req.body?.value as Decision | null;
-    if (v !== null && !["accepted", "reserve", "rejected"].includes(v)) return fail(res, 400, "Неизвестное решение");
-    const decision = v ? { value: v, comment: str(req.body?.comment, 1000), by: c.name, at: Date.now() } : null;
-    await col(t, "applicants").doc(a.id).update({ decision, updatedAt: Date.now() });
-    await audit(t, a.id, c, "decision", v ? DECISION_LABEL[v] : "снято");
-    return res.json({ success: true, decision });
+    const prev = candidateOf(a);
+    const candidate: CandidateInfo = { ...sanitizeCandidate(req.body), by: c.name, at: Date.now() };
+    await col(t, "applicants").doc(a.id).update({ candidate, decision: null, updatedAt: Date.now() });
+    if ((prev?.decision || null) !== candidate.decision) await audit(t, a.id, c, "decision", candidate.decision ? CANDIDATE_DECISION_LABEL[candidate.decision] : "снято");
+    if (!!prev?.feedbackGiven !== candidate.feedbackGiven) await audit(t, a.id, c, "feedback", candidate.feedbackGiven ? "дана — ученик видит результаты по QR" : "снята");
+    return res.json({ success: true, candidate });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/**
+ * Тест на бумаге (1–6 классы): администрация вносит правильные ответы по
+ * предметам. «Из скольки» запоминается в экзамене — вводится один раз на
+ * предмет и класс. Работа сохраняется как обычная сданная: с процентами,
+ * в списке работ экзамена и в анкете кандидата.
+ */
+router.post("/:tenantId/applicants/:id/paper-test", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Результаты вносит администрация");
+    const a = await loadApplicant(t, String(req.params.id));
+    if (!a) return fail(res, 404, "Поступающий не найден");
+    const examId = str(req.body?.examId, 60) || a.referral?.examId || "";
+    const exam = (await tenantExams(t)).find(e => e.id === examId);
+    if (!exam || !exam.settings.paper) return fail(res, 400, "Это не тест на бумаге");
+    const g = gradeOf(a.child.grade);
+    if (a.referral?.examId !== exam.id && !(g !== null && (exam.settings.admission?.grades || []).includes(g))) return fail(res, 400, "Этот тест не для класса поступающего");
+    const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows.slice(0, 20) : [];
+    const rowOf = (id: string) => rows.find(x => x?.sectionId === id);
+    let remember = false;
+    const sections = exam.sections.map(x => {
+      const n = Math.round(Number(rowOf(x.id)?.tasks));
+      if (Number.isFinite(n) && n > 0 && n <= 500 && n !== x.tasks) { remember = true; return { ...x, tasks: n }; }
+      return x;
+    });
+    const noTasks = sections.filter(x => !(Number(x.tasks) > 0));
+    if (noTasks.length) return fail(res, 400, `Укажите, сколько заданий: ${noTasks.map(x => x.title).join(", ")}`);
+    const correct: Record<string, number> = {};
+    for (const x of sections) {
+      const v = Number(rowOf(x.id)?.correct);
+      if (!Number.isInteger(v) || v < 0 || v > (x.tasks || 0)) return fail(res, 400, `${x.title}: правильных — от 0 до ${x.tasks}`);
+      correct[x.id] = v;
+    }
+    const now = Date.now();
+    if (remember) await col(t, "exams").doc(exam.id).update({ sections: sanitizeSections(sections), updatedAt: now });
+    const ex = { ...exam, sections };
+    const result = paperResult(ex, correct);
+    const ref = col(t, "exam_attempts").doc(`paper_${a.id}_${exam.id}`);
+    const prev: any = (await ref.get()).data() || null;
+    let shortId = prev?.shortId || "";
+    for (let k = 0; k < 8 && !shortId; k++) {
+      const n = String(randomInt(100000, 1000000));
+      if ((await col(t, "exam_attempts").where("examId", "==", exam.id).where("shortId", "==", n).limit(1).get()).empty) shortId = n;
+    }
+    await ref.set(deep({
+      id: ref.id, tenantId: t, examId: exam.id, examTitle: exam.title, shortId, identity: `a:${a.id}`,
+      student: { name: a.child.name, phone: "", email: "", level: a.child.grade, extra: { birthDate: a.child.birthDate || "", school: a.child.school || "", parentName: a.parent.name || "", parentPhone: a.parent.phone || "" } },
+      status: "finished", startedAt: prev?.startedAt || now, finishedAt: now, current: 0, sections: [], questions: {}, answers: {},
+      result, review: { status: "done", overrides: {}, notes: {} }, proctoring: { enabled: false },
+      published: false, decision: null, group: null, retakeAllowed: false, superseded: false, hasPhoto: false,
+      applicantId: a.id, refNo: a.refNo, paper: true, enteredBy: c.name, enteredAt: now,
+    }));
+    await audit(t, a.id, c, "paper_results", `${exam.title}: ${result.sections.map(x => `${x.title} ${x.correct}/${x.total}`).join(", ")}`);
+    await notifyAdmission(t, a, "results", c, { summary: resultSummary(ex, result) });
+    return res.json({ success: true, attemptId: ref.id, result });
   } catch (e: any) { return oops(res, e); }
 });
 
@@ -586,10 +683,21 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
       const r = await syncReferral(l.tenantId, a).catch(() => a.referral);
       // Согласие дано родителем в анкете — на странице теста его не спрашиваем (сервер проверяет то же).
       const consented = (await col(l.tenantId, "applicant_forms").where("applicantId", "==", a.id).get()).docs.some(d => !!d.data().consent);
+      const exam = r?.examId ? (await tenantExams(l.tenantId)).find(e => e.id === r.examId) : null;
+      // Сдал — по этому же QR смотрит результаты, но только после обратной связи администрации.
+      const done = (await attemptsOf(l.tenantId, [a.id])).filter(x => x.status === "finished" && !x.superseded)
+        .sort((x, y) => (y.finishedAt || 0) - (x.finishedAt || 0))[0];
+      const open = !!done && !!candidateOf(a)?.feedbackGiven;
       return res.json({
         success: true, mode: "student", org, signedIn,
         child: { name: a.child.name, grade: a.child.grade },
-        exam: r?.examCode ? { code: r.examCode, title: r.examTitle } : null,
+        exam: r?.examCode && !exam?.settings.paper ? { code: r.examCode, title: r.examTitle } : null,
+        paper: !!exam?.settings.paper,
+        tested: !!done,
+        results: open ? {
+          examTitle: done.examTitle,
+          subjects: done.sections.map((x: any) => { const lv = subjectLevel(x, done.parts, done.levels); return { title: x.title, percent: x.percent, level: lv.own || LEVEL_WORD[lv.band] }; }),
+        } : null,
         referred: !!r,
         // Поля «о себе» на странице теста — из карточки, ученику остаётся проверить.
         prefill: { birthDate: a.child.birthDate || "", school: a.child.school || "", parentName: a.parent.name || "", parentPhone: a.parent.phone || "" },

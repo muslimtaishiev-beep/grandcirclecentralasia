@@ -33,6 +33,17 @@ export const ABL_PARENT_TEMPLATE: Omit<QTemplate, "version"> = {
         { id: "school_from", kind: "text", label: "Школа, из которой переходит ребёнок", required: true, bind: "child.school" },
         { id: "parent_name", kind: "text", label: "ФИО родителя (законного представителя)", required: true, bind: "parent.name" },
         { id: "parent_phone", kind: "phone", label: "Телефон представителя ребёнка", required: true, bind: "parent.phone" },
+        { id: "student_phone", kind: "phone", label: "Телефон ученика" },
+      ],
+    },
+    {
+      // Пункты «Анкеты кандидата на поступление» — их раньше записывала приёмная.
+      id: "admission", title: "О поступлении", items: [
+        { id: "program", kind: "choice", label: "Программа обучения", grades: [7], options: [{ id: "y11", label: "11-летняя" }, { id: "y12", label: "12-летняя" }] },
+        { id: "grades3", kind: "choice", label: "Есть ли оценки «3» за четверть?", options: [{ id: "yes", label: "Да" }, { id: "no", label: "Нет" }] },
+        { id: "grades3_subjects", kind: "text", label: "Если да — по каким предметам" },
+        { id: "why_school", kind: "text", label: "Почему выбрали нашу школу?" },
+        { id: "source", kind: "text", label: "Откуда узнали о школе?" },
       ],
     },
     {

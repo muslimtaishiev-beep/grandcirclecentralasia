@@ -79,6 +79,9 @@ export default function ExamDetailPage() {
       </div>
       {error && <div className="text-sm text-rose-600">{error}</div>}
 
+      {exam.settings.paper ? (
+        <div className={`${card} p-4 text-sm text-[var(--text-main)]`}>Тест на бумаге: правильные ответы вносят в карточке поступающего, во вкладке «Тест и решение».</div>
+      ) : (
       <div className={`${card} p-4 flex flex-wrap items-center gap-4`}>
         <div className="flex-1 min-w-[240px]">
           <div className="text-[11px] uppercase font-mono font-bold text-[var(--text-muted)]">Ссылка для учеников</div>
@@ -97,6 +100,7 @@ export default function ExamDetailPage() {
         )}
         {exam.status !== "open" && <div className="w-full text-xs text-amber-700">Экзамен {exam.status === "draft" ? "в черновике" : "закрыт"} — ученики не смогут начать. {canEdit ? "Нажмите «Открыт», когда всё готово." : ""}</div>}
       </div>
+      )}
 
       <div className="flex gap-1 border-b border-[var(--border-color)] overflow-x-auto hide-scrollbar">
         {([["attempts", "Работы"], ["analytics", "Аналитика"], ["settings", "Конструктор"]] as const).map(([k, l]) => (

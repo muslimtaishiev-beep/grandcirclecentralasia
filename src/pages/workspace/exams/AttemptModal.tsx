@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Award, Ban, CheckCircle2, RefreshCw, Eye, EyeOff, FileText, Loader2, RotateCcw, ShieldAlert, Square, Trash2, Undo2 } from "lucide-react";
+import { Award, Ban, CheckCircle2, ClipboardList, RefreshCw, Eye, EyeOff, FileText, Loader2, RotateCcw, ShieldAlert, Square, Trash2, Undo2 } from "lucide-react";
 import DOMPurify from "dompurify";
 import ProctoringDossier from "../../../components/ProctoringDossier";
 import { TYPE_LABEL, plainText } from "../../../shared/exams";
@@ -8,6 +8,8 @@ import { certificateHTML, openPrint, reportHTML, type PrintData } from "../../..
 import { tenantLogos, resolveLegalProfile } from "../../../shared/legal";
 import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui";
 import type { Api } from "./examApi";
+import { useAdmissionApi } from "../admissions/admissionApi";
+import { candidateDoc, latestTest, saveCandidate, testOfAttempt } from "../admissions/candidateForm";
 
 type Full = Attempt & { questions: Record<string, FrozenQuestion> };
 
@@ -26,6 +28,29 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
   const [dossier, setDossier] = useState(false);
   const [onlyWrong, setOnlyWrong] = useState(false);
   const [comment, setComment] = useState("");
+  const admApi = useAdmissionApi(exam.tenantId);
+  /** Вступительный тест: вместо сертификата и отчёта по темам — анкета кандидата. */
+  const admission = !!exam.settings.admission?.grades?.length;
+  const downloadCandidate = async () => {
+    if (!a) return;
+    setBusy("candidate"); setError(null);
+    try {
+      const own = testOfAttempt(a, exam);
+      const org = { name: String(tenant?.name || ""), logoUrl: tenantLogos(tenant).logoUrl };
+      let doc = null;
+      // Есть карточка и права на неё — анкета целиком (анкета родителя, решение, QR).
+      if (a.applicantId) {
+        try {
+          const d = await admApi(`/applicants/${a.applicantId}`);
+          doc = candidateDoc({ applicant: d.applicant, parentForm: d.forms.find((f: any) => f.full && f.template.audience === "parent") || null, test: (d.attempts.length ? latestTest(d.attempts) : null) || own });
+        } catch { /* нет прав на карточку — из данных работы */ }
+      }
+      const x = a.student.extra || {};
+      doc = doc || candidateDoc({ test: own, fallback: { name: a.student.name, birthDate: x.birthDate || "", grade: a.student.level || "", school: x.school || "", parentName: x.parentName || "", parentPhone: x.parentPhone || "", studentPhone: x.studentPhone || a.student.phone || "" } });
+      await saveCandidate(org, doc);
+    } catch (e: any) { setError(e.message); }
+    finally { setBusy(null); }
+  };
 
   const load = useCallback(async () => {
     try { const j = await api(`/attempts/${attemptId}`); setA(j.attempt); setComment(j.attempt.decision?.comment || ""); }
@@ -124,11 +149,12 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
             {a.status === "finished" && (a.published
               ? <button className={btn} disabled={!!busy} onClick={() => act("unpublish")}><EyeOff className="w-4 h-4" /> Снять публикацию</button>
               : <button className={btnPrimary} disabled={!!busy} onClick={() => act("publish")}><Eye className="w-4 h-4" /> Опубликовать</button>)}
-            {r && s.results.certificate && printData && <button className={btn} onClick={() => openPrint(certificateHTML(printData)) || alert("Разрешите всплывающие окна")}><Award className="w-4 h-4" /> Сертификат</button>}
-            {r && printData && <button className={btn} onClick={() => openPrint(reportHTML(printData)) || alert("Разрешите всплывающие окна")}><FileText className="w-4 h-4" /> Отчёт по темам</button>}
+            {r && admission && <button className={btn} disabled={!!busy} onClick={downloadCandidate}>{busy === "candidate" ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />} Анкета кандидата</button>}
+            {r && !admission && s.results.certificate && printData && <button className={btn} onClick={() => openPrint(certificateHTML(printData)) || alert("Разрешите всплывающие окна")}><Award className="w-4 h-4" /> Сертификат</button>}
+            {r && !admission && printData && <button className={btn} onClick={() => openPrint(reportHTML(printData)) || alert("Разрешите всплывающие окна")}><FileText className="w-4 h-4" /> Отчёт по темам</button>}
             {pr.enabled && <button className={btn} onClick={() => setDossier(true)}><ShieldAlert className="w-4 h-4" /> Досье прокторинга</button>}
             {a.status === "in_progress" && <button className={btn} disabled={!!busy} onClick={() => act("finish", {}, "Завершить работу сейчас и посчитать результат?")}><Square className="w-4 h-4" /> Завершить сейчас</button>}
-            {a.status === "finished" && <button className={btn} disabled={!!busy} onClick={() => act("recheck")}>{busy === "recheck" ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Перепроверить</button>}
+            {a.status === "finished" && !(a as any).paper && <button className={btn} disabled={!!busy} onClick={() => act("recheck")}>{busy === "recheck" ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Перепроверить</button>}
             {!a.retakeAllowed && a.status === "finished" && !a.superseded && <button className={btn} disabled={!!busy} onClick={() => act("allow_retake", {}, "Разрешить ещё одну попытку? Новая сданная работа заменит эту.")}><RotateCcw className="w-4 h-4" /> Разрешить пересдачу</button>}
             {a.status !== "annulled"
               ? <button className={`${btn} text-rose-600`} disabled={!!busy} onClick={() => { const reason = prompt("Причина аннулирования (увидят менеджеры):"); if (reason !== null) void act("annul", { reason }); }}><Ban className="w-4 h-4" /> Аннулировать</button>

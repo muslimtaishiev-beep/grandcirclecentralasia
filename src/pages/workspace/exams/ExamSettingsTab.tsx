@@ -42,7 +42,7 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
   }, [api, exam.id, sections]);
 
   const dirty = JSON.stringify({ title, description, group, sections, st }) !== JSON.stringify({ title: exam.title, description: exam.description, group: exam.group, sections: exam.sections, st: exam.settings });
-  const set = <K extends keyof ExamSettings>(k: K, p: Partial<ExamSettings[K]>) => setSt(s => ({ ...s, [k]: { ...s[k], ...p } }));
+  const set = <K extends Exclude<keyof ExamSettings, "paper">>(k: K, p: Partial<NonNullable<ExamSettings[K]>>) => setSt(s => ({ ...s, [k]: { ...(s[k] as object), ...p } }));
   const upd = (i: number, p: Partial<ExamSection>) => setSections(xs => xs.map((x, k) => (k === i ? { ...x, ...p } : x)));
   const move = (i: number, d: number) => setSections(xs => { const n = [...xs]; const j = i + d; if (j < 0 || j >= n.length) return xs; [n[i], n[j]] = [n[j], n[i]]; return n; });
   const addSection = () => {
@@ -120,10 +120,11 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
         <div className="flex items-end justify-between gap-2">
           <div>
             <h3 className="font-bold text-[var(--text-main)]">Порядок прохождения</h3>
-            <p className="text-xs text-[var(--text-muted)]">Ученик проходит дисциплины сверху вниз, у каждой свой таймер. Всего: {totalMinutes} мин, {totalQuestions} вопросов.</p>
+            <p className="text-xs text-[var(--text-muted)]">{st.paper ? "Тест на бумаге: правильные ответы вносит администрация в карточке поступающего." : `Ученик проходит дисциплины сверху вниз, у каждой свой таймер. Всего: ${totalMinutes} мин, ${totalQuestions} вопросов.`}</p>
           </div>
           <button className={btn} onClick={addSection} disabled={!disciplines.length} title="Ещё одна часть, например вторая часть той же дисциплины"><Plus className="w-4 h-4" /> Часть</button>
         </div>
+        <Check checked={!!st.paper} onChange={v => setSt(x => ({ ...x, paper: v }))}>Тест на бумаге — без вопросов, вводится число правильных</Check>
         {!sections.length && <div className={`${card} p-6 text-sm text-[var(--text-muted)] text-center`}>Включите дисциплины выше — они появятся здесь в порядке прохождения.</div>}
         {sections.map((s, i) => {
           const disc = disciplines.find(d => d.code === s.disciplineId);
@@ -136,13 +137,16 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
                   {disciplines.map(d => <option key={d.code} value={d.code}>{d.code} · {d.name}</option>)}
                 </select>
                 <input className={`${input} flex-1 min-w-[160px]`} value={s.title} onChange={e => upd(i, { title: e.target.value })} placeholder="Название раздела для ученика" />
-                {i > 0 && s.joinPrev
+                {st.paper
+                  ? <div className="flex items-center gap-1"><span className="text-xs text-[var(--text-muted)]">заданий</span><input type="number" min={1} className={`${input} !w-20`} value={s.tasks || ""} onChange={e => upd(i, { tasks: Math.max(0, Number(e.target.value) || 0) || undefined })} /></div>
+                  : i > 0 && s.joinPrev
                   ? <span className="text-xs text-[var(--text-muted)] px-2">общий таймер</span>
                   : <div className="flex items-center gap-1"><input type="number" min={1} className={`${input} !w-20`} value={s.minutes} onChange={e => upd(i, { minutes: Number(e.target.value) || 1 })} /><span className="text-xs text-[var(--text-muted)]">мин</span></div>}
                 <button className={btn} onClick={() => move(i, -1)} disabled={i === 0}><ArrowUp className="w-4 h-4" /></button>
                 <button className={btn} onClick={() => move(i, 1)} disabled={i === sections.length - 1}><ArrowDown className="w-4 h-4" /></button>
                 <button className={btn} onClick={() => setSections(xs => xs.filter((_, k) => k !== i))}><Trash2 className="w-4 h-4 text-rose-600" /></button>
               </div>
+              {!st.paper && <>
               {s.mode !== "picked" && sets.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm text-[var(--text-main)]">Вопросы из</span>
@@ -197,6 +201,7 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
                     : <>Ученик получит {plan.want} вопр. из {plan.pool} подходящих{plan.short.map(x => ` · не хватает «${DIFFICULTY_LABEL[x.difficulty].toLowerCase()}»: нужно ${x.need}, есть ${x.have}`).join("")}</>}
                 </div>
               )}
+              </>}
             </div>
           );
         })}

@@ -66,6 +66,13 @@ export default function AdmissionGate({ tenantId, value, onChange }: { tenantId:
         {templates && templates.length > 0 && <button type="button" className={btn} onClick={() => set({ stages: [...value.stages, { templateId: templates.find(t => !value.stages.some(s => s.templateId === t.id))?.id || templates[0].id, passOutcomes: [] }] })}><Plus className="w-4 h-4" /> Этап</button>}
         {denied && <p className="text-xs text-[var(--text-muted)]">Анкеты видны сотрудникам с правами раздела «Поступающие».</p>}
       </div>
+      <div>
+        <span className={label}>Уровень в анкете кандидата</span>
+        <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--text-main)]">
+          средний от <input type="number" min={0} max={100} className={`${input} !w-16`} value={value.levels?.mid ?? 50} onChange={e => set({ levels: { mid: Number(e.target.value) || 0, high: value.levels?.high ?? 77 } })} />%
+          отличный от <input type="number" min={0} max={100} className={`${input} !w-16`} value={value.levels?.high ?? 77} onChange={e => set({ levels: { mid: value.levels?.mid ?? 50, high: Number(e.target.value) || 0 } })} />%
+        </div>
+      </div>
       <label className="flex items-start gap-2 text-sm text-[var(--text-main)]"><input type="checkbox" className="mt-1" checked={value.referralOnly} onChange={e => set({ referralOnly: e.target.checked })} /> <span>Вход только по направлению (QR) — без ручной регистрации</span></label>
     </div>
   );

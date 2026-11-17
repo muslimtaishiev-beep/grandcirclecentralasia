@@ -19,7 +19,8 @@ import { gradeOf, missingFor, type QAnswers, type QTemplate } from "../../shared
 type Info =
   | { mode: "staff"; url: string; who: string }
   | { mode: "staff_only"; org: Org; signedIn: boolean }
-  | { mode: "student"; org: Org; signedIn: boolean; child: { name: string; grade: string }; exam: { code: string; title: string } | null; referred?: boolean }
+  | { mode: "student"; org: Org; signedIn: boolean; child: { name: string; grade: string }; exam: { code: string; title: string } | null; referred?: boolean;
+      paper?: boolean; tested?: boolean; results?: { examTitle: string; subjects: { title: string; percent: number; level: string }[] } | null }
   | { mode: "parent"; org: Org; signedIn: boolean; locked: boolean; template: QTemplate; answers: QAnswers; done: boolean; grade: string };
 type Org = { id: string; name: string; logoUrl: string | null };
 
@@ -75,10 +76,25 @@ export default function AdmissionLink() {
   if (info.mode === "student") return (
     <Shell org={info.org}>
       <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4 text-center">
-        <div className="text-sm text-slate-500">Направление на тест</div>
+        <div className="text-sm text-slate-500">{info.tested ? "Результаты теста" : "Направление на тест"}</div>
         <h1 className="text-2xl font-bold text-slate-900">{info.child.name}</h1>
         <div className="text-slate-600">Поступает в {info.child.grade} класс</div>
-        {info.exam ? (
+        {info.results ? (
+          <div className="text-left space-y-2">
+            <div className="text-xs text-slate-500 text-center">{info.results.examTitle}</div>
+            {info.results.subjects.map(x => (
+              <div key={x.title} className="rounded-xl bg-slate-50 p-3">
+                <div className="flex items-baseline justify-between gap-2"><span className="font-medium text-slate-800">{x.title}</span><b className="text-lg tabular-nums text-slate-900">{String(x.percent).replace(".", ",")}%</b></div>
+                <div className="mt-1.5 h-1.5 rounded-full bg-slate-200 overflow-hidden"><i className="block h-full bg-blue-600 rounded-full" style={{ width: `${Math.max(0, Math.min(100, x.percent))}%` }} /></div>
+                <div className="text-xs text-slate-500 mt-1">Уровень: {x.level}</div>
+              </div>
+            ))}
+          </div>
+        ) : info.tested ? (
+          <p className="text-sm text-slate-600">Тест сдан. Результаты появятся здесь после встречи с администрацией школы.</p>
+        ) : info.paper ? (
+          <p className="text-sm text-slate-600">Тест для {info.child.grade} класса пишут на бумаге в школе. После теста результаты можно будет посмотреть по этому коду.</p>
+        ) : info.exam ? (
           <>
             <div className="rounded-xl bg-slate-50 p-3"><div className="text-xs text-slate-500">Тест</div><div className="font-semibold">{info.exam.title}</div></div>
             <button className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold" onClick={() => navigate(`/exam/${info.exam!.code}?ref=${encodeURIComponent(token)}`)}>Перейти к тесту</button>

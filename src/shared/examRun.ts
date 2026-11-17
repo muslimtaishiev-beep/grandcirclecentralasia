@@ -41,6 +41,8 @@ export interface ExamSection {
    * математика и логика — одной частью на 90 минут.
    */
   joinPrev?: boolean;
+  /** Тест на бумаге: сколько заданий в разделе — от него считается процент. */
+  tasks?: number;
 }
 
 export interface ScaleBand { minPercent: number; label: string }
@@ -149,7 +151,16 @@ export interface ExamSettings {
    * шаблоне). grades — для поступающих в какие классы этот экзамен.
    * referralOnly — войти можно только по направлению (QR), без ручной регистрации.
    */
-  admission?: { referralOnly: boolean; grades: number[]; stages: { templateId: string; passOutcomes: string[] }[] };
+  admission?: {
+    referralOnly: boolean; grades: number[]; stages: { templateId: string; passOutcomes: string[] }[];
+    /** Уровень по предмету в анкете кандидата: «средний» от mid %, «отличный» от high %. */
+    levels?: { mid: number; high: number };
+  };
+  /**
+   * Тест на бумаге: вопросов нет, ученик пишет в школе, администратор вносит
+   * число правильных по разделам (из «заданий» раздела). Онлайн не открывается.
+   */
+  paper?: boolean;
 }
 
 export type ExamStatus = "draft" | "open" | "closed";
@@ -192,7 +203,8 @@ export const DEFAULT_SETTINGS: ExamSettings = {
     groups: [],
   },
   display: { layout: "paged" },
-  admission: { referralOnly: false, grades: [], stages: [] },
+  admission: { referralOnly: false, grades: [], stages: [], levels: { mid: 50, high: 77 } },
+  paper: false,
 };
 
 const num = (v: unknown, min: number, max: number, def: number) => {
@@ -224,6 +236,7 @@ export function sanitizeSections(raw: unknown): ExamSection[] {
       counts: { 1: Math.round(num(c[1], 0, 500, 0)), 2: Math.round(num(c[2], 0, 500, 0)), 3: Math.round(num(c[3], 0, 500, 0)) },
       shuffle: b(r?.shuffle, false),
       ...(out.length && r?.joinPrev === true ? { joinPrev: true } : {}),
+      ...(Number(r?.tasks) > 0 ? { tasks: Math.round(num(r.tasks, 1, 500, 1)) } : {}),
     });
   }
   return out;
@@ -308,7 +321,37 @@ export function sanitizeSettings(raw: any): ExamSettings {
       stages: (Array.isArray(r.admission?.stages) ? r.admission.stages : []).slice(0, 6)
         .map((x: any) => ({ templateId: s(x?.templateId, 40), passOutcomes: [...new Set<string>((Array.isArray(x?.passOutcomes) ? x.passOutcomes : []).map((v: unknown) => s(v, 40)).filter(Boolean))].slice(0, 8) }))
         .filter((x: { templateId: string }) => /^[A-Za-z0-9_-]{1,40}$/.test(x.templateId)),
+      levels: (() => {
+        const mid = Math.round(num(r.admission?.levels?.mid, 0, 100, 50));
+        return { mid, high: Math.max(mid, Math.round(num(r.admission?.levels?.high, 0, 100, 77))) };
+      })(),
     },
+    paper: b(r.paper, false),
+  };
+}
+
+/** Уровень по предмету в анкете кандидата. */
+export const LEVEL_LABELS = ["Низкий", "Средний", "Отличный"] as const;
+export const levelOf = (percent: number, l: { mid: number; high: number } = { mid: 50, high: 77 }): 0 | 1 | 2 =>
+  percent >= l.high ? 2 : percent >= l.mid ? 1 : 0;
+
+/**
+ * Результат теста на бумаге: по разделу — правильных из заданий. Так
+ * бумажная работа считается и показывается как обычная (проценты, части,
+ * отметка), только без вопросов и разбора по темам.
+ */
+export function paperResult(exam: Pick<Exam, "sections" | "settings">, correct: Record<string, number>): ExamResult {
+  const sections: SectionResult[] = exam.sections.filter(x => (x.tasks || 0) > 0).map(x => {
+    const total = x.tasks || 0;
+    const c = Math.max(0, Math.min(total, Math.round(Number(correct[x.id]) || 0)));
+    return { id: x.id, title: x.title, earned: c, max: total, percent: pct(c, total), correct: c, total };
+  });
+  const earned = sections.reduce((n, x) => n + x.earned, 0), max = sections.reduce((n, x) => n + x.max, 0);
+  const percent = pct(earned, max);
+  return {
+    earned, max, percent, correct: earned, total: max, sections, topics: [], items: [],
+    mark: markOf(percent, exam.settings.scoring.marks), band: exam.settings.scoring.band ? bandOf(percent) : null,
+    scaleLabel: scaleOf(percent, exam.settings.scoring.scale),
   };
 }
 

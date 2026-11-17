@@ -145,7 +145,95 @@ export async function sessionSheet(org: PrintOrg, c: PrintChild, o: { cardToken:
   </div>`;
 }
 
+/** Данные «Анкеты кандидата на поступление» — собираются из карточки, анкеты родителя и теста. */
+export interface CandidateDoc {
+  date: number | null;
+  responsible: string;
+  child: { name: string; birthDate: string; grade: string; school: string };
+  refNo: number | null;
+  /** Только для поступающих в 7 класс. */
+  program: string;
+  grades3: string; grades3Subjects: string;
+  studentPhone: string; parentName: string; parentPhone: string;
+  whySchool: string; source: string;
+  stages: { consult: boolean; tested: boolean; feedback: boolean };
+  subjects: { title: string; percent: number | null; band: 0 | 1 | 2 | null; own: string | null }[];
+  overall: string;
+  conclusion: string;
+  feedback: string;
+  decision: "enroll" | "trial" | "rejected" | "pending" | null;
+  trialFrom: string; trialTo: string; klass: string; reviewDate: string;
+  parentNotified: boolean | null; nextContact: string; decisionBy: string;
+  /** QR ученика: до теста — тест, после — его результаты; сотруднику — карточка. */
+  qrUrl: string | null;
+}
+
+const CAND_CSS = `
+.cand{font-size:10pt;line-height:1.35}
+.cand .top{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.cand .top img.logo{height:46px;max-width:140px;object-fit:contain}
+.cand .top .t{flex:1;text-align:center}.cand .top .t b{display:block;font-size:12.5pt;letter-spacing:.02em}
+.cand .top .t span{display:block;font-weight:700;font-size:12pt;margin-top:4px}
+.cand .top .q{text-align:center}.cand .top .q img{width:84px;height:84px}.cand .top .q div{font:700 11pt monospace}
+.cand h3{font-size:10.5pt;margin:9px 0 2px;text-transform:uppercase}
+.cand .ln{display:flex;flex-wrap:wrap;gap:2px 6px;align-items:flex-end;margin:3px 0;line-height:1.2}
+.cand .ln .k{white-space:nowrap;padding-bottom:5px}.cand .ln .v{flex:1;min-width:60px;border-bottom:1px solid #777;min-height:20px;padding:0 4px 6px;font-weight:600}
+.cand .ln .cb{padding-bottom:5px}.cand .hint{display:block;margin-bottom:6px}
+.cand .row{display:flex;gap:16px}.cand .row>.ln{flex:1}
+.cand .cb{white-space:nowrap;margin-right:6px}
+.cand table{margin-top:4px}.cand td,.cand th{padding:4px 6px 10px;line-height:1.25}
+.cand .box2{border:1px solid #777;min-height:60px;padding:6px 8px 10px;white-space:pre-wrap}
+.cand .note{font-size:9pt;color:#444;margin-top:8px}
+`;
+
+/** «Анкета кандидата на поступление» — по бумажному бланку школы, заполненная системой. */
+export async function candidateSheet(org: PrintOrg, d: CandidateDoc) {
+  const cb = (on: boolean | null | undefined, label: string) => `<span class="cb">${on ? "☑" : "☐"} ${esc(label)}</span>`;
+  const ln = (k: string, v: string, style = "") => `<div class="ln"${style ? ` style="${style}"` : ""}><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`;
+  const dt = (v: string) => (v ? new Date(v).toLocaleDateString("ru-RU") : "");
+  const qrImg = d.qrUrl ? await qr(d.qrUrl) : "";
+  const levels = ["Низкий", "Средний", "Отличный"];
+  const rows = d.subjects.map(x => `<tr><td>${esc(x.title)}</td><td style="text-align:center;font-weight:700">${x.percent == null ? "" : `${String(x.percent).replace(".", ",")} %`}</td>
+    <td>${levels.map((l, i) => cb(x.band === i, l)).join("")}${x.own ? `<b> · ${esc(x.own)}</b>` : ""}</td></tr>`).join("");
+  return `<div class="sheet cand"><style>${CAND_CSS}</style>
+    <div class="top">
+      ${org.logoUrl ? `<img class="logo" src="${esc(org.logoUrl)}" alt="">` : ""}
+      <div class="t"><b>${esc(org.name.toUpperCase())}</b><span>АНКЕТА КАНДИДАТА НА ПОСТУПЛЕНИЕ</span></div>
+      ${qrImg ? `<div class="q"><img src="${qrImg}" alt="">${d.refNo ? `<div>${no(d.refNo)}</div>` : ""}</div>` : ""}
+    </div>
+    <div class="row">${ln("Дата обращения:", d.date ? new Date(d.date).toLocaleDateString("ru-RU") : "")}${ln("Ответственный:", d.responsible)}</div>
+    <h3>1. Сведения об ученике</h3>
+    ${ln("ФИО ученика:", d.child.name)}
+    <div class="row">${ln("Дата рождения:", dt(d.child.birthDate))}${ln("Класс поступления:", d.child.grade ? `${d.child.grade} класс` : "")}</div>
+    ${ln("Школа:", d.child.school)}
+    ${d.program || d.child.grade.trim().startsWith("7") ? `<div class="ln"><span class="k">Для 7-го класса:</span> ${cb(d.program === "11-летняя", "11-летняя программа")}${cb(d.program === "12-летняя", "12-летняя программа")}</div>` : ""}
+    <div class="ln"><span class="k">Есть ли оценки «3» за четверть?</span> ${cb(d.grades3 === "Да", "Да")}${cb(d.grades3 === "Нет", "Нет")}<span class="k">Предметы:</span><span class="v">${esc(d.grades3Subjects)}</span></div>
+    <div class="row">${ln("Телефон ученика:", d.studentPhone)}${ln("ФИО родителя:", d.parentName)}</div>
+    ${ln("Телефон родителя:", d.parentPhone)}
+    ${ln("Почему выбрали школу?", d.whySchool)}
+    ${ln("Откуда узнали о школе?", d.source)}
+    <h3>2. Этапы поступления</h3>
+    <div class="ln"><span class="k">Консультация:</span> ${cb(d.stages.consult, "Проведена")}${cb(!d.stages.consult, "Нет")}
+      <span class="k">Тестирование:</span> ${cb(d.stages.tested, "Пройдено")}${cb(!d.stages.tested, "Нет")}
+      <span class="k">Обратная связь:</span> ${cb(d.stages.feedback, "Да")}${cb(!d.stages.feedback, "Нет")}</div>
+    <h3>3. Результаты тестирования</h3>
+    <table><tr><th style="width:34%">Предмет</th><th style="width:18%">Результат, %</th><th>Уровень</th></tr>${rows || `<tr><td colspan="3" class="hint">Тест ещё не сдан</td></tr>`}</table>
+    ${ln("Общий результат / заключение:", [d.overall, d.conclusion].filter(Boolean).join(" — "), "margin-top:6px")}
+    <h3>4. Обратная связь родителю / подробное примечание</h3>
+    <div class="hint">Сильные и слабые стороны, рекомендации, условия пробного периода, предупреждения родителю:</div>
+    <div class="box2">${esc(d.feedback)}</div>
+    <h3>5. Решение по кандидату</h3>
+    <div class="ln">${cb(d.decision === "enroll", "Зачисление рекомендовано")}${cb(d.decision === "trial", "Пробный период")}${cb(d.decision === "rejected", "Отказ")}${cb(d.decision === "pending", "На рассмотрении")}</div>
+    <div class="row">${ln("Пробный период: с", dt(d.trialFrom))}${ln("по", dt(d.trialTo))}${ln("Класс:", d.klass)}</div>
+    <div class="row">${ln("Дата повторного рассмотрения:", dt(d.reviewDate))}<div class="ln"><span class="k">Родитель уведомлён об условиях:</span> ${cb(d.parentNotified === true, "Да")}${cb(d.parentNotified === false, "Нет")}</div></div>
+    <div class="row">${ln("Следующий контакт:", d.nextContact)}${ln("Ответственный:", d.decisionBy)}${ln("Подпись:", "")}</div>
+    <div class="note">Примечание: решение о зачислении и условиях обучения оформляется отдельно.</div>
+  </div>`;
+}
+
 /** Стили печати, ограниченные одним блоком — чтобы PDF собирался прямо на странице, не задевая её. */
+const scopeCss = (css: string, root: string) => css.replace(/@page\{[^}]*\}/, "").replace(/(^|\})\s*([^{}]+)\{/g, (_m, close: string, sel: string) =>
+  `${close}${sel.split(",").map(x => x.trim()).map(x => (x === "body" ? root : `${root} ${x}`)).join(",")}{`);
 const scopedCss = (root: string) => CSS.replace(/@page\{[^}]*\}/, "").replace(/(^|\})\s*([^{}]+)\{/g, (_m, close: string, sel: string) =>
   `${close}${sel.split(",").map(x => x.trim()).map(x => (x === "body" ? root : `${root} ${x}`)).join(",")}{`);
 
@@ -155,9 +243,11 @@ export async function downloadPdf(sheets: string, filename: string) {
   const host = document.createElement("div");
   host.className = "adm-pdf";
   // В документ не вставляем: html2pdf сам кладёт копию в свой скрытый слой.
-  host.style.cssText = "width:186mm;background:#fff;color:#111;line-height:1.35;padding-bottom:10mm";
+  host.style.cssText = "width:186mm;background:#fff;color:#111;line-height:1.35;padding-bottom:4mm";
   // html2canvas опускает текст к нижней границе ячейки — даём строкам воздух.
   host.innerHTML = `<style>${scopedCss(".adm-pdf")} .adm-pdf td,.adm-pdf th{line-height:1.3;padding:4px 6px 8px} .adm-pdf p{margin:4px 0}</style>${sheets}`;
+  // У анкеты кандидата свои стили внутри листа — тоже только для этого блока.
+  host.querySelectorAll("style").forEach((st, i) => { if (i > 0) st.textContent = scopeCss(st.textContent || "", ".adm-pdf"); });
   await html2pdf().set({
     margin: 12, filename, image: { type: "jpeg", quality: 0.95 },
     html2canvas: { scale: 2, useCORS: true, backgroundColor: "#fff" },

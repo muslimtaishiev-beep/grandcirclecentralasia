@@ -1,4 +1,4 @@
-import { syncAllReferrals } from "./admissionRoutes.js";
+import { notifyTested, syncAllReferrals } from "./admissionRoutes.js";
 import { Router } from "express";
 import admin from "firebase-admin";
 import { randomBytes } from "crypto";
@@ -346,6 +346,7 @@ router.post("/:tenantId/attempts/:aid/action", ...edit, checkIds, async (req: an
         const sections = a.sections.map(s => ({ ...s, finishedAt: s.finishedAt || now }));
         await ref.update({ status: "finished", finishedAt: now, sections, result, finishedBy: who(req) });
         await supersedeOthers(t, { ...(a as any), status: "finished" });
+        await notifyTested(t, { ...(a as any), result }, exam);
         break;
       }
       case "decision": {
@@ -356,6 +357,7 @@ router.post("/:tenantId/attempts/:aid/action", ...edit, checkIds, async (req: an
       case "group": await ref.update({ group: str(req.body?.value, 30) || null }); break;
       case "recheck": {
         if (a.status !== "finished") return fail(res, 409, "Перепроверить можно только сданную работу");
+        if ((a as any).paper) return fail(res, 409, "Тест на бумаге: результаты меняют в карточке поступающего");
         const r = await recheck(t, a, exam?.settings || DEFAULT_SETTINGS);
         await ref.update({ questions: r.questions, result: r.result, recheckedAt: now, recheckedBy: who(req) });
         const fresh = await loadAttempt(t, a.id);
@@ -380,7 +382,8 @@ router.post("/:tenantId/exams/:id/recheck-all", ...edit, checkIds, async (req: a
     const exam = await loadExam(t, req.params.id);
     if (!exam) return fail(res, 404, "Экзамен не найден");
     const snap = await col(t, "exam_attempts").where("examId", "==", exam.id).where("status", "==", "finished").get();
-    const all = snap.docs.map(d => ({ ...(d.data() as WithQuestions), id: d.id }));
+    // Бумажные работы без вопросов — перепроверять нечего.
+    const all = snap.docs.map(d => ({ ...(d.data() as WithQuestions), id: d.id })).filter(a => !(a as any).paper);
     const ids = [...new Set(all.flatMap(a => Object.keys(a.questions || {})))];
     const bank = new Map<string, any>();
     for (let i = 0; i < ids.length; i += 300) {
