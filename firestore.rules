@@ -105,6 +105,12 @@ service cloud.firestore {
       match /exam_sets/{d}         { allow read, write: if false; }
       // Презентации: слайды и доступ — только через сервер, файлы — по подписанным ссылкам.
       match /presentations/{d}     { allow read, write: if false; }
+      // Поступающие: карточки, анкеты с данными о здоровье, журнал — только сервер.
+      match /applicants/{d}              { allow read, write: if false; }
+      match /applicant_forms/{d}         { allow read, write: if false; }
+      match /applicant_audit/{d}         { allow read, write: if false; }
+      match /questionnaire_templates/{d} { allow read, write: if false; }
+      match /admission_meta/{d}          { allow read, write: if false; }
       match /exams/{d}             { allow read, write: if false; }
       match /exam_attempts/{d}     { allow read, write: if false; }
       match /exam_evidence/{d}     { allow read, write: if false; }
@@ -200,6 +206,7 @@ service cloud.firestore {
     match /journal_sign_tokens/{docId} { allow read, write: if false; }
     match /exam_links/{docId} { allow read, write: if false; }
     match /presentation_links/{docId} { allow read, write: if false; }
+    match /applicant_links/{docId} { allow read, write: if false; }
     match /bookable_resources/{docId} { allow read: if hasTenantAccess(); allow write: if false; }
     match /resource_bookings/{docId}  { allow read: if hasTenantAccess(); allow write: if false; }
     // Заявки закрыты ПРАВОМ, а не одним лишь членством: в них лежит токен

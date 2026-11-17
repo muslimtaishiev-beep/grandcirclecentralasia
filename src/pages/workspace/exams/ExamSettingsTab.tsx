@@ -6,6 +6,7 @@ import { btn, btnPrimary, card, input, label } from "../journals/components/ui";
 import type { Api, DisciplineRow, SetRow } from "./examApi";
 import QuestionPicker from "./QuestionPicker";
 import GradePartsEditor from "./GradePartsEditor";
+import AdmissionGate from "./AdmissionGate";
 
 type Plan = { pool: number; have: Record<Difficulty, number>; want: number; short: { difficulty: Difficulty; need: number; have: number }[]; missing?: number };
 
@@ -219,6 +220,11 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
           </div>
           <div className="max-w-[220px]"><span className={label}>Попыток на человека</span><input type="number" min={1} max={20} className={input} value={st.access.maxAttempts} onChange={e => set("access", { maxAttempts: Number(e.target.value) || 1 })} /></div>
           <p className="text-[11px] text-[var(--text-muted)]">Повторную попытку сверх лимита разрешает менеджер в карточке работы.</p>
+        </section>
+
+        <section className={`${card} p-4 space-y-3`}>
+          <h3 className="font-bold text-[var(--text-main)]">Допуск поступающих</h3>
+          <AdmissionGate tenantId={exam.tenantId} value={st.admission || { referralOnly: false, grades: [], stages: [] }} onChange={admission => setSt(x => ({ ...x, admission }))} />
         </section>
 
         <section className={`${card} p-4 space-y-3 lg:col-span-2`}>

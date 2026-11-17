@@ -133,7 +133,7 @@ export default function AttemptsTab({ exam, api, tenant, canEdit }: { exam: Exam
               const cur = r.status === "in_progress" ? r.sections[r.current] : null;
               return (
                 <tr key={r.id} className={`border-t border-[var(--border-color)] hover:bg-[var(--bg-surface-hover)] cursor-pointer ${r.superseded || r.status === "annulled" ? "opacity-50" : ""}`} onClick={() => setOpen(r.id)}>
-                  <td className="px-3 py-2"><div className="font-medium text-[var(--text-main)]">{r.student.name}</div><div className="text-[11px] text-[var(--text-muted)] font-mono">№ {r.shortId}{r.superseded ? " · заменена" : ""}</div></td>
+                  <td className="px-3 py-2"><div className="font-medium text-[var(--text-main)]">{r.student.name}</div><div className="text-[11px] text-[var(--text-muted)] font-mono">№ {r.shortId}{r.refNo ? ` · поступ. ${String(r.refNo).padStart(4, "0")}` : ""}{r.superseded ? " · заменена" : ""}</div></td>
                   {s.registration.level && <td className="px-3 py-2 text-[var(--text-muted)]">{r.student.level}</td>}
                   <td className="px-3 py-2 whitespace-nowrap">
                     {cur ? <span className="inline-flex items-center gap-1.5 text-emerald-700 text-xs font-medium"><Radio className="w-3.5 h-3.5 animate-pulse" /> {r.current + 1}/{r.sections.length} · {cur.title} · {left(cur.deadline)}<span className="text-[var(--text-muted)] font-normal">· {r.answered}/{r.questionCount}</span></span>

@@ -33,6 +33,7 @@ import {
   BookOpen,
   ClipboardList,
   MonitorPlay,
+  UserCheck,
   X,
 } from "lucide-react";
 import GlobalNotifications from "../../components/workspace/GlobalNotifications";
@@ -161,6 +162,7 @@ export default function WorkspaceLayout() {
     ["tickets", "Проверка билетов", "/tickets", QrCode],
     ["crm", "CRM", "/crm/contacts", Briefcase],
     ["exams", "Экзамены", "/exams", ClipboardList],
+    ["admissions", "Поступающие", "/admissions", UserCheck],
     // «Тесты», «Проверка и прокторинг» и «Вступительный срез» собраны в
     // «Экзамены»; их страницы и старые ссылки учеников продолжают работать,
     // но в меню их больше нет.

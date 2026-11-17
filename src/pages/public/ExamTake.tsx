@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import QuestionFactory from "../../components/tests/QuestionFactory";
 import ProctoringWarningOverlay from "../../components/ProctoringWarningOverlay";
 import PublicBrand from "../../components/public/PublicBrand";
@@ -44,6 +44,10 @@ const primary = "w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-whi
 export default function ExamTake({ resultMode = false }: { resultMode?: boolean }) {
   const { code = "" } = useParams();
   const C = code.toUpperCase();
+  // Вход по направлению (QR психолога): ученик уже в карточке поступающего — данные не вводим.
+  const [search] = useSearchParams();
+  const ref = search.get("ref") || "";
+  const [refChild, setRefChild] = useState<{ name: string; grade: string } | null>(null);
   const storeKey = `exam_${C}`;
   const [info, setInfo] = useState<Info | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -279,10 +283,15 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
     return () => clearInterval(t);
   }, [phase]);
 
+  useEffect(() => {
+    if (!ref) return;
+    fetch(`/api/admissions/link/${encodeURIComponent(ref)}`).then(r => r.json()).then(j => { if (j.success && j.mode === "student") setRefChild(j.child); }).catch(() => {});
+  }, [ref]);
+
   const start = async () => {
     setBusy(true); setError(null);
     try {
-      const j = await post("/start", { ...form, consent });
+      const j = ref ? await post("/start-referral", { ref, pin: form.pin, consent }) : await post("/start", { ...form, consent });
       localStorage.setItem(storeKey, JSON.stringify({ token: j.token, shortId: j.shortId }));
       setToken(j.token);
       if (j.state.waitingStart) { setState(j.state); setPhase("photo"); }
@@ -341,10 +350,17 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
             <div className="p-6 text-center text-slate-600">{notYet ? `Экзамен откроется ${new Date(info.exam.opensAt!).toLocaleString("ru-RU")}` : "Экзамен сейчас закрыт."}<div className="mt-3"><Link className="text-blue-600 text-sm font-semibold" to={`/exam/${C}/result`}>Узнать результат</Link></div></div>
           ) : (
             <div className="p-6 space-y-3">
+              {ref ? (
+                <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                  <div className="text-xs text-slate-500">По направлению</div>
+                  <div className="font-semibold text-slate-900">{refChild ? `${refChild.name} · ${refChild.grade} класс` : "…"}</div>
+                </div>
+              ) : <>
               <Field l="Фамилия и имя"><input className={inp} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} autoComplete="name" /></Field>
               {reg.phone && <Field l="Телефон"><input className={inp} type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+996 …" autoComplete="tel" /></Field>}
               {reg.email && <Field l="Почта"><input className={inp} type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} autoComplete="email" /></Field>}
               {reg.level && <Field l={reg.levelLabel}><input className={inp} value={form.level} onChange={e => setForm({ ...form, level: e.target.value })} /></Field>}
+              </>}
               {info.exam.needPin && <Field l="PIN аудитории"><input className={`${inp} text-center text-2xl tracking-[0.4em] font-mono`} inputMode="numeric" value={form.pin} onChange={e => setForm({ ...form, pin: e.target.value.replace(/\D/g, "").slice(0, 8) })} placeholder="••••" /></Field>}
               {info.exam.proctoring.enabled && <p className="text-xs text-slate-500 bg-slate-50 rounded-xl p-3">Во время экзамена ведётся наблюдение через камеру: браузер попросит доступ. Нарушения фиксируются со временем и снимком.</p>}
               <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/50">
@@ -357,7 +373,7 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
                 </span>
               </label>
               {error && <div className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{error}</div>}
-              <button className={primary} disabled={busy || !form.name.trim() || !consent} onClick={start}>{busy ? "Начинаем…" : "Начать экзамен"}</button>
+              <button className={primary} disabled={busy || (!ref && !form.name.trim()) || !consent} onClick={start}>{busy ? "Начинаем…" : "Начать экзамен"}</button>
               <div className="text-center"><Link className="text-blue-600 text-sm" to={`/exam/${C}/result`}>Узнать результат</Link></div>
             </div>
           )}

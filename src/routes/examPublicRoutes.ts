@@ -208,31 +208,30 @@ router.get("/:code", async (req: any, res: any) => {
   } catch (e: any) { return oops(res, e); }
 });
 
-router.post("/:code/start", async (req: any, res: any) => {
-  try {
-    const r = await resolve(String(req.params.code).toUpperCase());
-    if ("error" in r) return fail(res, r.status, r.error);
-    const { exam, tenant } = r; const t = exam.tenantId;
-    if (!isWindowOpen(exam)) return fail(res, 403, exam.status === "open" ? "Экзамен сейчас закрыт — проверьте время начала" : "Экзамен не открыт для сдачи");
-    const reg = exam.settings.registration;
-    const student = {
-      name: str(req.body?.name, 120), phone: reg.phone ? str(req.body?.phone, 30) : "",
-      email: reg.email ? str(req.body?.email, 120).toLowerCase() : "", level: reg.level ? str(req.body?.level, 30) : "",
-    };
-    if (student.name.split(/\s+/).filter(Boolean).length < 2) return fail(res, 400, "Укажите фамилию и имя полностью");
-    if (reg.phone && digits(student.phone).length < 9) return fail(res, 400, "Укажите номер телефона");
-    if (reg.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(student.email)) return fail(res, 400, "Укажите почту");
-    if (reg.level && !student.level) return fail(res, 400, `Укажите: ${reg.levelLabel.toLowerCase()}`);
-    if (req.body?.consent !== true) return fail(res, 400, "Нужно согласие на обработку персональных данных");
-    const acc = exam.settings.access;
-    const pin = str(req.body?.pin, 12).replace(/\D/g, "");
-    const pinKey = `pin:${exam.id}:${req.ip}`;
-    const wait = blocked(pinKey);
-    if (wait) return fail(res, 429, `Слишком много неверных PIN. Попробуйте через ${wait} мин.`);
-    const pinOk = acc.pinMode === "none" || (acc.pinMode === "hourly" ? pinMatches(pin, `${t}:${exam.id}`) : pin === acc.fixedPin.replace(/\D/g, ""));
-    if (!pinOk) { fail1(pinKey); return fail(res, 403, "Неверный PIN — уточните его у организатора в аудитории"); }
+/**
+ * PIN аудитории. false — ответ уже отправлен (неверный PIN или перебор).
+ * Вход по направлению проверяет тот же PIN: направление — пропуск на тест,
+ * а не разрешение решать дома.
+ */
+function pinOk(exam: Exam, req: any, res: any): boolean {
+  const acc = exam.settings.access; const t = exam.tenantId;
+  const pin = str(req.body?.pin, 12).replace(/\D/g, "");
+  const pinKey = `pin:${exam.id}:${req.ip}`;
+  const wait = blocked(pinKey);
+  if (wait) { fail(res, 429, `Слишком много неверных PIN. Попробуйте через ${wait} мин.`); return false; }
+  const ok = acc.pinMode === "none" || (acc.pinMode === "hourly" ? pinMatches(pin, `${t}:${exam.id}`) : pin === acc.fixedPin.replace(/\D/g, ""));
+  if (!ok) { fail1(pinKey); fail(res, 403, "Неверный PIN — уточните его у организатора в аудитории"); return false; }
+  return true;
+}
 
-    const identity = identityKey(student);
+/**
+ * Новая работа: вопросы из банка, разделы, номер, токен; лимит попыток и
+ * «одна идущая работа» — в транзакции. Общая для регистрации по ссылке и
+ * для входа по направлению (там identity — поступающий, а не ФИО+телефон).
+ */
+async function createAttempt(exam: Exam, tenant: any, student: Attempt["student"], identity: string, req: any, extra: Record<string, unknown> = {}):
+  Promise<{ error: string; status: number } | { attempt: Full }> {
+  const t = exam.tenantId; const acc = exam.settings.access;
     const ids = [...new Set(exam.sections.map(s => s.disciplineId))];
     const bank: BankQuestion[] = [];
     for (let i = 0; i < ids.length; i += 10) {
@@ -263,7 +262,7 @@ router.post("/:code/start", async (req: any, res: any) => {
         last.title = last.blocks.map(x => x.title).join(", ");
       } else sections.push({ ...p });
     });
-    if (!sections.length) return fail(res, 503, "Для экзамена нет вопросов — сообщите организатору");
+    if (!sections.length) return { error: "Для экзамена нет вопросов — сообщите организатору", status: 503 };
     // С фото таймер первого раздела запускается после снимка (/begin), иначе
     // время на фотографию съедало бы время экзамена.
     if (exam.settings.registration.photo) { sections[0].startedAt = null; sections[0].deadline = null; }
@@ -286,6 +285,7 @@ router.post("/:code/start", async (req: any, res: any) => {
       meta: { ip: str(req.ip, 64), userAgent: str(req.headers["user-agent"], 300) },
       // Согласие — с редакцией документов и временем: доказательство для Организации.
       consent: { at: now, version: LEGAL_VERSION, ip: str(req.ip, 64), custom: !!str(tenant?.workspaceConfig?.registration?.consentText, 10) },
+      ...extra,
     };
     // Проверка попыток и создание — одной транзакцией: два параллельных
     // «Начать» не создадут две работы и не потратят одно разрешение дважды.
@@ -301,8 +301,68 @@ router.post("/:code/start", async (req: any, res: any) => {
       tx.set(ref, JSON.parse(JSON.stringify(attempt)));
       return null;
     });
-    if (refused) return fail(res, 409, refused);
-    return res.json({ success: true, token, shortId, org: orgView(tenant), state: studentState(exam, attempt) });
+    if (refused) return { error: refused, status: 409 };
+  return { attempt };
+}
+
+router.post("/:code/start", async (req: any, res: any) => {
+  try {
+    const r = await resolve(String(req.params.code).toUpperCase());
+    if ("error" in r) return fail(res, r.status, r.error);
+    const { exam, tenant } = r;
+    if (!isWindowOpen(exam)) return fail(res, 403, exam.status === "open" ? "Экзамен сейчас закрыт — проверьте время начала" : "Экзамен не открыт для сдачи");
+    if (exam.settings.admission?.referralOnly) return fail(res, 403, "На этот экзамен входят только по направлению — отсканируйте QR-код с направления");
+    const reg = exam.settings.registration;
+    const student = {
+      name: str(req.body?.name, 120), phone: reg.phone ? str(req.body?.phone, 30) : "",
+      email: reg.email ? str(req.body?.email, 120).toLowerCase() : "", level: reg.level ? str(req.body?.level, 30) : "",
+    };
+    if (student.name.split(/\s+/).filter(Boolean).length < 2) return fail(res, 400, "Укажите фамилию и имя полностью");
+    if (reg.phone && digits(student.phone).length < 9) return fail(res, 400, "Укажите номер телефона");
+    if (reg.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(student.email)) return fail(res, 400, "Укажите почту");
+    if (reg.level && !student.level) return fail(res, 400, `Укажите: ${reg.levelLabel.toLowerCase()}`);
+    if (req.body?.consent !== true) return fail(res, 400, "Нужно согласие на обработку персональных данных");
+    if (!pinOk(exam, req, res)) return;
+    const made = await createAttempt(exam, tenant, student, identityKey(student), req);
+    if ("error" in made) return fail(res, made.status, made.error);
+    return res.json({ success: true, token: made.attempt.token, shortId: made.attempt.shortId, org: orgView(tenant), state: studentState(exam, made.attempt) });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/**
+ * Вход по направлению (QR с направления психолога). Данные ученика — из
+ * карточки поступающего, вводить ничего не нужно; PIN аудитории — как
+ * обычно. Работа уже начата (например, на другом телефоне) — продолжаем её.
+ */
+router.post("/:code/start-referral", async (req: any, res: any) => {
+  try {
+    const r = await resolve(String(req.params.code).toUpperCase());
+    if ("error" in r) return fail(res, r.status, r.error);
+    const { exam, tenant } = r; const t = exam.tenantId;
+    const token = str(req.body?.ref, 80);
+    const link = /^[\w-]{20,60}$/.test(token) ? await db().collection("applicant_links").doc(token).get() : null;
+    const l = link?.exists ? (link.data() as { tenantId: string; applicantId: string; purpose: string }) : null;
+    if (!l || l.purpose !== "referral" || l.tenantId !== t) return fail(res, 404, "Направление не найдено");
+    const as = await col(t, "applicants").doc(l.applicantId).get();
+    const ap: any = as.exists ? as.data() : null;
+    if (!ap || ap.tokens?.referral !== token) return fail(res, 404, "Направление заменено новым — возьмите новое у приёмной");
+    if (ap.referral?.examId !== exam.id) return fail(res, 403, ap.referral ? "Направление выдано на другой экзамен" : "Направление на тест пока не выдано");
+    if (!isWindowOpen(exam)) return fail(res, 403, exam.status === "open" ? "Экзамен сейчас закрыт — проверьте время начала" : "Экзамен не открыт для сдачи");
+    if (!pinOk(exam, req, res)) return;
+    const live = await col(t, "exam_attempts").where("examId", "==", exam.id).where("applicantId", "==", as.id).where("status", "==", "in_progress").limit(1).get();
+    if (!live.empty) {
+      const a = { ...(live.docs[0].data() as Full), id: live.docs[0].id };
+      return res.json({ success: true, token: a.token, shortId: a.shortId, org: orgView(tenant), state: studentState(exam, a), resumed: true });
+    }
+    // Согласие родителя дано в его анкете; если её нет — согласие на странице теста.
+    const forms = await col(t, "applicant_forms").where("applicantId", "==", as.id).get();
+    const parentConsent = forms.docs.map(d => d.data()).find((f: any) => f.consent);
+    if (!parentConsent && req.body?.consent !== true) return fail(res, 400, "Нужно согласие на обработку персональных данных");
+    const student = { name: str(ap.child?.name, 120), phone: str(ap.parent?.phone, 30), email: "", level: str(ap.child?.grade, 30) };
+    const made = await createAttempt(exam, tenant, student, `a:${as.id}`, req, { applicantId: as.id, refNo: Number(ap.refNo) || null });
+    if ("error" in made) return fail(res, made.status, made.error);
+    await col(t, "applicants").doc(as.id).update({ updatedAt: Date.now() }).catch(() => {});
+    return res.json({ success: true, token: made.attempt.token, shortId: made.attempt.shortId, org: orgView(tenant), state: studentState(exam, made.attempt) });
   } catch (e: any) { return oops(res, e); }
 });
 

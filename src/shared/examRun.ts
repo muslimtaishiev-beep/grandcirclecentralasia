@@ -108,6 +108,13 @@ export interface ExamSettings {
     /** paged — один вопрос на экран, листается прокруткой и кнопками; list — все вопросы раздела лентой. */
     layout: "paged" | "list";
   };
+  /**
+   * Допуск поступающих. stages — анкеты (шаблоны), которые нужно пройти до
+   * теста, и какие их итоги пускают (пусто — по «пускает к тесту» в самом
+   * шаблоне). grades — для поступающих в какие классы этот экзамен.
+   * referralOnly — войти можно только по направлению (QR), без ручной регистрации.
+   */
+  admission?: { referralOnly: boolean; grades: number[]; stages: { templateId: string; passOutcomes: string[] }[] };
 }
 
 export type ExamStatus = "draft" | "open" | "closed";
@@ -150,6 +157,7 @@ export const DEFAULT_SETTINGS: ExamSettings = {
     groups: [],
   },
   display: { layout: "paged" },
+  admission: { referralOnly: false, grades: [], stages: [] },
 };
 
 const num = (v: unknown, min: number, max: number, def: number) => {
@@ -258,6 +266,13 @@ export function sanitizeSettings(raw: any): ExamSettings {
       groups: [...new Set<string>((Array.isArray(r.results?.groups) ? r.results.groups : []).map((x: unknown) => s(x, 30)).filter(Boolean))].slice(0, 60),
     },
     display: { layout: r.display?.layout === "list" ? "list" : d.display.layout },
+    admission: {
+      referralOnly: b(r.admission?.referralOnly, false),
+      grades: [...new Set<number>((Array.isArray(r.admission?.grades) ? r.admission.grades : []).map(Number).filter((n: number) => Number.isInteger(n) && n >= 0 && n <= 12))].sort((a, c) => a - c),
+      stages: (Array.isArray(r.admission?.stages) ? r.admission.stages : []).slice(0, 6)
+        .map((x: any) => ({ templateId: s(x?.templateId, 40), passOutcomes: [...new Set<string>((Array.isArray(x?.passOutcomes) ? x.passOutcomes : []).map((v: unknown) => s(v, 40)).filter(Boolean))].slice(0, 8) }))
+        .filter((x: { templateId: string }) => /^[A-Za-z0-9_-]{1,40}$/.test(x.templateId)),
+    },
   };
 }
 
@@ -507,6 +522,9 @@ export interface Attempt {
   superseded?: boolean;
   hasPhoto?: boolean;
   meta?: { ip: string; userAgent: string };
+  /** Вошёл по направлению: карточка поступающего и её номер. */
+  applicantId?: string;
+  refNo?: number | null;
 }
 
 /** Список работ без тяжёлых полей — для таблиц. */

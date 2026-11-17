@@ -70,6 +70,8 @@ const JournalPage = lazy(() => import("./pages/workspace/journals/JournalPage"))
 const JournalSign = lazy(() => import("./pages/public/JournalSign"));
 const PresentationsPage = lazy(() => import("./pages/workspace/presentations/PresentationsPage"));
 const ShowPresentation = lazy(() => import("./pages/public/ShowPresentation"));
+const AdmissionsPage = lazy(() => import("./pages/workspace/admissions/AdmissionsPage"));
+const AdmissionLink = lazy(() => import("./pages/public/AdmissionLink"));
 
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { GracefulErrorBoundary } from "./components/ui/GracefulErrorBoundary";
@@ -202,7 +204,7 @@ export default function App() {
       <GlobalTooltip />
       
       {/* Header is global */}
-      {!isAdminPath && !currentPath.startsWith("/super-admin") && !currentPath.startsWith("/workspace") && !currentPath.match(/^\/[^\/]+\/(admission|test|placement|results)/) && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && !currentPath.startsWith("/sandbox") && !currentPath.startsWith("/form/") && !currentPath.startsWith("/track/") && !currentPath.startsWith("/j/") && !currentPath.startsWith("/exam/") && !currentPath.startsWith("/show/") && (
+      {!isAdminPath && !currentPath.startsWith("/super-admin") && !currentPath.startsWith("/workspace") && !currentPath.match(/^\/[^\/]+\/(admission|test|placement|results)/) && !currentPath.startsWith("/login") && !currentPath.startsWith("/register") && !currentPath.startsWith("/dashboard") && !currentPath.startsWith("/decision") && !currentPath.startsWith("/sandbox") && !currentPath.startsWith("/form/") && !currentPath.startsWith("/track/") && !currentPath.startsWith("/j/") && !currentPath.startsWith("/exam/") && !currentPath.startsWith("/show/") && !currentPath.startsWith("/a/") && (
         <Header 
           lang={lang} 
           setLang={setLang} 
@@ -283,6 +285,7 @@ export default function App() {
           <Route path="/track/:qrToken" element={<GracefulErrorBoundary fallbackTitle="Ошибка QR-Трекера"><QrTracker /></GracefulErrorBoundary>} />
           <Route path="/exam/:code" element={<GracefulErrorBoundary fallbackTitle="Ошибка экзамена"><Suspense fallback={null}><ExamTake /></Suspense></GracefulErrorBoundary>} />
           <Route path="/exam/:code/result" element={<GracefulErrorBoundary fallbackTitle="Ошибка результата"><Suspense fallback={null}><ExamTake resultMode /></Suspense></GracefulErrorBoundary>} />
+          <Route path="/a/:token" element={<GracefulErrorBoundary fallbackTitle="Ошибка ссылки"><Suspense fallback={null}><AdmissionLink /></Suspense></GracefulErrorBoundary>} />
           <Route path="/show/:code" element={<GracefulErrorBoundary fallbackTitle="Ошибка презентации"><Suspense fallback={null}><ShowPresentation /></Suspense></GracefulErrorBoundary>} />
           <Route path="/j/:token" element={<GracefulErrorBoundary fallbackTitle="Ошибка подписи"><Suspense fallback={null}><JournalSign /></Suspense></GracefulErrorBoundary>} />
           <Route path="/form/:formId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Формы Заявки"><PublicForm /></GracefulErrorBoundary>} />
@@ -306,6 +309,7 @@ export default function App() {
             <Route path=":orgId/exams" element={<RequirePermission navKey="exams"><GracefulErrorBoundary fallbackTitle="Ошибка Экзаменов"><ExamsPage /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/exams/:examId" element={<RequirePermission navKey="exams"><GracefulErrorBoundary fallbackTitle="Ошибка Экзамена"><ExamDetailPage /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/journals" element={<RequirePermission navKey="journals"><GracefulErrorBoundary fallbackTitle="Ошибка Журналов"><JournalsListPage /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/admissions" element={<RequirePermission navKey="admissions"><GracefulErrorBoundary fallbackTitle="Ошибка Поступающих"><Suspense fallback={null}><AdmissionsPage /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/presentations" element={<RequirePermission navKey="presentations"><GracefulErrorBoundary fallbackTitle="Ошибка Презентаций"><Suspense fallback={null}><PresentationsPage /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/journals/:journalId" element={<RequirePermission navKey="journals"><GracefulErrorBoundary fallbackTitle="Ошибка Журнала"><JournalPage /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/tickets" element={<RequirePermission navKey="tickets"><GracefulErrorBoundary fallbackTitle="Ошибка Сканера Билетов"><TicketScanner /></GracefulErrorBoundary></RequirePermission>} />
