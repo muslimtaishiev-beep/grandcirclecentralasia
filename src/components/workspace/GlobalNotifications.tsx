@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Bell, Check, X } from 'lucide-react';
 import { useNotifications, type AppNotification } from '../../lib/useNotifications';
 import { useAuth } from '../../contexts/AuthContext';
@@ -13,6 +14,7 @@ export default function GlobalNotifications() {
   
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // Всплывашки: только то, что пришло или обновилось после входа на страницу.
   const [toasts, setToasts] = useState<AppNotification[]>([]);
@@ -48,9 +50,9 @@ export default function GlobalNotifications() {
   // Close dropdown on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
+      const t = e.target as Node;
+      if (dropdownRef.current?.contains(t) || panelRef.current?.contains(t)) return;
+      setIsOpen(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -58,8 +60,10 @@ export default function GlobalNotifications() {
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {toasts.length > 0 && (
-        <div className="fixed z-[70] bottom-4 left-4 right-4 sm:left-auto sm:w-96 flex flex-col gap-2" aria-live="polite">
+      {/* Список и всплывашки — в body: шапка и страница на одном уровне наложения,
+          и страница (она ниже в разметке) закрывала всё, что выпадает из шапки. */}
+      {toasts.length > 0 && createPortal(
+        <div className="fixed z-[90] bottom-4 left-4 right-4 sm:left-auto sm:w-96 flex flex-col gap-2" aria-live="polite">
           {toasts.map(n => (
             <div key={n.id} className="animate-toast-in flex items-start gap-3 p-3 pr-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] shadow-xl">
               <button className="flex-1 min-w-0 flex items-start gap-3 text-left" onClick={() => openToast(n)}>
@@ -72,7 +76,7 @@ export default function GlobalNotifications() {
               <button className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-black/5 dark:hover:bg-white/5" onClick={() => dismiss(n.id)} aria-label="Закрыть"><X className="w-4 h-4" /></button>
             </div>
           ))}
-        </div>
+        </div>, document.body
       )}
       <button 
         onClick={() => setIsOpen(!isOpen)}
@@ -84,8 +88,8 @@ export default function GlobalNotifications() {
         )}
       </button>
 
-      {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl shadow-xl z-50 flex flex-col overflow-hidden max-h-[500px]">
+      {isOpen && createPortal(
+        <div ref={panelRef} className="fixed top-14 right-2 sm:right-4 mt-1 w-80 max-w-[calc(100vw-1rem)] bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl shadow-xl z-[80] flex flex-col overflow-hidden max-h-[min(500px,calc(100dvh-5rem))]">
           <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)]">
             <h3 className="font-semibold text-[var(--text-main)] text-sm">Уведомления</h3>
             {unreadCount > 0 && (
@@ -136,7 +140,7 @@ export default function GlobalNotifications() {
               </div>
             )}
           </div>
-        </div>
+        </div>, document.body
       )}
     </div>
   );
