@@ -104,6 +104,7 @@ function FormEditor({ initial, parent, api, onClose, onSaved }: { initial: Candi
         </div>
 
         <div className="flex flex-wrap gap-4 text-sm text-[var(--text-main)]">
+          <label className="flex items-center gap-2"><input type="checkbox" checked={f.showPhoto !== false} onChange={e => set({ showPhoto: e.target.checked })} /> Фото ученика</label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={f.showStages} onChange={e => set({ showStages: e.target.checked })} /> Этапы поступления</label>
           {([["klass", "Класс"], ["reviewDate", "Дата повторного рассмотрения"], ["parentNotified", "Родитель уведомлён"], ["nextContact", "Следующий контакт"]] as const).map(([k, l]) => (
             <label key={k} className="flex items-center gap-2"><input type="checkbox" checked={f.extras[k]} onChange={e => set({ extras: { ...f.extras, [k]: e.target.checked } })} /> {l}</label>

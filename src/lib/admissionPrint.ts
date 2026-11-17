@@ -153,6 +153,8 @@ export interface CandidateDoc {
   refNo: number | null;
   /** QR ученика: до теста — тест, после — его результаты; сотруднику — карточка. */
   qrUrl: string | null;
+  /** Фото ребёнка (data:image/jpeg) — снято перед тестом или при вводе бумажного теста. */
+  photo: string | null;
   /** Раздел «Сведения об ученике»: строка или варианты с отметкой. half — полстроки. */
   fields: { label: string; value: string; half?: boolean; options?: { label: string; on: boolean }[] }[];
   stages: { consult: boolean; tested: boolean; feedback: boolean } | null;
@@ -180,6 +182,7 @@ const CAND_CSS = `
 .cand .top .t{flex:1;text-align:center}.cand .top .t b{display:block;font-size:12.5pt;letter-spacing:.02em}
 .cand .top .t span{display:block;font-weight:700;font-size:12pt;margin-top:4px}
 .cand .top .q{text-align:center}.cand .top .q img{width:84px;height:84px}.cand .top .q div{font:700 11pt monospace}
+.cand .top img.ph{width:76px;height:96px;object-fit:cover;border:1px solid #777}
 .cand h3{font-size:10.5pt;margin:9px 0 2px;text-transform:uppercase}
 .cand .ln{display:flex;flex-wrap:wrap;gap:2px 6px;align-items:flex-end;margin:3px 0;line-height:1.2}
 .cand .ln .k{white-space:nowrap;padding-bottom:5px}.cand .ln .v{flex:1;min-width:60px;border-bottom:1px solid #777;min-height:20px;padding:0 4px 6px;font-weight:600}
@@ -221,6 +224,7 @@ export async function candidateSheet(org: PrintOrg, d: CandidateDoc) {
     <div class="top">
       ${org.logoUrl ? `<img class="logo" src="${esc(org.logoUrl)}" alt="">` : ""}
       <div class="t"><b>${esc(d.orgLine.toUpperCase())}</b><span>${esc(d.title.toUpperCase())}</span></div>
+      ${d.photo && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(d.photo) ? `<img class="ph" src="${d.photo}" alt="">` : ""}
       ${qrImg ? `<div class="q"><img src="${qrImg}" alt="">${d.refNo ? `<div>${no(d.refNo)}</div>` : ""}</div>` : ""}
     </div>
     ${h("Сведения об ученике")}

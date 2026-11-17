@@ -579,6 +579,21 @@ router.delete("/:tenantId/applicants/:id/paper/:pid", ...staff, async (req: any,
   } catch (e: any) { return oops(res, e); }
 });
 
+/** Фото ребёнка для анкеты кандидата — с последней его работы, где оно есть. */
+router.get("/:tenantId/applicants/:id/photo", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!seesAcademic(c)) return fail(res, 403, "Нет прав");
+    const id = String(req.params.id);
+    if (!ID.test(id)) return fail(res, 400, "Неверный поступающий");
+    const snap = await col(t, "exam_attempts").where("applicantId", "==", id).get();
+    const best = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })).filter(x => x.hasPhoto && x.status !== "annulled")
+      .sort((x, y) => (y.finishedAt || y.startedAt || 0) - (x.finishedAt || x.startedAt || 0))[0];
+    const photo = best ? (await col(t, "exam_photos").doc(best.id).get()).data()?.photo || null : null;
+    return res.json({ success: true, photo });
+  } catch (e: any) { return oops(res, e); }
+});
+
 /**
  * Анкета кандидата: заключение, обратная связь родителю, решение и условия
  * (пункты 3–5 бланка). «Обратная связь: да» открывает ученику результаты по QR.
@@ -632,6 +647,9 @@ router.post("/:tenantId/applicants/:id/paper-test", ...staff, async (req: any, r
       if (!Number.isInteger(v) || v < 0 || v > (x.tasks || 0)) return fail(res, 400, `${x.title}: правильных — от 0 до ${x.tasks}`);
       correct[x.id] = v;
     }
+    // Фото ребёнка — по желанию: снимает администратор при вводе (на онлайн-тесте его делает сам ученик).
+    const photo = typeof req.body?.photo === "string" ? req.body.photo : "";
+    if (photo && (!/^data:image\/jpeg;base64,/.test(photo) || photo.length > 400_000)) return fail(res, 400, "Фото не подходит — нужен снимок JPEG до 300 КБ");
     const now = Date.now();
     if (remember) await col(t, "exams").doc(exam.id).update({ sections: sanitizeSections(sections), updatedAt: now });
     const ex = { ...exam, sections };
@@ -648,9 +666,10 @@ router.post("/:tenantId/applicants/:id/paper-test", ...staff, async (req: any, r
       student: { name: a.child.name, phone: "", email: "", level: a.child.grade, extra: { birthDate: a.child.birthDate || "", school: a.child.school || "", parentName: a.parent.name || "", parentPhone: a.parent.phone || "" } },
       status: "finished", startedAt: prev?.startedAt || now, finishedAt: now, current: 0, sections: [], questions: {}, answers: {},
       result, review: { status: "done", overrides: {}, notes: {} }, proctoring: { enabled: false },
-      published: false, decision: null, group: null, retakeAllowed: false, superseded: false, hasPhoto: false,
+      published: false, decision: null, group: null, retakeAllowed: false, superseded: false, hasPhoto: !!photo || !!prev?.hasPhoto,
       applicantId: a.id, refNo: a.refNo, paper: true, enteredBy: c.name, enteredAt: now,
     }));
+    if (photo) await col(t, "exam_photos").doc(ref.id).set({ photo, at: now });
     await audit(t, a.id, c, "paper_results", `${exam.title}: ${result.sections.map(x => `${x.title} ${x.correct}/${x.total}`).join(", ")}`);
     await notifyAdmission(t, a, "results", c, { summary: resultSummary(ex, result) });
     return res.json({ success: true, attemptId: ref.id, result });

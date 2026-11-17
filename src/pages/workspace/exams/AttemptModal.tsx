@@ -43,13 +43,13 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
       if (a.applicantId) {
         try {
           const d = await admApi(`/applicants/${a.applicantId}`);
-          doc = candidateDoc({ form: d.candidateForm || NEUTRAL_CANDIDATE_FORM, orgName: org.name, applicant: d.applicant, parentForm: d.forms.find((f: any) => f.full && f.template.audience === "parent") || null, test: (d.attempts.length ? latestTest(d.attempts) : null) || own });
+          doc = candidateDoc({ form: d.candidateForm || NEUTRAL_CANDIDATE_FORM, orgName: org.name, applicant: d.applicant, parentForm: d.forms.find((f: any) => f.full && f.template.audience === "parent") || null, test: (d.attempts.length ? latestTest(d.attempts) : null) || own, photo });
         } catch { /* нет прав на карточку — из данных работы */ }
       }
       if (!doc) {
         const form: CandidateFormConfig = await admApi("/candidate-form").then(j => j.form).catch(() => NEUTRAL_CANDIDATE_FORM);
         const x = a.student.extra || {};
-        doc = candidateDoc({ form, orgName: org.name, test: own, fallback: { name: a.student.name, birthDate: x.birthDate || "", grade: a.student.level || "", school: x.school || "", parentName: x.parentName || "", parentPhone: x.parentPhone || "", studentPhone: x.studentPhone || a.student.phone || "" } });
+        doc = candidateDoc({ form, orgName: org.name, test: own, photo, fallback: { name: a.student.name, birthDate: x.birthDate || "", grade: a.student.level || "", school: x.school || "", parentName: x.parentName || "", parentPhone: x.parentPhone || "", studentPhone: x.studentPhone || a.student.phone || "" } });
       }
       await saveCandidate(org, doc, a.student.name);
     } catch (e: any) { setError(e.message); }

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, ClipboardList, Download, ExternalLink, Loader2, Lock, Pencil, Printer, RefreshCw, Trash2 } from "lucide-react";
+import { Camera, CheckCircle2, ClipboardList, Download, ExternalLink, Loader2, Lock, Pencil, Printer, RefreshCw, Trash2 } from "lucide-react";
 import FormFiller from "../../../components/admissions/FormFiller";
 import { STAGE_LABEL, stageOf, type Applicant, type CandidateInfo, type PaperResult } from "../../../shared/admissions";
 import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
@@ -78,7 +78,11 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, on
   const sessions = sessionsOf(d.forms);
   const downloadCandidate = async () => {
     setSaving(true);
-    try { await saveCandidate(org, candidateDoc({ form: d.candidateForm || NEUTRAL_CANDIDATE_FORM, orgName: org.name, applicant: a, parentForm: parentForm?.full ? parentForm : null, test: latestTest(d.attempts) }), a.child.name); }
+    try {
+      const form = d.candidateForm || NEUTRAL_CANDIDATE_FORM;
+      const photo = form.showPhoto !== false ? await api(`/applicants/${a.id}/photo`).then(j => j.photo as string | null).catch(() => null) : null;
+      await saveCandidate(org, candidateDoc({ form, orgName: org.name, applicant: a, parentForm: parentForm?.full ? parentForm : null, test: latestTest(d.attempts), photo }), a.child.name);
+    }
     catch (e: any) { alert(e.message); } finally { setSaving(false); }
   };
   const downloadSession = async () => {
@@ -307,7 +311,7 @@ function TestTab({ a, d, api, onSaved, onDownload }: { a: Applicant; d: Data; ap
           </div>
         )) : <p className="text-sm text-[var(--text-muted)]">{d.testExam?.paper ? "Тест пишут на бумаге в школе — внесите результаты ниже." : "Онлайн-теста ещё не было."}</p>}
         {d.testExam?.paper && canManage && <PaperTestForm key={d.testExam.id + (test?.finishedAt || 0)} exam={d.testExam} prev={d.attempts.find(x => x.paper && x.examId === d.testExam!.id) || null}
-          onSave={rows => act(() => api(`/applicants/${a.id}/paper-test`, { method: "POST", body: JSON.stringify({ examId: d.testExam!.id, rows }) }))} />}
+          onSave={(rows, photo) => act(() => api(`/applicants/${a.id}/paper-test`, { method: "POST", body: JSON.stringify({ examId: d.testExam!.id, rows, ...(photo ? { photo } : {}) }) }))} />}
         {a.paperResults.map(p => (
           <div key={p.id} className="rounded-xl border border-[var(--border-color)] p-3 text-sm">
             <div className="flex items-center gap-2"><b>{p.title}</b><span className="text-xs text-[var(--text-muted)]">на бумаге · {p.byName} · {new Date(p.at).toLocaleDateString("ru-RU")}</span>
@@ -332,7 +336,20 @@ function TestTab({ a, d, api, onSaved, onDownload }: { a: Applicant; d: Data; ap
  * Тест на бумаге: правильные ответы по предметам. «Из скольки» вводится один
  * раз на предмет и класс — дальше система помнит его в экзамене.
  */
-function PaperTestForm({ exam, prev, onSave }: { exam: TestExam; prev: TestSummary | null; onSave: (rows: { sectionId: string; correct: number; tasks: number }[]) => Promise<void> }) {
+/** Снимок с камеры или из файла → JPEG до 480 px (на сервер — до 300 КБ). */
+async function shrinkPhoto(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = url; });
+    const k = Math.min(1, 480 / Math.max(img.width, img.height));
+    const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", 0.82);
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function PaperTestForm({ exam, prev, onSave }: { exam: TestExam; prev: TestSummary | null; onSave: (rows: { sectionId: string; correct: number; tasks: number }[], photo: string | null) => Promise<void> }) {
+  const [photo, setPhoto] = useState<string | null>(null);
   const [rows, setRows] = useState(() => exam.sections.map(s => ({
     sectionId: s.id, title: s.title, tasks: s.tasks ? String(s.tasks) : "", editTasks: !s.tasks,
     correct: String(prev?.sections.find(x => x.id === s.id)?.correct ?? ""),
@@ -354,9 +371,16 @@ function PaperTestForm({ exam, prev, onSave }: { exam: TestExam; prev: TestSumma
           {Number(r.tasks) > 0 && r.correct !== "" && <span className="text-xs text-[var(--text-muted)]">{String(Math.round((Number(r.correct) / Number(r.tasks)) * 1000) / 10).replace(".", ",")}%</span>}
         </div>
       ))}
-      <button className={btnPrimary} disabled={busy || !ready} onClick={async () => { setBusy(true); try { await onSave(rows.map(r => ({ sectionId: r.sectionId, correct: Number(r.correct), tasks: Number(r.tasks) }))); } finally { setBusy(false); } }}>
-        {busy && <Loader2 className="w-4 h-4 animate-spin" />} {prev ? "Сохранить изменения" : "Сохранить результаты"}
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className={`${btn} cursor-pointer`}>
+          <Camera className="w-4 h-4" /> {photo ? "Другое фото" : "Фото ученика"}
+          <input type="file" accept="image/*" capture="user" className="hidden" onChange={async e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setPhoto(await shrinkPhoto(f).catch(() => null)); }} />
+        </label>
+        {photo && <img src={photo} alt="" className="w-10 h-12 object-cover rounded border border-[var(--border-color)]" />}
+        <button className={btnPrimary} disabled={busy || !ready} onClick={async () => { setBusy(true); try { await onSave(rows.map(r => ({ sectionId: r.sectionId, correct: Number(r.correct), tasks: Number(r.tasks) })), photo); } finally { setBusy(false); } }}>
+          {busy && <Loader2 className="w-4 h-4 animate-spin" />} {prev ? "Сохранить изменения" : "Сохранить результаты"}
+        </button>
+      </div>
     </div>
   );
 }

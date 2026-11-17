@@ -58,6 +58,7 @@ export function candidateDoc(o: {
   applicant?: Applicant | null;
   parentForm?: ParentForm;
   test: TestSummary | null;
+  photo?: string | null;
   /** Без карточки (работа без направления) — данные из регистрации на тест. */
   fallback?: { name: string; birthDate: string; grade: string; school: string; parentName: string; parentPhone: string; studentPhone: string };
 }): CandidateDoc {
@@ -97,6 +98,7 @@ export function candidateDoc(o: {
     title: cfg.title,
     refNo: a?.refNo ?? null,
     qrUrl: a?.tokens.referral ? linkUrl(a.tokens.referral) : null,
+    photo: cfg.showPhoto !== false ? o.photo || null : null,
     fields: cfg.fields
       .filter(x => !x.grades?.length || (g !== null && x.grades.includes(g)))
       .filter(x => !x.source.startsWith("answer:") || items.some(i => i.id === x.source.slice(7) && itemVisible(i, g)) || !items.length)

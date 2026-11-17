@@ -53,6 +53,8 @@ export interface CandidateFormConfig {
   fields: CandidateField[];
   /** Раздел «Этапы поступления»: консультация, тестирование, обратная связь. */
   showStages: boolean;
+  /** Фото ребёнка (снято перед тестом или при вводе бумажного теста). */
+  showPhoto: boolean;
   /** Слова уровня по предмету: ниже «среднего», от «среднего», от «высокого» порога экзамена. */
   levels: [string, string, string];
   feedbackHint: string;
@@ -80,6 +82,7 @@ export const NEUTRAL_CANDIDATE_FORM: CandidateFormConfig = {
     { id: "f_pphone", label: "Телефон родителя", source: "parent.phone", half: true },
   ],
   showStages: true,
+  showPhoto: true,
   levels: ["Низкий", "Средний", "Высокий"],
   feedbackHint: "Сильные и слабые стороны, рекомендации",
   topics: { strong: 80, weak: 60 },
@@ -124,6 +127,7 @@ export function sanitizeCandidateForm(raw: any, prev?: CandidateFormConfig | nul
     orgLine: str(raw?.orgLine, 160),
     fields: fields.length ? fields : d.fields,
     showStages: typeof raw?.showStages === "boolean" ? raw.showStages : d.showStages,
+    showPhoto: typeof raw?.showPhoto === "boolean" ? raw.showPhoto : d.showPhoto,
     levels: [0, 1, 2].map(i => str(lv[i], 30) || d.levels[i]) as [string, string, string],
     feedbackHint: str(raw?.feedbackHint, 300),
     topics: { weak, strong: Math.max(weak, num(raw?.topics?.strong, d.topics.strong)) },
