@@ -157,16 +157,19 @@ function FormTab({ api, a, tpl, form, canFill, canSee, grade, onSaved, onMateria
   const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [paperConsent, setPaperConsent] = useState(!!form?.consent);
   const done = form?.status === "done";
   const [editing, setEditing] = useState(!done);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latest = useRef({ answers, outcome });
   latest.current = { answers, outcome };
+  const latestConsent = useRef(paperConsent);
+  latestConsent.current = paperConsent;
 
   const save = useCallback(async (extra: Record<string, unknown> = {}) => {
     setState("saving");
     try {
-      const j = await api(`/applicants/${a.id}/forms/${tpl.id}`, { method: "PUT", body: JSON.stringify({ answers: latest.current.answers, outcome: latest.current.outcome, ...extra }) });
+      const j = await api(`/applicants/${a.id}/forms/${tpl.id}`, { method: "PUT", body: JSON.stringify({ answers: latest.current.answers, outcome: latest.current.outcome, ...(tpl.audience === "parent" ? { paperConsent: latestConsent.current } : {}), ...extra }) });
       setState("saved"); return j;
     } catch (e: any) { setState("error"); throw e; }
   }, [api, a.id, tpl.id]);
@@ -219,6 +222,12 @@ function FormTab({ api, a, tpl, form, canFill, canSee, grade, onSaved, onMateria
       {grade === null && <div className="text-sm text-amber-700">В карточке не указан класс — вопросы и нормы по классу не подставятся.</div>}
       <FormFiller template={tpl} grade={grade} answers={answers} onChange={x => touch({ answers: x })} outcome={outcome} onOutcome={tpl.outcome ? o => touch({ outcome: o }) : undefined}
         readOnly={readOnly} parent={parent} onMaterial={onMaterial} staff={staff} />
+      {tpl.audience === "parent" && canFill && (form?.filledBy?.kind !== "parent") && (
+        <label className="flex items-center gap-2 text-sm text-[var(--text-main)]">
+          <input type="checkbox" checked={paperConsent} disabled={readOnly || !!form?.consent} onChange={e => setPaperConsent(e.target.checked)} />
+          Родитель подписал согласие на бумаге{form?.consent ? " (отмечено)" : ""}
+        </label>
+      )}
       {error && <div className="text-sm text-rose-600">{error}</div>}
       {canFill && !readOnly && (
         <div className="sticky bottom-0 bg-[var(--bg-surface)] border-t border-[var(--border-color)] -mx-4 sm:-mx-5 px-4 sm:px-5 py-3 flex flex-wrap justify-end gap-2">
@@ -238,8 +247,8 @@ function TestTab({ a, d, api, onSaved }: { a: Applicant; d: Data; api: Api; onSa
   const [comment, setComment] = useState(a.decision?.comment || "");
   const [paper, setPaper] = useState<PaperResult | null>(null);
   const canManage = d.me.admission;
-  /** Направление выдают и снимают приёмная и психолог. */
-  const canRefer = d.me.admission || d.me.psych;
+  /** Вручную направляет только администрация: психолог ставит итог, тест по классу выбирает система. */
+  const canRefer = d.me.admission;
   const t = a.tenantId;
   useEffect(() => {
     if (!canRefer) return;

@@ -57,6 +57,10 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   const [form, setForm] = useState({ name: "", phone: "", email: "", level: "", pin: "" });
   /** Поля «о себе» из настроек экзамена; по направлению — заполнены из карточки. */
   const [extra, setExtra] = useState<Record<string, string>>({});
+  /** По направлению: согласие уже дал родитель в анкете; поля, известные из карточки, — строкой, без ввода. */
+  const [refConsented, setRefConsented] = useState(false);
+  const [known, setKnown] = useState<Set<string>>(new Set());
+  const [editKnown, setEditKnown] = useState(false);
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -290,14 +294,17 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
     fetch(`/api/admissions/link/${encodeURIComponent(ref)}`).then(r => r.json()).then(j => {
       if (!j.success || j.mode !== "student") return;
       setRefChild(j.child);
-      setExtra(x => ({ ...Object.fromEntries(Object.entries(j.prefill || {}).filter(([, v]) => v)), ...x }) as Record<string, string>);
+      const pre = Object.fromEntries(Object.entries(j.prefill || {}).filter(([, v]) => v)) as Record<string, string>;
+      setExtra(x => ({ ...pre, ...x }));
+      setKnown(new Set(Object.keys(pre)));
+      setRefConsented(!!j.consented);
     }).catch(() => {});
   }, [ref]);
 
   const start = async () => {
     setBusy(true); setError(null);
     try {
-      const j = ref ? await post("/start-referral", { ref, pin: form.pin, consent, extra }) : await post("/start", { ...form, consent, extra });
+      const j = ref ? await post("/start-referral", { ref, pin: form.pin, consent: consent || refConsented, extra }) : await post("/start", { ...form, consent, extra });
       localStorage.setItem(storeKey, JSON.stringify({ token: j.token, shortId: j.shortId }));
       setToken(j.token);
       if (j.state.waitingStart) { setState(j.state); setPhase("photo"); }
@@ -367,7 +374,15 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
               {reg.email && <Field l="Почта"><input className={inp} type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} autoComplete="email" /></Field>}
               {reg.level && <Field l={reg.levelLabel}><input className={inp} value={form.level} onChange={e => setForm({ ...form, level: e.target.value })} /></Field>}
               </>}
-              {(reg.extra || []).map(f => (
+              {ref && !editKnown && (reg.extra || []).some(f => known.has(f.id)) && (
+                <div className="rounded-xl border border-slate-200 p-3 text-sm text-slate-700 space-y-0.5">
+                  {(reg.extra || []).filter(f => known.has(f.id)).map(f => (
+                    <div key={f.id}><span className="text-slate-500">{f.label}:</span> {f.kind === "date" && /^\d{4}-\d{2}-\d{2}$/.test(extra[f.id] || "") ? new Date(extra[f.id]).toLocaleDateString("ru-RU") : extra[f.id]}</div>
+                  ))}
+                  <button type="button" className="text-xs text-blue-600 underline" onClick={() => setEditKnown(true)}>Исправить</button>
+                </div>
+              )}
+              {(reg.extra || []).filter(f => !ref || editKnown || !known.has(f.id)).map(f => (
                 <Field key={f.id} l={`${f.label}${f.required ? "" : " (необязательно)"}`}>
                   <input className={inp} type={f.kind === "date" ? "date" : f.kind === "phone" ? "tel" : "text"} inputMode={f.kind === "phone" ? "tel" : undefined}
                     value={extra[f.id] || ""} onChange={e => setExtra({ ...extra, [f.id]: e.target.value })} placeholder={f.kind === "phone" ? "+996 …" : undefined} />
@@ -375,7 +390,7 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
               ))}
               {info.exam.needPin && <Field l="PIN аудитории"><input className={`${inp} text-center text-2xl tracking-[0.4em] font-mono`} inputMode="numeric" value={form.pin} onChange={e => setForm({ ...form, pin: e.target.value.replace(/\D/g, "").slice(0, 8) })} placeholder="••••" /></Field>}
               {info.exam.proctoring.enabled && <p className="text-xs text-slate-500 bg-slate-50 rounded-xl p-3">Во время экзамена ведётся наблюдение через камеру: браузер попросит доступ. Нарушения фиксируются со временем и снимком.</p>}
-              <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/50">
+              {!(ref && refConsented) && <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/50">
                 <input type="checkbox" className="mt-1 w-5 h-5 shrink-0" checked={consent} onChange={e => setConsent(e.target.checked)} />
                 <span className="text-sm text-slate-700 leading-relaxed">
                   {examConsentText(info.org.name, info.org.consentText)}{" "}
@@ -383,9 +398,9 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
                   <a href={termsHref(info.org.id)} target="_blank" rel="noreferrer" className="text-blue-600 underline">Соглашение</a>
                   <span className="block text-xs text-slate-500 mt-1.5">{GUARDIAN_NOTE}</span>
                 </span>
-              </label>
+              </label>}
               {error && <div className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{error}</div>}
-              <button className={primary} disabled={busy || (!ref && !form.name.trim()) || !consent} onClick={start}>{busy ? "Начинаем…" : "Начать экзамен"}</button>
+              <button className={primary} disabled={busy || (!ref && !form.name.trim()) || !(consent || (ref && refConsented))} onClick={start}>{busy ? "Начинаем…" : "Начать экзамен"}</button>
               <div className="text-center"><Link className="text-blue-600 text-sm" to={`/exam/${C}/result`}>Узнать результат</Link></div>
             </div>
           )}

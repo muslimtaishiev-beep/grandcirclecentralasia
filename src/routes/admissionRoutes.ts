@@ -231,7 +231,7 @@ router.get("/:tenantId/applicants", ...staff, async (req: any, res: any) => {
 /** Экзамены для ручного направления — приёмной не нужен доступ к самим экзаменам. */
 router.get("/:tenantId/exams", ...staff, async (req: any, res: any) => {
   try {
-    if (!hasPerm(req.caller, "admission:manage", "psych:conduct")) return fail(res, 403, "Нет прав");
+    if (!hasPerm(req.caller, "admission:manage")) return fail(res, 403, "Нет прав");
     const exams = (await tenantExams(req.params.tenantId)).filter(e => !e.archived)
       .map(e => ({ id: e.id, title: e.title, status: e.status, grades: e.settings.admission?.grades || [] }));
     return res.json({ success: true, exams });
@@ -373,7 +373,8 @@ router.put("/:tenantId/applicants/:id/forms/:tid", ...staff, async (req: any, re
     const form: ApplicantForm = {
       id: fref.id, applicantId: a.id, templateId: tid, template: tpl, grade: g, answers, outcome, status,
       filledBy: { kind: "staff", uid: c.uid, name: c.name },
-      ...(prev?.consent ? { consent: prev.consent } : {}),
+      // Анкету родителя внесли с бумаги — согласие, подписанное на бумаге, отмечает сотрудник.
+      ...(prev?.consent ? { consent: prev.consent } : tpl.audience === "parent" && req.body?.paperConsent === true ? { consent: { at: now, version: LEGAL_VERSION, ip: `бумага, внёс ${c.name}`.slice(0, 64) } } : {}),
       createdAt: prev?.createdAt || now, updatedAt: now, doneAt: done ? now : status === "done" ? prev?.doneAt || now : null,
     };
     await fref.set(deep(form));
@@ -402,7 +403,9 @@ router.put("/:tenantId/applicants/:id/forms/:tid", ...staff, async (req: any, re
 router.post("/:tenantId/applicants/:id/referral", ...staff, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const c: StaffCaller = req.caller;
-    if (!hasPerm(c, "admission:manage", "psych:conduct")) return fail(res, 403, "Выдавать направление вручную может приёмная или психолог");
+    // Разделение обязанностей: психолог ставит итог, тест по классу выбирает система;
+    // выдать направление вопреки итогу или на другой экзамен — только администрация.
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Направление вручную выдаёт администратор");
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
     const exam = (await tenantExams(t)).find(e => e.id === String(req.body?.examId || ""));
@@ -419,7 +422,7 @@ router.post("/:tenantId/applicants/:id/referral", ...staff, async (req: any, res
 router.delete("/:tenantId/applicants/:id/referral", ...staff, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const c: StaffCaller = req.caller;
-    if (!hasPerm(c, "admission:manage", "psych:conduct")) return fail(res, 403, "Снимать направление может приёмная или психолог");
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Снимать направление может администратор");
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
     await col(t, "applicants").doc(a.id).update({ referral: null, updatedAt: Date.now() });
@@ -529,12 +532,15 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
     if (l.purpose === "card") return res.json({ success: true, mode: "staff_only", org, signedIn });
     if (l.purpose === "referral") {
       const r = a.referral;
+      // Согласие дано родителем в анкете — на странице теста его не спрашиваем (сервер проверяет то же).
+      const consented = (await col(l.tenantId, "applicant_forms").where("applicantId", "==", a.id).get()).docs.some(d => !!d.data().consent);
       return res.json({
         success: true, mode: "student", org, signedIn,
         child: { name: a.child.name, grade: a.child.grade },
         exam: r?.examCode ? { code: r.examCode, title: r.examTitle } : null,
         // Поля «о себе» на странице теста — из карточки, ученику остаётся проверить.
         prefill: { birthDate: a.child.birthDate || "", school: a.child.school || "", parentName: a.parent.name || "", parentPhone: a.parent.phone || "" },
+        consented,
       });
     }
     // Анкета родителя: шаблон и сохранённые ответы (их же родитель и вводил).
