@@ -22,7 +22,7 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
   const api = useAdmissionApi(tenantId);
   const [params, setParams] = useSearchParams();
   const [rows, setRows] = useState<Row[]>([]);
-  const [me, setMe] = useState<Me>({ admission: false, psych: false, psychView: false });
+  const [me, setMe] = useState<Me>({ admission: false, psych: false, psychView: false, academic: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
@@ -65,11 +65,11 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
   const excel = async () => {
     const { default: ExcelJS } = await import("exceljs");
     const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet("Поступающие");
-    ws.addRow(["№", "ФИО ребёнка", "Класс", "Дата рождения", "Родитель", "Телефон", "Анкета родителя", "Психолог", "Тест", "Результат", "Решение", "Этап"]);
+    ws.addRow(["№", "ФИО ребёнка", "Класс", "Дата рождения", "Родитель", "Телефон", "Анкета родителя", "Психолог", ...(me.academic ? ["Тест", "Результат", "Решение"] : []), "Этап"]);
     for (const r of visible) ws.addRow([no(r.refNo), r.child.name, r.child.grade, r.child.birthDate, r.parent.name, r.parent.phone, r.parentForm.status === "done" ? "да" : "",
       Object.values(r.stages).map(s => `${s.title}: ${s.status === "done" ? s.outcomeLabel : "идёт"}`).join("; "),
-      r.attempt?.examTitle || r.referral?.examTitle || (r.paperResults ? "на бумаге" : ""), r.attempt?.parts.map(p => `${p.title}: ${p.value}`).join("; ") || (r.attempt?.percent != null ? `${r.attempt.percent}%` : ""),
-      r.decision || "", STAGE_LABEL[r.stage]]);
+      ...(me.academic ? [r.attempt?.examTitle || r.referral?.examTitle || (r.paperResults ? "на бумаге" : ""), r.attempt?.parts.map(p => `${p.title}: ${p.value}`).join("; ") || (r.attempt?.percent != null ? `${r.attempt.percent}%` : ""),
+        r.decision || attemptDecision(r)] : []), STAGE_LABEL[r.stage]]);
     ws.getRow(1).font = { bold: true }; ws.columns.forEach(c => { c.width = 18; });
     const buf = await wb.xlsx.writeBuffer();
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([buf])); a.download = `Поступающие ${new Date().toLocaleDateString("ru-RU")}.xlsx`; a.click();
@@ -109,7 +109,7 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
               </select>
             )}
             <select className={`${input} !w-auto`} value={stage} onChange={e => setStage(e.target.value as any)}>
-              <option value="">Все этапы</option>{(Object.keys(STAGE_LABEL) as Stage[]).map(s => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}
+              <option value="">Все этапы</option>{(Object.keys(STAGE_LABEL) as Stage[]).filter(s => me.academic || !ACADEMIC_STAGES.has(s)).map(s => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}
             </select>
             <button className={btn} onClick={excel} disabled={!visible.length}><Download className="w-4 h-4" /> Excel</button>
           </div>
@@ -120,7 +120,7 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
             <div className={`${card} overflow-x-auto`}>
               <table className="w-full text-sm min-w-[860px]">
                 <thead className="text-[11px] uppercase font-mono text-[var(--text-muted)] bg-[var(--bg-panel)]">
-                  <tr>{["№", "Ребёнок", "Класс", "Анкета род.", "Психолог", "Тест", "Решение", "Этап"].map(h => <th key={h} className="px-3 py-2.5 text-left whitespace-nowrap">{h}</th>)}</tr>
+                  <tr>{["№", "Ребёнок", "Класс", "Анкета род.", "Психолог", ...(me.academic ? ["Тест", "Решение"] : []), "Этап"].map(h => <th key={h} className="px-3 py-2.5 text-left whitespace-nowrap">{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {visible.map(r => (
@@ -130,15 +130,15 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
                       <td className="px-3 py-2">{r.child.grade}</td>
                       <td className="px-3 py-2">{r.parentForm.status === "done" ? <span className="text-emerald-700">✓</span> : <span className="text-[var(--text-muted)]">—</span>}</td>
                       <td className="px-3 py-2">{Object.values(r.stages).map(s => <span key={s.templateId} className={`inline-block mr-1 mb-0.5 px-2 py-0.5 rounded text-[11px] font-medium ${s.status === "done" && s.tone ? TONE[s.tone] : "text-[var(--text-muted)] bg-[var(--bg-surface-hover)]"}`}>{s.status === "done" ? s.outcomeLabel : "идёт"}</span>)}{!Object.keys(r.stages).length && <span className="text-[var(--text-muted)]">—</span>}</td>
-                      <td className="px-3 py-2 text-xs">
+                      {me.academic && <td className="px-3 py-2 text-xs">
                         {r.attempt ? <><div className="text-[var(--text-main)]">{r.attempt.examTitle}</div><div className="text-[var(--text-muted)]">{r.attempt.status === "in_progress" ? "пишет" : r.attempt.parts.map(p => `${p.title}: ${p.value}`).join(" · ") || (r.attempt.percent != null ? `${r.attempt.percent}%` : "сдан")}</div></>
                           : r.referral ? <span className="text-sky-700">направлен{r.referral.manual ? " (вручную)" : ""}</span> : r.paperResults ? "на бумаге" : <span className="text-[var(--text-muted)]">—</span>}
-                      </td>
-                      <td className="px-3 py-2 text-xs">{r.decision || attemptDecision(r) || "—"}</td>
+                      </td>}
+                      {me.academic && <td className="px-3 py-2 text-xs">{r.decision || attemptDecision(r) || "—"}</td>}
                       <td className="px-3 py-2 text-xs whitespace-nowrap text-[var(--text-muted)]">{STAGE_LABEL[r.stage]}</td>
                     </tr>
                   ))}
-                  {!visible.length && <tr><td colSpan={8} className="py-8 text-center text-[var(--text-muted)]">Ничего не найдено</td></tr>}
+                  {!visible.length && <tr><td colSpan={me.academic ? 8 : 6} className="py-8 text-center text-[var(--text-muted)]">Ничего не найдено</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -154,6 +154,8 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
 }
 
 const attemptDecision = (r: Row) => r.attempt?.decision || "";
+/** Этапы после направления — академическая часть, психологу не показываются. */
+const ACADEMIC_STAGES = new Set<Stage>(["testing", "tested", "decided"]);
 
 function CreateModal({ api, onClose, onDone }: { api: ReturnType<typeof useAdmissionApi>; onClose: () => void; onDone: (id: string) => void }) {
   const [f, setF] = useState({ name: "", birthDate: "", grade: "", parentName: "", phone: "", note: "" });

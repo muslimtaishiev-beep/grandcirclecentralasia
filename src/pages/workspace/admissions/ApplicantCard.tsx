@@ -45,7 +45,7 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, on
   useEffect(() => {
     if (!d) return;
     if (tab === "psych") setTab(staffTemplates.find(t => d.canFill[t.id])?.id || staffTemplates[0]?.id || "profile");
-    else if (tab === "test" && !d.me.admission && !d.me.psychView && !d.me.psych) setTab("profile");
+    else if (tab === "test" && !d.me.academic) setTab("profile");
   }, [d]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (section) setTimeout(() => document.getElementById(`sec-${section}`)?.scrollIntoView({ behavior: "smooth" }), 400); }, [section, d]);
 
@@ -58,7 +58,10 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, on
   const print = async (make: () => Promise<string>) => { const html = await make(); if (!openHtml(html)) alert("Разрешите всплывающие окна для печати"); };
   const material = (t: QTemplate) => (m: QAttachment) => m.kind === "show" ? window.open(m.url, "_blank") : print(() => sheetHTML(org, child, { cardToken: a.tokens.card, attachment: m, templateId: t.id }));
   const mainStage = Object.values(a.stages).find(s => s.status === "done");
-  const tabs: [string, string][] = [["profile", "Профиль"], ...(parentTpl ? [["parent", "Анкета родителя"] as [string, string]] : []), ...staffTemplates.map(t => [t.id, t.title] as [string, string]), ["test", "Тест и решение"], ...(d.me.admission ? [["history", "История"] as [string, string]] : [])];
+  const printReferral = a.referral && a.tokens.referral
+    ? () => print(() => referralHTML(org, child, { token: a.tokens.referral!, examTitle: a.referral!.examTitle, psychName: mainStage?.byName || "", outcome: mainStage?.outcomeLabel || "" }))
+    : undefined;
+  const tabs: [string, string][] = [["profile", "Профиль"], ...(parentTpl ? [["parent", "Анкета родителя"] as [string, string]] : []), ...staffTemplates.map(t => [t.id, t.title] as [string, string]), ...(d.me.academic ? [["test", "Тест и решение"] as [string, string]] : []), ...(d.me.admission ? [["history", "История"] as [string, string]] : [])];
   const changed = async () => { await load(); onChanged(); };
 
   return (
@@ -69,7 +72,7 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, on
           <span className="text-[var(--text-muted)]">{STAGE_LABEL[stageOf(a, d.attempts[0] || null)]}</span>
           {mainStage && <span className={`px-2 py-0.5 rounded text-xs font-medium ${mainStage.tone ? TONE[mainStage.tone] : ""}`}>{mainStage.outcomeLabel}</span>}
           <div className="ml-auto flex flex-wrap gap-1.5">
-            {a.referral && a.tokens.referral && <button className={btnPrimary} onClick={() => print(() => referralHTML(org, child, { token: a.tokens.referral!, examTitle: a.referral!.examTitle, psychName: mainStage?.byName || "", outcome: mainStage?.outcomeLabel || "" }))}><Printer className="w-4 h-4" /> Направление</button>}
+            {printReferral && <button className={btnPrimary} onClick={printReferral}><Printer className="w-4 h-4" /> Направление</button>}
             {parentTpl && (d.me.admission || d.me.psych) && <button className={btn} onClick={() => print(() => parentHTML(org, child, { parentToken: a.tokens.parent, cardToken: a.tokens.card, template: parentForm?.template || parentTpl }))}><Printer className="w-4 h-4" /> Анкета родителю</button>}
           </div>
         </div>
@@ -89,11 +92,12 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, on
         {staffTemplates.map(t => tab === t.id && (
           <FormTab key={t.id} api={api} a={a} tpl={d.forms.find(f => f.templateId === t.id)?.template || t} form={d.forms.find(f => f.templateId === t.id)}
             canFill={!!d.canFill[t.id]} canSee={!!d.canSee[t.id]} grade={grade} onSaved={changed} onMaterial={material(t)} staff
+            referral={t.outcome && a.referral ? { title: a.referral.examTitle, print: printReferral } : null}
             parent={parentForm?.full && parentForm.answers ? { template: parentForm.template, answers: parentForm.answers } : null}
             onPrintBlank={() => print(() => staffBlankHTML(org, child, { cardToken: a.tokens.card, template: t, grade }))}
             onPrintSheets={() => attachmentsFor(t, grade).filter(m => m.kind === "sheet").forEach(m => void print(() => sheetHTML(org, child, { cardToken: a.tokens.card, attachment: m, templateId: t.id })))} />
         ))}
-        {tab === "test" && <TestTab a={a} d={d} api={api} onSaved={changed} />}
+        {tab === "test" && d.me.academic && <TestTab a={a} d={d} api={api} onSaved={changed} />}
         {tab === "history" && (
           <ul className="text-sm divide-y divide-[var(--border-color)]">
             {d.audit.map((x: any, k: number) => <li key={k} className="py-2 flex gap-3"><span className="text-[var(--text-muted)] tabular-nums whitespace-nowrap">{new Date(x.at).toLocaleString("ru-RU")}</span><span className="flex-1"><b className="font-medium">{x.byName}</b> — {AUDIT[x.action] || x.action}{x.detail ? `: ${x.detail}` : ""}</span></li>)}
@@ -147,10 +151,12 @@ function ProfileTab({ a, api, me, onSaved, onDeleted }: { a: Applicant; api: Api
 }
 
 /** Анкета ребёнка: автосохранение черновика, «Завершить», «Изменить». */
-function FormTab({ api, a, tpl, form, canFill, canSee, grade, onSaved, onMaterial, staff, parent, note, onPrintBlank, onPrintSheets }: {
+function FormTab({ api, a, tpl, form, canFill, canSee, grade, onSaved, onMaterial, staff, parent, note, onPrintBlank, onPrintSheets, referral }: {
   api: Api; a: Applicant; tpl: QTemplate; form?: FormDoc; canFill: boolean; canSee: boolean; grade: number | null; onSaved: () => void;
   onMaterial: (m: QAttachment) => void; staff?: boolean; parent?: { template: QTemplate; answers: QAnswers } | null; note?: string;
   onPrintBlank?: () => void; onPrintSheets?: () => void;
+  /** Направление после заключения — печать прямо под бланком, без прокрутки наверх. */
+  referral?: { title: string; print?: () => void } | null;
 }) {
   const [answers, setAnswers] = useState<QAnswers>(form?.answers || {});
   const [outcome, setOutcome] = useState<string | null>(form?.outcome || null);
@@ -187,8 +193,7 @@ function FormTab({ api, a, tpl, form, canFill, canSee, grade, onSaved, onMateria
     if (timer.current) clearTimeout(timer.current);
     setBusy(true); setError(null);
     try {
-      const j = await save({ done: true });
-      if (tpl.outcome && j.referral) alert(`Готово. Направление выдано${j.referral.examTitle ? `: ${j.referral.examTitle}` : ""} — распечатайте его кнопкой «Направление».`);
+      await save({ done: true });
       setEditing(false); onSaved();
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
@@ -228,10 +233,12 @@ function FormTab({ api, a, tpl, form, canFill, canSee, grade, onSaved, onMateria
         </label>
       )}
       {error && <div className="text-sm text-rose-600">{error}</div>}
-      {canFill && !readOnly && (
-        <div className="sticky bottom-0 bg-[var(--bg-surface)] border-t border-[var(--border-color)] -mx-4 sm:-mx-5 px-4 sm:px-5 py-3 flex flex-wrap justify-end gap-2">
-          {done ? <button className={btnPrimary} disabled={busy} onClick={finish}>{busy && <Loader2 className="w-4 h-4 animate-spin" />} Сохранить</button>
-            : <button className={btnPrimary} disabled={busy} onClick={finish}>{busy && <Loader2 className="w-4 h-4 animate-spin" />} {tpl.outcome ? "Завершить сессию" : "Сохранить анкету"}</button>}
+      {canFill && (!readOnly || (done && tpl.outcome)) && (
+        <div className="sticky bottom-0 bg-[var(--bg-surface)] border-t border-[var(--border-color)] -mx-4 sm:-mx-5 px-4 sm:px-5 py-3 flex flex-wrap items-center justify-end gap-2">
+          {done && referral && <span className="mr-auto text-sm text-emerald-700 inline-flex items-center gap-1"><CheckCircle2 className="w-4 h-4" /> Направление выдано{referral.title ? `: ${referral.title}` : ""}</span>}
+          {readOnly ? <button className={btn} disabled={busy} onClick={reopen}><Pencil className="w-4 h-4" /> Изменить</button>
+            : <button className={done ? btn : btnPrimary} disabled={busy} onClick={finish}>{busy && <Loader2 className="w-4 h-4 animate-spin" />} {done ? "Сохранить" : tpl.outcome ? "Завершить сессию" : "Сохранить анкету"}</button>}
+          {done && referral?.print && <button className={btnPrimary} onClick={referral.print}><Printer className="w-4 h-4" /> Печать направления</button>}
         </div>
       )}
     </div>

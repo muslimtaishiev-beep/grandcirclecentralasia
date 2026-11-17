@@ -28,6 +28,7 @@ export interface Row {
   stage: Stage;
   createdAt: number; updatedAt: number;
 }
-export interface Me { admission: boolean; psych: boolean; psychView: boolean; name?: string }
+/** academic — видит тест, бумажные результаты и решение (не психолог). */
+export interface Me { admission: boolean; psych: boolean; psychView: boolean; academic: boolean; name?: string }
 
 export const TONE: Record<string, string> = { good: "text-emerald-700 bg-emerald-500/10", warn: "text-amber-700 bg-amber-500/10", bad: "text-rose-700 bg-rose-500/10" };

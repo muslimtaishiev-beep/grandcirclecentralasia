@@ -57,6 +57,13 @@ const canSee = (c: StaffCaller, t: QTemplate) => !t.sensitive || canFill(c, t) |
 /** Править шаблон: владелец, настройки, приёмная — или тот, кто по нему работает (психолог правит нормы). */
 const canEditTemplate = (c: StaffCaller, t?: QTemplate) =>
   hasPerm(c, "settings:manage", "admission:manage") || (!!t?.fillPermission && hasPerm(c, t.fillPermission));
+/** Тест, бумажные результаты и решение — академическая часть: психологу их не отдаём. */
+const seesAcademic = (c: StaffCaller) => hasPerm(c, "admission:manage", "tests:manage", "placement:manage", "tests:review");
+const meOf = (c: StaffCaller) => ({
+  admission: hasPerm(c, "admission:manage"), psych: hasPerm(c, "psych:conduct"), psychView: hasPerm(c, "psych:view"), academic: seesAcademic(c), name: c.name,
+});
+/** Карточка без академической части: этап — не дальше направления. */
+const withoutAcademic = (a: Applicant): Applicant => ({ ...a, decision: null, paperResults: [] });
 
 // ── Данные ──────────────────────────────────────────────────────────────
 
@@ -178,7 +185,8 @@ async function attemptsOf(t: string, applicantIds?: string[]) {
 }
 
 /** Строка списка: без содержимого анкет — только итоги этапов. */
-function row(a: Applicant, attempts: any[]) {
+function row(a: Applicant, attempts: any[], academic: boolean) {
+  if (!academic) a = withoutAcademic(a);
   const mine = attempts.filter(x => x.applicantId === a.id && !x.superseded).sort((x, y) => (y.startedAt || 0) - (x.startedAt || 0));
   return {
     id: a.id, refNo: a.refNo, child: a.child, parent: a.parent, parentForm: a.parentForm, stages: a.stages,
@@ -234,12 +242,12 @@ router.put("/:tenantId/templates/:tid", ...staff, async (req: any, res: any) => 
 router.get("/:tenantId/applicants", ...staff, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
-    const [snap, attempts] = await Promise.all([col(t, "applicants").orderBy("createdAt", "desc").limit(3000).get(), attemptsOf(t)]);
-    const c: StaffCaller = req.caller;
+    const c: StaffCaller = req.caller; const academic = seesAcademic(c);
+    const [snap, attempts] = await Promise.all([col(t, "applicants").orderBy("createdAt", "desc").limit(3000).get(), academic ? attemptsOf(t) : []]);
     return res.json({
       success: true,
-      applicants: snap.docs.map(d => row({ ...(d.data() as Applicant), id: d.id }, attempts)),
-      me: { admission: hasPerm(c, "admission:manage"), psych: hasPerm(c, "psych:conduct"), psychView: hasPerm(c, "psych:view") },
+      applicants: snap.docs.map(d => row({ ...(d.data() as Applicant), id: d.id }, attempts, academic)),
+      me: meOf(c),
     });
   } catch (e: any) { return oops(res, e); }
 });
@@ -292,8 +300,9 @@ router.get("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
     a.referral = await syncReferral(t, a).catch(() => a.referral);
+    const academic = seesAcademic(c);
     const [templates, formsSnap, attempts] = await Promise.all([
-      loadTemplates(t), col(t, "applicant_forms").where("applicantId", "==", a.id).get(), attemptsOf(t, [a.id]),
+      loadTemplates(t), col(t, "applicant_forms").where("applicantId", "==", a.id).get(), academic ? attemptsOf(t, [a.id]) : [],
     ]);
     let sensitive = false;
     const forms = formsSnap.docs.map(d => {
@@ -310,9 +319,9 @@ router.get("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
     const canFillMap = Object.fromEntries(templates.map(x => [x.id, canFill(c, x)]));
     const canSeeMap = Object.fromEntries(templates.map(x => [x.id, canSee(c, x)]));
     return res.json({
-      success: true, applicant: a, forms, attempts, audit: auditLog,
+      success: true, applicant: academic ? a : withoutAcademic(a), forms, attempts, audit: auditLog,
       templates: templates.filter(x => !x.archived), canFill: canFillMap, canSee: canSeeMap,
-      me: { admission: hasPerm(c, "admission:manage"), psych: hasPerm(c, "psych:conduct"), psychView: hasPerm(c, "psych:view"), name: c.name },
+      me: meOf(c),
     });
   } catch (e: any) { return oops(res, e); }
 });
