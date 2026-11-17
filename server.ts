@@ -142,7 +142,7 @@ const examPublicLimiter = rateLimit({
 app.use("/api/exam-public", examPublicLimiter);
 // Старт отдельно и строже: без PIN («по одной ссылке») иначе можно засыпать
 // экзамен мусорными работами. 300 за 10 минут хватает на большой зал.
-app.use(/^\/api\/exam-public\/[^/]+\/start$/, rateLimit({
+app.use(/^\/api\/exam-public\/[^/]+\/start(-referral)?$/, rateLimit({
   windowMs: 10 * 60 * 1000, max: 300,
   message: { success: false, error: "Слишком много попыток начать экзамен — подождите несколько минут." },
   standardHeaders: true, legacyHeaders: false, validate: false,

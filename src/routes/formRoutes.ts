@@ -786,6 +786,20 @@ async function logApiAudit(req: any, action: string, details: Record<string, any
  * с организацией формы, и за пределы своей школы не выйти. Запасной секрет,
  * зашитый в код, убран — репозиторий публичный.
  */
+/** Сравнение секретов за постоянное время — без подсказок по таймингу. */
+function safeEq(a: string, b: string): boolean {
+  const x = Buffer.from(String(a)), y = Buffer.from(String(b));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+/**
+ * Ключи API организации лежат в tenant_secrets/{id} — туда не дотягиваются
+ * правила клиента (документ организации читает любой её сотрудник, и ключ в
+ * нём был виден всем). Старое место — запасное, пока ключи не перенесены.
+ */
+async function tenantKeys(tenantId: string): Promise<string[]> {
+  const [s, t] = await Promise.all([db().collection("tenant_secrets").doc(tenantId).get(), db().collection("tenants").doc(tenantId).get()]);
+  return [s.data()?.apiKey, s.data()?.secretKey, t.data()?.apiKey, t.data()?.secretKey].filter((k): k is string => typeof k === "string" && k.length >= 16);
+}
 const LEGACY_LOGOS_SECRET = "sf_sec_logos_2026";
 const LEGACY_LOGOS_TENANT = "org_logoshack";
 async function authenticateFormApi(req: any, res: any, next: any) {
@@ -795,7 +809,7 @@ async function authenticateFormApi(req: any, res: any, next: any) {
     const SERVER_SECRET = process.env.STUDYFREE_SECRET_KEY || process.env.TENANT_SECRET_KEY || "";
     const bind = (t: string) => { req.headers["x-tenant-id"] = t; };
 
-    const isSecret = (sec: string) => !!sec && [userToken, apiKey, secretHeader].some(v => v === sec || v === `Bearer ${sec}`);
+    const isSecret = (sec: string) => !!sec && [userToken, apiKey, secretHeader].some(v => !!v && (safeEq(v, sec) || safeEq(v, `Bearer ${sec}`)));
     if (SERVER_SECRET && SERVER_SECRET !== LEGACY_LOGOS_SECRET && isSecret(SERVER_SECRET)) return next();
     // Старый секрет из кода (он виден в публичном репозитории) пускает только
     // в организацию Logos — её интеграция им пользуется. Заявки остальных школ
@@ -820,11 +834,12 @@ async function authenticateFormApi(req: any, res: any, next: any) {
     const providedKey = apiKey || (secretHeader.startsWith("Bearer ") ? secretHeader.slice(7) : secretHeader);
     if (providedKey) {
       if (tenantId) {
-        const t = await db().collection("tenants").doc(tenantId).get();
-        if (t.exists && (t.data()?.apiKey === providedKey || t.data()?.secretKey === providedKey)) { bind(tenantId); return next(); }
+        if ((await tenantKeys(tenantId)).some(k => safeEq(k, providedKey))) { bind(tenantId); return next(); }
       } else {
-        const k = await db().collection("tenants").where("apiKey", "==", providedKey).limit(1).get();
-        if (!k.empty) { bind(k.docs[0].id); return next(); }
+        const k = await db().collection("tenant_secrets").where("apiKey", "==", providedKey).limit(1).get();
+        const old = k.empty ? await db().collection("tenants").where("apiKey", "==", providedKey).limit(1).get() : null;
+        const hit = !k.empty ? k.docs[0] : old && !old.empty ? old.docs[0] : null;
+        if (hit) { bind(hit.id); return next(); }
       }
     }
 
@@ -834,7 +849,8 @@ async function authenticateFormApi(req: any, res: any, next: any) {
       message: "Доступ запрещен. Требуется заголовок Authorization (Bearer <TOKEN>) или X-API-Key / X-API-Secret.",
     });
   } catch (e: any) {
-    return res.status(500).json({ success: false, error: "AUTH_ERROR", message: e.message });
+    console.error("[forms api auth]", e);
+    return res.status(500).json({ success: false, error: "AUTH_ERROR", message: "Ошибка проверки доступа" });
   }
 }
 

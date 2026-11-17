@@ -159,10 +159,13 @@ router.put("/:tenantId/exams/:id", ...edit, checkIds, async (req: any, res: any)
       const sections = patch.sections || exam.sections;
       if (b.status === "open") {
         if (!sections.length) return fail(res, 400, "Добавьте хотя бы одну дисциплину");
-        const bank = await bankFor(t, sections.map(s => s.disciplineId));
-        const empty = sections.filter(s => !sectionPlan(s, bank).pool);
-        if (empty.length) return fail(res, 400, `Нет активных вопросов для: ${empty.map(s => s.title).join(", ")}`);
         const settings = patch.settings || exam.settings;
+        // Тест на бумаге без вопросов: ответы вносит администрация.
+        if (!settings.paper) {
+          const bank = await bankFor(t, sections.map(s => s.disciplineId));
+          const empty = sections.filter(s => !sectionPlan(s, bank).pool);
+          if (empty.length) return fail(res, 400, `Нет активных вопросов для: ${empty.map(s => s.title).join(", ")}`);
+        }
         if (settings.access.pinMode === "fixed" && !settings.access.fixedPin) return fail(res, 400, "Задайте постоянный PIN или выберите другой режим");
       }
       patch.status = b.status;

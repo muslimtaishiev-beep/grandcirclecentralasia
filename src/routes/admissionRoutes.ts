@@ -160,6 +160,7 @@ function bindToCard(a: Applicant, tpl: QTemplate, answers: QAnswers, overwrite: 
   const patch: any = { child: { ...a.child }, parent: { ...a.parent } };
   const set = (b: QBind, v: string) => {
     const [k, f] = b.split(".") as ["child" | "parent", string];
+    if (b === "child.birthDate" && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; // в карточку — только настоящая дата
     if (v && (overwrite || !patch[k][f])) patch[k][f] = v;
   };
   for (const i of tpl.sections.flatMap(s => s.items)) if (i.bind) set(i.bind, str(answers[i.id]?.value, 120));
@@ -305,9 +306,13 @@ router.put("/:tenantId/templates/:tid", ...staff, async (req: any, res: any) => 
     if (!snap.exists) return fail(res, 404, "Анкета не найдена");
     const prev = { ...(snap.data() as QTemplate), id: snap.id };
     if (!canEditTemplate(req.caller, prev)) return fail(res, 403, "Нет прав менять эту анкету");
-    // Права «кто заполняет / видит» может менять только администрация — иначе психолог мог бы открыть анкету всем.
-    const body = hasPerm(req.caller, "settings:manage", "admission:manage") ? req.body : { ...req.body, fillPermission: prev.fillPermission, viewPermission: prev.viewPermission, sensitive: prev.sensitive, audience: prev.audience };
-    const tpl = sanitizeTemplate({ ...body, id: tid, audience: prev.audience }, prev);
+    const c: StaffCaller = req.caller;
+    // «Кто заполняет / кто видит» — только настройки организации: иначе приёмная
+    // могла бы выдать себе просмотр психологии, а психолог — открыть анкету всем.
+    let body = hasPerm(c, "settings:manage") ? req.body : { ...req.body, fillPermission: prev.fillPermission, viewPermission: prev.viewPermission, sensitive: prev.sensitive };
+    // Какие итоги пускают к тесту — решает администрация, не тот, кто заполняет анкету.
+    if (!hasPerm(c, "settings:manage", "admission:manage")) body = { ...body, outcome: prev.outcome };
+    const tpl = { ...sanitizeTemplate({ ...body, id: tid, audience: prev.audience }, prev), updatedBy: c.name, updatedAt: Date.now() };
     await ref.set(tpl);
     return res.json({ success: true, template: tpl });
   } catch (e: any) { return oops(res, e); }
@@ -566,8 +571,10 @@ router.delete("/:tenantId/applicants/:id/paper/:pid", ...staff, async (req: any,
     if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Нет прав");
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
+    const gone = a.paperResults.find(p => p.id === String(req.params.pid));
     const paperResults = a.paperResults.filter(p => p.id !== String(req.params.pid));
     await col(t, "applicants").doc(a.id).update({ paperResults, updatedAt: Date.now() });
+    if (gone) await audit(t, a.id, c, "paper_deleted", gone.title);
     return res.json({ success: true, paperResults });
   } catch (e: any) { return oops(res, e); }
 });
@@ -723,7 +730,8 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
         } : null,
         referred: !!r,
         // Поля «о себе» на странице теста — из карточки, ученику остаётся проверить.
-        prefill: { birthDate: a.child.birthDate || "", school: a.child.school || "", parentName: a.parent.name || "", parentPhone: a.parent.phone || "" },
+        // Для подстановки на странице теста — пока тест не сдан; потом по QR видны только результаты.
+        prefill: done ? {} : { birthDate: a.child.birthDate || "", school: a.child.school || "", parentName: a.parent.name || "", parentPhone: a.parent.phone || "" },
         consented,
       });
     }
@@ -740,9 +748,11 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
       const [k, f] = i.bind.split(".") as ["child" | "parent", string];
       const v = (a as any)[k]?.[f]; if (v) prefill[i.id] = { value: String(v) };
     }
+    // После встречи с психологом ответы зафиксированы — по ссылке (её могли
+    // переслать или сфотографировать) их больше не показываем, только статус.
     return res.json({
-      success: true, mode: "parent", org, signedIn, locked, template: tpl,
-      answers: { ...prefill, ...(prev?.answers || {}) }, done: prev?.status === "done", grade: a.child.grade,
+      success: true, mode: "parent", org, signedIn, locked, template: locked ? { ...tpl, sections: [] } : tpl,
+      answers: locked ? {} : { ...prefill, ...(prev?.answers || {}) }, done: prev?.status === "done", grade: a.child.grade,
     });
   } catch (e: any) { return oops(res, e); }
 });

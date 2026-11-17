@@ -27,7 +27,7 @@ interface Data {
 const no = (n: number) => `№ ${String(n).padStart(4, "0")}`;
 const AUDIT: Record<string, string> = {
   created: "Карточка создана", edited: "Изменена карточка", viewed: "Открыл анкеты с данными о здоровье", form_done: "Анкета завершена", form_reopened: "Анкета открыта для правки",
-  parent_form: "Родитель заполнил анкету", referral_manual: "Направление выдано вручную", referral_revoked: "Направление снято", paper_results: "Внесены результаты на бумаге",
+  parent_form: "Родитель заполнил анкету", referral_manual: "Направление выдано вручную", referral_revoked: "Направление снято", paper_results: "Внесены результаты на бумаге", paper_deleted: "Удалены результаты на бумаге",
   decision: "Решение", feedback: "Обратная связь", relink: "Перевыпущен QR", deleted: "Карточка удалена",
 };
 

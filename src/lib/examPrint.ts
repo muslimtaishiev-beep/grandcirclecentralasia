@@ -29,7 +29,7 @@ export interface PrintData {
   result: PrintResult;
 }
 
-const esc = (v: unknown) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const esc = (v: unknown) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const fmtDate = (ms?: number | null) => new Date(ms || Date.now()).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
 const n1 = (n: number) => (Math.round(n * 10) / 10).toString().replace(".", ",");
 

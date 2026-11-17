@@ -1,4 +1,5 @@
 import QRCode from "qrcode";
+import DOMPurify from "dompurify";
 import { SCALES, answerText, itemVisible, normFor, normText, visibleSections, type QAnswers, type QAttachment, type QTemplate } from "../shared/questionnaires";
 
 /**
@@ -10,7 +11,7 @@ import { SCALES, answerText, itemVisible, normFor, normText, visibleSections, ty
 export interface PrintOrg { name: string; logoUrl?: string | null }
 export interface PrintChild { refNo: number; name: string; grade: string; birthDate?: string }
 
-const esc = (v: unknown) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const esc = (v: unknown) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const no = (n: number) => `№ ${String(n).padStart(4, "0")}`;
 const today = () => new Date().toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
 export const linkUrl = (token: string, section?: string) => `${window.location.origin}/a/${token}${section ? `?s=${encodeURIComponent(section)}` : ""}`;
@@ -254,7 +255,8 @@ export async function downloadPdf(sheets: string, filename: string) {
   // В документ не вставляем: html2pdf сам кладёт копию в свой скрытый слой.
   host.style.cssText = "width:186mm;background:#fff;color:#111;line-height:1.35;padding-bottom:4mm";
   // html2canvas опускает текст к нижней границе ячейки — даём строкам воздух.
-  host.innerHTML = `<style>${scopedCss(".adm-pdf")} .adm-pdf td,.adm-pdf th{line-height:1.3;padding:4px 6px 8px} .adm-pdf p{margin:4px 0}</style>${sheets}`;
+  // Данные экранируются при сборке; DOMPurify — второй рубеж: этот HTML попадает в документ приложения.
+  host.innerHTML = DOMPurify.sanitize(`<style>${scopedCss(".adm-pdf")} .adm-pdf td,.adm-pdf th{line-height:1.3;padding:4px 6px 8px} .adm-pdf p{margin:4px 0}</style>${sheets}`, { FORCE_BODY: true, ADD_TAGS: ["style"] });
   // У анкеты кандидата свои стили внутри листа — тоже только для этого блока.
   host.querySelectorAll("style").forEach((st, i) => { if (i > 0) st.textContent = scopeCss(st.textContent || "", ".adm-pdf"); });
   await html2pdf().set({

@@ -37,7 +37,7 @@ import {
   Ban
 } from "lucide-react";
 import { CreateTenantModal } from './superadmin/components/CreateTenantModal';
-import { collection, onSnapshot, updateDoc, doc, query, orderBy, limit, where, getCountFromServer } from "firebase/firestore";
+import { collection, onSnapshot, updateDoc, doc, query, orderBy, limit, where, getCountFromServer, getDocs } from "firebase/firestore";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { db, auth } from "../lib/firebase";
 import { TenantRequestsTab } from "../components/superadmin/TenantRequestsTab";
@@ -219,6 +219,9 @@ export default function SuperAdminDashboard() {
       // tenant with 70 real submissions could be presented as having 420, and a
       // failed read rendered a fully fictional organisation. Everything shown
       // here is now either a real count or an explicit "—".
+      // Ключи API — в tenant_secrets (читает только суперадмин); старое поле — пока не перенесли.
+      const secrets = new Map<string, any>();
+      try { (await getDocs(collection(db, "tenant_secrets"))).forEach(s => secrets.set(s.id, s.data())); } catch { /* нет доступа — покажем «не выдан» */ }
       const counts = await Promise.all(
         snapshot.docs.map(async (d) => {
           try {
@@ -245,7 +248,7 @@ export default function SuperAdminDashboard() {
           activeSessions: data.activeSessions || 0,
           totalSubmissions: counts[i] ?? 0,
           storageUsedMb: typeof data.storageUsedMb === "number" ? data.storageUsedMb : null,
-          apiKey: data.apiKey || null,
+          apiKey: secrets.get(d.id)?.apiKey || data.apiKey || null,
           // Default ON: tenants provisioned before this switch existed still
           // expect proctoring to run if they enabled the module.
           proctoringEnabled: data.proctoringEnabled !== false,

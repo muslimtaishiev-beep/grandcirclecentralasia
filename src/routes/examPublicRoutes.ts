@@ -149,7 +149,8 @@ const identityKey = (st: Attempt["student"]) => `${digits(st.phone).slice(-9) ? 
 function studentState(exam: Exam, a: Full) {
   // Раздел ещё не запущен (ждём фото) — вопросы не показываем.
   const cur = a.status === "in_progress" && a.sections[a.current]?.deadline ? a.sections[a.current] : null;
-  const showNow = a.status === "finished" && exam.settings.results.showToStudent === "immediately";
+  // Поступающему результаты открывает администрация после обратной связи — по QR направления, не здесь.
+  const showNow = a.status === "finished" && exam.settings.results.showToStudent === "immediately" && !a.applicantId;
   return {
     shortId: a.shortId,
     status: a.status,
@@ -222,7 +223,9 @@ function pinOk(exam: Exam, req: any, res: any): boolean {
   const pinKey = `pin:${exam.id}:${req.ip}`;
   const wait = blocked(pinKey);
   if (wait) { fail(res, 429, `Слишком много неверных PIN. Попробуйте через ${wait} мин.`); return false; }
-  const ok = acc.pinMode === "none" || (acc.pinMode === "hourly" ? pinMatches(pin, `${t}:${exam.id}`) : pin === acc.fixedPin.replace(/\D/g, ""));
+  // Постоянный PIN не задан — не пускаем: пустой PIN не должен совпадать с пустым.
+  const fixed = acc.fixedPin.replace(/\D/g, "");
+  const ok = acc.pinMode === "none" || (acc.pinMode === "hourly" ? pinMatches(pin, `${t}:${exam.id}`) : !!fixed && pin === fixed);
   if (!ok) { fail1(pinKey); fail(res, 403, "Неверный PIN — уточните его у организатора в аудитории"); return false; }
   return true;
 }
@@ -539,6 +542,8 @@ router.post("/:code/result", async (req: any, res: any) => {
     if (!a || !tokens.includes(name)) { fail1(lookKey); return fail(res, 404, "Работа с таким номером и фамилией не найдена"); }
     if (a.status === "annulled") return res.json({ success: true, state: "annulled" });
     if (a.status !== "finished") return res.json({ success: true, state: "in_progress" });
+    // Работа по направлению: результаты — по QR после обратной связи администрации.
+    if (a.applicantId) return res.json({ success: true, state: "pending" });
     const mode = exam.settings.results.showToStudent;
     if (mode === "never") return res.json({ success: true, state: "hidden" });
     if (mode === "after_publish" && !a.published) return res.json({ success: true, state: "pending" });

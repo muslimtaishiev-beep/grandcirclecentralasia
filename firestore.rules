@@ -158,7 +158,14 @@ service cloud.firestore {
       allow read, delete: if isSuperadmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
-      allow create: if hasTenantAccessOnCreate();
+      // Создают авто-правила и бот: только своей организации, со временем сервера,
+      // ссылкой внутри кабинета. Уведомления о приёме пишет только сервер.
+      allow create: if hasTenantAccessOnCreate()
+        && request.resource.data.get('type', '') != 'admission'
+        && !('applicantId' in request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && (!('actionUrl' in request.resource.data)
+            || (request.resource.data.actionUrl is string && request.resource.data.actionUrl.matches('^/workspace/[A-Za-z0-9_-]+(/.*)?$')));
     }
 
     // Billing & Memberships. Memberships are keyed by tenantId same as other flat
@@ -213,6 +220,8 @@ service cloud.firestore {
     match /exam_links/{docId} { allow read, write: if false; }
     match /presentation_links/{docId} { allow read, write: if false; }
     match /applicant_links/{docId} { allow read, write: if false; }
+    // Ключи API организаций: не в документе организации (его читает любой сотрудник).
+    match /tenant_secrets/{tenantId} { allow read: if isSuperadmin(); allow write: if false; }
     match /bookable_resources/{docId} { allow read: if hasTenantAccess(); allow write: if false; }
     match /resource_bookings/{docId}  { allow read: if hasTenantAccess(); allow write: if false; }
     // Заявки закрыты ПРАВОМ, а не одним лишь членством: в них лежит токен

@@ -141,7 +141,7 @@ function ParentForm({ info, token, staffBar }: { info: Extract<Info, { mode: "pa
           {info.done && !info.locked && <p className="text-sm text-emerald-700 mt-2">Анкета уже отправлена — можно поправить ответы и отправить снова.</p>}
           {info.locked && <p className="text-sm text-amber-700 mt-2">Психолог уже провёл встречу — ответы зафиксированы. Изменить их можно через психолога.</p>}
         </div>
-        <FormFiller template={info.template} grade={g} answers={answers} onChange={setAnswers} readOnly={info.locked} />
+        {!info.locked && <FormFiller template={info.template} grade={g} answers={answers} onChange={setAnswers} />}
         {!info.locked && (
           <>
             <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/50">
