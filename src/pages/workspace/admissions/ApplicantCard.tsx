@@ -106,14 +106,14 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, on
 }
 
 function ProfileTab({ a, api, me, onSaved, onDeleted }: { a: Applicant; api: Api; me: Me; onSaved: () => void; onDeleted: () => void }) {
-  const [f, setF] = useState({ name: a.child.name, birthDate: a.child.birthDate, grade: a.child.grade, parentName: a.parent.name, phone: a.parent.phone, note: a.note });
+  const [f, setF] = useState({ name: a.child.name, birthDate: a.child.birthDate, grade: a.child.grade, school: a.child.school || "", parentName: a.parent.name, phone: a.parent.phone, note: a.note });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const canEdit = me.admission || me.psych;
-  const dirty = f.name !== a.child.name || f.birthDate !== a.child.birthDate || f.grade !== a.child.grade || f.parentName !== a.parent.name || f.phone !== a.parent.phone || f.note !== a.note;
+  const dirty = f.name !== a.child.name || f.birthDate !== a.child.birthDate || f.grade !== a.child.grade || f.school !== (a.child.school || "") || f.parentName !== a.parent.name || f.phone !== a.parent.phone || f.note !== a.note;
   const save = async () => {
     setBusy(true); setMsg(null);
-    try { await api(`/applicants/${a.id}`, { method: "PUT", body: JSON.stringify({ child: { name: f.name, birthDate: f.birthDate, grade: f.grade }, parent: { name: f.parentName, phone: f.phone }, note: f.note }) }); setMsg("Сохранено"); onSaved(); }
+    try { await api(`/applicants/${a.id}`, { method: "PUT", body: JSON.stringify({ child: { name: f.name, birthDate: f.birthDate, grade: f.grade, school: f.school }, parent: { name: f.parentName, phone: f.phone }, note: f.note }) }); setMsg("Сохранено"); onSaved(); }
     catch (e: any) { setMsg(e.message); } finally { setBusy(false); }
   };
   const del = async () => {
@@ -130,6 +130,7 @@ function ProfileTab({ a, api, me, onSaved, onDeleted }: { a: Applicant; api: Api
       <div className="sm:col-span-2"><span className={label}>ФИО ребёнка</span><input className={input} value={f.name} onChange={set("name")} /></div>
       <div><span className={label}>Поступает в класс</span><input className={input} value={f.grade} onChange={set("grade")} /></div>
       <div><span className={label}>Дата рождения</span><input type="date" className={input} value={f.birthDate} onChange={set("birthDate")} /></div>
+      <div className="sm:col-span-2"><span className={label}>Школа, из которой переходит</span><input className={input} value={f.school} onChange={set("school")} /></div>
       <div><span className={label}>ФИО родителя</span><input className={input} value={f.parentName} onChange={set("parentName")} /></div>
       <div><span className={label}>Телефон родителя</span><input className={input} value={f.phone} onChange={set("phone")} /></div>
       <div className="sm:col-span-2"><span className={label}>Заметка</span><textarea rows={2} className={input} value={f.note} onChange={set("note")} /></div>
@@ -237,11 +238,13 @@ function TestTab({ a, d, api, onSaved }: { a: Applicant; d: Data; api: Api; onSa
   const [comment, setComment] = useState(a.decision?.comment || "");
   const [paper, setPaper] = useState<PaperResult | null>(null);
   const canManage = d.me.admission;
+  /** Направление выдают и снимают приёмная и психолог. */
+  const canRefer = d.me.admission || d.me.psych;
   const t = a.tenantId;
   useEffect(() => {
-    if (!canManage) return;
+    if (!canRefer) return;
     api("/exams").then(j => setExams(j.exams)).catch(() => setExams([]));
-  }, [canManage, api]);
+  }, [canRefer, api]);
   const act = async (fn: () => Promise<unknown>) => { try { await fn(); onSaved(); } catch (e: any) { alert(e.message); } };
   return (
     <div className="space-y-5">
@@ -250,10 +253,10 @@ function TestTab({ a, d, api, onSaved }: { a: Applicant; d: Data; api: Api; onSa
         {a.referral ? (
           <div className="rounded-xl border border-[var(--border-color)] p-3 text-sm flex flex-wrap items-center gap-2">
             <span>На тест <b>{a.referral.examTitle}</b> · {new Date(a.referral.issuedAt).toLocaleDateString("ru-RU")} · {a.referral.manual ? `вручную: ${a.referral.byName}${a.referral.reason ? ` (${a.referral.reason})` : ""}` : "по заключению"}</span>
-            {canManage && <button className={`${btn} ml-auto`} onClick={() => confirm("Снять направление? QR перестанет открывать тест.") && act(() => api(`/applicants/${a.id}/referral`, { method: "DELETE" }))}>Снять</button>}
+            {canRefer && <button className={`${btn} ml-auto`} onClick={() => confirm("Снять направление? QR перестанет открывать тест.") && act(() => api(`/applicants/${a.id}/referral`, { method: "DELETE" }))}>Снять</button>}
           </div>
         ) : <p className="text-sm text-[var(--text-muted)]">Не выдано. {Object.values(a.stages).some(s => s.status === "done") ? "Итог диагностики не пускает к тесту или для этого класса нет экзамена с допуском." : "Выдаётся автоматически, когда специалист завершит диагностику."}</p>}
-        {canManage && (
+        {canRefer && (
           <div className="flex flex-wrap gap-2 items-end">
             <div className="min-w-[220px] flex-1"><span className={label}>Выдать вручную</span>
               <select className={input} value={examId} onChange={e => setExamId(e.target.value)}><option value="">— экзамен —</option>{(exams || []).map(e => <option key={e.id} value={e.id}>{e.title}</option>)}</select>

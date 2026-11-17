@@ -172,7 +172,7 @@ function row(a: Applicant, attempts: any[]) {
   };
 }
 
-const sanitizeChild = (b: any) => ({ name: str(b?.name, 120), birthDate: /^\d{4}-\d{2}-\d{2}$/.test(String(b?.birthDate)) ? String(b.birthDate) : "", grade: str(b?.grade, 20) });
+const sanitizeChild = (b: any) => ({ name: str(b?.name, 120), birthDate: /^\d{4}-\d{2}-\d{2}$/.test(String(b?.birthDate)) ? String(b.birthDate) : "", grade: str(b?.grade, 20), school: str(b?.school, 160) });
 const sanitizeParent = (b: any) => ({ name: str(b?.name, 120), phone: str(b?.phone, 30) });
 
 // ── Шаблоны анкет ───────────────────────────────────────────────────────
@@ -231,7 +231,7 @@ router.get("/:tenantId/applicants", ...staff, async (req: any, res: any) => {
 /** Экзамены для ручного направления — приёмной не нужен доступ к самим экзаменам. */
 router.get("/:tenantId/exams", ...staff, async (req: any, res: any) => {
   try {
-    if (!hasPerm(req.caller, "admission:manage")) return fail(res, 403, "Нет прав");
+    if (!hasPerm(req.caller, "admission:manage", "psych:conduct")) return fail(res, 403, "Нет прав");
     const exams = (await tenantExams(req.params.tenantId)).filter(e => !e.archived)
       .map(e => ({ id: e.id, title: e.title, status: e.status, grades: e.settings.admission?.grades || [] }));
     return res.json({ success: true, exams });
@@ -402,7 +402,7 @@ router.put("/:tenantId/applicants/:id/forms/:tid", ...staff, async (req: any, re
 router.post("/:tenantId/applicants/:id/referral", ...staff, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const c: StaffCaller = req.caller;
-    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Выдавать направление вручную может приёмная");
+    if (!hasPerm(c, "admission:manage", "psych:conduct")) return fail(res, 403, "Выдавать направление вручную может приёмная или психолог");
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
     const exam = (await tenantExams(t)).find(e => e.id === String(req.body?.examId || ""));
@@ -419,7 +419,7 @@ router.post("/:tenantId/applicants/:id/referral", ...staff, async (req: any, res
 router.delete("/:tenantId/applicants/:id/referral", ...staff, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const c: StaffCaller = req.caller;
-    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Снимать направление может приёмная");
+    if (!hasPerm(c, "admission:manage", "psych:conduct")) return fail(res, 403, "Снимать направление может приёмная или психолог");
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
     await col(t, "applicants").doc(a.id).update({ referral: null, updatedAt: Date.now() });
@@ -523,7 +523,7 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
     const c = await staffCaller(db(), l.tenantId, req.user);
     if (c?.member && hasPerm(c, ...ANY)) {
       const tab = l.purpose === "parent" ? "parent" : hasPerm(c, "admission:manage") ? "test" : hasPerm(c, "psych:conduct") ? "psych" : "profile";
-      return res.json({ success: true, mode: "staff", org, who: c.name, url: `/workspace/${l.tenantId}/admissions?open=${a.id}&tab=${tab}${req.query.s ? `&s=${encodeURIComponent(String(req.query.s).slice(0, 40))}` : ""}`, child: a.child.name, refNo: a.refNo });
+      return res.json({ success: true, mode: "staff", org, who: c.name, url: `/workspace/${l.tenantId}/exams?side=psych&open=${a.id}&ctab=${tab}${req.query.s ? `&s=${encodeURIComponent(String(req.query.s).slice(0, 40))}` : ""}`, child: a.child.name, refNo: a.refNo });
     }
     const signedIn = !!c;
     if (l.purpose === "card") return res.json({ success: true, mode: "staff_only", org, signedIn });
@@ -533,6 +533,8 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
         success: true, mode: "student", org, signedIn,
         child: { name: a.child.name, grade: a.child.grade },
         exam: r?.examCode ? { code: r.examCode, title: r.examTitle } : null,
+        // Поля «о себе» на странице теста — из карточки, ученику остаётся проверить.
+        prefill: { birthDate: a.child.birthDate || "", school: a.child.school || "", parentName: a.parent.name || "", parentPhone: a.parent.phone || "" },
       });
     }
     // Анкета родителя: шаблон и сохранённые ответы (их же родитель и вводил).

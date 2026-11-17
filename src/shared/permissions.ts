@@ -74,6 +74,19 @@ export const PERMISSIONS: PermissionDef[] = [
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSIONS.map(p => p.key);
+
+/** Права, которые не делают сотрудника «не только психологом». */
+const PSYCH_ONLY_ALLOWED = new Set<PermissionKey>(["psych:conduct", "psych:view", "chat:use", "tasks:use", "docs:use", "sheets:use"]);
+/**
+ * Только психолог: проводит диагностику и больше ничем в организации не
+ * управляет. Ему не нужен общий дашборд — он сразу работает с поступающими.
+ */
+export const isPsychOnly = (granted: Set<PermissionKey>) =>
+  granted.has("psych:conduct") && [...granted].every(p => PSYCH_ONLY_ALLOWED.has(p));
+/** Видит ли вкладку «Админ» экзаменов (банк, конструктор, работы). */
+export const canExamsAdmin = (granted: Set<PermissionKey>) => ["tests:manage", "placement:manage", "tests:review"].some(p => granted.has(p as PermissionKey));
+/** Видит ли вкладку «Психолог» (поступающие). */
+export const canAdmissions = (granted: Set<PermissionKey>) => ["admission:manage", "psych:conduct", "psych:view"].some(p => granted.has(p as PermissionKey));
 export const isPermissionKey = (v: unknown): v is PermissionKey =>
   ALL_PERMISSION_KEYS.includes(v as PermissionKey);
 
@@ -223,7 +236,8 @@ export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | nu
   payroll: "edu:payroll",
   crm: ["crm:read", "crm:manage"],
   // Экзамены: банк вопросов, конструктор, проверка. Права — прежние тестовые.
-  exams: ["tests:manage", "placement:manage", "tests:review"],
+  // Экзамены: вкладка «Админ» — тестовые права, вкладка «Психолог» — поступающие.
+  exams: ["tests:manage", "placement:manage", "tests:review", "admission:manage", "psych:conduct", "psych:view"],
   // Поступающие: приёмная, психологи и те, кто читает их заключения.
   admissions: ["admission:manage", "psych:conduct", "psych:view"],
   tests: ["tests:read", "tests:manage"],

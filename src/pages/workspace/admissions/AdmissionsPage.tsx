@@ -16,7 +16,7 @@ import TemplatesTab from "./TemplatesTab";
  */
 const no = (n: number) => String(n).padStart(4, "0");
 
-export default function AdmissionsPage() {
+export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}) {
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
   const tenantId: string = activeTenant?.id || "";
   const api = useAdmissionApi(tenantId);
@@ -51,12 +51,12 @@ export default function AdmissionsPage() {
   });
   const openCard = (id: string | null, tabKey?: string) => {
     const p = new URLSearchParams(params);
-    if (id) { p.set("open", id); if (tabKey) p.set("tab", tabKey); else p.delete("tab"); } else { p.delete("open"); p.delete("tab"); p.delete("s"); }
+    if (id) { p.set("open", id); if (tabKey) p.set("ctab", tabKey); else p.delete("ctab"); } else { p.delete("open"); p.delete("ctab"); p.delete("s"); }
     setParams(p, { replace: true });
   };
   /** Ввели номер целиком — сразу в карточку. */
-  const findNo = async () => {
-    const n = q.replace(/\D/g, "");
+  const findNo = async (raw = q) => {
+    const n = raw.replace(/\D/g, "");
     if (!n) return;
     const hit = rows.find(r => r.refNo === Number(n));
     if (hit) return openCard(hit.id);
@@ -79,8 +79,12 @@ export default function AdmissionsPage() {
     <div className="max-w-6xl mx-auto space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-[200px]">
-          <h1 className="text-xl md:text-2xl font-bold text-[var(--text-main)]">Поступающие</h1>
+          {!embedded && <h1 className="text-xl md:text-2xl font-bold text-[var(--text-main)]">Поступающие</h1>}
         </div>
+        <form className="flex" onSubmit={e => { e.preventDefault(); const n = (e.currentTarget.elements.namedItem("no") as HTMLInputElement).value; if (n.trim()) void findNo(n); }}>
+          <input name="no" inputMode="numeric" className={`${input} !w-28 rounded-r-none`} placeholder="№ 0001" />
+          <button className={`${btn} rounded-l-none border-l-0`} type="submit"><Search className="w-4 h-4" /> Найти</button>
+        </form>
         <button className={btn} onClick={() => setScan(true)}><QrCode className="w-4 h-4" /> Сканер</button>
         {(me.admission || me.psych) && <button className={btnPrimary} onClick={() => setCreating(true)}><UserPlus className="w-4 h-4" /> Поступающий</button>}
       </div>
@@ -144,7 +148,7 @@ export default function AdmissionsPage() {
 
       {creating && <CreateModal api={api} onClose={() => setCreating(false)} onDone={async id => { setCreating(false); await load(); openCard(id, "profile"); }} />}
       {scan && <QrScanModal onClose={() => setScan(false)} />}
-      {open && <ApplicantCard key={open} id={open} api={api} tenant={activeTenant} initialTab={params.get("tab") || undefined} section={params.get("s") || undefined} onClose={() => openCard(null)} onChanged={load} />}
+      {open && <ApplicantCard key={open} id={open} api={api} tenant={activeTenant} initialTab={params.get("ctab") || undefined} section={params.get("s") || undefined} onClose={() => openCard(null)} onChanged={load} />}
     </div>
   );
 }

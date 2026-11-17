@@ -45,6 +45,37 @@ export interface ExamSection {
 
 export interface ScaleBand { minPercent: number; label: string }
 
+/** Поле регистрации ученика. По направлению заполняется из карточки поступающего (prefill). */
+export interface RegField { id: string; label: string; kind: "text" | "date" | "phone"; required: boolean }
+/** Готовые поля «о себе»: id совпадает с полем карточки поступающего — так они подставляются сами. */
+export const REG_PRESETS: RegField[] = [
+  { id: "birthDate", label: "Дата рождения", kind: "date", required: true },
+  { id: "school", label: "Школа, из которой переходит", kind: "text", required: true },
+  { id: "studentPhone", label: "Телефон ученика", kind: "phone", required: false },
+  { id: "parentName", label: "ФИО родителя", kind: "text", required: true },
+  { id: "parentPhone", label: "Телефон родителя", kind: "phone", required: true },
+];
+export function sanitizeExtra(raw: unknown): RegField[] {
+  const seen = new Set<string>();
+  return (Array.isArray(raw) ? raw : []).slice(0, 12).map((f: any, i: number) => ({
+    id: /^[A-Za-z0-9_-]{1,32}$/.test(String(f?.id)) ? String(f.id) : `f${i + 1}`,
+    label: String(f?.label ?? "").trim().slice(0, 80),
+    kind: (["text", "date", "phone"].includes(f?.kind) ? f.kind : "text") as RegField["kind"],
+    required: f?.required === true,
+  })).filter(f => f.label && !seen.has(f.id) && (seen.add(f.id), true));
+}
+/** Ответы на поля «о себе»: только объявленные, обязательные — заполнены. */
+export function readExtra(fields: RegField[], raw: any): { values: Record<string, string>; missing: string[] } {
+  const values: Record<string, string> = {}; const missing: string[] = [];
+  for (const f of fields) {
+    let v = String(raw?.[f.id] ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 160);
+    if (f.kind === "date" && v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) v = "";
+    if (f.kind === "phone" && v && v.replace(/\D/g, "").length < 9) v = "";
+    if (v) values[f.id] = v; else if (f.required) missing.push(f.label);
+  }
+  return { values, missing };
+}
+
 /**
  * Часть оценки: свои дисциплины и свой вид итога. Так основная часть
  * (русский, математика, логика) получает баллы, а английский — уровень, и
@@ -66,7 +97,11 @@ export interface GradePart {
 export interface PartResult { id: string; title: string; kind: GradeKind; earned: number; max: number; percent: number; value: string }
 
 export interface ExamSettings {
-  registration: { phone: boolean; email: boolean; level: boolean; levelLabel: string; photo: boolean };
+  registration: {
+    phone: boolean; email: boolean; level: boolean; levelLabel: string; photo: boolean;
+    /** Дополнительные поля «о себе» на странице регистрации — попадают в работу и отчёт. */
+    extra?: RegField[];
+  };
   access: {
     pinMode: "hourly" | "fixed" | "none";
     fixedPin: string;
@@ -232,6 +267,7 @@ export function sanitizeSettings(raw: any): ExamSettings {
       level: b(r.registration?.level, d.registration.level),
       levelLabel: s(r.registration?.levelLabel, 30) || d.registration.levelLabel,
       photo: b(r.registration?.photo, d.registration.photo),
+      extra: sanitizeExtra(r.registration?.extra),
     },
     access: {
       pinMode: ["hourly", "fixed", "none"].includes(r.access?.pinMode) ? r.access.pinMode : d.access.pinMode,
@@ -504,7 +540,7 @@ export interface Attempt {
   examId: string;
   examTitle: string;
   shortId: string;
-  student: { name: string; phone: string; email: string; level: string };
+  student: { name: string; phone: string; email: string; level: string; extra?: Record<string, string> };
   status: "in_progress" | "finished" | "annulled";
   startedAt: number;
   finishedAt: number | null;

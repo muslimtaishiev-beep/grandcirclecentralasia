@@ -20,7 +20,7 @@ type Info = {
   org: { id?: string; name: string; logoUrl: string | null; markUrl: string | null; consentText?: string };
   exam: {
     title: string; description: string; open: boolean; status: string; opensAt: number | null; closesAt: number | null; needPin: boolean;
-    registration: { phone: boolean; email: boolean; level: boolean; levelLabel: string; photo: boolean };
+    registration: { phone: boolean; email: boolean; level: boolean; levelLabel: string; photo: boolean; extra?: { id: string; label: string; kind: "text" | "date" | "phone"; required: boolean }[] };
     proctoring: { enabled: boolean; detectors: Record<string, boolean>; tabSwitch: boolean };
     sections: { title: string; minutes: number }[];
     resultsMode: "never" | "after_publish" | "immediately";
@@ -55,6 +55,8 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   const [token, setToken] = useState<string>(() => { try { return JSON.parse(localStorage.getItem(`exam_${code.toUpperCase()}`) || "{}").token || ""; } catch { return ""; } });
   const [phase, setPhase] = useState<"loading" | "login" | "photo" | "exam" | "final">("loading");
   const [form, setForm] = useState({ name: "", phone: "", email: "", level: "", pin: "" });
+  /** Поля «о себе» из настроек экзамена; по направлению — заполнены из карточки. */
+  const [extra, setExtra] = useState<Record<string, string>>({});
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -285,13 +287,17 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
 
   useEffect(() => {
     if (!ref) return;
-    fetch(`/api/admissions/link/${encodeURIComponent(ref)}`).then(r => r.json()).then(j => { if (j.success && j.mode === "student") setRefChild(j.child); }).catch(() => {});
+    fetch(`/api/admissions/link/${encodeURIComponent(ref)}`).then(r => r.json()).then(j => {
+      if (!j.success || j.mode !== "student") return;
+      setRefChild(j.child);
+      setExtra(x => ({ ...Object.fromEntries(Object.entries(j.prefill || {}).filter(([, v]) => v)), ...x }) as Record<string, string>);
+    }).catch(() => {});
   }, [ref]);
 
   const start = async () => {
     setBusy(true); setError(null);
     try {
-      const j = ref ? await post("/start-referral", { ref, pin: form.pin, consent }) : await post("/start", { ...form, consent });
+      const j = ref ? await post("/start-referral", { ref, pin: form.pin, consent, extra }) : await post("/start", { ...form, consent, extra });
       localStorage.setItem(storeKey, JSON.stringify({ token: j.token, shortId: j.shortId }));
       setToken(j.token);
       if (j.state.waitingStart) { setState(j.state); setPhase("photo"); }
@@ -361,6 +367,12 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
               {reg.email && <Field l="Почта"><input className={inp} type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} autoComplete="email" /></Field>}
               {reg.level && <Field l={reg.levelLabel}><input className={inp} value={form.level} onChange={e => setForm({ ...form, level: e.target.value })} /></Field>}
               </>}
+              {(reg.extra || []).map(f => (
+                <Field key={f.id} l={`${f.label}${f.required ? "" : " (необязательно)"}`}>
+                  <input className={inp} type={f.kind === "date" ? "date" : f.kind === "phone" ? "tel" : "text"} inputMode={f.kind === "phone" ? "tel" : undefined}
+                    value={extra[f.id] || ""} onChange={e => setExtra({ ...extra, [f.id]: e.target.value })} placeholder={f.kind === "phone" ? "+996 …" : undefined} />
+                </Field>
+              ))}
               {info.exam.needPin && <Field l="PIN аудитории"><input className={`${inp} text-center text-2xl tracking-[0.4em] font-mono`} inputMode="numeric" value={form.pin} onChange={e => setForm({ ...form, pin: e.target.value.replace(/\D/g, "").slice(0, 8) })} placeholder="••••" /></Field>}
               {info.exam.proctoring.enabled && <p className="text-xs text-slate-500 bg-slate-50 rounded-xl p-3">Во время экзамена ведётся наблюдение через камеру: браузер попросит доступ. Нарушения фиксируются со временем и снимком.</p>}
               <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/50">

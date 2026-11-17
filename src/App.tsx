@@ -70,7 +70,6 @@ const JournalPage = lazy(() => import("./pages/workspace/journals/JournalPage"))
 const JournalSign = lazy(() => import("./pages/public/JournalSign"));
 const PresentationsPage = lazy(() => import("./pages/workspace/presentations/PresentationsPage"));
 const ShowPresentation = lazy(() => import("./pages/public/ShowPresentation"));
-const AdmissionsPage = lazy(() => import("./pages/workspace/admissions/AdmissionsPage"));
 const AdmissionLink = lazy(() => import("./pages/public/AdmissionLink"));
 
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -95,6 +94,15 @@ import { GlobalTooltip } from "./components/ui/GlobalTooltip";
 
 /** Страницы, где нужен подвал сайта форума (LEAD+ Forum). */
 const FORUM_FOOTER_PATHS = new Set(["/", "/privacy", "/terms"]);
+
+/** Прежний адрес «Поступающих» → вкладка «Психолог» в «Экзаменах», с карточкой, если была открыта. */
+function ToAdmissions() {
+  const { orgId } = useParams();
+  const q = new URLSearchParams(window.location.search);
+  if (q.has("tab")) { q.set("ctab", q.get("tab")!); q.delete("tab"); }
+  q.set("side", "psych");
+  return <Navigate to={`/workspace/${orgId}/exams?${q.toString()}`} replace />;
+}
 
 /** Старые адреса тестов и среза в кабинете → «Экзамены» этой организации. */
 function ToExams() {
@@ -309,7 +317,8 @@ export default function App() {
             <Route path=":orgId/exams" element={<RequirePermission navKey="exams"><GracefulErrorBoundary fallbackTitle="Ошибка Экзаменов"><ExamsPage /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/exams/:examId" element={<RequirePermission navKey="exams"><GracefulErrorBoundary fallbackTitle="Ошибка Экзамена"><ExamDetailPage /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/journals" element={<RequirePermission navKey="journals"><GracefulErrorBoundary fallbackTitle="Ошибка Журналов"><JournalsListPage /></GracefulErrorBoundary></RequirePermission>} />
-            <Route path=":orgId/admissions" element={<RequirePermission navKey="admissions"><GracefulErrorBoundary fallbackTitle="Ошибка Поступающих"><Suspense fallback={null}><AdmissionsPage /></Suspense></GracefulErrorBoundary></RequirePermission>} />
+            {/* «Поступающие» живут во вкладке «Психолог» раздела «Экзамены»; старый адрес ведёт туда. */}
+            <Route path=":orgId/admissions" element={<ToAdmissions />} />
             <Route path=":orgId/presentations" element={<RequirePermission navKey="presentations"><GracefulErrorBoundary fallbackTitle="Ошибка Презентаций"><Suspense fallback={null}><PresentationsPage /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/journals/:journalId" element={<RequirePermission navKey="journals"><GracefulErrorBoundary fallbackTitle="Ошибка Журнала"><JournalPage /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/tickets" element={<RequirePermission navKey="tickets"><GracefulErrorBoundary fallbackTitle="Ошибка Сканера Билетов"><TicketScanner /></GracefulErrorBoundary></RequirePermission>} />

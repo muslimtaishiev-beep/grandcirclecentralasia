@@ -8,7 +8,7 @@ import { resolveLegalProfile } from "../shared/legal.js";
 import { studentView, type BankQuestion } from "../shared/exams.js";
 import { LEGAL_VERSION } from "../shared/legalDocs.js";
 import {
-  DECISION_LABEL, gradeAttempt, isWindowOpen, partResults, pickSectionQuestions,
+  DECISION_LABEL, gradeAttempt, isWindowOpen, partResults, pickSectionQuestions, readExtra,
   type Attempt, type AttemptSection, type Exam, type FrozenQuestion,
 } from "../shared/examRun.js";
 
@@ -321,9 +321,11 @@ router.post("/:code/start", async (req: any, res: any) => {
     if (reg.phone && digits(student.phone).length < 9) return fail(res, 400, "Укажите номер телефона");
     if (reg.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(student.email)) return fail(res, 400, "Укажите почту");
     if (reg.level && !student.level) return fail(res, 400, `Укажите: ${reg.levelLabel.toLowerCase()}`);
+    const extra = readExtra(reg.extra || [], req.body?.extra);
+    if (extra.missing.length) return fail(res, 400, `Заполните: ${extra.missing.join(", ")}`);
     if (req.body?.consent !== true) return fail(res, 400, "Нужно согласие на обработку персональных данных");
     if (!pinOk(exam, req, res)) return;
-    const made = await createAttempt(exam, tenant, student, identityKey(student), req);
+    const made = await createAttempt(exam, tenant, { ...student, ...(Object.keys(extra.values).length ? { extra: extra.values } : {}) }, identityKey(student), req);
     if ("error" in made) return fail(res, made.status, made.error);
     return res.json({ success: true, token: made.attempt.token, shortId: made.attempt.shortId, org: orgView(tenant), state: studentState(exam, made.attempt) });
   } catch (e: any) { return oops(res, e); }
@@ -358,10 +360,18 @@ router.post("/:code/start-referral", async (req: any, res: any) => {
     const forms = await col(t, "applicant_forms").where("applicantId", "==", as.id).get();
     const parentConsent = forms.docs.map(d => d.data()).find((f: any) => f.consent);
     if (!parentConsent && req.body?.consent !== true) return fail(res, 400, "Нужно согласие на обработку персональных данных");
-    const student = { name: str(ap.child?.name, 120), phone: str(ap.parent?.phone, 30), email: "", level: str(ap.child?.grade, 30) };
+    const extra = readExtra(exam.settings.registration.extra || [], req.body?.extra);
+    if (extra.missing.length) return fail(res, 400, `Заполните: ${extra.missing.join(", ")}`);
+    const student = { name: str(ap.child?.name, 120), phone: str(ap.parent?.phone, 30), email: "", level: str(ap.child?.grade, 30), ...(Object.keys(extra.values).length ? { extra: extra.values } : {}) };
     const made = await createAttempt(exam, tenant, student, `a:${as.id}`, req, { applicantId: as.id, refNo: Number(ap.refNo) || null });
     if ("error" in made) return fail(res, made.status, made.error);
-    await col(t, "applicants").doc(as.id).update({ updatedAt: Date.now() }).catch(() => {});
+    // Ученик дописал о себе — пустые поля карточки заполняются (заполненные не трогаем).
+    const v = extra.values; const patch: Record<string, unknown> = { updatedAt: Date.now() };
+    if (v.birthDate && !ap.child?.birthDate) patch["child.birthDate"] = v.birthDate;
+    if (v.parentName && !ap.parent?.name) patch["parent.name"] = v.parentName;
+    if (v.parentPhone && !ap.parent?.phone) patch["parent.phone"] = v.parentPhone;
+    if (v.school && !ap.child?.school) patch["child.school"] = v.school;
+    await col(t, "applicants").doc(as.id).update(patch).catch(() => {});
     return res.json({ success: true, token: made.attempt.token, shortId: made.attempt.shortId, org: orgView(tenant), state: studentState(exam, made.attempt) });
   } catch (e: any) { return oops(res, e); }
 });

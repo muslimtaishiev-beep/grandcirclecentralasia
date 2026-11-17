@@ -3,7 +3,7 @@ import { Award, Ban, CheckCircle2, RefreshCw, Eye, EyeOff, FileText, Loader2, Ro
 import DOMPurify from "dompurify";
 import ProctoringDossier from "../../../components/ProctoringDossier";
 import { TYPE_LABEL, plainText } from "../../../shared/exams";
-import { DECISION_LABEL, partResults, type Attempt, type Decision, type Exam, type FrozenQuestion } from "../../../shared/examRun";
+import { DECISION_LABEL, REG_PRESETS, partResults, type Attempt, type Decision, type Exam, type FrozenQuestion } from "../../../shared/examRun";
 import { certificateHTML, openPrint, reportHTML, type PrintData } from "../../../lib/examPrint";
 import { tenantLogos, resolveLegalProfile } from "../../../shared/legal";
 import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui";
@@ -12,6 +12,10 @@ import type { Api } from "./examApi";
 type Full = Attempt & { questions: Record<string, FrozenQuestion> };
 
 /** Карточка работы: ответы и ручная проверка, прокторинг, решения. */
+/** Поля «о себе» работы — подписи из настроек экзамена (или готовых полей). */
+export const extraRowsOf = (a: Attempt, exam: Exam) => Object.entries(a.student.extra || {})
+  .map(([id, value]) => ({ label: (exam.settings.registration.extra || []).find(f => f.id === id)?.label || REG_PRESETS.find(f => f.id === id)?.label || id, value: id === "birthDate" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value).toLocaleDateString("ru-RU") : value }));
+
 export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, onChanged, onClose }: {
   attemptId: string; exam: Exam; api: Api; tenant: any; canEdit: boolean; onChanged: () => void; onClose: () => void;
 }) {
@@ -54,7 +58,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
     const legal = resolveLegalProfile(tenant);
     return {
       title: exam.settings.results.certificateTitle, examTitle: exam.title,
-      student: { name: a.student.name, level: a.student.level ? `${exam.settings.registration.levelLabel}: ${a.student.level}` : "", shortId: a.shortId },
+      student: { name: a.student.name, level: a.student.level ? `${exam.settings.registration.levelLabel}: ${a.student.level}` : "", shortId: a.shortId, extra: extraRowsOf(a, exam) },
       orgName: tenant?.name || "", logoUrl: tenantLogos(tenant).logoUrl,
       school: { legalName: legal.legalName, signatoryTitle: legal.signatoryTitle, signatoryName: legal.signatoryName, stampUrl: legal.stampUrl || null },
       photo,
@@ -78,7 +82,8 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
           {photo && <img src={photo} alt="" className="w-20 h-24 object-cover rounded-lg border border-[var(--border-color)]" />}
           <div className="flex-1 min-w-[220px] text-sm space-y-0.5">
             <div className="text-[var(--text-muted)]">{[a.student.level && `${s.registration.levelLabel}: ${a.student.level}`, a.student.phone, a.student.email].filter(Boolean).join(" · ")}</div>
-            {a.applicantId && <a href={`/workspace/${exam.tenantId}/admissions?open=${a.applicantId}&tab=test`} className="text-xs text-[var(--accent)] hover:underline">Поступающий{a.refNo ? ` № ${String(a.refNo).padStart(4, "0")}` : ""} — карточка</a>}
+            {extraRowsOf(a, exam).length > 0 && <div className="text-xs text-[var(--text-muted)]">{extraRowsOf(a, exam).map(x => `${x.label}: ${x.value}`).join(" · ")}</div>}
+            {a.applicantId && <a href={`/workspace/${exam.tenantId}/exams?side=psych&open=${a.applicantId}&ctab=test`} className="text-xs text-[var(--accent)] hover:underline">Поступающий{a.refNo ? ` № ${String(a.refNo).padStart(4, "0")}` : ""} — карточка</a>}
             <div className="text-[var(--text-muted)]">Начал {new Date(a.startedAt).toLocaleString("ru-RU")}{a.finishedAt ? ` · сдал ${new Date(a.finishedAt).toLocaleString("ru-RU")} (${Math.round((a.finishedAt - a.startedAt) / 60000)} мин)` : ""}</div>
             <div className="flex flex-wrap gap-1.5 pt-1">
               {a.status === "in_progress" && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700">Сдаёт: {a.sections[a.current]?.title}</span>}

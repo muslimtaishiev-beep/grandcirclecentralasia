@@ -33,12 +33,11 @@ import {
   BookOpen,
   ClipboardList,
   MonitorPlay,
-  UserCheck,
   X,
 } from "lucide-react";
 import GlobalNotifications from "../../components/workspace/GlobalNotifications";
 import QuickSetupWizard from "../../components/workspace/QuickSetupWizard";
-import { resolvePermissions, resolveScreens, normalizeTenantStatus, type PermissionKey } from "../../shared/permissions";
+import { isPsychOnly, resolvePermissions, resolveScreens, normalizeTenantStatus, type PermissionKey } from "../../shared/permissions";
 import SpotlightCommandBar from "../../components/common/SpotlightCommandBar";
 
 export default function WorkspaceLayout() {
@@ -141,7 +140,13 @@ export default function WorkspaceLayout() {
       granted,
     }).visible);
   }, [activeTenant, granted]);
-  const canSee = (navKey: string) => visibleScreens.has(navKey);
+  // Только психолог: без дашборда — меню и вход ведут сразу к поступающим.
+  const psychOnly = isPsychOnly(granted);
+  const canSee = (navKey: string) => visibleScreens.has(navKey) && !(psychOnly && navKey === "dashboard");
+  useEffect(() => {
+    if (!psychOnly || !activeTenant) return;
+    if (new RegExp(`^/workspace/${activeTenant.id}(/dashboard)?/?$`).test(location.pathname)) navigate(`/workspace/${activeTenant.id}/exams?side=psych`, { replace: true });
+  }, [psychOnly, activeTenant, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
   const hasPerm = (perm: string) => granted.has(perm as PermissionKey);
   const isSuperadmin = String(activeTenant?.role || "") === "superadmin";
   const suspended = activeTenant
@@ -162,7 +167,6 @@ export default function WorkspaceLayout() {
     ["tickets", "Проверка билетов", "/tickets", QrCode],
     ["crm", "CRM", "/crm/contacts", Briefcase],
     ["exams", "Экзамены", "/exams", ClipboardList],
-    ["admissions", "Поступающие", "/admissions", UserCheck],
     // «Тесты», «Проверка и прокторинг» и «Вступительный срез» собраны в
     // «Экзамены»; их страницы и старые ссылки учеников продолжают работать,
     // но в меню их больше нет.

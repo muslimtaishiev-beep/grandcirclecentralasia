@@ -44,7 +44,7 @@ export default function AttemptsTab({ exam, api, tenant, canEdit }: { exam: Exam
       if (filter === "unpublished" && !(r.status === "finished" && !r.published)) return false;
       if (filter === "flagged" && !flagged(r)) return false;
       if (filter !== "annulled" && filter !== "all" && r.status === "annulled") return false;
-      return !t || `${r.student.name} ${r.shortId} ${r.student.phone} ${r.student.level} ${r.group || ""}`.toLowerCase().includes(t);
+      return !t || `${r.student.name} ${r.shortId} ${r.student.phone} ${r.student.level} ${r.group || ""} ${r.refNo ? String(r.refNo).padStart(4, "0") : ""}`.toLowerCase().includes(t);
     });
   }, [rows, q, filter]);
 
@@ -94,7 +94,7 @@ export default function AttemptsTab({ exam, api, tenant, canEdit }: { exam: Exam
       <div className={`${card} p-3 flex flex-wrap items-center gap-2`}>
         <div className="relative flex-1 min-w-[200px]">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-          <input className={`${input} pl-9`} placeholder="ФИО, номер работы, телефон" value={q} onChange={e => setQ(e.target.value)} />
+          <input className={`${input} pl-9`} placeholder="ФИО, номер работы или поступающего, телефон" value={q} onChange={e => setQ(e.target.value)} />
         </div>
         {canEdit && s.results.showToStudent === "after_publish" && <button className={btnPrimary} disabled={busy} onClick={publishAll}><Send className="w-4 h-4" /> Опубликовать готовые</button>}
         {canEdit && <button className={btn} disabled={busy || !done} onClick={recheckAll} title="Заново проверить ответы по текущим ключам банка"><RefreshCw className="w-4 h-4" /> Перепроверить все</button>}

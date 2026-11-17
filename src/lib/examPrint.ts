@@ -20,7 +20,8 @@ export interface PrintResult {
 export interface PrintData {
   title: string;
   examTitle: string;
-  student: { name: string; level?: string; shortId: string };
+  /** extra — поля «о себе» из регистрации; печатаются только в отчёте (не в сертификате). */
+  student: { name: string; level?: string; shortId: string; extra?: { label: string; value: string }[] };
   orgName: string;
   logoUrl?: string | null;
   school?: { legalName?: string; signatoryTitle?: string; signatoryName?: string; stampUrl?: string | null } | null;
@@ -133,7 +134,7 @@ export function reportHTML(d: PrintData): string {
   return page(`Отчёт — ${d.student.name}`, `<div class="sheet">
     ${head(d, "Отчёт о результатах")}
     <h1 style="font-size:18pt">${esc(d.examTitle)}</h1>
-    <div class="who"><div><div class="name">${esc(d.student.name)}</div><div class="meta">${d.student.level ? `${esc(d.student.level)} · ` : ""}работа № ${esc(d.student.shortId)}</div></div></div>
+    <div class="who"><div><div class="name">${esc(d.student.name)}</div><div class="meta">${d.student.level ? `${esc(d.student.level)} · ` : ""}работа № ${esc(d.student.shortId)}</div>${d.student.extra?.length ? `<div class="meta">${d.student.extra.map(x => `${esc(x.label)}: ${esc(x.value)}`).join(" · ")}</div>` : ""}</div></div>
     ${tiles(d.result)}
     ${d.result.decision ? `<p><b>Решение:</b> ${esc(d.result.decision)}</p>` : ""}
     <h2>По разделам</h2>${sectionsTable(d.result)}

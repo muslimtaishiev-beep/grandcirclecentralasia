@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, ListChecks, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { DIFFICULTY_LABEL, type Difficulty } from "../../../shared/exams";
-import { type Exam, type ExamSection, type ExamSettings, type ScaleBand } from "../../../shared/examRun";
+import { REG_PRESETS, type Exam, type ExamSection, type ExamSettings, type RegField, type ScaleBand } from "../../../shared/examRun";
 import { btn, btnPrimary, card, input, label } from "../journals/components/ui";
 import type { Api, DisciplineRow, SetRow } from "./examApi";
 import QuestionPicker from "./QuestionPicker";
@@ -247,6 +247,7 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
           <Check checked={st.registration.level} onChange={v => set("registration", { level: v })}>Спросить уровень</Check>
           {st.registration.level && <input className={`${input} ml-6 !w-60`} value={st.registration.levelLabel} onChange={e => set("registration", { levelLabel: e.target.value })} placeholder="Класс" />}
           <Check checked={st.registration.photo} onChange={v => set("registration", { photo: v })}>Фото с камеры перед началом (для сертификата и сверки личности)</Check>
+          <RegFields value={st.registration.extra || []} onChange={extra => set("registration", { extra })} />
         </section>
 
         <section className={`${card} p-4 space-y-2`}>
@@ -345,6 +346,32 @@ function GroupsEditor({ groups, onChange }: { groups: string[]; onChange: (g: st
       <span className={label}>Распределение по группам (классам)</span>
       <input className={input} value={text} onChange={e => setText(e.target.value)} onBlur={() => onChange(text.split(/[,;\n]/).map(x => x.trim()).filter(Boolean))} placeholder="7А, 7Б, 7В — пусто: не распределять" />
       <p className="text-[11px] text-[var(--text-muted)] mt-1">Менеджер назначает группу в карточке работы; в аналитике — сколько в каждой.</p>
+    </div>
+  );
+}
+
+/** Поля «о себе» на странице регистрации: готовые — кнопкой, свои — строкой. */
+function RegFields({ value, onChange }: { value: RegField[]; onChange: (v: RegField[]) => void }) {
+  const has = (id: string) => value.some(f => f.id === id);
+  const upd = (k: number, p: Partial<RegField>) => onChange(value.map((f, j) => (j === k ? { ...f, ...p } : f)));
+  return (
+    <div className="pt-2 space-y-2">
+      <span className={label}>О себе</span>
+      <div className="flex flex-wrap gap-1.5">
+        {REG_PRESETS.map(p => (
+          <button key={p.id} type="button" onClick={() => onChange(has(p.id) ? value.filter(f => f.id !== p.id) : [...value, p])}
+            className={`px-3 py-1 rounded-full text-xs font-medium border ${has(p.id) ? "bg-[var(--accent)] border-[var(--accent)] text-white" : "border-[var(--border-color)] text-[var(--text-main)]"}`}>{p.label}</button>
+        ))}
+      </div>
+      {value.map((f, k) => (
+        <div key={f.id} className="flex flex-wrap items-center gap-1.5">
+          <input className={`${input} flex-1 min-w-[160px]`} value={f.label} onChange={e => upd(k, { label: e.target.value })} />
+          <select className={`${input} !w-auto`} value={f.kind} onChange={e => upd(k, { kind: e.target.value as RegField["kind"] })}><option value="text">текст</option><option value="date">дата</option><option value="phone">телефон</option></select>
+          <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={f.required} onChange={e => upd(k, { required: e.target.checked })} /> обязательно</label>
+          <button type="button" className={btn} onClick={() => onChange(value.filter((_, j) => j !== k))}><Trash2 className="w-4 h-4" /></button>
+        </div>
+      ))}
+      <button type="button" className={btn} onClick={() => onChange([...value, { id: `f${Date.now().toString(36)}`, label: "Поле", kind: "text", required: false }])}><Plus className="w-4 h-4" /> Своё поле</button>
     </div>
   );
 }

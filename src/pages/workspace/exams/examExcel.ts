@@ -1,4 +1,4 @@
-import { DECISION_LABEL, examAnalytics, partResults, type Attempt, type Exam } from "../../../shared/examRun";
+import { DECISION_LABEL, REG_PRESETS, examAnalytics, partResults, type Attempt, type Exam } from "../../../shared/examRun";
 
 /**
  * Результаты экзамена в Excel: строка на ученика, матрица ответов,
@@ -24,10 +24,14 @@ export async function exportExamXlsx(exam: Exam, attempts: Attempt[]) {
   const s = exam.settings;
   const list = attempts.filter(a => !a.superseded);
   const parts = s.scoring.parts || [];
+  // Поля «о себе»: из настроек и все, что встретились в работах (поле могли убрать после сдачи).
+  const extraIds = [...new Set([...(s.registration.extra || []).map(f => f.id), ...list.flatMap(a => Object.keys(a.student.extra || {}))])];
+  const extraLabel = (id: string) => (s.registration.extra || []).find(f => f.id === id)?.label || REG_PRESETS.find(f => f.id === id)?.label || id;
   const total = !(parts.length && s.scoring.hideTotal);
 
   add("Результаты", [
     "№ работы", "ФИО", ...(s.registration.phone ? ["Телефон"] : []), ...(s.registration.email ? ["Почта"] : []), ...(s.registration.level ? [s.registration.levelLabel] : []),
+    ...extraIds.map(extraLabel), "Поступающий №",
     "Статус", "Начало", "Окончание", "Минут",
     ...parts.flatMap(p => [p.title, `${p.title}, %`]),
     ...(total ? ["Баллы", "Из", "%"] : []),
@@ -39,6 +43,7 @@ export async function exportExamXlsx(exam: Exam, attempts: Attempt[]) {
     const r = a.result;
     return [
       a.shortId, a.student.name, ...(s.registration.phone ? [a.student.phone] : []), ...(s.registration.email ? [a.student.email] : []), ...(s.registration.level ? [a.student.level] : []),
+      ...extraIds.map(id => a.student.extra?.[id] || ""), a.refNo ? String(a.refNo).padStart(4, "0") : "",
       STATUS[a.status], dt(a.startedAt), dt(a.finishedAt), a.finishedAt ? Math.round((a.finishedAt - a.startedAt) / 60000) : null,
       ...(r ? partResults(r.sections, s.scoring).flatMap(p => [p.value, p.percent]) : parts.flatMap(() => [null, null])),
       ...(total ? [r?.earned ?? null, r?.max ?? null, r?.percent ?? null] : []),

@@ -30,7 +30,7 @@ export interface Applicant {
   tenantId: string;
   /** Сквозной номер в организации — его пишут на бумаге и вводят в поиск. */
   refNo: number;
-  child: { name: string; birthDate: string; grade: string };
+  child: { name: string; birthDate: string; grade: string; school?: string };
   parent: { name: string; phone: string };
   note: string;
   /** Анкета родителя: сдана ли (содержимое — в applicant_forms). */
