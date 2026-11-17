@@ -772,55 +772,59 @@ async function logApiAudit(req: any, action: string, details: Record<string, any
 }
 
 /** Авторизация API запросов по секретному ключу / Bearer токену / API key */
+/**
+ * Доступ к API заявок (поиск, upsert, правка).
+ *
+ * Кто проходит и к чему:
+ * - секрет платформы (только из окружения STUDYFREE_SECRET_KEY /
+ *   TENANT_SECRET_KEY) — интеграция платформы, все организации;
+ * - сотрудник по входу Firebase — только СВОЯ организация и только с правами
+ *   на заявки (раньше проходил любой вошедший пользователь);
+ * - ключ API организации — только эта организация (раньше ключ одной школы
+ *   открывал заявки другой).
+ * Организация вызывающего подставляется в x-tenant-id: обработчики сверяют её
+ * с организацией формы, и за пределы своей школы не выйти. Запасной секрет,
+ * зашитый в код, убран — репозиторий публичный.
+ */
+const LEGACY_LOGOS_SECRET = "sf_sec_logos_2026";
+const LEGACY_LOGOS_TENANT = "org_logoshack";
 async function authenticateFormApi(req: any, res: any, next: any) {
   try {
-    if (req.user) {
-      return next();
-    }
-
     const { tenantId, apiKey, userToken } = extractTenantContext(req);
-    const secretHeader = (req.headers["x-api-secret"] || req.headers["x-secret-key"] || req.headers["authorization"] || "") as string;
-    const SERVER_SECRET = process.env.STUDYFREE_SECRET_KEY || process.env.TENANT_SECRET_KEY || "sf_sec_logos_2026";
+    const secretHeader = String(req.headers["x-api-secret"] || req.headers["x-secret-key"] || req.headers["authorization"] || "");
+    const SERVER_SECRET = process.env.STUDYFREE_SECRET_KEY || process.env.TENANT_SECRET_KEY || "";
+    const bind = (t: string) => { req.headers["x-tenant-id"] = t; };
 
-    if (userToken && userToken === SERVER_SECRET) {
+    const isSecret = (sec: string) => !!sec && [userToken, apiKey, secretHeader].some(v => v === sec || v === `Bearer ${sec}`);
+    if (SERVER_SECRET && SERVER_SECRET !== LEGACY_LOGOS_SECRET && isSecret(SERVER_SECRET)) return next();
+    // Старый секрет из кода (он виден в публичном репозитории) пускает только
+    // в организацию Logos — её интеграция им пользуется. Заявки остальных школ
+    // по нему больше не открываются. Заменить на ключ API организации.
+    if (isSecret(LEGACY_LOGOS_SECRET)) {
+      if (tenantId && tenantId !== LEGACY_LOGOS_TENANT) return res.status(403).json({ success: false, error: "FORBIDDEN", message: "Этот ключ действует только для своей организации" });
+      bind(LEGACY_LOGOS_TENANT);
       return next();
     }
 
-    if (secretHeader && (secretHeader === SERVER_SECRET || secretHeader === `Bearer ${SERVER_SECRET}`)) {
+    let user = req.user;
+    if (!user && userToken) { try { user = await admin.auth().verifyIdToken(userToken); } catch { /* не токен входа — может быть ключ */ } }
+    if (user?.uid) {
+      req.user = user;
+      if (user.isSuperadmin === true) return next();
+      if (!tenantId) return res.status(400).json({ success: false, error: "TENANT_REQUIRED", message: "Укажите организацию: заголовок x-tenant-id" });
+      if (!(await canManageForms(user, tenantId))) return res.status(403).json({ success: false, error: "FORBIDDEN", message: "Нет прав на заявки этой организации" });
+      bind(tenantId);
       return next();
-    }
-
-    if (userToken) {
-      try {
-        const decoded = await admin.auth().verifyIdToken(userToken);
-        if (decoded && decoded.uid) {
-          req.user = decoded;
-          return next();
-        }
-      } catch (err) {
-        // Token verification failed, continue checking API keys
-      }
     }
 
     const providedKey = apiKey || (secretHeader.startsWith("Bearer ") ? secretHeader.slice(7) : secretHeader);
     if (providedKey) {
-      if (providedKey === SERVER_SECRET) {
-        return next();
-      }
-
       if (tenantId) {
-        const tenantSnap = await db().collection("tenants").doc(tenantId).get();
-        if (tenantSnap.exists) {
-          const tenantData = tenantSnap.data();
-          if (tenantData?.apiKey === providedKey || tenantData?.secretKey === providedKey) {
-            return next();
-          }
-        }
-      }
-
-      const keyTenantSnap = await db().collection("tenants").where("apiKey", "==", providedKey).limit(1).get();
-      if (!keyTenantSnap.empty) {
-        return next();
+        const t = await db().collection("tenants").doc(tenantId).get();
+        if (t.exists && (t.data()?.apiKey === providedKey || t.data()?.secretKey === providedKey)) { bind(tenantId); return next(); }
+      } else {
+        const k = await db().collection("tenants").where("apiKey", "==", providedKey).limit(1).get();
+        if (!k.empty) { bind(k.docs[0].id); return next(); }
       }
     }
 

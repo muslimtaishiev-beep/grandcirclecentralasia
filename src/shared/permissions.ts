@@ -28,6 +28,8 @@ export type PermissionKey =
   | "journals:manage"
   // Презентации
   | "presentations:manage"
+  // Поступающие: приём, психологическая диагностика
+  | "admission:manage" | "psych:conduct" | "psych:view"
   // Приём заявок и бронирование
   | "intake:manage"
   // Администрирование
@@ -60,6 +62,9 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: "sheets:use", label: "Таблицы", description: "Совместные таблицы", category: "Работа" },
   { key: "tickets:check", label: "Проверка билетов", description: "Сканер QR на входе — отметка гостей", category: "Работа" },
   { key: "journals:manage", label: "Создание журналов", description: "Новые журналы из шаблонов; доступ к каждому журналу настраивается в нём самом", category: "Работа" },
+  { key: "admission:manage", label: "Поступающие: приём", description: "Карточки поступающих, академическая часть, направления на тест, бумажные результаты, решение", category: "Поступающие" },
+  { key: "psych:conduct", label: "Психологическая диагностика", description: "Проводить диагностику по анкетам психолога и видеть её результаты", category: "Поступающие" },
+  { key: "psych:view", label: "Просмотр психологических заключений", description: "Видеть психологические анкеты целиком (без права заполнять) — директор, завуч", category: "Поступающие" },
   { key: "presentations:manage", label: "Управление презентациями", description: "Загрузка презентаций, удаление и настройка доступа ко всем презентациям организации", category: "Работа" },
 
   { key: "intake:manage", label: "Приём заявок и бронирование", description: "Потоки приёма с внешних сайтов, занимаемые ресурсы и брони", category: "CRM и продажи" },
@@ -86,6 +91,7 @@ export const PERMISSION_CODES: Record<PermissionKey, string> = {
   "edu:schedule": "es", "edu:payroll": "ep",
   "crm:read": "cr", "crm:manage": "cm", "intake:manage": "ik",
   "chat:use": "ch", "tasks:use": "ta", "docs:use": "dc", "sheets:use": "sh", "tickets:check": "tk", "journals:manage": "jm", "presentations:manage": "pr",
+  "admission:manage": "ad", "psych:conduct": "ps", "psych:view": "pv",
   "team:manage": "tg", "settings:manage": "sg",
 };
 
@@ -137,6 +143,16 @@ export const ROLE_PRESETS: { name: string; description: string; permissions: Per
     permissions: ["tests:read", "tests:review", "chat:use", "tasks:use"],
   },
   {
+    name: "Психолог",
+    description: "Психологическая диагностика поступающих",
+    permissions: ["psych:conduct", "chat:use", "tasks:use"],
+  },
+  {
+    name: "Приёмная",
+    description: "Карточки поступающих, направления, результаты",
+    permissions: ["admission:manage", "tests:read", "chat:use", "tasks:use"],
+  },
+  {
     name: "Волонтёр",
     description: "Только проверка билетов на входе",
     permissions: ["tickets:check", "chat:use"],
@@ -171,6 +187,7 @@ export const WORKSPACE_SCREENS: { key: string; label: string; group: string }[] 
   { key: "payroll", label: "Зарплаты", group: "Обучение" },
 
   { key: "exams", label: "Экзамены", group: "Тесты и приём" },
+  { key: "admissions", label: "Поступающие", group: "Тесты и приём" },
 
   { key: "crm", label: "CRM", group: "Продажи и заявки" },
   { key: "forms", label: "Заявки и QR", group: "Продажи и заявки" },
@@ -207,6 +224,8 @@ export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | nu
   crm: ["crm:read", "crm:manage"],
   // Экзамены: банк вопросов, конструктор, проверка. Права — прежние тестовые.
   exams: ["tests:manage", "placement:manage", "tests:review"],
+  // Поступающие: приёмная, психологи и те, кто читает их заключения.
+  admissions: ["admission:manage", "psych:conduct", "psych:view"],
   tests: ["tests:read", "tests:manage"],
   testsManage: ["tests:review", "tests:manage"],
   // Срез: своё право (раньше — роль с подстрокой «завуч» в названии).
@@ -230,6 +249,7 @@ export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | nu
 export const ORG_MODULES: { key: string; label: string; description: string; permissions: PermissionKey[]; screens: string[] }[] = [
   { key: "mod_edu", label: "Обучение и расписание", description: "Занятия, абонементы, зарплаты", permissions: ["edu:schedule", "edu:payroll"], screens: ["schedule", "subscriptions", "payroll"] },
   { key: "mod_tests", label: "Тесты и экзамены", description: "Тесты, прокторинг, вступительный срез", permissions: ["tests:read", "tests:manage", "tests:review", "certificates:issue", "placement:manage"], screens: ["exams"] },
+  { key: "mod_admission", label: "Поступающие", description: "Карточки поступающих, психологическая диагностика, направления на тест", permissions: ["admission:manage", "psych:conduct", "psych:view"], screens: ["admissions"] },
   { key: "mod_crm", label: "CRM и продажи", description: "Контакты, сделки, воронки", permissions: ["crm:read", "crm:manage"], screens: ["crm"] },
   { key: "mod_tickets", label: "Заявки и билеты", description: "Конструктор заявок, QR-билеты, проверка на входе", permissions: ["tickets:check"], screens: ["forms", "tickets"] },
   { key: "mod_intake", label: "Приём и бронирование", description: "Заявки с внешних сайтов, занимаемые ресурсы, брони", permissions: ["intake:manage"], screens: ["intake"] },

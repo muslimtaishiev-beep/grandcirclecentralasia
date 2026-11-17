@@ -23,7 +23,6 @@ const Signup = lazy(() => import("./pages/Signup"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Decision = lazy(() => import("./pages/Decision"));
 const Landing = lazy(() => import("./pages/Landing"));
-const Receipt = lazy(() => import("./pages/Receipt"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsOfUse = lazy(() => import("./pages/TermsOfUse"));
 const ProctorSandbox = lazy(() => import("./pages/ProctorSandbox"));
@@ -272,7 +271,6 @@ export default function App() {
 
           <Route path="/manager/form" element={<Navigate to="/workspace" replace />} />
           <Route path="/manager-dashboard" element={<Navigate to="/workspace" replace />} />
-          <Route path="/receipt/:shortId" element={<Receipt />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/terms" element={<TermsOfUse />} />
 

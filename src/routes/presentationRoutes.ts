@@ -2,9 +2,8 @@ import { Router } from "express";
 import admin from "firebase-admin";
 import { randomBytes } from "crypto";
 import { requireFirebaseAuth } from "./authRoutes.js";
-import { activeMembership, membershipPermissions } from "../server/access.js";
+import { hasPerm, optionalAuth as optionalAuthWith, staffCaller } from "../server/access.js";
 import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
-import { hasFullAccess } from "../shared/permissions.js";
 import { tenantLogos } from "../shared/legal.js";
 import { listEmployees } from "./journalRoutes.js";
 import {
@@ -45,16 +44,11 @@ const READ_TTL = 6 * 3600_000;
 
 interface Caller { uid: string; name: string; full: boolean; manageAll: boolean; member: boolean }
 
+/** Общая проверка доступа (src/server/access.ts) + «управляет всеми презентациями». */
 async function callerIn(t: string, user: any): Promise<Caller | null> {
-  if (!user?.uid) return null;
-  const uid = String(user.uid);
-  const name = str(user.name || user.email || uid, 120);
-  if (user.isSuperadmin === true) return { uid, name, full: true, manageAll: true, member: true };
-  const m = await activeMembership(db(), uid, t);
-  if (!m) return { uid, name, full: false, manageAll: false, member: false };
-  const perms = await membershipPermissions(db(), m);
-  const full = hasFullAccess(m.role);
-  return { uid, name: str(m.displayName, 120) || name, full, manageAll: full || perms.has("presentations:manage"), member: true };
+  const c = await staffCaller(db(), t, user);
+  if (!c) return null;
+  return { uid: c.uid, name: c.name, full: c.full, manageAll: hasPerm(c, "presentations:manage"), member: c.member };
 }
 
 const requireEmployee = async (req: any, res: any, next: any) => {
@@ -242,12 +236,7 @@ router.delete("/:tenantId/:id", ...guard, async (req: any, res: any) => {
 
 // ── Просмотр по ссылке ──────────────────────────────────────────────────
 
-/** Вход не обязателен: токен проверяем, только если он прислан. */
-const optionalAuth = async (req: any, _res: any, next: any) => {
-  const token = String(req.headers.authorization || "").replace("Bearer ", "").trim();
-  if (token) { try { req.user = await admin.auth().verifyIdToken(token); } catch { /* как без входа */ } }
-  next();
-};
+const optionalAuth = optionalAuthWith(t => admin.auth().verifyIdToken(t));
 
 router.get("/show/:code", optionalAuth, async (req: any, res: any) => {
   try {
