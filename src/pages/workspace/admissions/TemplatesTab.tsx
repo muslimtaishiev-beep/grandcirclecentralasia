@@ -173,6 +173,18 @@ function ItemEditor({ i, t, parent, set, onMove, onDelete }: { i: QItem; t: QTem
         {i.kind !== "note" && <label className="flex items-center gap-1.5"><input type="checkbox" checked={i.kind === "rating" ? i.comment !== false : !!i.comment} onChange={e => set({ comment: e.target.checked })} /> поле для комментария</label>}
         {i.kind === "rating" && <select className={`${input} !w-auto`} value={i.scale || "norm4"} onChange={e => set({ scale: e.target.value as any })}>{(Object.keys(SCALES) as (keyof typeof SCALES)[]).map(k => <option key={k} value={k}>{SCALES[k].map(x => x.short).join(" / ")}</option>)}</select>}
       </div>
+      {t.audience === "parent" && ["text", "date", "phone"].includes(i.kind) && (
+        <div className="flex items-center gap-2 text-sm"><span className="text-[var(--text-muted)]">Заполняет поле карточки:</span>
+          <select className={`${input} !w-auto`} value={i.bind || ""} onChange={e => set({ bind: (e.target.value || undefined) as QItem["bind"] })}>
+            <option value="">—</option>
+            <option value="child.name">ФИО ребёнка</option>
+            <option value="child.birthDate">Дата рождения</option>
+            <option value="child.school">Школа, из которой переходит</option>
+            <option value="parent.name">ФИО родителя</option>
+            <option value="parent.phone">Телефон родителя</option>
+          </select>
+        </div>
+      )}
       {(i.kind === "choice" || i.kind === "multi") && (
         <div><span className={label}>Варианты (каждый с новой строки)</span>
           <textarea rows={3} className={input} value={(i.options || []).map(o => o.label).join("\n")} onChange={e => set({ options: lines(e.target.value).map((l, k) => ({ id: i.options?.[k]?.id || `o${k + 1}`, label: l })) })} /></div>
