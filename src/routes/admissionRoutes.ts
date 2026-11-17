@@ -7,13 +7,13 @@ import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
 import { tenantLogos } from "../shared/legal.js";
 import { LEGAL_VERSION } from "../shared/legalDocs.js";
 import { DECISION_LABEL, paperResult, partResults, sanitizeSections, sanitizeSettings, type Decision, type Exam, type ExamResult } from "../shared/examRun.js";
-import { DEFAULT_TEMPLATES } from "../shared/admissionTemplates.js";
+import { NEUTRAL_CANDIDATE_FORM, sanitizeCandidateForm, type CandidateFormConfig } from "../shared/candidateForm.js";
 import {
   gradeOf, missingFor, outcomeOf, sanitizeAnswers, sanitizeTemplate,
   type QAnswers, type QBind, type QTemplate,
 } from "../shared/questionnaires.js";
 import {
-  admittedByStages, candidateOf, CANDIDATE_DECISION_LABEL, examForApplicant, sanitizeCandidate, stageOf, subjectLevel,
+  admittedByStages, candidateOf, examForApplicant, sanitizeCandidate, stageOf, subjectLevel,
   type Applicant, type ApplicantForm, type CandidateInfo, type LinkPurpose, type StageSummary,
 } from "../shared/admissions.js";
 import type { PermissionKey } from "../shared/permissions.js";
@@ -115,13 +115,16 @@ const withoutAcademic = (a: Applicant): Applicant => ({ ...a, decision: null, ca
 
 // ── Данные ──────────────────────────────────────────────────────────────
 
-/** Анкеты организации; при первом обращении — готовые шаблоны АБЛ. */
+/** Анкеты организации. Новая организация начинает с пустого списка — свои анкеты создаёт сама. */
 async function loadTemplates(t: string): Promise<QTemplate[]> {
   const snap = await col(t, "questionnaire_templates").get();
-  if (!snap.empty) return snap.docs.map(d => ({ ...(d.data() as QTemplate), id: d.id }));
-  const made = DEFAULT_TEMPLATES.map(x => sanitizeTemplate(deep(x)));
-  await Promise.all(made.map(x => col(t, "questionnaire_templates").doc(x.id).create(x).catch((e: any) => { if (e?.code !== 6) throw e; })));
-  return made;
+  return snap.docs.map(d => ({ ...(d.data() as QTemplate), id: d.id }));
+}
+
+/** Вид анкеты кандидата организации; не настроен — нейтральный. */
+async function loadCandidateForm(t: string): Promise<CandidateFormConfig> {
+  const s = await col(t, "admission_meta").doc("candidate_form").get();
+  return s.exists ? (s.data() as CandidateFormConfig) : NEUTRAL_CANDIDATE_FORM;
 }
 const byId = (ts: QTemplate[]) => Object.fromEntries(ts.map(x => [x.id, x]));
 
@@ -246,7 +249,7 @@ function row(a: Applicant, attempts: any[], academic: boolean) {
     id: a.id, refNo: a.refNo, child: a.child, parent: a.parent, parentForm: a.parentForm, stages: a.stages,
     referral: a.referral ? { examTitle: a.referral.examTitle, manual: a.referral.manual, issuedAt: a.referral.issuedAt } : null,
     attempt: mine[0] || null, paperResults: a.paperResults.length,
-    decision: (d => (d ? CANDIDATE_DECISION_LABEL[d] : null))(candidateOf(a)?.decision),
+    decision: candidateOf(a)?.decisionLabel || null,
     stage: stageOf(a, mine[0] || null), createdAt: a.createdAt, updatedAt: a.updatedAt,
   };
 }
@@ -261,6 +264,24 @@ router.get("/:tenantId/templates", ...staff, async (req: any, res: any) => {
     const ts = await loadTemplates(req.params.tenantId);
     const c: StaffCaller = req.caller;
     return res.json({ success: true, templates: ts.filter(x => !x.archived), canEdit: Object.fromEntries(ts.map(x => [x.id, canEditTemplate(c, x)])), canCreate: canEditTemplate(c) });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** Вид анкеты кандидата: читают сотрудники приёма, меняют настройки и администрация. */
+router.get("/:tenantId/candidate-form", ...staff, async (req: any, res: any) => {
+  try {
+    return res.json({ success: true, form: await loadCandidateForm(req.params.tenantId), canEdit: hasPerm(req.caller, "settings:manage", "admission:manage") });
+  } catch (e: any) { return oops(res, e); }
+});
+router.put("/:tenantId/candidate-form", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "settings:manage", "admission:manage")) return fail(res, 403, "Менять анкету кандидата может администрация");
+    const ref = col(t, "admission_meta").doc("candidate_form");
+    const prev = (await ref.get()).data() as CandidateFormConfig | undefined;
+    const form: CandidateFormConfig = { ...sanitizeCandidateForm(req.body, prev || null), updatedBy: c.name, updatedAt: Date.now() };
+    await ref.set(form);
+    return res.json({ success: true, form });
   } catch (e: any) { return oops(res, e); }
 });
 
@@ -377,6 +398,7 @@ router.get("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
     return res.json({
       success: true, applicant: academic ? { ...a, candidate: candidateOf(a) } : withoutAcademic(a), forms, attempts, audit: auditLog,
       // Тест ребёнка по направлению: если на бумаге — администрация вносит правильные ответы.
+      candidateForm: academic ? await loadCandidateForm(t) : null,
       testExam: academic ? await (async () => {
         const e = a.referral?.examId ? (await tenantExams(t)).find(x => x.id === a.referral!.examId) : null;
         return e ? { id: e.id, title: e.title, paper: !!e.settings.paper, sections: e.sections.map(x => ({ id: x.id, title: x.title, tasks: x.tasks || 0 })) } : null;
@@ -561,9 +583,10 @@ router.put("/:tenantId/applicants/:id/candidate", ...staff, async (req: any, res
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
     const prev = candidateOf(a);
-    const candidate: CandidateInfo = { ...sanitizeCandidate(req.body), by: c.name, at: Date.now() };
+    const form = await loadCandidateForm(t);
+    const candidate: CandidateInfo = { ...sanitizeCandidate(req.body, form.decisions), by: c.name, at: Date.now() };
     await col(t, "applicants").doc(a.id).update({ candidate, decision: null, updatedAt: Date.now() });
-    if ((prev?.decision || null) !== candidate.decision) await audit(t, a.id, c, "decision", candidate.decision ? CANDIDATE_DECISION_LABEL[candidate.decision] : "снято");
+    if ((prev?.decision || null) !== candidate.decision) await audit(t, a.id, c, "decision", candidate.decision ? candidate.decisionLabel : "снято");
     if (!!prev?.feedbackGiven !== candidate.feedbackGiven) await audit(t, a.id, c, "feedback", candidate.feedbackGiven ? "дана — ученик видит результаты по QR" : "снята");
     return res.json({ success: true, candidate });
   } catch (e: any) { return oops(res, e); }

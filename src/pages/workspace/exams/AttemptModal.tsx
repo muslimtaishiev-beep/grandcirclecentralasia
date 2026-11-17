@@ -10,6 +10,7 @@ import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui"
 import type { Api } from "./examApi";
 import { useAdmissionApi } from "../admissions/admissionApi";
 import { candidateDoc, latestTest, saveCandidate, testOfAttempt } from "../admissions/candidateForm";
+import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
 
 type Full = Attempt & { questions: Record<string, FrozenQuestion> };
 
@@ -30,7 +31,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
   const [comment, setComment] = useState("");
   const admApi = useAdmissionApi(exam.tenantId);
   /** Вступительный тест: вместо сертификата и отчёта по темам — анкета кандидата. */
-  const admission = !!exam.settings.admission?.grades?.length;
+  const admission = !!exam.settings.admission?.candidateForm;
   const downloadCandidate = async () => {
     if (!a) return;
     setBusy("candidate"); setError(null);
@@ -42,12 +43,15 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
       if (a.applicantId) {
         try {
           const d = await admApi(`/applicants/${a.applicantId}`);
-          doc = candidateDoc({ applicant: d.applicant, parentForm: d.forms.find((f: any) => f.full && f.template.audience === "parent") || null, test: (d.attempts.length ? latestTest(d.attempts) : null) || own });
+          doc = candidateDoc({ form: d.candidateForm || NEUTRAL_CANDIDATE_FORM, orgName: org.name, applicant: d.applicant, parentForm: d.forms.find((f: any) => f.full && f.template.audience === "parent") || null, test: (d.attempts.length ? latestTest(d.attempts) : null) || own });
         } catch { /* нет прав на карточку — из данных работы */ }
       }
-      const x = a.student.extra || {};
-      doc = doc || candidateDoc({ test: own, fallback: { name: a.student.name, birthDate: x.birthDate || "", grade: a.student.level || "", school: x.school || "", parentName: x.parentName || "", parentPhone: x.parentPhone || "", studentPhone: x.studentPhone || a.student.phone || "" } });
-      await saveCandidate(org, doc);
+      if (!doc) {
+        const form: CandidateFormConfig = await admApi("/candidate-form").then(j => j.form).catch(() => NEUTRAL_CANDIDATE_FORM);
+        const x = a.student.extra || {};
+        doc = candidateDoc({ form, orgName: org.name, test: own, fallback: { name: a.student.name, birthDate: x.birthDate || "", grade: a.student.level || "", school: x.school || "", parentName: x.parentName || "", parentPhone: x.parentPhone || "", studentPhone: x.studentPhone || a.student.phone || "" } });
+      }
+      await saveCandidate(org, doc, a.student.name);
     } catch (e: any) { setError(e.message); }
     finally { setBusy(null); }
   };

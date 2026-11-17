@@ -30,7 +30,7 @@ h1{font-size:18pt;margin:6px 0 4px}h2{font-size:12.5pt;margin:14px 0 6px}
 table{width:100%;border-collapse:collapse;font-size:9.5pt}td,th{border:1px solid #444;padding:4px 5px;vertical-align:top}th{background:#f1f1f1}
 .box{display:inline-block;width:11px;height:11px;border:1px solid #111;margin-right:4px;vertical-align:-1px}
 .hint{color:#555;font-size:9pt}.stim{width:100%;max-height:235mm;object-fit:contain}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:52mm;border:1px solid #111}.grid div{border:1px solid #111}
+.grid{display:grid;grid-auto-rows:52mm;border:1px solid #111}.grid div{border:1px solid #111}
 .sign{margin-top:28px;display:flex;justify-content:space-between;font-size:10pt}
 `;
 
@@ -145,27 +145,31 @@ export async function sessionSheet(org: PrintOrg, c: PrintChild, o: { cardToken:
   </div>`;
 }
 
-/** Данные «Анкеты кандидата на поступление» — собираются из карточки, анкеты родителя и теста. */
+/** Данные «Анкеты кандидата» — вид из настроек организации, значения из карточки и теста. */
 export interface CandidateDoc {
-  date: number | null;
-  responsible: string;
-  child: { name: string; birthDate: string; grade: string; school: string };
+  orgLine: string;
+  title: string;
   refNo: number | null;
-  /** Только для поступающих в 7 класс. */
-  program: string;
-  grades3: string; grades3Subjects: string;
-  studentPhone: string; parentName: string; parentPhone: string;
-  whySchool: string; source: string;
-  stages: { consult: boolean; tested: boolean; feedback: boolean };
+  /** QR ученика: до теста — тест, после — его результаты; сотруднику — карточка. */
+  qrUrl: string | null;
+  /** Раздел «Сведения об ученике»: строка или варианты с отметкой. half — полстроки. */
+  fields: { label: string; value: string; half?: boolean; options?: { label: string; on: boolean }[] }[];
+  stages: { consult: boolean; tested: boolean; feedback: boolean } | null;
+  levels: [string, string, string];
   subjects: { title: string; percent: number | null; band: 0 | 1 | 2 | null; own: string | null }[];
   overall: string;
   conclusion: string;
+  feedbackHint: string;
   feedback: string;
-  decision: "enroll" | "trial" | "rejected" | "pending" | null;
-  trialFrom: string; trialTo: string; klass: string; reviewDate: string;
-  parentNotified: boolean | null; nextContact: string; decisionBy: string;
-  /** QR ученика: до теста — тест, после — его результаты; сотруднику — карточка. */
-  qrUrl: string | null;
+  decisions: { label: string; on: boolean }[];
+  trial: { from: string; to: string } | null;
+  /** null — поле в анкете организации выключено. */
+  klass: string | null;
+  reviewDate: string | null;
+  parentNotified: boolean | null | undefined;
+  nextContact: string | null;
+  decisionBy: string;
+  note: string;
 }
 
 const CAND_CSS = `
@@ -186,48 +190,53 @@ const CAND_CSS = `
 .cand .note{font-size:9pt;color:#444;margin-top:8px}
 `;
 
-/** «Анкета кандидата на поступление» — по бумажному бланку школы, заполненная системой. */
+/** «Анкета кандидата» — по виду, который организация задала у себя, заполненная системой. */
 export async function candidateSheet(org: PrintOrg, d: CandidateDoc) {
   const cb = (on: boolean | null | undefined, label: string) => `<span class="cb">${on ? "☑" : "☐"} ${esc(label)}</span>`;
   const ln = (k: string, v: string, style = "") => `<div class="ln"${style ? ` style="${style}"` : ""}><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`;
+  const field = (x: CandidateDoc["fields"][number]) => x.options
+    ? `<div class="ln"><span class="k">${esc(x.label)}</span> ${x.options.map(o => cb(o.on, o.label)).join("")}</div>`
+    : ln(/[?:]$/.test(x.label) ? x.label : `${x.label}:`, x.value);
+  // Поля «полстроки» идут парами, как на бланке.
+  const rowsHtml: string[] = [];
+  for (let i = 0; i < d.fields.length; i++) {
+    const x = d.fields[i], y = d.fields[i + 1];
+    if (x.half && y?.half) { rowsHtml.push(`<div class="row">${field(x)}${field(y)}</div>`); i++; }
+    else rowsHtml.push(field(x));
+  }
   const dt = (v: string) => (v ? new Date(v).toLocaleDateString("ru-RU") : "");
   const qrImg = d.qrUrl ? await qr(d.qrUrl) : "";
-  const levels = ["Низкий", "Средний", "Отличный"];
-  const rows = d.subjects.map(x => `<tr><td>${esc(x.title)}</td><td style="text-align:center;font-weight:700">${x.percent == null ? "" : `${String(x.percent).replace(".", ",")} %`}</td>
-    <td>${levels.map((l, i) => cb(x.band === i, l)).join("")}${x.own ? `<b> · ${esc(x.own)}</b>` : ""}</td></tr>`).join("");
+  const rows = d.subjects.map(x => `<tr><td>${esc(x.title)}</td><td style="text-align:center;font-weight:700">${x.percent == null ? "" : `${esc(String(x.percent).replace(".", ","))} %`}</td>
+    <td>${d.levels.map((l, i) => cb(x.band === i, l)).join("")}${x.own ? `<b> · ${esc(x.own)}</b>` : ""}</td></tr>`).join("");
+  const extra = [
+    d.trial ? `<div class="row">${ln("Пробный период: с", dt(d.trial.from))}${ln("по", dt(d.trial.to))}</div>` : "",
+    d.klass !== null || d.reviewDate !== null ? `<div class="row">${d.klass !== null ? ln("Класс:", d.klass) : ""}${d.reviewDate !== null ? ln("Дата повторного рассмотрения:", dt(d.reviewDate)) : ""}</div>` : "",
+    d.parentNotified !== undefined ? `<div class="ln"><span class="k">Родитель уведомлён об условиях:</span> ${cb(d.parentNotified === true, "Да")}${cb(d.parentNotified === false, "Нет")}</div>` : "",
+    `<div class="row">${d.nextContact !== null ? ln("Следующий контакт:", d.nextContact) : ""}${ln("Ответственный:", d.decisionBy)}${ln("Подпись:", "")}</div>`,
+  ].join("");
+  let n = 0;
+  const h = (title: string) => `<h3>${++n}. ${esc(title)}</h3>`;
   return `<div class="sheet cand"><style>${CAND_CSS}</style>
     <div class="top">
       ${org.logoUrl ? `<img class="logo" src="${esc(org.logoUrl)}" alt="">` : ""}
-      <div class="t"><b>${esc(org.name.toUpperCase())}</b><span>АНКЕТА КАНДИДАТА НА ПОСТУПЛЕНИЕ</span></div>
+      <div class="t"><b>${esc(d.orgLine.toUpperCase())}</b><span>${esc(d.title.toUpperCase())}</span></div>
       ${qrImg ? `<div class="q"><img src="${qrImg}" alt="">${d.refNo ? `<div>${no(d.refNo)}</div>` : ""}</div>` : ""}
     </div>
-    <div class="row">${ln("Дата обращения:", d.date ? new Date(d.date).toLocaleDateString("ru-RU") : "")}${ln("Ответственный:", d.responsible)}</div>
-    <h3>1. Сведения об ученике</h3>
-    ${ln("ФИО ученика:", d.child.name)}
-    <div class="row">${ln("Дата рождения:", dt(d.child.birthDate))}${ln("Класс поступления:", d.child.grade ? `${d.child.grade} класс` : "")}</div>
-    ${ln("Школа:", d.child.school)}
-    ${d.program || d.child.grade.trim().startsWith("7") ? `<div class="ln"><span class="k">Для 7-го класса:</span> ${cb(d.program === "11-летняя", "11-летняя программа")}${cb(d.program === "12-летняя", "12-летняя программа")}</div>` : ""}
-    <div class="ln"><span class="k">Есть ли оценки «3» за четверть?</span> ${cb(d.grades3 === "Да", "Да")}${cb(d.grades3 === "Нет", "Нет")}<span class="k">Предметы:</span><span class="v">${esc(d.grades3Subjects)}</span></div>
-    <div class="row">${ln("Телефон ученика:", d.studentPhone)}${ln("ФИО родителя:", d.parentName)}</div>
-    ${ln("Телефон родителя:", d.parentPhone)}
-    ${ln("Почему выбрали школу?", d.whySchool)}
-    ${ln("Откуда узнали о школе?", d.source)}
-    <h3>2. Этапы поступления</h3>
-    <div class="ln"><span class="k">Консультация:</span> ${cb(d.stages.consult, "Проведена")}${cb(!d.stages.consult, "Нет")}
+    ${h("Сведения об ученике")}
+    ${rowsHtml.join("")}
+    ${d.stages ? `${h("Этапы поступления")}<div class="ln"><span class="k">Консультация:</span> ${cb(d.stages.consult, "Проведена")}${cb(!d.stages.consult, "Нет")}
       <span class="k">Тестирование:</span> ${cb(d.stages.tested, "Пройдено")}${cb(!d.stages.tested, "Нет")}
-      <span class="k">Обратная связь:</span> ${cb(d.stages.feedback, "Да")}${cb(!d.stages.feedback, "Нет")}</div>
-    <h3>3. Результаты тестирования</h3>
-    <table><tr><th style="width:34%">Предмет</th><th style="width:18%">Результат, %</th><th>Уровень</th></tr>${rows || `<tr><td colspan="3" class="hint">Тест ещё не сдан</td></tr>`}</table>
+      <span class="k">Обратная связь:</span> ${cb(d.stages.feedback, "Да")}${cb(!d.stages.feedback, "Нет")}</div>` : ""}
+    ${h("Результаты тестирования")}
+    <table><tr><th style="width:34%">Предмет</th><th style="width:18%">Результат, %</th><th>Уровень</th></tr>${rows || `<tr><td colspan="3" style="color:#555">Тест ещё не сдан</td></tr>`}</table>
     ${ln("Общий результат / заключение:", [d.overall, d.conclusion].filter(Boolean).join(" — "), "margin-top:6px")}
-    <h3>4. Обратная связь родителю / подробное примечание</h3>
-    <div class="hint">Сильные и слабые стороны, рекомендации, условия пробного периода, предупреждения родителю:</div>
+    ${h("Обратная связь родителю / подробное примечание")}
+    ${d.feedbackHint ? `<div class="hint">${esc(d.feedbackHint)}:</div>` : ""}
     <div class="box2">${esc(d.feedback)}</div>
-    <h3>5. Решение по кандидату</h3>
-    <div class="ln">${cb(d.decision === "enroll", "Зачисление рекомендовано")}${cb(d.decision === "trial", "Пробный период")}${cb(d.decision === "rejected", "Отказ")}${cb(d.decision === "pending", "На рассмотрении")}</div>
-    <div class="row">${ln("Пробный период: с", dt(d.trialFrom))}${ln("по", dt(d.trialTo))}${ln("Класс:", d.klass)}</div>
-    <div class="row">${ln("Дата повторного рассмотрения:", dt(d.reviewDate))}<div class="ln"><span class="k">Родитель уведомлён об условиях:</span> ${cb(d.parentNotified === true, "Да")}${cb(d.parentNotified === false, "Нет")}</div></div>
-    <div class="row">${ln("Следующий контакт:", d.nextContact)}${ln("Ответственный:", d.decisionBy)}${ln("Подпись:", "")}</div>
-    <div class="note">Примечание: решение о зачислении и условиях обучения оформляется отдельно.</div>
+    ${h("Решение по кандидату")}
+    <div class="ln">${d.decisions.map(x => cb(x.on, x.label)).join("")}</div>
+    ${extra}
+    ${d.note ? `<div class="note">${esc(d.note)}</div>` : ""}
   </div>`;
 }
 
@@ -261,8 +270,10 @@ export const pdfName = (title: string, c: PrintChild) => `${title} — ${c.name}
 /** Лист, который заполняет ребёнок: корректурная проба, бланк памяти. */
 export async function sheetHTML(org: PrintOrg, c: PrintChild, o: { cardToken: string; attachment: QAttachment; templateId: string }) {
   const a = o.attachment;
-  const content = a.url === "/admission/sheet/memory"
-    ? `<p class="hint">Запиши или нарисуй всё, что запомнил.</p><div class="grid">${Array.from({ length: 12 }, () => "<div></div>").join("")}</div>`
+  // «/grid/4x3» — пустая таблица, куда ребёнок пишет или рисует ответы; иначе — картинка задания.
+  const grid = a.url.match(/^\/grid\/(\d{1,2})x(\d{1,2})$/);
+  const content = grid
+    ? `${a.hint ? `<p class="hint">${esc(a.hint)}</p>` : ""}<div class="grid" style="grid-template-columns:repeat(${Math.min(8, Number(grid[1]))},1fr)">${Array.from({ length: Math.min(8, Number(grid[1])) * Math.min(8, Number(grid[2])) }, () => "<div></div>").join("")}</div>`
     : `<img class="stim" src="${esc(new URL(a.url, window.location.origin).toString())}" alt="">`;
   return page(`${a.name} ${no(c.refNo)}`, `<div class="sheet">
     ${await head(org, c, linkUrl(o.cardToken, o.templateId), a.name)}

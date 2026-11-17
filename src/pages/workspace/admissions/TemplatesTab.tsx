@@ -4,6 +4,7 @@ import { PERMISSIONS, type PermissionKey } from "../../../shared/permissions";
 import { SCALES, type QItem, type QKind, type QNorm, type QSection, type QTemplate } from "../../../shared/questionnaires";
 import { Modal, btn, btnPrimary, card, input, label } from "../journals/components/ui";
 import type { Api } from "./admissionApi";
+import { CandidateFormCard } from "./CandidateFormEditor";
 
 /**
  * Анкеты приёма — конструктор. Кто заполняет и кто видит целиком — права
@@ -47,7 +48,9 @@ export default function TemplatesTab({ api }: { api: Api }) {
             <div className="text-xs text-[var(--text-muted)]">{t.sections.length} блоков · {t.sections.reduce((n, s) => n + s.items.length, 0)} пунктов{t.outcome ? ` · итог: ${t.outcome.options.map(o => o.label).join(" / ")}` : ""}{t.attachments.length ? ` · материалов: ${t.attachments.length}` : ""}</div>
           </div>
         ))}
+        <CandidateFormCard api={api} parent={list.find(t => t.audience === "parent")} />
       </div>
+      {!list.length && <p className="text-sm text-[var(--text-muted)]">Анкет пока нет.</p>}
       {canCreate && (
         <div className="flex gap-2">
           <button className={btn} onClick={() => setEditing(blank("staff"))}><Plus className="w-4 h-4" /> Анкета сотрудника</button>

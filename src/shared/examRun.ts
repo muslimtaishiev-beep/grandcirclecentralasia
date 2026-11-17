@@ -155,6 +155,8 @@ export interface ExamSettings {
     referralOnly: boolean; grades: number[]; stages: { templateId: string; passOutcomes: string[] }[];
     /** Уровень по предмету в анкете кандидата: «средний» от mid %, «отличный» от high %. */
     levels?: { mid: number; high: number };
+    /** Вместо сертификата и «Отчёта по темам» — анкета кандидата организации. */
+    candidateForm?: boolean;
   };
   /**
    * Тест на бумаге: вопросов нет, ученик пишет в школе, администратор вносит
@@ -203,7 +205,7 @@ export const DEFAULT_SETTINGS: ExamSettings = {
     groups: [],
   },
   display: { layout: "paged" },
-  admission: { referralOnly: false, grades: [], stages: [], levels: { mid: 50, high: 77 } },
+  admission: { referralOnly: false, grades: [], stages: [], levels: { mid: 50, high: 77 }, candidateForm: false },
   paper: false,
 };
 
@@ -325,6 +327,7 @@ export function sanitizeSettings(raw: any): ExamSettings {
         const mid = Math.round(num(r.admission?.levels?.mid, 0, 100, 50));
         return { mid, high: Math.max(mid, Math.round(num(r.admission?.levels?.high, 0, 100, 77))) };
       })(),
+      candidateForm: b(r.admission?.candidateForm, false),
     },
     paper: b(r.paper, false),
   };

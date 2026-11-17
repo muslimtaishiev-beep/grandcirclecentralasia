@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, ClipboardList, Download, ExternalLink, Loader2, Lock, Pencil, Printer, RefreshCw, Trash2 } from "lucide-react";
 import FormFiller from "../../../components/admissions/FormFiller";
-import { CANDIDATE_DECISION_LABEL, STAGE_LABEL, stageOf, type Applicant, type CandidateDecision, type CandidateInfo, type PaperResult } from "../../../shared/admissions";
+import { STAGE_LABEL, stageOf, type Applicant, type CandidateInfo, type PaperResult } from "../../../shared/admissions";
+import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
 import { attachmentsFor, gradeOf, outcomeOf, type QAnswers, type QAttachment, type QTemplate } from "../../../shared/questionnaires";
 import { tenantLogos } from "../../../shared/legal";
 import { openHtml, parentHTML, referralHTML, sheetHTML, staffBlankHTML, type PrintChild, type PrintOrg } from "../../../lib/admissionPrint";
@@ -21,6 +22,7 @@ interface Data {
   applicant: Applicant; forms: FormDoc[]; attempts: (TestSummary & { id: string; examId: string; shortId: string; decision: string | null })[]; audit: any[];
   templates: QTemplate[]; canFill: Record<string, boolean>; canSee: Record<string, boolean>; me: Me;
   testExam: TestExam | null;
+  candidateForm: CandidateFormConfig | null;
 }
 const no = (n: number) => `№ ${String(n).padStart(4, "0")}`;
 const AUDIT: Record<string, string> = {
@@ -76,7 +78,7 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, on
   const sessions = sessionsOf(d.forms);
   const downloadCandidate = async () => {
     setSaving(true);
-    try { await saveCandidate(org, candidateDoc({ applicant: a, parentForm: parentForm?.full ? parentForm : null, test: latestTest(d.attempts) })); }
+    try { await saveCandidate(org, candidateDoc({ form: d.candidateForm || NEUTRAL_CANDIDATE_FORM, orgName: org.name, applicant: a, parentForm: parentForm?.full ? parentForm : null, test: latestTest(d.attempts) }), a.child.name); }
     catch (e: any) { alert(e.message); } finally { setSaving(false); }
   };
   const downloadSession = async () => {
@@ -318,7 +320,7 @@ function TestTab({ a, d, api, onSaved, onDownload }: { a: Applicant; d: Data; ap
         {canManage && !d.testExam && <button className={btn} onClick={() => setPaper({ id: "", title: "Тест на бумаге", rows: [{ subject: "", score: null, max: null }], comment: "", at: 0, byName: "" })}>Внести результаты на бумаге</button>}
       </section>
 
-      <CandidateEditor a={a} me={d.me} test={test} canManage={canManage} onDownload={onDownload}
+      <CandidateEditor a={a} me={d.me} test={test} cfg={d.candidateForm || NEUTRAL_CANDIDATE_FORM} canManage={canManage} onDownload={onDownload}
         onSave={c => act(() => api(`/applicants/${a.id}/candidate`, { method: "PUT", body: JSON.stringify(c) }))} />
 
       {paper && <PaperModal p={paper} onClose={() => setPaper(null)} onSave={async x => { await api(`/applicants/${a.id}/paper`, { method: "POST", body: JSON.stringify(x) }); setPaper(null); onSaved(); }} />}
@@ -359,21 +361,22 @@ function PaperTestForm({ exam, prev, onSave }: { exam: TestExam; prev: TestSumma
   );
 }
 
-const DECISIONS: CandidateDecision[] = ["enroll", "trial", "rejected", "pending"];
-/** Пункты 3–5 «Анкеты кандидата»: заключение, обратная связь, решение и условия. */
-function CandidateEditor({ a, me, test, canManage, onSave, onDownload }: {
-  a: Applicant; me: Me; test: TestSummary | null; canManage: boolean;
-  onSave: (c: Omit<CandidateInfo, "by" | "at">) => Promise<void>; onDownload: () => void;
+type CandidateDraft = Omit<CandidateInfo, "by" | "at" | "decisionLabel" | "decisionFinal">;
+/** Заключение, обратная связь, решение и условия — поля и варианты из анкеты кандидата организации. */
+function CandidateEditor({ a, me, test, cfg, canManage, onSave, onDownload }: {
+  a: Applicant; me: Me; test: TestSummary | null; cfg: CandidateFormConfig; canManage: boolean;
+  onSave: (c: CandidateDraft) => Promise<void>; onDownload: () => void;
 }) {
   const c = a.candidate;
-  const [f, setF] = useState<Omit<CandidateInfo, "by" | "at">>(() => ({
+  const [f, setF] = useState<CandidateDraft>(() => ({
     responsible: c?.responsible || me.name || "", conclusion: c?.conclusion || "", feedback: c?.feedback || "", feedbackGiven: !!c?.feedbackGiven,
     decision: c?.decision || null, trialFrom: c?.trialFrom || "", trialTo: c?.trialTo || "", klass: c?.klass || a.child.grade || "",
     reviewDate: c?.reviewDate || "", parentNotified: c?.parentNotified ?? null, nextContact: c?.nextContact || "",
   }));
   const [busy, setBusy] = useState(false);
   const set = (p: Partial<typeof f>) => setF(x => ({ ...x, ...p }));
-  const auto = test ? topicFeedback(test.topics) : "";
+  const auto = test ? topicFeedback(test.topics, cfg.topics) : "";
+  const trial = !!cfg.decisions.find(x => x.id === f.decision)?.trial;
   const chip = (on: boolean) => `px-3 py-1.5 rounded-full text-sm font-medium border ${on ? "bg-[var(--accent)] border-[var(--accent)] text-white" : "border-[var(--border-color)] text-[var(--text-main)]"}`;
   return (
     <section className="space-y-3">
@@ -391,27 +394,27 @@ function CandidateEditor({ a, me, test, canManage, onSave, onDownload }: {
             <span className={label}>Обратная связь родителю / подробное примечание</span>
             {auto && <button type="button" className="text-xs text-[var(--accent)] hover:underline mb-1" onClick={() => set({ feedback: f.feedback ? `${f.feedback}\n${auto}` : auto })}>Из разбора по темам</button>}
           </div>
-          <textarea rows={4} className={input} value={f.feedback} onChange={e => set({ feedback: e.target.value })} placeholder={auto || "Сильные и слабые стороны, рекомендации, условия пробного периода, предупреждения родителю"} />
+          <textarea rows={4} className={input} value={f.feedback} onChange={e => set({ feedback: e.target.value })} placeholder={auto || cfg.feedbackHint} />
         </div>
         <label className="flex items-center gap-2 text-sm text-[var(--text-main)]"><input type="checkbox" checked={f.feedbackGiven} onChange={e => set({ feedbackGiven: e.target.checked })} /> Обратная связь дана — ученик видит результаты по QR</label>
         <div>
           <span className={label}>Решение по кандидату</span>
-          <div className="flex flex-wrap gap-1.5">{DECISIONS.map(v => <button key={v} type="button" className={chip(f.decision === v)} onClick={() => set({ decision: f.decision === v ? null : v })}>{CANDIDATE_DECISION_LABEL[v]}</button>)}</div>
+          <div className="flex flex-wrap gap-1.5">{cfg.decisions.map(v => <button key={v.id} type="button" className={chip(f.decision === v.id)} onClick={() => set({ decision: f.decision === v.id ? null : v.id })}>{v.label}</button>)}</div>
         </div>
         <div className="grid sm:grid-cols-4 gap-3">
-          {f.decision === "trial" && <>
+          {trial && <>
             <div><span className={label}>Пробный период с</span><input type="date" className={input} value={f.trialFrom} onChange={e => set({ trialFrom: e.target.value })} /></div>
             <div><span className={label}>по</span><input type="date" className={input} value={f.trialTo} onChange={e => set({ trialTo: e.target.value })} /></div>
           </>}
-          <div><span className={label}>Класс</span><input className={input} value={f.klass} onChange={e => set({ klass: e.target.value })} /></div>
-          <div><span className={label}>Повторное рассмотрение</span><input type="date" className={input} value={f.reviewDate} onChange={e => set({ reviewDate: e.target.value })} /></div>
+          {cfg.extras.klass && <div><span className={label}>Класс</span><input className={input} value={f.klass} onChange={e => set({ klass: e.target.value })} /></div>}
+          {cfg.extras.reviewDate && <div><span className={label}>Повторное рассмотрение</span><input type="date" className={input} value={f.reviewDate} onChange={e => set({ reviewDate: e.target.value })} /></div>}
         </div>
         <div className="grid sm:grid-cols-2 gap-3">
-          <div>
+          {cfg.extras.parentNotified && <div>
             <span className={label}>Родитель уведомлён об условиях</span>
             <div className="flex gap-1.5">{([[true, "Да"], [false, "Нет"]] as const).map(([v, l]) => <button key={l} type="button" className={chip(f.parentNotified === v)} onClick={() => set({ parentNotified: f.parentNotified === v ? null : v })}>{l}</button>)}</div>
-          </div>
-          <div><span className={label}>Следующий контакт</span><input className={input} value={f.nextContact} onChange={e => set({ nextContact: e.target.value })} /></div>
+          </div>}
+          {cfg.extras.nextContact && <div><span className={label}>Следующий контакт</span><input className={input} value={f.nextContact} onChange={e => set({ nextContact: e.target.value })} /></div>}
         </div>
         {canManage && <button className={btnPrimary} disabled={busy} onClick={async () => { setBusy(true); try { await onSave(f); } finally { setBusy(false); } }}>{busy && <Loader2 className="w-4 h-4 animate-spin" />} Сохранить анкету</button>}
         {c?.at ? <span className="ml-3 text-xs text-[var(--text-muted)]">{c.by} · {new Date(c.at).toLocaleString("ru-RU")}</span> : null}

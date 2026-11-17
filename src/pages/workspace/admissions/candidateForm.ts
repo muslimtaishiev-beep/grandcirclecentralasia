@@ -1,13 +1,15 @@
-import { candidateOf, subjectLevel, type Applicant, type CandidateInfo } from "../../../shared/admissions";
+import { candidateOf, subjectLevel, type Applicant } from "../../../shared/admissions";
+import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
 import { partResults, type Attempt, type Exam } from "../../../shared/examRun";
-import { answerText, type QAnswers, type QTemplate } from "../../../shared/questionnaires";
+import { answerText, gradeOf, itemVisible, type QAnswers, type QTemplate } from "../../../shared/questionnaires";
 import { candidateSheet, downloadPdf, linkUrl, type CandidateDoc, type PrintOrg } from "../../../lib/admissionPrint";
 
 /**
- * «Анкета кандидата на поступление»: всё, что система уже знает, — из
- * карточки, анкеты родителя и теста; заключение, обратная связь и решение —
- * из того, что вписала администрация. Заменяет сертификат и «Отчёт по темам»
- * вступительных тестов: сильные стороны и зона роста идут в пункт 4.
+ * «Анкета кандидата»: вид — из настроек организации (CandidateFormConfig),
+ * данные — из карточки, анкеты родителя и теста; заключение, обратная связь
+ * и решение — из того, что вписала администрация. У экзаменов, где она
+ * включена, заменяет сертификат и «Отчёт по темам»: сильные стороны и зона
+ * роста по темам идут в обратную связь.
  */
 export interface TestSummary {
   examTitle: string; status: string; superseded?: boolean; finishedAt: number | null; paper?: boolean;
@@ -19,7 +21,7 @@ export interface TestSummary {
   studentPhone?: string;
 }
 
-/** Итоги работы из экзамена — для анкеты, когда карточки поступающего нет или она недоступна. */
+/** Итоги работы из экзамена — когда карточки поступающего нет или она недоступна. */
 export function testOfAttempt(a: Attempt, exam: Exam): TestSummary | null {
   const r = a.result;
   if (!r) return null;
@@ -39,58 +41,85 @@ export function testOfAttempt(a: Attempt, exam: Exam): TestSummary | null {
 export const latestTest = (xs: TestSummary[]) =>
   xs.filter(x => x.status === "finished" && !x.superseded).sort((a, b) => (b.finishedAt || 0) - (a.finishedAt || 0))[0] || null;
 
-/** Сильные стороны и зона роста по темам — как в прежнем отчёте (от 80% и ниже 60%). */
-export function topicFeedback(topics: TestSummary["topics"]): string {
+/** Сильные стороны и зона роста по темам — пороги из анкеты организации. */
+export function topicFeedback(topics: TestSummary["topics"], th: CandidateFormConfig["topics"] = NEUTRAL_CANDIDATE_FORM.topics): string {
   const f = (xs: TestSummary["topics"]) => xs.slice(0, 6).map(t => `${t.topic} (${Math.round(t.percent)}%)`).join(", ");
-  const strong = topics.filter(t => t.percent >= 80).sort((a, b) => b.percent - a.percent);
-  const weak = topics.filter(t => t.percent < 60).sort((a, b) => a.percent - b.percent);
+  const strong = topics.filter(t => t.percent >= th.strong).sort((a, b) => b.percent - a.percent);
+  const weak = topics.filter(t => t.percent < th.weak).sort((a, b) => a.percent - b.percent);
   return [strong.length ? `Сильные стороны: ${f(strong)}.` : "", weak.length ? `Зона роста: ${f(weak)}.` : ""].filter(Boolean).join("\n");
 }
 
 type ParentForm = { template: QTemplate; answers?: QAnswers } | null | undefined;
-const answerOf = (form: ParentForm, id: string) => {
-  const item = form?.template.sections.flatMap(s => s.items).find(i => i.id === id);
-  return item && form?.answers ? answerText(item, form.answers[id]) : "";
-};
+const ru = (v: string) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(v).toLocaleDateString("ru-RU") : v);
 
 export function candidateDoc(o: {
+  form: CandidateFormConfig;
+  orgName: string;
   applicant?: Applicant | null;
   parentForm?: ParentForm;
   test: TestSummary | null;
   /** Без карточки (работа без направления) — данные из регистрации на тест. */
   fallback?: { name: string; birthDate: string; grade: string; school: string; parentName: string; parentPhone: string; studentPhone: string };
 }): CandidateDoc {
+  const { form: cfg, test: t, fallback: f } = o;
   const a = o.applicant || null;
-  const c: CandidateInfo | null = a ? candidateOf(a) : null;
-  const f = o.fallback;
-  const t = o.test;
-  const overall = !t ? "" : t.parts.length ? t.parts.map(p => `${p.title}: ${p.value}`).join(", ") : t.percent != null ? `${String(t.percent).replace(".", ",")} %` : "";
+  const c = a ? candidateOf(a) : null;
+  const grade = a?.child.grade || f?.grade || "";
+  const g = gradeOf(grade);
+  const items = o.parentForm?.template.sections.flatMap(s => s.items) || [];
+  const value = (src: string): Pick<CandidateDoc["fields"][number], "value" | "options"> => {
+    if (src.startsWith("answer:")) {
+      const item = items.find(i => i.id === src.slice(7));
+      if (!item) return { value: "" };
+      const ans = o.parentForm?.answers?.[item.id];
+      if (item.kind === "choice" || item.kind === "multi") {
+        const picked = item.kind === "multi" ? (Array.isArray(ans?.value) ? ans!.value : []) : [ans?.value];
+        return { value: "", options: (item.options || []).map(x => ({ label: x.label, on: picked.includes(x.id) })) };
+      }
+      return { value: ru(answerText(item, ans)) };
+    }
+    switch (src) {
+      case "date": return { value: a?.createdAt ? new Date(a.createdAt).toLocaleDateString("ru-RU") : "" };
+      case "responsible": return { value: c?.responsible || a?.createdByName || "" };
+      case "child.name": return { value: a?.child.name || f?.name || "" };
+      case "child.birthDate": return { value: ru(a?.child.birthDate || f?.birthDate || "") };
+      case "child.grade": return { value: grade ? (/^\d+$/.test(grade.trim()) ? `${grade.trim()} класс` : grade) : "" };
+      case "child.school": return { value: a?.child.school || f?.school || "" };
+      case "parent.name": return { value: a?.parent.name || f?.parentName || "" };
+      case "parent.phone": return { value: a?.parent.phone || f?.parentPhone || "" };
+      case "student.phone": return { value: t?.studentPhone || f?.studentPhone || "" };
+      default: return { value: "" };
+    }
+  };
+  const chosen = cfg.decisions.find(d => d.id === c?.decision);
   return {
-    date: a?.createdAt ?? null,
-    responsible: c?.responsible || a?.createdByName || "",
-    child: { name: a?.child.name || f?.name || "", birthDate: a?.child.birthDate || f?.birthDate || "", grade: a?.child.grade || f?.grade || "", school: a?.child.school || f?.school || "" },
+    orgLine: cfg.orgLine || o.orgName,
+    title: cfg.title,
     refNo: a?.refNo ?? null,
-    program: answerOf(o.parentForm, "program"),
-    grades3: answerOf(o.parentForm, "grades3"),
-    grades3Subjects: answerOf(o.parentForm, "grades3_subjects"),
-    studentPhone: answerOf(o.parentForm, "student_phone") || t?.studentPhone || f?.studentPhone || "",
-    parentName: a?.parent.name || f?.parentName || "",
-    parentPhone: a?.parent.phone || f?.parentPhone || "",
-    whySchool: answerOf(o.parentForm, "why_school"),
-    source: answerOf(o.parentForm, "source"),
-    stages: { consult: !!a && Object.values(a.stages).some(s => s.status === "done"), tested: !!t, feedback: !!c?.feedbackGiven },
-    subjects: (t?.sections || []).map(s => { const lv = subjectLevel(s, t!.parts, t!.levels); return { title: s.title, percent: s.percent, band: lv.band, own: lv.own }; }),
-    overall,
-    conclusion: c?.conclusion || "",
-    feedback: c?.feedback || (t ? topicFeedback(t.topics) : ""),
-    decision: c?.decision || null,
-    trialFrom: c?.trialFrom || "", trialTo: c?.trialTo || "", klass: c?.klass || "", reviewDate: c?.reviewDate || "",
-    parentNotified: c?.parentNotified ?? null, nextContact: c?.nextContact || "", decisionBy: c?.decision ? c.by : "",
     qrUrl: a?.tokens.referral ? linkUrl(a.tokens.referral) : null,
+    fields: cfg.fields
+      .filter(x => !x.grades?.length || (g !== null && x.grades.includes(g)))
+      .filter(x => !x.source.startsWith("answer:") || items.some(i => i.id === x.source.slice(7) && itemVisible(i, g)) || !items.length)
+      .map(x => ({ label: x.label, half: x.half, ...value(x.source) })),
+    stages: cfg.showStages ? { consult: !!a && Object.values(a.stages).some(s => s.status === "done"), tested: !!t, feedback: !!c?.feedbackGiven } : null,
+    levels: cfg.levels,
+    subjects: (t?.sections || []).map(s => { const lv = subjectLevel(s, t!.parts, t!.levels); return { title: s.title, percent: s.percent, band: lv.band, own: lv.own }; }),
+    overall: !t ? "" : t.parts.length ? t.parts.map(p => `${p.title}: ${p.value}`).join(", ") : t.percent != null ? `${String(t.percent).replace(".", ",")} %` : "",
+    conclusion: c?.conclusion || "",
+    feedbackHint: cfg.feedbackHint,
+    feedback: c?.feedback || (t ? topicFeedback(t.topics, cfg.topics) : ""),
+    decisions: cfg.decisions.map(d => ({ label: d.label, on: d.id === c?.decision })),
+    trial: cfg.decisions.some(d => d.trial) ? { from: chosen?.trial ? c?.trialFrom || "" : "", to: chosen?.trial ? c?.trialTo || "" : "" } : null,
+    klass: cfg.extras.klass ? c?.klass || "" : null,
+    reviewDate: cfg.extras.reviewDate ? c?.reviewDate || "" : null,
+    parentNotified: cfg.extras.parentNotified ? (c?.parentNotified ?? null) : undefined,
+    nextContact: cfg.extras.nextContact ? c?.nextContact || "" : null,
+    decisionBy: c?.decision ? c.by : "",
+    note: cfg.note,
   };
 }
 
-export async function saveCandidate(org: PrintOrg, doc: CandidateDoc): Promise<void> {
-  const name = `Анкета кандидата — ${doc.child.name || "ученик"}${doc.refNo ? ` — № ${String(doc.refNo).padStart(4, "0")}` : ""}.pdf`.replace(/[\\/:*?"<>|]/g, " ");
+export async function saveCandidate(org: PrintOrg, doc: CandidateDoc, childName: string): Promise<void> {
+  const name = `${doc.title} — ${childName || "ученик"}${doc.refNo ? ` — № ${String(doc.refNo).padStart(4, "0")}` : ""}.pdf`.replace(/[\\/:*?"<>|]/g, " ");
   await downloadPdf(await candidateSheet(org, doc), name);
 }

@@ -73,6 +73,7 @@ export default function AdmissionGate({ tenantId, value, onChange }: { tenantId:
           отличный от <input type="number" min={0} max={100} className={`${input} !w-16`} value={value.levels?.high ?? 77} onChange={e => set({ levels: { mid: value.levels?.mid ?? 50, high: Number(e.target.value) || 0 } })} />%
         </div>
       </div>
+      <label className="flex items-start gap-2 text-sm text-[var(--text-main)]"><input type="checkbox" className="mt-1" checked={!!value.candidateForm} onChange={e => set({ candidateForm: e.target.checked })} /> <span>Анкета кандидата вместо сертификата и отчёта по темам</span></label>
       <label className="flex items-start gap-2 text-sm text-[var(--text-main)]"><input type="checkbox" className="mt-1" checked={value.referralOnly} onChange={e => set({ referralOnly: e.target.checked })} /> <span>Вход только по направлению (QR) — без ручной регистрации</span></label>
     </div>
   );

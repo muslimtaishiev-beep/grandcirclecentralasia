@@ -23,14 +23,10 @@ export interface StageSummary {
   at: number;
 }
 
-/** Решение по кандидату — как в бумажной «Анкете кандидата на поступление». */
-export type CandidateDecision = "enroll" | "trial" | "rejected" | "pending";
-export const CANDIDATE_DECISION_LABEL: Record<CandidateDecision, string> = {
-  enroll: "Зачисление рекомендовано", trial: "Пробный период", rejected: "Отказ", pending: "На рассмотрении",
-};
 /**
- * Что пишет и решает администрация в анкете кандидата (пункты 3–5 бланка).
- * Остальное в анкете — из карточки, анкеты родителя и теста.
+ * Что пишет и решает администрация в анкете кандидата: заключение, обратная
+ * связь, решение и условия. Варианты решения — из настроек анкеты кандидата
+ * организации; подпись и «решение принято» сохраняются вместе с решением.
  */
 export interface CandidateInfo {
   responsible: string;
@@ -40,7 +36,9 @@ export interface CandidateInfo {
   feedback: string;
   /** «Обратная связь: да» — с этого момента ученик видит свои результаты по QR. */
   feedbackGiven: boolean;
-  decision: CandidateDecision | null;
+  decision: string | null;
+  decisionLabel: string;
+  decisionFinal: boolean;
   trialFrom: string; trialTo: string;
   klass: string;
   reviewDate: string;
@@ -48,18 +46,21 @@ export interface CandidateInfo {
   nextContact: string;
   by: string; at: number;
 }
-const DECISIONS: CandidateDecision[] = ["enroll", "trial", "rejected", "pending"];
-const LEGACY_DECISION: Record<Decision, CandidateDecision> = { accepted: "enroll", reserve: "pending", rejected: "rejected" };
+const LEGACY_DECISION: Record<Decision, { label: string; final: boolean }> = {
+  accepted: { label: "Принят", final: true }, reserve: { label: "Резерв", final: false }, rejected: { label: "Не принят", final: true },
+};
 const txt = (v: unknown, max: number) => String(v ?? "").replace(/\r/g, "").trim().slice(0, max);
 const day = (v: unknown) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v ?? "")) ? String(v) : "");
 
-export function sanitizeCandidate(raw: any): Omit<CandidateInfo, "by" | "at"> {
+/** Ответ администрации; решение — только из вариантов анкеты организации. */
+export function sanitizeCandidate(raw: any, decisions: { id: string; label: string; final: boolean }[]): Omit<CandidateInfo, "by" | "at"> {
+  const d = decisions.find(x => x.id === raw?.decision) || null;
   return {
     responsible: txt(raw?.responsible, 120),
     conclusion: txt(raw?.conclusion, 1000),
     feedback: txt(raw?.feedback, 4000),
     feedbackGiven: raw?.feedbackGiven === true,
-    decision: DECISIONS.includes(raw?.decision) ? raw.decision : null,
+    decision: d ? d.id : null, decisionLabel: d ? d.label : "", decisionFinal: !!d?.final,
     trialFrom: day(raw?.trialFrom), trialTo: day(raw?.trialTo),
     klass: txt(raw?.klass, 20),
     reviewDate: day(raw?.reviewDate),
@@ -71,7 +72,13 @@ export function sanitizeCandidate(raw: any): Omit<CandidateInfo, "by" | "at"> {
 export function candidateOf(a: Pick<Applicant, "candidate" | "decision">): CandidateInfo | null {
   if (a.candidate) return a.candidate;
   if (!a.decision) return null;
-  return { ...sanitizeCandidate({ conclusion: a.decision.comment }), decision: LEGACY_DECISION[a.decision.value] || null, by: a.decision.by, at: a.decision.at };
+  const l = LEGACY_DECISION[a.decision.value];
+  return {
+    responsible: "", conclusion: a.decision.comment || "", feedback: "", feedbackGiven: false,
+    decision: a.decision.value, decisionLabel: l?.label || "", decisionFinal: !!l?.final,
+    trialFrom: "", trialTo: "", klass: "", reviewDate: "", parentNotified: null, nextContact: "",
+    by: a.decision.by, at: a.decision.at,
+  };
 }
 
 export interface PaperResult { id: string; title: string; rows: { subject: string; score: number | null; max: number | null }[]; comment: string; at: number; byName: string }
@@ -139,8 +146,7 @@ export const STAGE_LABEL: Record<Stage, string> = {
 
 /** Этап поступающего — для списка и фильтров. */
 export function stageOf(a: Pick<Applicant, "parentForm" | "stages" | "referral" | "decision" | "candidate" | "paperResults">, attempt?: { status: string } | null): Stage {
-  const d = candidateOf(a)?.decision;
-  if (d && d !== "pending") return "decided";
+  if (candidateOf(a)?.decisionFinal) return "decided";
   if (attempt?.status === "finished" || a.paperResults.length) return "tested";
   if (attempt?.status === "in_progress") return "testing";
   if (a.referral) return "referred";
