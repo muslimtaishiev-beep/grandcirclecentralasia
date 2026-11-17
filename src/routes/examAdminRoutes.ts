@@ -1,3 +1,4 @@
+import { syncAllReferrals } from "./admissionRoutes.js";
 import { Router } from "express";
 import admin from "firebase-admin";
 import { randomBytes } from "crypto";
@@ -168,6 +169,11 @@ router.put("/:tenantId/exams/:id", ...edit, checkIds, async (req: any, res: any)
     }
     await col(t, "exams").doc(exam.id).update(JSON.parse(JSON.stringify(patch)));
     const next = { ...exam, ...patch };
+    // Классы, этапы или статус экзамена поменялись — поступающие, которые ждут
+    // тест своего класса, получают его сами (уже напечатанный QR начинает работать).
+    if ((next as Exam).settings?.admission?.grades?.length || exam.settings?.admission?.grades?.length) {
+      await syncAllReferrals(t).catch(e => console.warn("[exam-admin] referrals", e?.message));
+    }
     return res.json({ success: true, exam: next, pin: pinNow(next as Exam) });
   } catch (e: any) { return fail(res, 500, e.message); }
 });

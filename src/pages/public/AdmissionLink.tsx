@@ -19,7 +19,7 @@ import { gradeOf, missingFor, type QAnswers, type QTemplate } from "../../shared
 type Info =
   | { mode: "staff"; url: string; who: string }
   | { mode: "staff_only"; org: Org; signedIn: boolean }
-  | { mode: "student"; org: Org; signedIn: boolean; child: { name: string; grade: string }; exam: { code: string; title: string } | null }
+  | { mode: "student"; org: Org; signedIn: boolean; child: { name: string; grade: string }; exam: { code: string; title: string } | null; referred?: boolean }
   | { mode: "parent"; org: Org; signedIn: boolean; locked: boolean; template: QTemplate; answers: QAnswers; done: boolean; grade: string };
 type Org = { id: string; name: string; logoUrl: string | null };
 
@@ -84,7 +84,9 @@ export default function AdmissionLink() {
             <button className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold" onClick={() => navigate(`/exam/${info.exam!.code}?ref=${encodeURIComponent(token)}`)}>Перейти к тесту</button>
             <p className="text-xs text-slate-500">PIN для начала назовёт организатор в аудитории.</p>
           </>
-        ) : <p className="text-sm text-slate-600">Направление на тест пока не выдано. Обратитесь в приёмную.</p>}
+        ) : info.referred
+          ? <p className="text-sm text-slate-600">Тест для {info.child.grade} класса ещё не открыт. Отсканируйте этот код в день теста — он откроет ваш тест.</p>
+          : <p className="text-sm text-slate-600">Направление на тест пока не выдано. Обратитесь в приёмную.</p>}
       </div>
       {staffBar}
     </Shell>

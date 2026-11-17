@@ -97,16 +97,26 @@ export function stageOf(a: Pick<Applicant, "parentForm" | "stages" | "referral" 
 }
 
 /**
+ * Допуск к тесту по итогам анкет: все пройденные этапы пускают (итог с
+ * «пускает к тесту»). Какой именно тест — решает класс, а не человек.
+ */
+export const admittedByStages = (a: Pick<Applicant, "stages">) => {
+  const st = Object.values(a.stages);
+  return st.length > 0 && st.every(s => s.status === "done" && s.allowsTest);
+};
+
+/**
  * Экзамен для направления: открыт (или черновик — его откроют к дате), для
  * класса поступающего, и все его этапы пройдены с пускающим итогом.
  * Итог пускает, если входит в passOutcomes этапа экзамена, а без них — если
  * в шаблоне у него «пускает к тесту».
  */
-export function examForApplicant(exams: Exam[], a: Pick<Applicant, "child" | "stages">, templates: Record<string, Pick<QTemplate, "outcome">>): Exam | null {
+export function examForApplicant(exams: Exam[], a: Pick<Applicant, "child" | "stages">, templates: Record<string, Pick<QTemplate, "outcome">>, override = false): Exam | null {
   const g = gradeOf(a.child.grade);
   if (g === null) return null;
   const fit = exams.filter(e => !e.archived && e.status !== "closed" && (e.settings.admission?.grades || []).includes(g))
-    .filter(e => (e.settings.admission?.stages || []).every(st => {
+    // Допущен администрацией вопреки итогу — этапы не проверяем, тест всё равно по классу.
+    .filter(e => override || (e.settings.admission?.stages || []).every(st => {
       const s = a.stages[st.templateId];
       if (!s || s.status !== "done" || !s.outcome) return false;
       if (st.passOutcomes.length) return st.passOutcomes.includes(s.outcome);

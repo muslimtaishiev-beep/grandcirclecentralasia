@@ -59,7 +59,7 @@ export async function referralHTML(org: PrintOrg, c: PrintChild, o: { token: str
     ${await head(org, c, url, "Направление на вступительное тестирование")}
     <h1>Направление на тестирование</h1>
     <p>Выдано: <b>${esc(c.name)}</b>, поступающему в ${esc(c.grade)} класс.</p>
-    <p>Тест: <b>${esc(o.examTitle)}</b></p>
+    <p>Тест: <b>${esc(o.examTitle || `вступительный тест, ${c.grade} класс`)}</b></p>
     <p>Собеседование с психологом пройдено.</p>
     <div class="big"><img src="${big}" alt=""><div>
       <p><b>Как начать тест</b></p>

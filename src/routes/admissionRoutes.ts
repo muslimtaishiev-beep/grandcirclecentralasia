@@ -13,7 +13,7 @@ import {
   type QAnswers, type QBind, type QTemplate,
 } from "../shared/questionnaires.js";
 import {
-  examForApplicant, stageOf,
+  admittedByStages, examForApplicant, stageOf,
   type Applicant, type ApplicantForm, type LinkPurpose, type StageSummary,
 } from "../shared/admissions.js";
 import type { PermissionKey } from "../shared/permissions.js";
@@ -127,20 +127,36 @@ async function referralTokenFor(t: string, a: Applicant): Promise<string> {
  * (ручное, выданное администратором, не трогаем). Если тест уже начат —
  * ничего не меняем.
  */
-async function syncReferral(t: string, a: Applicant, templates: QTemplate[]): Promise<Applicant["referral"]> {
+export async function syncReferral(t: string, a: Applicant, templates?: QTemplate[], exams?: Exam[]): Promise<Applicant["referral"]> {
   const started = await col(t, "exam_attempts").where("applicantId", "==", a.id).limit(1).get();
   if (!started.empty) return a.referral;
-  if (a.referral?.manual) return a.referral;
-  const exam = examForApplicant(await tenantExams(t), a, byId(templates));
-  if (!exam) {
+  // Направление есть, если итог пускает (или допустила администрация). Какой
+  // тест — система подбирает по классу; экзамена ещё нет — направление всё
+  // равно выдано, тест подставится, когда его откроют для этого класса.
+  const override = !!a.referral?.manual;
+  if (!override && !admittedByStages(a)) {
     if (a.referral) await col(t, "applicants").doc(a.id).update({ referral: null, updatedAt: Date.now() });
     return null;
   }
-  if (a.referral?.examId === exam.id) return a.referral;
+  const exam = examForApplicant(exams || await tenantExams(t), a, byId(templates || await loadTemplates(t)), override);
+  const want = { examId: exam?.id || null, examTitle: exam?.title || "", examCode: exam?.code || null };
+  if (a.referral && a.referral.examId === want.examId && a.referral.examTitle === want.examTitle) return a.referral;
   await referralTokenFor(t, a);
-  const referral = { examId: exam.id, examTitle: exam.title, examCode: exam.code, issuedAt: Date.now(), by: "auto", byName: "По заключению", manual: false, reason: "" };
+  const referral = {
+    ...want, issuedAt: a.referral?.issuedAt || Date.now(),
+    by: a.referral?.by || "auto", byName: a.referral?.byName || "По заключению", manual: override, reason: a.referral?.reason || "",
+  };
   await col(t, "applicants").doc(a.id).update({ referral, updatedAt: Date.now() });
   return referral;
+}
+
+/** Экзамен сохранили (поменяли классы или этапы) — подставить тест всем, кто его ждёт. */
+export async function syncAllReferrals(t: string) {
+  const [snap, templates, exams] = await Promise.all([col(t, "applicants").get(), loadTemplates(t), tenantExams(t)]);
+  for (const d of snap.docs) {
+    const a = { ...(d.data() as Applicant), id: d.id };
+    if (a.referral || admittedByStages(a)) await syncReferral(t, a, templates, exams).catch(e => console.warn("[admissions] sync", e?.message));
+  }
 }
 
 /** Работы поступающих по тесту: статус и итоги частей (без ответов). */
@@ -275,6 +291,7 @@ router.get("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
     const t = req.params.tenantId; const c: StaffCaller = req.caller;
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
+    a.referral = await syncReferral(t, a).catch(() => a.referral);
     const [templates, formsSnap, attempts] = await Promise.all([
       loadTemplates(t), col(t, "applicant_forms").where("applicantId", "==", a.id).get(), attemptsOf(t, [a.id]),
     ]);
@@ -399,7 +416,7 @@ router.put("/:tenantId/applicants/:id/forms/:tid", ...staff, async (req: any, re
   } catch (e: any) { return oops(res, e); }
 });
 
-/** Ручное направление (приёмная): на выбранный экзамен, даже если итог не пускает. */
+/** «Допустить к тесту» вопреки итогу (администрация). Тест — по классу, как у всех. */
 router.post("/:tenantId/applicants/:id/referral", ...staff, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const c: StaffCaller = req.caller;
@@ -408,13 +425,11 @@ router.post("/:tenantId/applicants/:id/referral", ...staff, async (req: any, res
     if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Направление вручную выдаёт администратор");
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
-    const exam = (await tenantExams(t)).find(e => e.id === String(req.body?.examId || ""));
-    if (!exam || exam.archived) return fail(res, 400, "Выберите экзамен");
     const reason = str(req.body?.reason, 500);
-    await referralTokenFor(t, a);
-    const referral = { examId: exam.id, examTitle: exam.title, examCode: exam.code, issuedAt: Date.now(), by: c.uid, byName: c.name, manual: true, reason };
-    await col(t, "applicants").doc(a.id).update({ referral, updatedAt: Date.now() });
-    await audit(t, a.id, c, "referral_manual", `${exam.title}${reason ? ` — ${reason}` : ""}`);
+    const seed = { examId: null, examTitle: "", examCode: null, issuedAt: Date.now(), by: c.uid, byName: c.name, manual: true, reason };
+    await col(t, "applicants").doc(a.id).update({ referral: seed, updatedAt: Date.now() });
+    const referral = await syncReferral(t, { ...a, referral: seed });
+    await audit(t, a.id, c, "referral_manual", `допущен к тесту${reason ? ` — ${reason}` : ""}`);
     return res.json({ success: true, referral });
   } catch (e: any) { return oops(res, e); }
 });
@@ -531,13 +546,14 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
     const signedIn = !!c;
     if (l.purpose === "card") return res.json({ success: true, mode: "staff_only", org, signedIn });
     if (l.purpose === "referral") {
-      const r = a.referral;
+      const r = await syncReferral(l.tenantId, a).catch(() => a.referral);
       // Согласие дано родителем в анкете — на странице теста его не спрашиваем (сервер проверяет то же).
       const consented = (await col(l.tenantId, "applicant_forms").where("applicantId", "==", a.id).get()).docs.some(d => !!d.data().consent);
       return res.json({
         success: true, mode: "student", org, signedIn,
         child: { name: a.child.name, grade: a.child.grade },
         exam: r?.examCode ? { code: r.examCode, title: r.examTitle } : null,
+        referred: !!r,
         // Поля «о себе» на странице теста — из карточки, ученику остаётся проверить.
         prefill: { birthDate: a.child.birthDate || "", school: a.child.school || "", parentName: a.parent.name || "", parentPhone: a.parent.phone || "" },
         consented,

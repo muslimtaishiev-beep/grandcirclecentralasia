@@ -1,3 +1,4 @@
+import { syncReferral } from "./admissionRoutes.js";
 import { Router } from "express";
 import admin from "firebase-admin";
 import { randomBytes, randomInt } from "crypto";
@@ -348,6 +349,8 @@ router.post("/:code/start-referral", async (req: any, res: any) => {
     const as = await col(t, "applicants").doc(l.applicantId).get();
     const ap: any = as.exists ? as.data() : null;
     if (!ap || ap.tokens?.referral !== token) return fail(res, 404, "Направление заменено новым — возьмите новое у приёмной");
+    // Тест подбирается по классу в момент входа: экзамен могли открыть уже после выдачи направления.
+    if (ap.referral && ap.referral.examId !== exam.id) ap.referral = await syncReferral(t, { ...ap, id: as.id }).catch(() => ap.referral);
     if (ap.referral?.examId !== exam.id) return fail(res, 403, ap.referral ? "Направление выдано на другой экзамен" : "Направление на тест пока не выдано");
     if (!isWindowOpen(exam)) return fail(res, 403, exam.status === "open" ? "Экзамен сейчас закрыт — проверьте время начала" : "Экзамен не открыт для сдачи");
     if (!pinOk(exam, req, res)) return;

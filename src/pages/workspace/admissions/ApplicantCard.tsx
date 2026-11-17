@@ -188,8 +188,7 @@ function FormTab({ api, a, tpl, form, canFill, canSee, grade, onSaved, onMateria
     setBusy(true); setError(null);
     try {
       const j = await save({ done: true });
-      if (tpl.outcome && j.referral) alert(`Готово. Направление на тест: ${j.referral.examTitle}. Распечатайте его кнопкой «Направление».`);
-      else if (tpl.outcome && outcomeOf(tpl, latest.current.outcome)?.allowsTest) alert("Готово. Подходящего экзамена для этого класса нет — тест пишется на бумаге, результаты вносит приёмная.");
+      if (tpl.outcome && j.referral) alert(`Готово. Направление выдано${j.referral.examTitle ? `: ${j.referral.examTitle}` : ""} — распечатайте его кнопкой «Направление».`);
       setEditing(false); onSaved();
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
@@ -240,8 +239,6 @@ function FormTab({ api, a, tpl, form, canFill, canSee, grade, onSaved, onMateria
 }
 
 function TestTab({ a, d, api, onSaved }: { a: Applicant; d: Data; api: Api; onSaved: () => void }) {
-  const [exams, setExams] = useState<{ id: string; title: string }[] | null>(null);
-  const [examId, setExamId] = useState("");
   const [reason, setReason] = useState("");
   const [decision, setDecision] = useState<Decision | "">(a.decision?.value || "");
   const [comment, setComment] = useState(a.decision?.comment || "");
@@ -250,10 +247,6 @@ function TestTab({ a, d, api, onSaved }: { a: Applicant; d: Data; api: Api; onSa
   /** Вручную направляет только администрация: психолог ставит итог, тест по классу выбирает система. */
   const canRefer = d.me.admission;
   const t = a.tenantId;
-  useEffect(() => {
-    if (!canRefer) return;
-    api("/exams").then(j => setExams(j.exams)).catch(() => setExams([]));
-  }, [canRefer, api]);
   const act = async (fn: () => Promise<unknown>) => { try { await fn(); onSaved(); } catch (e: any) { alert(e.message); } };
   return (
     <div className="space-y-5">
@@ -261,17 +254,14 @@ function TestTab({ a, d, api, onSaved }: { a: Applicant; d: Data; api: Api; onSa
         <h3 className="font-bold text-[var(--text-main)]">Направление</h3>
         {a.referral ? (
           <div className="rounded-xl border border-[var(--border-color)] p-3 text-sm flex flex-wrap items-center gap-2">
-            <span>На тест <b>{a.referral.examTitle}</b> · {new Date(a.referral.issuedAt).toLocaleDateString("ru-RU")} · {a.referral.manual ? `вручную: ${a.referral.byName}${a.referral.reason ? ` (${a.referral.reason})` : ""}` : "по заключению"}</span>
+            <span>{a.referral.examTitle ? <>Тест: <b>{a.referral.examTitle}</b></> : <>Тест для {a.child.grade} класса ещё не открыт — QR заработает сам, когда экзамен включат</>} · {a.referral.manual ? `допущен: ${a.referral.byName}${a.referral.reason ? ` (${a.referral.reason})` : ""}` : "по заключению"}</span>
             {canRefer && <button className={`${btn} ml-auto`} onClick={() => confirm("Снять направление? QR перестанет открывать тест.") && act(() => api(`/applicants/${a.id}/referral`, { method: "DELETE" }))}>Снять</button>}
           </div>
-        ) : <p className="text-sm text-[var(--text-muted)]">Не выдано. {Object.values(a.stages).some(s => s.status === "done") ? "Итог диагностики не пускает к тесту или для этого класса нет экзамена с допуском." : "Выдаётся автоматически, когда специалист завершит диагностику."}</p>}
-        {canRefer && (
-          <div className="flex flex-wrap gap-2 items-end">
-            <div className="min-w-[220px] flex-1"><span className={label}>Выдать вручную</span>
-              <select className={input} value={examId} onChange={e => setExamId(e.target.value)}><option value="">— экзамен —</option>{(exams || []).map(e => <option key={e.id} value={e.id}>{e.title}</option>)}</select>
-            </div>
-            <input className={`${input} flex-1 min-w-[180px]`} placeholder="Причина (видна в истории)" value={reason} onChange={e => setReason(e.target.value)} />
-            <button className={btn} disabled={!examId} onClick={() => act(() => api(`/applicants/${a.id}/referral`, { method: "POST", body: JSON.stringify({ examId, reason }) }))}>Выдать</button>
+        ) : <p className="text-sm text-[var(--text-muted)]">{Object.values(a.stages).some(s => s.status === "done") ? "Не выдано: заключение не пускает к тесту." : "Выдаётся само, когда специалист завершит диагностику. Тест подбирается по классу."}</p>}
+        {canRefer && !a.referral && Object.values(a.stages).some(s => s.status === "done") && (
+          <div className="flex flex-wrap gap-2">
+            <input className={`${input} flex-1 min-w-[200px]`} placeholder="Причина (видна в истории)" value={reason} onChange={e => setReason(e.target.value)} />
+            <button className={btn} onClick={() => act(() => api(`/applicants/${a.id}/referral`, { method: "POST", body: JSON.stringify({ reason }) }))}>Допустить к тесту</button>
           </div>
         )}
       </section>
