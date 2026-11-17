@@ -153,7 +153,13 @@ service cloud.firestore {
     match /chat_channels/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
     match /chat_messages/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
     match /automations/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    match /notifications/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    // Уведомление видит и отмечает прочитанным только адресат: в них бывают ФИО детей.
+    match /notifications/{docId} {
+      allow read, delete: if isSuperadmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow create: if hasTenantAccessOnCreate();
+    }
 
     // Billing & Memberships. Memberships are keyed by tenantId same as other flat
     // collections, but a user must always be able to read their OWN membership rows

@@ -41,6 +41,29 @@ export async function callerPermissions(db: Db, uid: string, tenantId: string, u
   return membershipPermissions(db, m);
 }
 
+/**
+ * Активные сотрудники организации, у которых есть хотя бы одно из прав —
+ * адресаты уведомлений. Должности читаются по разу на всю выборку.
+ */
+export async function membersWith(db: Db, tenantId: string, anyOf: PermissionKey[]): Promise<{ uid: string; name: string }[]> {
+  const ms = await db.collection("memberships").where("tenantId", "==", tenantId).where("status", "==", "active").get();
+  const roles = new Map<string, Promise<Set<PermissionKey>>>();
+  const rolePerms = (id: string) => {
+    if (!roles.has(id)) roles.set(id, db.collection("custom_roles").doc(id).get()
+      .then(r => new Set<PermissionKey>((r.exists ? r.data()?.permissions || [] : []).filter(isPermissionKey))));
+    return roles.get(id)!;
+  };
+  const out = new Map<string, string>();
+  for (const d of ms.docs) {
+    const m: any = d.data();
+    if (!m.userId) continue;
+    let ok = hasFullAccess(m.role) || migrateLegacyPermissions(m).some(p => anyOf.includes(p));
+    if (!ok && m.customRoleId) { const rp = await rolePerms(String(m.customRoleId)); ok = anyOf.some(p => rp.has(p)); }
+    if (ok) out.set(String(m.userId), String(m.displayName || ""));
+  }
+  return [...out].map(([uid, name]) => ({ uid, name }));
+}
+
 /** Есть ли у пользователя хотя бы одно из прав в организации. */
 export async function hasAnyPermission(db: Db, user: any, tenantId: string, anyOf: PermissionKey[]): Promise<boolean> {
   const mine = await callerPermissions(db, user?.uid, tenantId, user);

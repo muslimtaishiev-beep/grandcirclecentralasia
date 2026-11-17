@@ -60,6 +60,19 @@
   75% { transform: translateX(4px); }
 }
 
+@keyframes toastIn {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-toast-in {
+  animation: toastIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-toast-in { animation: fadeIn 0.15s ease-out both; }
+}
+
 .animate-fade-in {
   animation: fadeIn 0.25s ease-out forwards;
 }

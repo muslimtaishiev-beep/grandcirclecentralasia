@@ -1,17 +1,49 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bell, Check, Trash } from 'lucide-react';
-import { useNotifications } from '../../lib/useNotifications';
+import { Bell, Check, X } from 'lucide-react';
+import { useNotifications, type AppNotification } from '../../lib/useNotifications';
 import { useAuth } from '../../contexts/AuthContext';
-import { useOutletContext, Link } from 'react-router-dom';
+import { useOutletContext, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 
 export default function GlobalNotifications() {
   const { user } = useAuth();
   const { activeTenant } = useOutletContext<any>() || {};
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications(activeTenant?.id, user?.uid);
+  const { notifications, unreadCount, loaded, markAsRead, markAllAsRead } = useNotifications(activeTenant?.id, user?.uid);
+  const navigate = useNavigate();
   
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Всплывашки: только то, что пришло или обновилось после входа на страницу.
+  const [toasts, setToasts] = useState<AppNotification[]>([]);
+  const seen = useRef<{ tenant: string; at: Map<string, number> } | null>(null);
+  useEffect(() => {
+    if (!loaded) return;
+    const stamp = (n: AppNotification) => (n.createdAt?.toMillis ? n.createdAt.toMillis() : 0);
+    const tenant = String(activeTenant?.id || '');
+    if (!seen.current || seen.current.tenant !== tenant) {
+      seen.current = { tenant, at: new Map(notifications.map(n => [n.id, stamp(n)])) };
+      return;
+    }
+    const at = seen.current.at;
+    const fresh = notifications.filter(n => !n.read && stamp(n) > (at.get(n.id) ?? 0));
+    notifications.forEach(n => at.set(n.id, stamp(n)));
+    if (!fresh.length) return;
+    setToasts(t => [...fresh, ...t.filter(x => !fresh.some(f => f.id === x.id))].slice(0, 3));
+    // Открытый список поступающих и карточка обновляются сами.
+    fresh.forEach(n => window.dispatchEvent(new CustomEvent('sf:notification', { detail: n })));
+  }, [notifications, loaded, activeTenant?.id]);
+  useEffect(() => {
+    if (!toasts.length) return;
+    const timer = setTimeout(() => setToasts(t => t.slice(0, -1)), 12000);
+    return () => clearTimeout(timer);
+  }, [toasts]);
+  const dismiss = (id: string) => setToasts(t => t.filter(x => x.id !== id));
+  const openToast = (n: AppNotification) => {
+    dismiss(n.id);
+    if (!n.read) void markAsRead(n.id);
+    if (n.actionUrl) navigate(n.actionUrl);
+  };
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -26,6 +58,22 @@ export default function GlobalNotifications() {
 
   return (
     <div className="relative" ref={dropdownRef}>
+      {toasts.length > 0 && (
+        <div className="fixed z-[70] bottom-4 left-4 right-4 sm:left-auto sm:w-96 flex flex-col gap-2" aria-live="polite">
+          {toasts.map(n => (
+            <div key={n.id} className="animate-toast-in flex items-start gap-3 p-3 pr-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] shadow-xl">
+              <button className="flex-1 min-w-0 flex items-start gap-3 text-left" onClick={() => openToast(n)}>
+                <span className="w-8 h-8 shrink-0 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] grid place-items-center"><Bell className="w-4 h-4" /></span>
+                <span className="min-w-0">
+                  <span className="block font-semibold text-sm text-[var(--text-main)]">{n.title}</span>
+                  <span className="block text-xs text-[var(--text-muted)] mt-0.5">{n.body}</span>
+                </span>
+              </button>
+              <button className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-black/5 dark:hover:bg-white/5" onClick={() => dismiss(n.id)} aria-label="Закрыть"><X className="w-4 h-4" /></button>
+            </div>
+          ))}
+        </div>
+      )}
       <button 
         onClick={() => setIsOpen(!isOpen)}
         className="relative p-2 text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition"
@@ -60,7 +108,7 @@ export default function GlobalNotifications() {
                 {notifications.map(n => (
                   <div 
                     key={n.id} 
-                    onClick={() => { if (!n.read) markAsRead(n.id); }}
+                    onClick={() => { if (!n.read) markAsRead(n.id); if (n.actionUrl) { setIsOpen(false); navigate(n.actionUrl); } }}
                     className={clsx(
                       "p-4 border-b border-[var(--border-color)] last:border-b-0 hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition",
                       !n.read ? "bg-[var(--accent)]/5" : ""
@@ -72,15 +120,9 @@ export default function GlobalNotifications() {
                         !n.read ? "bg-[var(--accent)]" : "bg-transparent"
                       )} />
                       <div className="flex-1 min-w-0">
-                        {n.actionUrl ? (
-                          <Link to={n.actionUrl} className="font-medium text-sm text-[var(--text-main)] hover:underline">
-                            {n.title}
-                          </Link>
-                        ) : (
-                          <div className="font-medium text-sm text-[var(--text-main)]">
-                            {n.title}
-                          </div>
-                        )}
+                        <div className={clsx("font-medium text-sm text-[var(--text-main)]", n.actionUrl && "hover:underline")}>
+                          {n.title}
+                        </div>
                         <p className="text-xs text-[var(--text-muted)] mt-0.5 line-clamp-2">
                           {n.body}
                         </p>

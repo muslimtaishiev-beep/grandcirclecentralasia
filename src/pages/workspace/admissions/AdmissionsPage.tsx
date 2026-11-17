@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
-import { Download, Loader2, Plus, QrCode, Search, UserPlus } from "lucide-react";
+import { Download, FileDown, Loader2, Plus, QrCode, Search, UserPlus } from "lucide-react";
 import { STAGE_LABEL, type Stage } from "../../../shared/admissions";
 import { gradeOf } from "../../../shared/questionnaires";
 import { Modal, btn, btnPrimary, card, input, label } from "../journals/components/ui";
@@ -8,6 +8,7 @@ import { TONE, useAdmissionApi, type Me, type Row } from "./admissionApi";
 import ApplicantCard from "./ApplicantCard";
 import QrScanModal from "./QrScanModal";
 import TemplatesTab from "./TemplatesTab";
+import { downloadSessionById } from "./sessionPdf";
 
 /**
  * «Поступающие»: список с поиском по ФИО и №, фильтры по классу и этапу,
@@ -40,6 +41,17 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
     finally { setLoading(false); }
   }, [api, tenantId]);
   useEffect(() => { void load(); }, [load]);
+  // Психолог завёл ученика или завершил сессию — список обновляется без перезагрузки.
+  useEffect(() => {
+    const on = (e: Event) => { if ((e as CustomEvent).detail?.type === "admission") void load(); };
+    window.addEventListener("sf:notification", on);
+    return () => window.removeEventListener("sf:notification", on);
+  }, [load]);
+  const [saving, setSaving] = useState<string | null>(null);
+  const downloadSession = async (id: string) => {
+    setSaving(id);
+    try { await downloadSessionById(api, activeTenant, id); } catch (e: any) { alert(e.message); } finally { setSaving(null); }
+  };
 
   const grades = useMemo(() => [...new Set(rows.map(r => gradeOf(r.child.grade)).filter((g): g is number => g !== null))].sort((a, b) => a - b), [rows]);
   const visible = rows.filter(r => {
@@ -129,7 +141,11 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
                       <td className="px-3 py-2"><div className="font-medium text-[var(--text-main)]">{r.child.name}</div><div className="text-[11px] text-[var(--text-muted)]">{r.parent.name}{r.parent.phone ? ` · ${r.parent.phone}` : ""}</div></td>
                       <td className="px-3 py-2">{r.child.grade}</td>
                       <td className="px-3 py-2">{r.parentForm.status === "done" ? <span className="text-emerald-700">✓</span> : <span className="text-[var(--text-muted)]">—</span>}</td>
-                      <td className="px-3 py-2">{Object.values(r.stages).map(s => <span key={s.templateId} className={`inline-block mr-1 mb-0.5 px-2 py-0.5 rounded text-[11px] font-medium ${s.status === "done" && s.tone ? TONE[s.tone] : "text-[var(--text-muted)] bg-[var(--bg-surface-hover)]"}`}>{s.status === "done" ? s.outcomeLabel : "идёт"}</span>)}{!Object.keys(r.stages).length && <span className="text-[var(--text-muted)]">—</span>}</td>
+                      <td className="px-3 py-2">{Object.values(r.stages).map(s => <span key={s.templateId} className={`inline-block mr-1 mb-0.5 px-2 py-0.5 rounded text-[11px] font-medium ${s.status === "done" && s.tone ? TONE[s.tone] : "text-[var(--text-muted)] bg-[var(--bg-surface-hover)]"}`}>{s.status === "done" ? s.outcomeLabel : "идёт"}</span>)}{!Object.keys(r.stages).length && <span className="text-[var(--text-muted)]">—</span>}
+                        {(me.psych || me.psychView) && Object.values(r.stages).some(s => s.status === "done") && (
+                          <button className="ml-1 align-middle p-1 rounded-md text-[var(--accent)] hover:bg-[var(--accent)]/10 disabled:opacity-50" title="Скачать бланк сессии" aria-label="Скачать бланк сессии" disabled={saving === r.id}
+                            onClick={e => { e.stopPropagation(); void downloadSession(r.id); }}>{saving === r.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}</button>
+                        )}</td>
                       {me.academic && <td className="px-3 py-2 text-xs">
                         {r.attempt ? <><div className="text-[var(--text-main)]">{r.attempt.examTitle}</div><div className="text-[var(--text-muted)]">{r.attempt.status === "in_progress" ? "пишет" : r.attempt.parts.map(p => `${p.title}: ${p.value}`).join(" · ") || (r.attempt.percent != null ? `${r.attempt.percent}%` : "сдан")}</div></>
                           : r.referral ? <span className="text-sky-700">направлен{r.referral.manual ? " (вручную)" : ""}</span> : r.paperResults ? "на бумаге" : <span className="text-[var(--text-muted)]">—</span>}

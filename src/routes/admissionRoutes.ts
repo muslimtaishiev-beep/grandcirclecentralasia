@@ -2,7 +2,7 @@ import { Router } from "express";
 import admin from "firebase-admin";
 import { randomBytes } from "crypto";
 import { requireFirebaseAuth } from "./authRoutes.js";
-import { hasPerm, optionalAuth, requirePerm, staffCaller, type StaffCaller } from "../server/access.js";
+import { hasPerm, membersWith, optionalAuth, requirePerm, staffCaller, type StaffCaller } from "../server/access.js";
 import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
 import { tenantLogos } from "../shared/legal.js";
 import { LEGAL_VERSION } from "../shared/legalDocs.js";
@@ -62,6 +62,31 @@ const seesAcademic = (c: StaffCaller) => hasPerm(c, "admission:manage", "tests:m
 const meOf = (c: StaffCaller) => ({
   admission: hasPerm(c, "admission:manage"), psych: hasPerm(c, "psych:conduct"), psychView: hasPerm(c, "psych:view"), academic: seesAcademic(c), name: c.name,
 });
+// ── Уведомления администрации ───────────────────────────────────────────
+
+type AdmissionEvent = "new" | "session" | "done";
+/**
+ * Ход приёма — в колокольчик сотрудникам с правом приёма (кроме автора).
+ * Одна запись на ребёнка и адресата: показывает последний шаг, а не копит
+ * десяток строк про одного ученика. Ошибка рассылки не ломает сохранение.
+ */
+async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEvent, c: StaffCaller, o: { tid?: string; outcome?: string; referral?: boolean } = {}) {
+  try {
+    const to = (await membersWith(db(), t, ["admission:manage"])).filter(x => x.uid !== c.uid);
+    if (!to.length) return;
+    const who = `${a.child.name}, ${a.child.grade} класс`;
+    const title = ev === "new" ? "Новый поступающий" : ev === "session" ? "Новая сессия у психолога" : "Сессия завершена — бланк готов";
+    const body = ev === "done" ? [who, o.outcome, o.referral ? "направление выдано" : ""].filter(Boolean).join(" · ") : `${who} · ${c.name}`;
+    const url = `/workspace/${t}/exams?side=psych&open=${a.id}&ctab=${ev === "new" ? "profile" : o.tid || "psych"}`;
+    const batch = db().batch();
+    for (const r of to) batch.set(db().collection("notifications").doc(`adm_${a.id}_${r.uid}`), {
+      tenantId: t, userId: r.uid, type: "admission", title, body, actionUrl: url, applicantId: a.id, read: false,
+      createdAt: admin.firestore.Timestamp.now(),
+    });
+    await batch.commit();
+  } catch (e) { console.error("[admissions] notify:", e); }
+}
+
 /** Карточка без академической части: этап — не дальше направления. */
 const withoutAcademic = (a: Applicant): Applicant => ({ ...a, decision: null, paperResults: [] });
 
@@ -290,6 +315,7 @@ router.post("/:tenantId/applicants", ...staff, async (req: any, res: any) => {
     };
     await ref.create(a);
     await audit(t, ref.id, c, "created");
+    await notifyAdmission(t, a, "new", c);
     return res.json({ success: true, id: ref.id, refNo });
   } catch (e: any) { return oops(res, e); }
 });
@@ -421,6 +447,8 @@ router.put("/:tenantId/applicants/:id/forms/:tid", ...staff, async (req: any, re
       const fresh = await loadApplicant(t, a.id);
       if (fresh) referral = await syncReferral(t, fresh, templates);
     }
+    if (tpl.audience === "staff" && done) await notifyAdmission(t, a, "done", c, { tid, outcome: outcomeOf(tpl, outcome)?.label, referral: !!referral });
+    else if (tpl.audience === "staff" && !prev) await notifyAdmission(t, a, "session", c, { tid });
     return res.json({ success: true, form, referral });
   } catch (e: any) { return oops(res, e); }
 });

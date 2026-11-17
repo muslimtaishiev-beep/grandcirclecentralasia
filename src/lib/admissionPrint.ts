@@ -1,5 +1,5 @@
 import QRCode from "qrcode";
-import { SCALES, visibleSections, type QAttachment, type QTemplate } from "../shared/questionnaires";
+import { SCALES, answerText, itemVisible, normFor, normText, visibleSections, type QAnswers, type QAttachment, type QTemplate } from "../shared/questionnaires";
 
 /**
  * Печать по приёму. На каждой бумаге — QR и № поступающего: любую бумагу
@@ -113,6 +113,60 @@ export async function staffBlankHTML(org: PrintOrg, c: PrintChild, o: { cardToke
     ${body}${outcome}
   </div>`);
 }
+
+/**
+ * Бланк сессии, заполненный: те же графы, что на бумажном бланке, с
+ * отметками, цифрами проб, комментариями и заключением. Его скачивает
+ * администрация, чтобы не просить психолога печатать.
+ */
+export async function sessionSheet(org: PrintOrg, c: PrintChild, o: { cardToken: string; template: QTemplate; grade: number | null; answers: QAnswers; outcome: string | null; byName: string; at: number | null }) {
+  const t = o.template;
+  const body = visibleSections(t, o.grade).map(s => {
+    const items = s.items.filter(i => itemVisible(i, o.grade));
+    const ratings = items.filter(i => i.kind === "rating");
+    const other = items.filter(i => i.kind !== "rating" && i.kind !== "note");
+    const scale = SCALES[ratings[0]?.scale || "norm4"];
+    const table = ratings.length ? `<table><tr><th style="width:30%">Показатель</th>${scale.map(x => `<th style="width:8%">${esc(x.short)}</th>`).join("")}<th>Результат, характер трудностей, помощь</th></tr>${ratings.map(i => {
+      const a = o.answers[i.id];
+      const m = (i.measures || []).filter(x => a?.measures?.[x.id] != null).map(x => `${esc(x.label)}: <b>${esc(a!.measures![x.id])}</b>${x.suffix ? ` ${esc(x.suffix)}` : ""}`).join("; ");
+      const n = normFor(i, o.grade);
+      return `<tr><td>${esc(i.label)}</td>${scale.map(x => `<td style="text-align:center;font-weight:700">${a?.rating === x.id ? "✓" : ""}</td>`).join("")}<td>${m ? `<div>${m}${n ? ` <span class="hint">(${esc(normText(n))})</span>` : ""}</div>` : ""}${a?.comment ? `<div>${esc(a.comment)}</div>` : ""}</td></tr>`;
+    }).join("")}</table>` : "";
+    const rest = other.map(i => { const v = answerText(i, o.answers[i.id]); return `<div style="margin:6px 0"><span class="hint">${esc(i.label)}</span><div>${v ? esc(v) : "—"}${o.answers[i.id]?.comment ? ` · ${esc(o.answers[i.id]!.comment)}` : ""}</div></div>`; }).join("");
+    return `<h2>${esc(s.title)}</h2>${table}${rest}`;
+  }).join("");
+  const outcome = t.outcome ? `<h2>${esc(t.outcome.label)}</h2>${t.outcome.options.map(x => `<p>${x.id === o.outcome ? "☑" : "☐"} ${x.id === o.outcome ? `<b>${esc(x.label)}.</b>` : `${esc(x.label)}.`} <span class="hint">${esc(x.description)}</span></p>`).join("")}` : "";
+  const date = o.at ? new Date(o.at).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" }) : today();
+  return `<div class="sheet">
+    ${await head(org, c, linkUrl(o.cardToken, t.id), t.title)}
+    <p class="meta">Дата: <b>${esc(date)}</b> &nbsp; Специалист: <b>${esc(o.byName)}</b></p>
+    ${body}${outcome}
+    <div class="sign"><span>Специалист: ${esc(o.byName)} ______________</span><span>${esc(date)}</span></div>
+  </div>`;
+}
+
+/** Стили печати, ограниченные одним блоком — чтобы PDF собирался прямо на странице, не задевая её. */
+const scopedCss = (root: string) => CSS.replace(/@page\{[^}]*\}/, "").replace(/(^|\})\s*([^{}]+)\{/g, (_m, close: string, sel: string) =>
+  `${close}${sel.split(",").map(x => x.trim()).map(x => (x === "body" ? root : `${root} ${x}`)).join(",")}{`);
+
+/** Скачать листы файлом PDF (A4), без окна печати. */
+export async function downloadPdf(sheets: string, filename: string) {
+  const html2pdf = (await import("html2pdf.js")).default as any;
+  const host = document.createElement("div");
+  host.className = "adm-pdf";
+  // В документ не вставляем: html2pdf сам кладёт копию в свой скрытый слой.
+  host.style.cssText = "width:186mm;background:#fff;color:#111;line-height:1.35;padding-bottom:10mm";
+  // html2canvas опускает текст к нижней границе ячейки — даём строкам воздух.
+  host.innerHTML = `<style>${scopedCss(".adm-pdf")} .adm-pdf td,.adm-pdf th{line-height:1.3;padding:4px 6px 8px} .adm-pdf p{margin:4px 0}</style>${sheets}`;
+  await html2pdf().set({
+    margin: 12, filename, image: { type: "jpeg", quality: 0.95 },
+    html2canvas: { scale: 2, useCORS: true, backgroundColor: "#fff" },
+    jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+    pagebreak: { mode: ["css", "legacy"], avoid: ["tr", "h2", ".sign"] },
+  }).from(host).save();
+}
+
+export const pdfName = (title: string, c: PrintChild) => `${title} — ${c.name} — ${no(c.refNo)}.pdf`.replace(/[\\/:*?"<>|]/g, " ");
 
 /** Лист, который заполняет ребёнок: корректурная проба, бланк памяти. */
 export async function sheetHTML(org: PrintOrg, c: PrintChild, o: { cardToken: string; attachment: QAttachment; templateId: string }) {

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, ExternalLink, Loader2, Lock, Pencil, Printer, RefreshCw, Trash2 } from "lucide-react";
+import { CheckCircle2, Download, ExternalLink, Loader2, Lock, Pencil, Printer, RefreshCw, Trash2 } from "lucide-react";
 import FormFiller from "../../../components/admissions/FormFiller";
 import { DECISION_LABEL, type Decision } from "../../../shared/examRun";
 import { STAGE_LABEL, stageOf, type Applicant, type PaperResult } from "../../../shared/admissions";
@@ -8,6 +8,7 @@ import { tenantLogos } from "../../../shared/legal";
 import { openHtml, parentHTML, referralHTML, sheetHTML, staffBlankHTML, type PrintChild } from "../../../lib/admissionPrint";
 import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui";
 import { TONE, type Api, type Me } from "./admissionApi";
+import { saveSessions, sessionsOf } from "./sessionPdf";
 
 /**
  * Карточка поступающего. Вкладки — по правам: психолог открывает свою
@@ -37,6 +38,13 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, on
     try { setD(await api(`/applicants/${id}`)); setError(null); } catch (e: any) { setError(e.message); }
   }, [api, id]);
   useEffect(() => { void load(); }, [load]);
+  // Пришло уведомление про этого ребёнка — карточка обновляется сама.
+  useEffect(() => {
+    const on = (e: Event) => { if ((e as CustomEvent).detail?.applicantId === id) void load(); };
+    window.addEventListener("sf:notification", on);
+    return () => window.removeEventListener("sf:notification", on);
+  }, [id, load]);
+  const [saving, setSaving] = useState(false);
 
   const staffTemplates = useMemo(() => (d?.templates || []).filter(t => t.audience === "staff" && (d!.canFill[t.id] || d!.canSee[t.id] || d!.forms.some(f => f.templateId === t.id))), [d]);
   const parentTpl = d?.templates.find(t => t.audience === "parent");
@@ -63,6 +71,11 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, on
     : undefined;
   const tabs: [string, string][] = [["profile", "Профиль"], ...(parentTpl ? [["parent", "Анкета родителя"] as [string, string]] : []), ...staffTemplates.map(t => [t.id, t.title] as [string, string]), ...(d.me.academic ? [["test", "Тест и решение"] as [string, string]] : []), ...(d.me.admission ? [["history", "История"] as [string, string]] : [])];
   const changed = async () => { await load(); onChanged(); };
+  const sessions = sessionsOf(d.forms);
+  const downloadSession = async () => {
+    setSaving(true);
+    try { await saveSessions(org, a, sessions); } catch (e: any) { alert(e.message); } finally { setSaving(false); }
+  };
 
   return (
     <Modal title={`${a.child.name} · ${no(a.refNo)}`} onClose={onClose} xwide>
@@ -72,6 +85,7 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, on
           <span className="text-[var(--text-muted)]">{STAGE_LABEL[stageOf(a, d.attempts[0] || null)]}</span>
           {mainStage && <span className={`px-2 py-0.5 rounded text-xs font-medium ${mainStage.tone ? TONE[mainStage.tone] : ""}`}>{mainStage.outcomeLabel}</span>}
           <div className="ml-auto flex flex-wrap gap-1.5">
+            {sessions.length > 0 && <button className={btn} disabled={saving} onClick={downloadSession}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Бланк сессии</button>}
             {printReferral && <button className={btnPrimary} onClick={printReferral}><Printer className="w-4 h-4" /> Направление</button>}
             {parentTpl && (d.me.admission || d.me.psych) && <button className={btn} onClick={() => print(() => parentHTML(org, child, { parentToken: a.tokens.parent, cardToken: a.tokens.card, template: parentForm?.template || parentTpl }))}><Printer className="w-4 h-4" /> Анкета родителю</button>}
           </div>

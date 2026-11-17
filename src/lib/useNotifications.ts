@@ -8,17 +8,22 @@ export interface AppNotification {
   userId: string; // The user receiving the notification
   title: string;
   body: string;
-  type: 'task' | 'chat' | 'crm' | 'system' | 'mention';
+  type: 'task' | 'chat' | 'crm' | 'system' | 'mention' | 'admission';
   read: boolean;
   actionUrl?: string;
+  /** Приём: чья карточка — открытый список и карточка обновляются сами. */
+  applicantId?: string;
   createdAt: any;
 }
 
 export function useNotifications(tenantId: string | undefined, userId: string | undefined) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  /** Первый снимок пришёл: всё, что придёт после, — новое (для всплывашек). */
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    setLoaded(false);
     if (!tenantId || !userId) {
       setNotifications([]);
       setUnreadCount(0);
@@ -44,7 +49,8 @@ export function useNotifications(tenantId: string | undefined, userId: string | 
       
       setNotifications(notifs);
       setUnreadCount(unread);
-    });
+      setLoaded(true);
+    }, err => console.warn('notifications:', err.message));
 
     return () => unsubscribe();
   }, [tenantId, userId]);
@@ -59,7 +65,7 @@ export function useNotifications(tenantId: string | undefined, userId: string | 
     await Promise.all(promises);
   };
 
-  return { notifications, unreadCount, markAsRead, markAllAsRead };
+  return { notifications, unreadCount, loaded, markAsRead, markAllAsRead };
 }
 
 export const createNotification = async (notification: Omit<AppNotification, 'id' | 'createdAt' | 'read'>) => {
