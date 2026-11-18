@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, CheckCircle2, ClipboardList, Download, ExternalLink, Loader2, Lock, Pencil, Printer, RefreshCw, Trash2 } from "lucide-react";
+import { Camera, CheckCircle2, ClipboardList, Copy, Download, ExternalLink, Loader2, Lock, Pencil, Printer, QrCode, RefreshCw, Trash2 } from "lucide-react";
 import FormFiller from "../../../components/admissions/FormFiller";
 import { STAGE_LABEL, stageOf, type Applicant, type CandidateInfo, type PaperResult } from "../../../shared/admissions";
 import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
 import { attachmentsFor, gradeOf, outcomeOf, type QAnswers, type QAttachment, type QTemplate } from "../../../shared/questionnaires";
 import { tenantLogos } from "../../../shared/legal";
-import { openHtml, parentHTML, referralHTML, sheetHTML, staffBlankHTML, type PrintChild, type PrintOrg } from "../../../lib/admissionPrint";
+import { linkUrl, openHtml, parentHTML, referralHTML, sheetHTML, staffBlankHTML, type PrintChild } from "../../../lib/admissionPrint";
+import FancyQr from "../../../components/forms/FancyQr";
 import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui";
 import { TONE, type Api, type Me } from "./admissionApi";
 import { saveSessions, sessionsOf } from "./sessionPdf";
@@ -31,9 +32,14 @@ const AUDIT: Record<string, string> = {
   decision: "Решение", feedback: "Обратная связь", relink: "Перевыпущен QR", deleted: "Карточка удалена",
 };
 
-export default function ApplicantCard({ id, api, tenant, initialTab, section, onClose, onChanged }: {
-  id: string; api: Api; tenant: any; initialTab?: string; section?: string; onClose: () => void; onChanged: () => void;
+export default function ApplicantCard({ id, api, tenant, initialTab, section, autoQr, onClose, onChanged }: {
+  id: string; api: Api; tenant: any; initialTab?: string; section?: string;
+  /** Сразу показать QR (после «Завести» — анкета для родителя). */
+  autoQr?: "parent";
+  onClose: () => void; onChanged: () => void;
 }) {
+  const [qr, setQr] = useState<null | "referral" | "parent">(null);
+  const autoShown = useRef(false);
   const [d, setD] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<string>(section && section !== "parent" ? section : section === "parent" ? "parent" : initialTab || "profile");
@@ -56,8 +62,11 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, on
   // Вкладка из QR (?tab=psych) — первая анкета, которую этот сотрудник заполняет.
   useEffect(() => {
     if (!d) return;
-    if (tab === "psych") setTab(staffTemplates.find(t => d.canFill[t.id])?.id || staffTemplates[0]?.id || "profile");
-    else if (tab === "test" && !d.me.academic) setTab("profile");
+    const own = staffTemplates.find(t => d.canFill[t.id])?.id || staffTemplates[0]?.id || "profile";
+    // Психологу — только его сессия: профиль, анкету родителя и историю ведёт администрация.
+    if (tab === "psych" || (!d.me.admission && ["profile", "parent", "history"].includes(tab))) setTab(own);
+    else if (tab === "test" && !d.me.academic) setTab(d.me.admission ? "profile" : own);
+    if (autoQr === "parent" && !autoShown.current && d.me.admission && d.applicant.tokens.parent) { autoShown.current = true; setQr("parent"); }
   }, [d]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (section) setTimeout(() => document.getElementById(`sec-${section}`)?.scrollIntoView({ behavior: "smooth" }), 400); }, [section, d]);
 
@@ -73,7 +82,15 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, on
   const printReferral = a.referral && a.tokens.referral
     ? () => print(() => referralHTML(org, child, { token: a.tokens.referral!, examTitle: a.referral!.examTitle, psychName: mainStage?.byName || "", outcome: mainStage?.outcomeLabel || "" }))
     : undefined;
-  const tabs: [string, string][] = [["profile", "Профиль"], ...(parentTpl ? [["parent", "Анкета родителя"] as [string, string]] : []), ...staffTemplates.map(t => [t.id, t.title] as [string, string]), ...(d.me.academic ? [["test", "Тест и решение"] as [string, string]] : []), ...(d.me.admission ? [["history", "История"] as [string, string]] : [])];
+  const tabs: [string, string][] = [
+    ...(d.me.admission ? [["profile", "Профиль"] as [string, string]] : []),
+    ...(parentTpl && d.me.admission ? [["parent", "Анкета родителя"] as [string, string]] : []),
+    ...staffTemplates.map(t => [t.id, t.title] as [string, string]),
+    ...(d.me.academic ? [["test", "Тест и решение"] as [string, string]] : []),
+    ...(d.me.admission ? [["history", "История"] as [string, string]] : []),
+  ];
+  const mark = tenantLogos(tenant).markUrl;
+  const printParent = () => print(() => parentHTML(org, child, { parentToken: a.tokens.parent, cardToken: a.tokens.card, template: parentForm?.template || parentTpl! }));
   const changed = async () => { await load(); onChanged(); };
   const sessions = sessionsOf(d.forms);
   const downloadCandidate = async () => {
@@ -100,8 +117,8 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, on
           <div className="ml-auto flex flex-wrap gap-1.5">
             {d.me.academic && <button className={btn} disabled={saving} onClick={downloadCandidate}><ClipboardList className="w-4 h-4" /> Анкета кандидата</button>}
             {sessions.length > 0 && <button className={btn} disabled={saving} onClick={downloadSession}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Бланк сессии</button>}
-            {printReferral && <button className={btnPrimary} onClick={printReferral}><Printer className="w-4 h-4" /> Направление</button>}
-            {parentTpl && (d.me.admission || d.me.psych) && <button className={btn} onClick={() => print(() => parentHTML(org, child, { parentToken: a.tokens.parent, cardToken: a.tokens.card, template: parentForm?.template || parentTpl }))}><Printer className="w-4 h-4" /> Анкета родителю</button>}
+            {d.me.admission && printReferral && <button className={btnPrimary} onClick={() => setQr("referral")}><QrCode className="w-4 h-4" /> Направление</button>}
+            {d.me.admission && parentTpl && a.tokens.parent && <button className={btn} onClick={() => setQr("parent")}><QrCode className="w-4 h-4" /> Анкета родителю</button>}
           </div>
         </div>
 
@@ -111,6 +128,13 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, on
           ))}
         </div>
 
+        {qr && (
+          <QrModal mark={mark} onClose={() => setQr(null)}
+            title={qr === "referral" ? "Направление на тест" : "Анкета для родителя"}
+            sub={`${a.child.name} · ${no(a.refNo)}${qr === "referral" && a.referral?.examTitle ? ` · ${a.referral.examTitle}` : ""}`}
+            url={linkUrl(qr === "referral" ? a.tokens.referral! : a.tokens.parent)}
+            onPrint={qr === "referral" ? printReferral! : printParent} />
+        )}
         {tab === "profile" && <ProfileTab a={a} api={api} me={d.me} onSaved={changed} onDeleted={() => { onChanged(); onClose(); }} />}
         {tab === "parent" && parentTpl && (
           <FormTab key="parent" api={api} a={a} tpl={parentForm?.template || parentTpl} form={parentForm} canFill={!!d.canFill[parentTpl.id]} canSee={!!d.canSee[parentTpl.id] || !!parentForm?.full}
@@ -120,7 +144,7 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, on
         {staffTemplates.map(t => tab === t.id && (
           <FormTab key={t.id} api={api} a={a} tpl={d.forms.find(f => f.templateId === t.id)?.template || t} form={d.forms.find(f => f.templateId === t.id)}
             canFill={!!d.canFill[t.id]} canSee={!!d.canSee[t.id]} grade={grade} onSaved={changed} onMaterial={material(t)} staff
-            referral={t.outcome && a.referral ? { title: a.referral.examTitle, print: printReferral } : null}
+            referral={d.me.admission && t.outcome && a.referral ? { title: a.referral.examTitle, print: printReferral && (() => setQr("referral")) } : null}
             parent={parentForm?.full && parentForm.answers ? { template: parentForm.template, answers: parentForm.answers } : null}
             onPrintBlank={() => print(() => staffBlankHTML(org, child, { cardToken: a.tokens.card, template: t, grade }))}
             onPrintSheets={() => attachmentsFor(t, grade).filter(m => m.kind === "sheet").forEach(m => void print(() => sheetHTML(org, child, { cardToken: a.tokens.card, attachment: m, templateId: t.id })))} />
@@ -137,11 +161,29 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, on
   );
 }
 
+/** QR на экране — родитель или ученик сканирует сразу; бумага — только если нужна. */
+function QrModal({ title, sub, url, mark, onPrint, onClose }: { title: string; sub: string; url: string; mark?: string | null; onPrint: () => void; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div className="flex flex-col items-center gap-3 text-center">
+        <div className="text-sm text-[var(--text-main)]">{sub}</div>
+        <div className="bg-white rounded-2xl p-3"><FancyQr value={url} size={280} logo={mark || undefined} /></div>
+        <div className="text-xs text-[var(--text-muted)]">Наведите камеру телефона</div>
+        <div className="flex flex-wrap justify-center gap-2 pt-1">
+          <button className={btn} onClick={() => { navigator.clipboard?.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}><Copy className="w-4 h-4" /> {copied ? "Скопировано" : "Ссылка"}</button>
+          <button className={btn} onClick={onPrint}><Printer className="w-4 h-4" /> Печать</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function ProfileTab({ a, api, me, onSaved, onDeleted }: { a: Applicant; api: Api; me: Me; onSaved: () => void; onDeleted: () => void }) {
   const [f, setF] = useState({ name: a.child.name, birthDate: a.child.birthDate, grade: a.child.grade, school: a.child.school || "", parentName: a.parent.name, phone: a.parent.phone, note: a.note });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const canEdit = me.admission || me.psych;
+  const canEdit = me.admission;
   const dirty = f.name !== a.child.name || f.birthDate !== a.child.birthDate || f.grade !== a.child.grade || f.school !== (a.child.school || "") || f.parentName !== a.parent.name || f.phone !== a.parent.phone || f.note !== a.note;
   const save = async () => {
     setBusy(true); setMsg(null);

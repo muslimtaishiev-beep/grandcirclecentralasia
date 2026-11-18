@@ -63,7 +63,7 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
   });
   const openCard = (id: string | null, tabKey?: string) => {
     const p = new URLSearchParams(params);
-    if (id) { p.set("open", id); if (tabKey) p.set("ctab", tabKey); else p.delete("ctab"); } else { p.delete("open"); p.delete("ctab"); p.delete("s"); }
+    if (id) { p.set("open", id); if (tabKey) p.set("ctab", tabKey); else p.delete("ctab"); } else { p.delete("open"); p.delete("ctab"); p.delete("s"); p.delete("qr"); }
     setParams(p, { replace: true });
   };
   /** Ввели номер целиком — сразу в карточку. */
@@ -98,7 +98,7 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
           <button className={`${btn} rounded-l-none border-l-0`} type="submit"><Search className="w-4 h-4" /> Найти</button>
         </form>
         <button className={btn} onClick={() => setScan(true)}><QrCode className="w-4 h-4" /> Сканер</button>
-        {(me.admission || me.psych) && <button className={btnPrimary} onClick={() => setCreating(true)}><UserPlus className="w-4 h-4" /> Поступающий</button>}
+        {me.admission && <button className={btnPrimary} onClick={() => setCreating(true)}><UserPlus className="w-4 h-4" /> Поступающий</button>}
       </div>
 
       <div className="flex gap-1 border-b border-[var(--border-color)]">
@@ -127,7 +127,7 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
           </div>
           {error && <div className="text-sm text-rose-600">{error}</div>}
           {loading ? <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--text-muted)]" /></div> : !rows.length ? (
-            <div className={`${card} p-10 text-center text-sm text-[var(--text-muted)]`}>Пока никого. {(me.admission || me.psych) && <button className="text-[var(--accent)] hover:underline" onClick={() => setCreating(true)}>Завести первого поступающего</button>}</div>
+            <div className={`${card} p-10 text-center text-sm text-[var(--text-muted)]`}>Пока никого. {me.admission && <button className="text-[var(--accent)] hover:underline" onClick={() => setCreating(true)}>Завести первого поступающего</button>}</div>
           ) : (
             <div className={`${card} overflow-x-auto`}>
               <table className="w-full text-sm min-w-[860px]">
@@ -162,9 +162,13 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
         </>
       )}
 
-      {creating && <CreateModal api={api} onClose={() => setCreating(false)} onDone={async id => { setCreating(false); await load(); openCard(id, "profile"); }} />}
+      {creating && <CreateModal api={api} onClose={() => setCreating(false)} onDone={async id => {
+        setCreating(false); await load();
+        // Сразу QR анкеты для родителя — сканирует на месте, печать по желанию.
+        const p = new URLSearchParams(params); p.set("open", id); p.set("ctab", "profile"); p.set("qr", "parent"); setParams(p, { replace: true });
+      }} />}
       {scan && <QrScanModal onClose={() => setScan(false)} />}
-      {open && <ApplicantCard key={open} id={open} api={api} tenant={activeTenant} initialTab={params.get("ctab") || undefined} section={params.get("s") || undefined} onClose={() => openCard(null)} onChanged={load} />}
+      {open && <ApplicantCard key={open} id={open} api={api} tenant={activeTenant} initialTab={params.get("ctab") || undefined} section={params.get("s") || undefined} autoQr={params.get("qr") === "parent" ? "parent" : undefined} onClose={() => openCard(null)} onChanged={load} />}
     </div>
   );
 }

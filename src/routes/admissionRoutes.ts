@@ -51,7 +51,7 @@ const auth = optionalAuth(t => admin.auth().verifyIdToken(t));
 
 /** Заполнять: анкету родителя за него — приёмная и психолог; анкету сотрудника — по праву шаблона. */
 const canFill = (c: StaffCaller, t: QTemplate) =>
-  t.audience === "parent" ? hasPerm(c, "admission:manage", "psych:conduct") : t.fillPermission ? hasPerm(c, t.fillPermission) : hasPerm(c, "admission:manage");
+  t.audience === "parent" ? hasPerm(c, "admission:manage") : t.fillPermission ? hasPerm(c, t.fillPermission) : hasPerm(c, "admission:manage");
 /** Видеть содержимое целиком. */
 const canSee = (c: StaffCaller, t: QTemplate) => !t.sensitive || canFill(c, t) || (!!t.viewPermission && hasPerm(c, t.viewPermission));
 /** Править шаблон: владелец, настройки, приёмная — или тот, кто по нему работает (психолог правит нормы). */
@@ -66,33 +66,52 @@ const LEVEL_WORD = ["Низкий", "Средний", "Отличный"] as con
 
 // ── Уведомления администрации ───────────────────────────────────────────
 
-type AdmissionEvent = "new" | "session" | "done" | "tested" | "results";
-const EVENT_TITLE: Record<AdmissionEvent, string> = {
-  new: "Новый поступающий", session: "Новая сессия у психолога", done: "Сессия завершена — бланк готов",
-  tested: "Тест сдан", results: "Результаты теста внесены",
-};
+type AdmissionEvent = "new" | "parent" | "session" | "done" | "tested" | "results";
+type Audience = "admin" | "psych";
 /**
- * Ход приёма — в колокольчик сотрудникам с правом приёма (кроме автора).
- * Одна запись на ребёнка и адресата: показывает последний шаг, а не копит
- * десяток строк про одного ученика. Ошибка рассылки не ломает сохранение.
+ * Кому и с каким заголовком. Администрация (право приёма) — обо всём ходе
+ * приёма; психологи (проводят диагностику) — о новом ученике и о готовой
+ * анкете родителя: это их работа на сессию.
+ */
+const EVENT_PLAN: Record<AdmissionEvent, Partial<Record<Audience, string>>> = {
+  new: { admin: "Новый поступающий", psych: "К вам новый ученик" },
+  parent: { admin: "Анкета родителя заполнена", psych: "Анкета родителя заполнена" },
+  session: { admin: "Новая сессия у психолога" },
+  done: { admin: "Сессия завершена — выдайте направление" },
+  tested: { admin: "Тест сдан" },
+  results: { admin: "Результаты теста внесены" },
+};
+const AUDIENCE_PERMS: Record<Audience, PermissionKey[]> = { admin: ["admission:manage"], psych: ["psych:conduct"] };
+/**
+ * Ход приёма — в колокольчик (кроме автора). Одна запись на ребёнка и
+ * адресата: показывает последний шаг, а не копит десяток строк про одного
+ * ученика. У кого оба права (или полный доступ) — получает как администрация.
+ * Ошибка рассылки не ломает сохранение.
  */
 async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEvent, c: { uid: string; name: string }, o: { tid?: string; outcome?: string; referral?: boolean; summary?: string } = {}) {
   try {
-    const to = (await membersWith(db(), t, ["admission:manage"])).filter(x => x.uid !== c.uid);
-    if (!to.length) return;
+    const plan = EVENT_PLAN[ev];
     const who = `${a.child.name}, ${a.child.grade} класс`;
-    const title = EVENT_TITLE[ev];
-    const body = ev === "done" ? [who, o.outcome, o.referral ? "направление выдано" : ""].filter(Boolean).join(" · ")
+    const body = ev === "done" ? [who, o.outcome, o.referral ? "направление готово" : ""].filter(Boolean).join(" · ")
       : ev === "tested" || ev === "results" ? [who, o.summary, ev === "results" ? c.name : ""].filter(Boolean).join(" · ")
-      : `${who} · ${c.name}`;
-    const tab = ev === "new" ? "profile" : ev === "tested" || ev === "results" ? "test" : o.tid || "psych";
-    const url = `/workspace/${t}/exams?side=psych&open=${a.id}&ctab=${tab}`;
-    const batch = db().batch();
-    for (const r of to) batch.set(db().collection("notifications").doc(`adm_${a.id}_${r.uid}`), {
-      tenantId: t, userId: r.uid, type: "admission", title, body, actionUrl: url, applicantId: a.id, read: false,
-      createdAt: admin.firestore.Timestamp.now(),
-    });
-    await batch.commit();
+      : [who, c.name].filter(Boolean).join(" · ");
+    const adminTab = ev === "new" ? "profile" : ev === "parent" ? "parent" : ev === "tested" || ev === "results" ? "test" : o.tid || "psych";
+    const sent = new Set<string>([c.uid]);
+    const batch = db().batch(); let n = 0;
+    for (const aud of ["admin", "psych"] as Audience[]) {
+      const title = plan[aud];
+      if (!title) continue;
+      const url = `/workspace/${t}/exams?side=psych&open=${a.id}&ctab=${aud === "admin" ? adminTab : "psych"}`;
+      for (const r of await membersWith(db(), t, AUDIENCE_PERMS[aud])) {
+        if (sent.has(r.uid)) continue;
+        sent.add(r.uid); n++;
+        batch.set(db().collection("notifications").doc(`adm_${a.id}_${r.uid}`), {
+          tenantId: t, userId: r.uid, type: "admission", title, body, actionUrl: url, applicantId: a.id, read: false,
+          createdAt: admin.firestore.Timestamp.now(),
+        });
+      }
+    }
+    if (n) await batch.commit();
   } catch (e) { console.error("[admissions] notify:", e); }
 }
 
@@ -356,7 +375,7 @@ router.get("/:tenantId/by-no/:n", ...staff, async (req: any, res: any) => {
 router.post("/:tenantId/applicants", ...staff, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const c: StaffCaller = req.caller;
-    if (!hasPerm(c, "admission:manage", "psych:conduct")) return fail(res, 403, "Заводить поступающих может приёмная или психолог");
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Поступающих заводит администрация");
     const child = sanitizeChild(req.body?.child);
     if (child.name.split(/\s+/).filter(Boolean).length < 2) return fail(res, 400, "Укажите фамилию и имя ребёнка");
     if (gradeOf(child.grade) === null) return fail(res, 400, "Укажите класс, в который поступает");
@@ -401,7 +420,8 @@ router.get("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
     const canFillMap = Object.fromEntries(templates.map(x => [x.id, canFill(c, x)]));
     const canSeeMap = Object.fromEntries(templates.map(x => [x.id, canSee(c, x)]));
     return res.json({
-      success: true, applicant: academic ? { ...a, candidate: candidateOf(a) } : withoutAcademic(a), forms, attempts, audit: auditLog,
+      success: true, applicant: { ...(academic ? { ...a, candidate: candidateOf(a) } : withoutAcademic(a)), tokens: hasPerm(c, "admission:manage") ? a.tokens : { card: a.tokens.card, parent: "" } },
+      forms, attempts, audit: auditLog,
       // Тест ребёнка по направлению: если на бумаге — администрация вносит правильные ответы.
       candidateForm: academic ? await loadCandidateForm(t) : null,
       testExam: academic ? await (async () => {
@@ -417,7 +437,7 @@ router.get("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
 router.put("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const c: StaffCaller = req.caller;
-    if (!hasPerm(c, "admission:manage", "psych:conduct")) return fail(res, 403, "Нет прав менять карточку");
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Карточку меняет администрация");
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
     const patch: Partial<Applicant> = { updatedAt: Date.now() };
@@ -509,6 +529,7 @@ router.put("/:tenantId/applicants/:id/forms/:tid", ...staff, async (req: any, re
       const fresh = await loadApplicant(t, a.id);
       if (fresh) referral = await syncReferral(t, fresh, templates);
     }
+    if (tpl.audience === "parent" && done && prev?.status !== "done") await notifyAdmission(t, a, "parent", c);
     if (tpl.audience === "staff" && done) await notifyAdmission(t, a, "done", c, { tid, outcome: outcomeOf(tpl, outcome)?.label, referral: !!referral });
     else if (tpl.audience === "staff" && !prev) await notifyAdmission(t, a, "session", c, { tid });
     return res.json({ success: true, form, referral });
@@ -680,7 +701,7 @@ router.post("/:tenantId/applicants/:id/paper-test", ...staff, async (req: any, r
 router.post("/:tenantId/applicants/:id/relink", ...staff, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const c: StaffCaller = req.caller;
-    if (!hasPerm(c, "admission:manage", "psych:conduct")) return fail(res, 403, "Нет прав");
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "QR перевыпускает администрация");
     const purpose = String(req.body?.purpose) as LinkPurpose;
     if (!["parent", "referral", "card"].includes(purpose)) return fail(res, 400, "Неизвестная ссылка");
     const a = await loadApplicant(t, String(req.params.id));
@@ -723,7 +744,7 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
     const a = l.applicant;
     const c = await staffCaller(db(), l.tenantId, req.user);
     if (c?.member && hasPerm(c, ...ANY)) {
-      const tab = l.purpose === "parent" ? "parent" : hasPerm(c, "admission:manage") ? "test" : hasPerm(c, "psych:conduct") ? "psych" : "profile";
+      const tab = hasPerm(c, "admission:manage") ? (l.purpose === "parent" ? "parent" : "test") : hasPerm(c, "psych:conduct") ? "psych" : "profile";
       return res.json({ success: true, mode: "staff", org, who: c.name, url: `/workspace/${l.tenantId}/exams?side=psych&open=${a.id}&ctab=${tab}${req.query.s ? `&s=${encodeURIComponent(String(req.query.s).slice(0, 40))}` : ""}`, child: a.child.name, refNo: a.refNo });
     }
     const signedIn = !!c;
@@ -806,6 +827,7 @@ router.post("/link/:token/parent", async (req: any, res: any) => {
     await fref.set(deep(form));
     await col(t, "applicants").doc(a.id).update({ parentForm: { status: "done", at: now, by: "parent" }, updatedAt: now, ...bindToCard(a, tpl, answers, false) });
     await audit(t, a.id, null, "parent_form", "родитель заполнил анкету");
+    await notifyAdmission(t, a, "parent", { uid: "", name: "заполнил родитель" });
     return res.json({ success: true });
   } catch (e: any) { return oops(res, e); }
 });
