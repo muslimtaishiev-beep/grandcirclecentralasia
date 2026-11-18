@@ -7,6 +7,7 @@ import {
   Settings,
   LayoutDashboard,
   LogOut,
+  UserRound,
   FileText,
   FileSpreadsheet,
   LayoutTemplate,
@@ -269,16 +270,34 @@ export default function WorkspaceLayout() {
           </button>
           <GlobalNotifications />
           
-          {/* Профиль: имя, Telegram, безопасность */}
-          <button 
-            onClick={() => navigate(`/workspace/${orgId}/profile`)}
-            className="hidden sm:flex items-center gap-2 pl-2 border-l border-[var(--border-color)] cursor-pointer hover:opacity-80 transition"
-            title="Профиль"
-          >
-            <div className="w-8 h-8 rounded-full bg-[var(--accent)] flex items-center justify-center font-bold text-white text-xs">
-              {user?.email?.[0]?.toUpperCase() || "M"}
+          {/* Профиль: при наведении — меню «Профиль» и «Выйти» */}
+          <div className="hidden sm:block relative group pl-2 border-l border-[var(--border-color)]">
+            <button
+              onClick={() => navigate(`/workspace/${orgId}/profile`)}
+              className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition"
+              aria-haspopup="menu"
+            >
+              <div className="w-8 h-8 rounded-full bg-[var(--accent)] flex items-center justify-center font-bold text-white text-xs">
+                {user?.email?.[0]?.toUpperCase() || "M"}
+              </div>
+            </button>
+            <div role="menu" className="absolute right-0 top-full pt-2 z-50 hidden group-hover:block group-focus-within:block">
+              <div className="w-60 rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] shadow-xl overflow-hidden text-sm">
+                <div className="px-3.5 py-2.5 border-b border-[var(--border-color)]">
+                  <div className="font-semibold text-[var(--text-main)] truncate">{user?.displayName || user?.email}</div>
+                  {user?.displayName && <div className="text-xs text-[var(--text-muted)] truncate">{user?.email}</div>}
+                </div>
+                <button role="menuitem" onClick={() => navigate(`/workspace/${orgId}/profile`)}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]">
+                  <UserRound className="w-4 h-4 text-[var(--text-muted)]" /> Профиль и безопасность
+                </button>
+                <button role="menuitem" onClick={logout}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-red-500 hover:bg-red-500/10">
+                  <LogOut className="w-4 h-4" /> Выйти
+                </button>
+              </div>
             </div>
-          </button>
+          </div>
         </div>
       </div>
 
@@ -364,15 +383,7 @@ export default function WorkspaceLayout() {
             )
           })}
 
-          <div className="mt-auto shrink-0">
-            <button 
-              onClick={logout}
-              className="w-12 h-12 rounded-xl flex items-center justify-center text-[var(--text-muted)] hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 transition-colors"
-              title="Выйти"
-            >
-              <LogOut className="w-5 h-5" />
-            </button>
-          </div>
+          {/* «Выйти» — в меню профиля в шапке. */}
         </div>
 
         {/* Dynamic Outlet (The actual page content) */}
