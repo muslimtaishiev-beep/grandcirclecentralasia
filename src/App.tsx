@@ -33,6 +33,7 @@ const MaintenanceMode = lazy(() => import("./pages/MaintenanceMode"));
 const WorkspaceLayout = lazy(() => import("./pages/workspace/Layout"));
 const WorkspaceDashboard = lazy(() => import("./pages/workspace/Dashboard"));
 const WorkspaceSettings = lazy(() => import("./pages/workspace/Settings"));
+const ProfilePage = lazy(() => import("./pages/workspace/profile/ProfilePage"));
 const OrgStructure = lazy(() => import("./pages/workspace/settings/OrgStructure"));
 const DocumentTemplates = lazy(() => import("./pages/workspace/settings/DocumentTemplates"));
 const WorkspaceBuilder = lazy(() => import("./pages/workspace/Builder"));
@@ -302,6 +303,7 @@ export default function App() {
             <Route index element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId/dashboard" element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/profile" element={<GracefulErrorBoundary fallbackTitle="Ошибка Профиля"><Suspense fallback={null}><ProfilePage /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId/settings" element={<GracefulErrorBoundary fallbackTitle="Ошибка Настроек"><WorkspaceSettings /></GracefulErrorBoundary>} />
             {/* Роли и права сведены в один экран /settings/roles. Старые
                 адреса (в закладках, в письмах-инвайтах) редиректим туда, чтобы

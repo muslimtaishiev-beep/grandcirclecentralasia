@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { verifySession } from "../server/session.js";
 import admin from "firebase-admin";
 import { randomBytes } from "crypto";
 import { requireFirebaseAuth } from "./authRoutes.js";
@@ -236,7 +237,7 @@ router.delete("/:tenantId/:id", ...guard, async (req: any, res: any) => {
 
 // ── Просмотр по ссылке ──────────────────────────────────────────────────
 
-const optionalAuth = optionalAuthWith(t => admin.auth().verifyIdToken(t));
+const optionalAuth = optionalAuthWith(t => verifySession(t));
 
 router.get("/show/:code", optionalAuth, async (req: any, res: any) => {
   try {

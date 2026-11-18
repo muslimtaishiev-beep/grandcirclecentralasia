@@ -9,6 +9,7 @@ import {
 } from "../shared/formStatuses.js";
 import { checkFileValue, FILE_LIMITS } from "../shared/uploads.js";
 import { cleanMulti, fieldVisible } from "../shared/formFields.js";
+import { verifySession } from "../server/session.js";
 import { hasAnyPermission } from "../server/access.js";
 import { checkTenantOpen, requireScreen, loadTenant } from "../server/tenantAccess.js";
 import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
@@ -834,7 +835,7 @@ async function authenticateFormApi(req: any, res: any, next: any) {
     }
 
     let user = req.user;
-    if (!user && userToken) { try { user = await admin.auth().verifyIdToken(userToken); } catch { /* не токен входа — может быть ключ */ } }
+    if (!user && userToken) { try { user = await verifySession(userToken); } catch { /* не токен входа — может быть ключ */ } }
     if (user?.uid) {
       req.user = user;
       if (user.isSuperadmin === true) return next();

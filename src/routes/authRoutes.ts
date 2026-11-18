@@ -4,6 +4,8 @@ import admin from "firebase-admin";
 import { sendStaffInviteEmail } from "../../emailService.js";
 import { callerPermissions } from "../server/access.js";
 import { syncClaims } from "../server/claims.js";
+import { verifySession } from "../server/session.js";
+import { recordLogin } from "../server/loginAlerts.js";
 import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
 
 const router = Router();
@@ -18,10 +20,12 @@ export const requireFirebaseAuth = async (req: any, res: any, next: any) => {
   }
 
   try {
-    const decodedToken = await admin.auth().verifyIdToken(token);
+    const decodedToken = await verifySession(token);
     req.user = decodedToken;
     next();
-  } catch (error) {
+  } catch (error: any) {
+    // «Выйти везде» или «Это не я» — клиент выходит и просит войти заново.
+    if (error?.code === "SESSION_REVOKED") return res.status(401).json({ error: error.message, code: "SESSION_REVOKED" });
     // NOTE: a "fail-safe" fallback used to decode the JWT payload WITHOUT
     // verifying its signature and accept any uid/sub/email it contained — an
     // authentication bypass for every endpoint behind this middleware
@@ -69,6 +73,9 @@ router.get("/me", requireFirebaseAuth, async (req: any, res: any) => {
       });
       userData.lastLoginAt = new Date().toISOString();
     }
+
+    // Каждый новый вход (новый auth_time) — в журнал входов и оповещение в Telegram.
+    await recordLogin(req, uid, userData || {}).catch(e => console.error("[login] record:", e?.message));
 
     if (isNewSession) {
       db.collection("audit_logs").add({

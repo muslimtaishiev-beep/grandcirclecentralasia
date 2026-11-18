@@ -56,6 +56,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             signal: AbortSignal.timeout(8000),
           });
           const data = await res.json();
+          // «Выйти везде» или «Это не я» в Telegram: этот сеанс завершён — выходим,
+          // onAuthStateChanged сработает ещё раз уже без пользователя.
+          if (res.status === 401 && data?.code === 'SESSION_REVOKED') {
+            await signOut(auth).catch(() => {});
+            return;
+          }
           if (data?.claimsRefreshed) {
             await currentUser.getIdToken(true);
           }

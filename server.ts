@@ -268,6 +268,8 @@ import examRoutes from "./src/routes/examRoutes.js";
 import presentationRoutes from "./src/routes/presentationRoutes.js";
 import admissionRoutes from "./src/routes/admissionRoutes.js";
 import telegramRoutes from "./src/routes/telegramRoutes.js";
+import profileRoutes from "./src/routes/profileRoutes.js";
+import { verifySession } from "./src/server/session.js";
 import examAdminRoutes from "./src/routes/examAdminRoutes.js";
 import examPublicRoutes from "./src/routes/examPublicRoutes.js";
 import { sendTestResultEmail } from "./emailService.js";
@@ -284,6 +286,7 @@ app.use("/api/exam-builder", examRoutes);
 app.use("/api/presentations", presentationRoutes);
 app.use("/api/admissions", admissionRoutes);
 app.use("/api/telegram", telegramRoutes);
+app.use("/api/profile", profileRoutes);
 app.use("/api/exam-admin", examAdminRoutes);
 app.use("/api/exam-public", examPublicRoutes);
 
@@ -398,7 +401,7 @@ async function requireSuperadmin(req: express.Request, res: express.Response, ne
   }
 
   try {
-    const decoded = await admin.auth().verifyIdToken(token);
+    const decoded = await verifySession(token);
     const snap = await admin.firestore().collection("superadmins").doc(decoded.uid).get();
     if (!snap.exists) {
       return res.status(403).json({ error: "Forbidden: Superadmin role required." });
@@ -423,7 +426,7 @@ async function requireAuth(req: express.Request, res: express.Response, next: ex
   }
 
   try {
-    const decoded = await admin.auth().verifyIdToken(token);
+    const decoded = await verifySession(token);
     (req as any).user = decoded;
     return next();
   } catch (e) {

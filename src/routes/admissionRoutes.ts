@@ -4,6 +4,7 @@ import { randomBytes, randomInt } from "crypto";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { hasPerm, membersWith, optionalAuth, requirePerm, staffCaller, type StaffCaller } from "../server/access.js";
 import { notifyTelegram } from "../server/telegram.js";
+import { verifySession } from "../server/session.js";
 import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
 import { tenantLogos } from "../shared/legal.js";
 import { LEGAL_VERSION } from "../shared/legalDocs.js";
@@ -46,7 +47,7 @@ const deep = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 const ANY: PermissionKey[] = ["admission:manage", "psych:conduct", "psych:view"];
 const staff = [requireFirebaseAuth, requireScreen("admissions", (req: any) => req.params.tenantId), requirePerm(db, ...ANY)];
-const auth = optionalAuth(t => admin.auth().verifyIdToken(t));
+const auth = optionalAuth(t => verifySession(t));
 
 // ── Права на анкеты ─────────────────────────────────────────────────────
 

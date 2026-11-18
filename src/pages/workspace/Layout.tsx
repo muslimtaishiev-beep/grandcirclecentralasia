@@ -269,11 +269,11 @@ export default function WorkspaceLayout() {
           </button>
           <GlobalNotifications />
           
-          {/* Profile Button / Link to Settings */}
+          {/* Профиль: имя, Telegram, безопасность */}
           <button 
-            onClick={() => navigate(`/workspace/${orgId}/settings/roles`)}
+            onClick={() => navigate(`/workspace/${orgId}/profile`)}
             className="hidden sm:flex items-center gap-2 pl-2 border-l border-[var(--border-color)] cursor-pointer hover:opacity-80 transition"
-            title="Роли и доступы"
+            title="Профиль"
           >
             <div className="w-8 h-8 rounded-full bg-[var(--accent)] flex items-center justify-center font-bold text-white text-xs">
               {user?.email?.[0]?.toUpperCase() || "M"}
@@ -323,7 +323,7 @@ export default function WorkspaceLayout() {
                 })}
               </div>
               <div className="p-2 border-t border-[var(--border-color)] shrink-0 space-y-0.5">
-                <button onClick={() => { setIsMobileSidebarOpen(false); navigate(`/workspace/${orgId}/settings/roles`); }}
+                <button onClick={() => { setIsMobileSidebarOpen(false); navigate(`/workspace/${orgId}/profile`); }}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]">
                   <span className="w-5 h-5 rounded-full bg-[var(--accent)] text-white text-[10px] font-bold flex items-center justify-center">{user?.email?.[0]?.toUpperCase() || "M"}</span>
                   <span className="truncate">{user?.email || "Профиль"}</span>
