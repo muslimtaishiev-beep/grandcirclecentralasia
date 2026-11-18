@@ -3,6 +3,7 @@ import admin from "firebase-admin";
 import { randomBytes, randomInt } from "crypto";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { hasPerm, membersWith, optionalAuth, requirePerm, staffCaller, type StaffCaller } from "../server/access.js";
+import { notifyTelegram } from "../server/telegram.js";
 import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
 import { tenantLogos } from "../shared/legal.js";
 import { LEGAL_VERSION } from "../shared/legalDocs.js";
@@ -99,6 +100,7 @@ async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEvent, c: {
     const sent = new Set<string>([c.uid]);
     const adminUrl = plan.admin ? await adminCardUrl(t, a, adminTab) : "";
     const batch = db().batch(); let n = 0;
+    const tg: { uids: string[]; title: string; url: string }[] = [];
     for (const aud of ["admin", "psych"] as Audience[]) {
       const title = plan[aud];
       if (!title) continue;
@@ -106,6 +108,7 @@ async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEvent, c: {
       for (const r of await membersWith(db(), t, AUDIENCE_PERMS[aud])) {
         if (sent.has(r.uid)) continue;
         sent.add(r.uid); n++;
+        (tg.find(x => x.title === title && x.url === url) || (tg.push({ uids: [], title, url }), tg[tg.length - 1])).uids.push(r.uid);
         batch.set(db().collection("notifications").doc(`adm_${a.id}_${r.uid}`), {
           tenantId: t, userId: r.uid, type: "admission", title, body, actionUrl: url, applicantId: a.id, read: false,
           createdAt: admin.firestore.Timestamp.now(),
@@ -113,6 +116,8 @@ async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEvent, c: {
       }
     }
     if (n) await batch.commit();
+    // То же — в Telegram тем, кто его привязал.
+    await Promise.all(tg.map(x => notifyTelegram(x.uids, x.title, body, x.url)));
   } catch (e) { console.error("[admissions] notify:", e); }
 }
 

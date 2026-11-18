@@ -267,6 +267,7 @@ import journalRoutes from "./src/routes/journalRoutes.js";
 import examRoutes from "./src/routes/examRoutes.js";
 import presentationRoutes from "./src/routes/presentationRoutes.js";
 import admissionRoutes from "./src/routes/admissionRoutes.js";
+import telegramRoutes from "./src/routes/telegramRoutes.js";
 import examAdminRoutes from "./src/routes/examAdminRoutes.js";
 import examPublicRoutes from "./src/routes/examPublicRoutes.js";
 import { sendTestResultEmail } from "./emailService.js";
@@ -282,6 +283,7 @@ app.use("/api/journals", journalRoutes);
 app.use("/api/exam-builder", examRoutes);
 app.use("/api/presentations", presentationRoutes);
 app.use("/api/admissions", admissionRoutes);
+app.use("/api/telegram", telegramRoutes);
 app.use("/api/exam-admin", examAdminRoutes);
 app.use("/api/exam-public", examPublicRoutes);
 

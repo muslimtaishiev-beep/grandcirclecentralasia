@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Bell, Check, X } from 'lucide-react';
+import { Bell, Check, Send, X } from 'lucide-react';
 import { useNotifications, type AppNotification } from '../../lib/useNotifications';
 import { useAuth } from '../../contexts/AuthContext';
 import { useOutletContext, useNavigate } from 'react-router-dom';
@@ -140,7 +140,44 @@ export default function GlobalNotifications() {
               </div>
             )}
           </div>
+          <TelegramLink user={user} open={isOpen} />
         </div>, document.body
+      )}
+    </div>
+  );
+}
+
+/**
+ * Уведомления в Telegram: ссылка на бота с одноразовым кодом — сотрудник жмёт
+ * «Старт», и всё, что приходит в колокольчик, дублируется на телефон.
+ */
+function TelegramLink({ user, open }: { user: any; open: boolean }) {
+  const [st, setSt] = useState<{ configured: boolean; linked: boolean; username: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const call = async (method: string, path: string) => {
+    const token = await user?.getIdToken?.();
+    const r = await fetch(`/api/telegram${path}`, { method, headers: { Authorization: `Bearer ${token}` } });
+    return r.json().catch(() => ({}));
+  };
+  useEffect(() => { if (open && user) call('GET', '/status').then(j => j.success && setSt(j)).catch(() => {}); }, [open, user]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!st?.configured) return null;
+  const connect = async () => {
+    // Окно открываем сразу (иначе браузер посчитает его всплывающим), ссылку подставляем после ответа.
+    const w = window.open('', '_blank');
+    setBusy(true);
+    try { const j = await call('POST', '/link'); if (j.url) { if (w) w.location.href = j.url; else window.location.href = j.url; } else w?.close(); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="px-4 py-2.5 border-t border-[var(--border-color)] flex items-center gap-2 text-xs">
+      <Send className="w-3.5 h-3.5 text-[#229ED9] shrink-0" />
+      {st.linked ? (
+        <>
+          <span className="flex-1 text-[var(--text-main)]">Telegram подключён{st.username ? ` · @${st.username}` : ''}</span>
+          <button className="text-[var(--text-muted)] hover:underline" disabled={busy} onClick={async () => { setBusy(true); await call('DELETE', '/link'); setSt({ ...st, linked: false, username: '' }); setBusy(false); }}>Отключить</button>
+        </>
+      ) : (
+        <button className="flex-1 text-left font-medium text-[var(--accent)] hover:underline" disabled={busy} onClick={connect}>Получать в Telegram</button>
       )}
     </div>
   );
