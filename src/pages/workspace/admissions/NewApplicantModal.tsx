@@ -8,13 +8,13 @@ import type { Api } from "./admissionApi";
  * со страницы вступительного теста (класс уже подставлен) или из «Поступающих».
  */
 export default function NewApplicantModal({ api, grade, onClose, onDone }: { api: Api; grade?: string; onClose: () => void; onDone: (id: string, grade: string) => void }) {
-  const [f, setF] = useState({ name: "", birthDate: "", grade: grade || "", parentName: "", phone: "", note: "" });
+  const [f, setF] = useState({ name: "", birthDate: "", grade: grade || "", parentName: "", phone: "", email: "", note: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const save = async () => {
     setBusy(true); setError(null);
     try {
-      const j = await api("/applicants", { method: "POST", body: JSON.stringify({ child: { name: f.name, birthDate: f.birthDate, grade: f.grade }, parent: { name: f.parentName, phone: f.phone }, note: f.note }) });
+      const j = await api("/applicants", { method: "POST", body: JSON.stringify({ child: { name: f.name, birthDate: f.birthDate, grade: f.grade }, parent: { name: f.parentName, phone: f.phone, email: f.email }, note: f.note }) });
       onDone(j.id, f.grade);
     } catch (e: any) { setError(e.message); setBusy(false); }
   };
@@ -28,7 +28,10 @@ export default function NewApplicantModal({ api, grade, onClose, onDone }: { api
           <div><span className={label}>Дата рождения</span><input type="date" className={input} value={f.birthDate} onChange={set("birthDate")} /></div>
         </div>
         <div><span className={label}>ФИО родителя</span><input className={input} value={f.parentName} onChange={set("parentName")} /></div>
-        <div><span className={label}>Телефон родителя</span><input className={input} inputMode="tel" value={f.phone} onChange={set("phone")} placeholder="+996 …" /></div>
+        <div className="grid grid-cols-2 gap-2">
+          <div><span className={label}>Телефон родителя</span><input className={input} inputMode="tel" value={f.phone} onChange={set("phone")} placeholder="+996 …" /></div>
+          <div><span className={label}>Почта родителя</span><input className={input} type="email" inputMode="email" value={f.email} onChange={set("email")} placeholder="name@mail.com" /></div>
+        </div>
         {error && <div className="text-sm text-rose-600">{error}</div>}
         <div className="flex justify-end gap-2">
           <button className={btn} onClick={onClose}>Отмена</button>

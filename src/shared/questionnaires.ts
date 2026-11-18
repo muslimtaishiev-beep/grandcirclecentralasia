@@ -53,7 +53,7 @@ export interface QNorm {
   label?: string;
 }
 /** Связь пункта с карточкой поступающего: ответ заполняет пустое поле карточки. */
-export type QBind = "child.name" | "child.birthDate" | "child.school" | "parent.name" | "parent.phone";
+export type QBind = "child.name" | "child.birthDate" | "child.school" | "parent.name" | "parent.phone" | "parent.email";
 
 export interface QItem {
   id: string;
@@ -196,7 +196,7 @@ const id = (v: unknown, fallback: string) => (ID.test(String(v)) ? String(v) : f
 const KINDS: QKind[] = ["text", "longtext", "date", "number", "phone", "choice", "multi", "rating", "note"];
 const grades = (v: unknown) => [...new Set((Array.isArray(v) ? v : []).map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 12))].sort((a, b) => a - b);
 const num = (v: unknown, def = 0) => { const n = Number(v); return Number.isFinite(n) ? n : def; };
-const BINDS: QBind[] = ["child.name", "child.birthDate", "child.school", "parent.name", "parent.phone"];
+const BINDS: QBind[] = ["child.name", "child.birthDate", "child.school", "parent.name", "parent.phone", "parent.email"];
 
 function sanitizeItem(r: any, k: number): QItem | null {
   const kind: QKind = KINDS.includes(r?.kind) ? r.kind : "text";

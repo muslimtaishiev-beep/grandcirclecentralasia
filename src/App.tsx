@@ -40,6 +40,7 @@ const WorkspaceBuilder = lazy(() => import("./pages/workspace/Builder"));
 const FormBuilder = lazy(() => import("./pages/workspace/builder/FormBuilder"));
 const TicketScanner = lazy(() => import("./pages/workspace/tickets/TicketScanner"));
 const WorkspaceSetupPage = lazy(() => import("./pages/workspace/settings/WorkspaceSetupPage"));
+const EmailTemplatesPage = lazy(() => import("./pages/workspace/settings/EmailTemplatesPage"));
 import RequirePermission from "./components/workspace/RequirePermission";
 const RolesAndAccess = lazy(() => import("./pages/workspace/settings/RolesAndAccess"));
 const FunctionStudio = lazy(() => import("./pages/workspace/functions/FunctionStudio"));
@@ -312,6 +313,7 @@ export default function App() {
             <Route path=":orgId/settings/permission-matrix" element={<Navigate to="../roles" relative="path" replace />} />
             <Route path=":orgId/settings/roles" element={<GracefulErrorBoundary fallbackTitle="Ошибка Ролей"><RequirePermission navKey="permissions"><RolesAndAccess /></RequirePermission></GracefulErrorBoundary>} />
             <Route path=":orgId/settings/workspace" element={<RequirePermission navKey="workspaceSetup"><GracefulErrorBoundary fallbackTitle="Ошибка Настроек Воркспейса"><WorkspaceSetupPage /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/settings/emails" element={<RequirePermission navKey="emailTemplates"><GracefulErrorBoundary fallbackTitle="Ошибка Шаблонов писем"><EmailTemplatesPage /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/settings/departments" element={<RequirePermission navKey="departments"><GracefulErrorBoundary fallbackTitle="Ошибка Оргструктуры"><OrgStructure /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/settings/templates" element={<GracefulErrorBoundary fallbackTitle="Ошибка Шаблонов"><DocumentTemplates /></GracefulErrorBoundary>} />
             <Route path=":orgId/builder" element={<GracefulErrorBoundary fallbackTitle="Ошибка Конструктора"><WorkspaceBuilder /></GracefulErrorBoundary>} />

@@ -214,6 +214,7 @@ export const WORKSPACE_SCREENS: { key: string; label: string; group: string }[] 
   { key: "departments", label: "Оргструктура и отделы", group: "Администрирование" },
   { key: "permissions", label: "Роли, доступы и сотрудники", group: "Администрирование" },
   { key: "workspaceSetup", label: "Настройка воркспейса", group: "Администрирование" },
+  { key: "emailTemplates", label: "Шаблоны писем", group: "Администрирование" },
 ];
 
 /** Экраны, которые нельзя выключать: без них воркспейс становится тупиком. */
@@ -254,6 +255,8 @@ export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | nu
   workspaceSetup: ["team:manage", "settings:manage"],
   sites: ["team:manage", "settings:manage"],
   automations: ["team:manage", "settings:manage"],
+  // Шаблоны писем: кто шлёт письма — приём, экзамены, заявки.
+  emailTemplates: ["settings:manage", "team:manage", "admission:manage", "tests:manage", "crm:manage", "certificates:issue"],
 };
 
 /**

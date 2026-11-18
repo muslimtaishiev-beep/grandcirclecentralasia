@@ -269,6 +269,7 @@ import presentationRoutes from "./src/routes/presentationRoutes.js";
 import admissionRoutes from "./src/routes/admissionRoutes.js";
 import telegramRoutes from "./src/routes/telegramRoutes.js";
 import profileRoutes from "./src/routes/profileRoutes.js";
+import emailTemplateRoutes from "./src/routes/emailTemplateRoutes.js";
 import { verifySession } from "./src/server/session.js";
 import examAdminRoutes from "./src/routes/examAdminRoutes.js";
 import examPublicRoutes from "./src/routes/examPublicRoutes.js";
@@ -287,6 +288,7 @@ app.use("/api/presentations", presentationRoutes);
 app.use("/api/admissions", admissionRoutes);
 app.use("/api/telegram", telegramRoutes);
 app.use("/api/profile", profileRoutes);
+app.use("/api/email-templates", emailTemplateRoutes);
 app.use("/api/exam-admin", examAdminRoutes);
 app.use("/api/exam-public", examPublicRoutes);
 

@@ -4,6 +4,7 @@ import { randomBytes, randomInt } from "crypto";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { hasPerm, membersWith, optionalAuth, requirePerm, staffCaller, type StaffCaller } from "../server/access.js";
 import { notifyTelegram } from "../server/telegram.js";
+import { appUrl, sendTemplated } from "../server/emailEvents.js";
 import { verifySession } from "../server/session.js";
 import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
 import { tenantLogos } from "../shared/legal.js";
@@ -139,11 +140,38 @@ const resultSummary = (exam: Pick<Exam, "settings">, r: Pick<ExamResult, "sectio
   return parts.length ? parts.map(p => `${p.title}: ${p.value}`).join(" · ") : `${r.percent}%`;
 };
 
-/** Ученик сдал тест по направлению — сообщить администрации. */
-export async function notifyTested(t: string, x: { applicantId?: string; result?: ExamResult | null }, exam: Exam) {
-  if (!x.applicantId) return;
-  const a = await loadApplicant(t, x.applicantId).catch(() => null);
+type TestedAttempt = { id?: string; applicantId?: string; result?: ExamResult | null; shortId?: string; student?: { name?: string; email?: string } };
+
+/** Ученик сдал тест — сообщить администрации (по направлению) и письмо по шаблону экзамена. */
+export async function notifyTested(t: string, x: TestedAttempt, exam: Exam) {
+  const a = x.applicantId ? await loadApplicant(t, x.applicantId).catch(() => null) : null;
+  await emailTested(t, x, exam, a);
   if (a) await notifyAdmission(t, a, "tested", { uid: "", name: "" }, { summary: resultSummary(exam, x.result) });
+}
+
+/**
+ * Письмо после теста. Поступающему — на почту родителя со ссылкой
+ * направления (результат там откроется после обратной связи), без балла.
+ * Остальным — на почту из регистрации; балл — только если результат
+ * показывается ученику сразу и без проверки.
+ */
+async function emailTested(t: string, x: TestedAttempt, exam: Exam, a: Applicant | null) {
+  const settings = sanitizeSettings(exam.settings);
+  const templateId = settings.results.emailTemplate || "";
+  if (!templateId || !x.id) return;
+  const base = await appUrl();
+  const vars: Record<string, string> = { экзамен: exam.title || "", номер: x.shortId || "" };
+  let to = "";
+  if (a) {
+    to = a.parent.email || "";
+    Object.assign(vars, { имя: a.parent.name, ребёнок: a.child.name, класс: a.child.grade, ссылка: `${base}/a/${await referralTokenFor(t, a)}` });
+  } else {
+    to = String(x.student?.email || "");
+    Object.assign(vars, { имя: String(x.student?.name || ""), ссылка: exam.code ? `${base}/exam/${exam.code}/result` : "" });
+    const open = settings.results.showToStudent === "immediately" && !settings.results.requireReview;
+    if (open && x.result) Object.assign(vars, { балл: `${x.result.earned} из ${x.result.max}`, процент: `${x.result.percent}%` });
+  }
+  await sendTemplated({ tenantId: t, templateId, to, vars, event: "tested", refId: `${t}_${x.id}` });
 }
 
 /** Карточка без академической части: этап — не дальше направления. */
@@ -197,6 +225,7 @@ function bindToCard(a: Applicant, tpl: QTemplate, answers: QAnswers, overwrite: 
   const set = (b: QBind, v: string) => {
     const [k, f] = b.split(".") as ["child" | "parent", string];
     if (b === "child.birthDate" && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; // в карточку — только настоящая дата
+    if (b === "parent.email") v = cleanEmail(v);
     if (v && (overwrite || !patch[k][f])) patch[k][f] = v;
   };
   for (const i of tpl.sections.flatMap(s => s.items)) if (i.bind) set(i.bind, str(answers[i.id]?.value, 120));
@@ -243,6 +272,30 @@ export async function syncReferral(t: string, a: Applicant, templates?: QTemplat
   };
   await col(t, "applicants").doc(a.id).update({ referral, updatedAt: Date.now() });
   return referral;
+}
+
+/**
+ * Письмо родителю с направлением — шаблоном, выбранным в настройках
+ * экзамена направления. Одно письмо на направление (журнал email_log);
+ * force — ручная кнопка «На почту», отправит повторно.
+ */
+export async function emailReferral(t: string, applicantId: string, o: { force?: boolean; by?: string } = {}): Promise<{ sent: boolean; reason?: string; skipped?: boolean }> {
+  try {
+    const a = await loadApplicant(t, applicantId);
+    if (!a?.referral?.examId) return { sent: false, reason: "Нет направления на экзамен" };
+    const es = await col(t, "exams").doc(a.referral.examId).get();
+    const templateId = sanitizeSettings(es.data()?.settings).admission?.referralEmail || "";
+    if (!templateId) return { sent: false, reason: "В настройках экзамена не выбран шаблон письма" };
+    if (!a.parent.email) return { sent: false, reason: "Нет почты родителя" };
+    const token = await referralTokenFor(t, a);
+    return await sendTemplated({
+      tenantId: t, templateId, to: a.parent.email, event: "referral", refId: `${t}_${a.id}_${a.referral.examId}`, force: o.force, by: o.by,
+      vars: {
+        имя: a.parent.name, ребёнок: a.child.name, класс: a.child.grade, экзамен: a.referral.examTitle || String(es.data()?.title || ""),
+        код: a.referral.examCode || "", ссылка: `${await appUrl()}/a/${token}`,
+      },
+    });
+  } catch (e) { console.error("[admissions] referral email", e); return { sent: false, reason: "Не удалось отправить" }; }
 }
 
 /** Экзамен сохранили (поменяли классы или этапы) — подставить тест всем, кто его ждёт. */
@@ -292,7 +345,8 @@ function row(a: Applicant, attempts: any[], academic: boolean) {
 }
 
 const sanitizeChild = (b: any) => ({ name: str(b?.name, 120), birthDate: /^\d{4}-\d{2}-\d{2}$/.test(String(b?.birthDate)) ? String(b.birthDate) : "", grade: str(b?.grade, 20), school: str(b?.school, 160) });
-const sanitizeParent = (b: any) => ({ name: str(b?.name, 120), phone: str(b?.phone, 30) });
+const cleanEmail = (v: unknown) => { const e = str(v, 120).toLowerCase(); return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : ""; };
+const sanitizeParent = (b: any) => ({ name: str(b?.name, 120), phone: str(b?.phone, 30), email: cleanEmail(b?.email) });
 
 // ── Шаблоны анкет ───────────────────────────────────────────────────────
 
@@ -548,6 +602,7 @@ router.put("/:tenantId/applicants/:id/forms/:tid", ...staff, async (req: any, re
     }
     if (tpl.audience === "parent" && done && prev?.status !== "done") await notifyAdmission(t, a, "parent", c);
     if (tpl.audience === "staff" && done) await notifyAdmission(t, a, "done", c, { tid, outcome: outcomeOf(tpl, outcome)?.label, referral: !!referral });
+    if (tpl.audience === "staff" && done && referral?.examId) await emailReferral(t, a.id, { by: c.uid });
     else if (tpl.audience === "staff" && !prev) await notifyAdmission(t, a, "session", c, { tid });
     return res.json({ success: true, form, referral });
   } catch (e: any) { return oops(res, e); }
@@ -567,7 +622,26 @@ router.post("/:tenantId/applicants/:id/referral", ...staff, async (req: any, res
     await col(t, "applicants").doc(a.id).update({ referral: seed, updatedAt: Date.now() });
     const referral = await syncReferral(t, { ...a, referral: seed });
     await audit(t, a.id, c, "referral_manual", `допущен к тесту${reason ? ` — ${reason}` : ""}`);
+    if (referral?.examId) await emailReferral(t, a.id, { by: c.uid });
     return res.json({ success: true, referral });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** «На почту»: направление родителю письмом (повторно — тоже). */
+const lastReferralMail = new Map<string, number>();
+router.post("/:tenantId/applicants/:id/referral-email", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Отправлять направление может администратор");
+    const key = `${t}_${req.params.id}`;
+    if (Date.now() - (lastReferralMail.get(key) || 0) < 60_000) return fail(res, 429, "Письмо только что ушло — подождите минуту");
+    const a = await loadApplicant(t, String(req.params.id));
+    if (!a) return fail(res, 404, "Поступающий не найден");
+    const r = await emailReferral(t, a.id, { force: true, by: c.uid });
+    if (!r.sent) return fail(res, 400, r.reason || "Не отправилось");
+    lastReferralMail.set(key, Date.now());
+    await audit(t, a.id, c, "referral_emailed", a.parent.email || "");
+    return res.json({ success: true, to: a.parent.email });
   } catch (e: any) { return oops(res, e); }
 });
 

@@ -89,7 +89,7 @@ export interface Applicant {
   /** Сквозной номер в организации — его пишут на бумаге и вводят в поиск. */
   refNo: number;
   child: { name: string; birthDate: string; grade: string; school?: string };
-  parent: { name: string; phone: string };
+  parent: { name: string; phone: string; email?: string };
   note: string;
   /** Анкета родителя: сдана ли (содержимое — в applicant_forms). */
   parentForm: { status: "none" | "done"; at: number | null; by: "parent" | "staff" | null };

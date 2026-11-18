@@ -192,6 +192,10 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Шаблоны писем и журнал отправок — только через сервер (/api/email-templates).
+    match /email_templates/{docId} { allow read, write: if false; }
+    match /email_log/{docId} { allow read, write: if false; }
+
     match /departments/{docId} {
       allow read: if hasTenantAccess();
       allow update, delete: if isTenantAdmin(resource.data.tenantId);

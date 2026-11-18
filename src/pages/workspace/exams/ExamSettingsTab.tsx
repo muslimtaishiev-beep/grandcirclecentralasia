@@ -7,6 +7,7 @@ import type { Api, DisciplineRow, SetRow } from "./examApi";
 import QuestionPicker from "./QuestionPicker";
 import GradePartsEditor from "./GradePartsEditor";
 import AdmissionGate from "./AdmissionGate";
+import EmailTemplateSelect from "../../../components/workspace/EmailTemplateSelect";
 
 type Plan = { pool: number; have: Record<Difficulty, number>; want: number; short: { difficulty: Difficulty; need: number; have: number }[]; missing?: number };
 
@@ -301,6 +302,7 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
           {st.results.certificate && <input className={`${input} ml-6 !w-96 max-w-full`} value={st.results.certificateTitle} onChange={e => set("results", { certificateTitle: e.target.value })} />}
           <Check checked={st.results.decisions} onChange={v => set("results", { decisions: v })}>Решение по работе: принят / резерв / не принят, с комментарием</Check>
           <GroupsEditor groups={st.results.groups} onChange={groups => set("results", { groups })} />
+          <EmailTemplateSelect tenantId={exam.tenantId} title="Письмо после теста" value={st.results.emailTemplate || ""} onChange={emailTemplate => set("results", { emailTemplate })} />
         </section>
       </div>
 

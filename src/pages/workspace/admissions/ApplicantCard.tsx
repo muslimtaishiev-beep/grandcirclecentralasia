@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, CheckCircle2, ClipboardList, Copy, Download, ExternalLink, Loader2, Lock, Pencil, Printer, QrCode, RefreshCw, Trash2 } from "lucide-react";
+import { Camera, CheckCircle2, ClipboardList, Copy, Download, ExternalLink, Loader2, Lock, Mail, Pencil, Printer, QrCode, RefreshCw, Trash2 } from "lucide-react";
 import FormFiller from "../../../components/admissions/FormFiller";
 import { STAGE_LABEL, stageOf, type Applicant, type CandidateInfo, type PaperResult } from "../../../shared/admissions";
 import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
@@ -140,7 +140,8 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
             title={qr === "referral" ? "Направление на тест" : "Анкета для родителя"}
             sub={`${a.child.name} · ${no(a.refNo)}${qr === "referral" && a.referral?.examTitle ? ` · ${a.referral.examTitle}` : ""}`}
             url={linkUrl(qr === "referral" ? a.tokens.referral! : a.tokens.parent)}
-            onPrint={qr === "referral" ? printReferral! : printParent} />
+            onPrint={qr === "referral" ? printReferral! : printParent}
+            onEmail={qr === "referral" && d.me.admission ? async () => (await api(`/applicants/${a.id}/referral-email`, { method: "POST" })).to : undefined} />
         )}
         {tab === "profile" && <ProfileTab a={a} api={api} me={d.me} onSaved={changed} onDeleted={() => { onChanged(); onClose(); }} />}
         {tab === "parent" && parentTpl && (
@@ -169,8 +170,14 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
 }
 
 /** QR на экране — родитель или ученик сканирует сразу; бумага — только если нужна. */
-function QrModal({ title, sub, url, mark, onPrint, onClose }: { title: string; sub: string; url: string; mark?: string | null; onPrint: () => void; onClose: () => void }) {
+function QrModal({ title, sub, url, mark, onPrint, onEmail, onClose }: { title: string; sub: string; url: string; mark?: string | null; onPrint: () => void; onEmail?: () => Promise<string>; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
+  const [mail, setMail] = useState<{ busy?: boolean; ok?: boolean; text?: string }>({});
+  const email = async () => {
+    if (!onEmail) return;
+    setMail({ busy: true });
+    try { setMail({ ok: true, text: `Отправлено: ${await onEmail()}` }); } catch (e: any) { setMail({ ok: false, text: e.message }); }
+  };
   return (
     <Modal title={title} onClose={onClose}>
       <div className="flex flex-col items-center gap-3 text-center">
@@ -180,21 +187,23 @@ function QrModal({ title, sub, url, mark, onPrint, onClose }: { title: string; s
         <div className="flex flex-wrap justify-center gap-2 pt-1">
           <button className={btn} onClick={() => { navigator.clipboard?.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}><Copy className="w-4 h-4" /> {copied ? "Скопировано" : "Ссылка"}</button>
           <button className={btn} onClick={onPrint}><Printer className="w-4 h-4" /> Печать</button>
+          {onEmail && <button className={btn} disabled={mail.busy} onClick={email}>{mail.busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />} На почту</button>}
         </div>
+        {mail.text && <div className={`text-sm ${mail.ok ? "text-emerald-600" : "text-rose-600"}`}>{mail.text}</div>}
       </div>
     </Modal>
   );
 }
 
 function ProfileTab({ a, api, me, onSaved, onDeleted }: { a: Applicant; api: Api; me: Me; onSaved: () => void; onDeleted: () => void }) {
-  const [f, setF] = useState({ name: a.child.name, birthDate: a.child.birthDate, grade: a.child.grade, school: a.child.school || "", parentName: a.parent.name, phone: a.parent.phone, note: a.note });
+  const [f, setF] = useState({ name: a.child.name, birthDate: a.child.birthDate, grade: a.child.grade, school: a.child.school || "", parentName: a.parent.name, phone: a.parent.phone, email: a.parent.email || "", note: a.note });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const canEdit = me.admission;
-  const dirty = f.name !== a.child.name || f.birthDate !== a.child.birthDate || f.grade !== a.child.grade || f.school !== (a.child.school || "") || f.parentName !== a.parent.name || f.phone !== a.parent.phone || f.note !== a.note;
+  const dirty = f.name !== a.child.name || f.birthDate !== a.child.birthDate || f.grade !== a.child.grade || f.school !== (a.child.school || "") || f.parentName !== a.parent.name || f.phone !== a.parent.phone || f.email !== (a.parent.email || "") || f.note !== a.note;
   const save = async () => {
     setBusy(true); setMsg(null);
-    try { await api(`/applicants/${a.id}`, { method: "PUT", body: JSON.stringify({ child: { name: f.name, birthDate: f.birthDate, grade: f.grade, school: f.school }, parent: { name: f.parentName, phone: f.phone }, note: f.note }) }); setMsg("Сохранено"); onSaved(); }
+    try { await api(`/applicants/${a.id}`, { method: "PUT", body: JSON.stringify({ child: { name: f.name, birthDate: f.birthDate, grade: f.grade, school: f.school }, parent: { name: f.parentName, phone: f.phone, email: f.email }, note: f.note }) }); setMsg("Сохранено"); onSaved(); }
     catch (e: any) { setMsg(e.message); } finally { setBusy(false); }
   };
   const del = async () => {
@@ -214,6 +223,7 @@ function ProfileTab({ a, api, me, onSaved, onDeleted }: { a: Applicant; api: Api
       <div className="sm:col-span-2"><span className={label}>Школа, из которой переходит</span><input className={input} value={f.school} onChange={set("school")} /></div>
       <div><span className={label}>ФИО родителя</span><input className={input} value={f.parentName} onChange={set("parentName")} /></div>
       <div><span className={label}>Телефон родителя</span><input className={input} value={f.phone} onChange={set("phone")} /></div>
+      <div><span className={label}>Почта родителя</span><input className={input} type="email" value={f.email} onChange={set("email")} /></div>
       <div className="sm:col-span-2"><span className={label}>Заметка</span><textarea rows={2} className={input} value={f.note} onChange={set("note")} /></div>
       <div className="sm:col-span-2 flex flex-wrap items-center gap-2">
         {canEdit && <button className={btnPrimary} disabled={busy || !dirty} onClick={save}>{busy && <Loader2 className="w-4 h-4 animate-spin" />} Сохранить</button>}

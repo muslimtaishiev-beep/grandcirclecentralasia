@@ -31,6 +31,7 @@ import { isFileValue, fileLabel, fileInfo } from '../../../shared/uploads';
 import { useAuth } from '../../../contexts/AuthContext';
 import { tenantLogos } from '../../../shared/legal';
 import FormSummary from './FormSummary';
+import EmailTemplateSelect from '../../../components/workspace/EmailTemplateSelect';
 
 /**
  * Обрыв сети браузеры называют по-своему: Safari — «Load failed», Chrome —
@@ -152,6 +153,7 @@ export default function FormBuilder() {
    * собирает страницу «все наши анкеты» на своём сайте.
    */
   const [publicListed, setPublicListed] = useState(false);
+  const [emailTemplateId, setEmailTemplateId] = useState('');
   // Режим формы: обычная заявка или билет на событие. От него зависят набор
   // статусов и появление QR-билета у гостя после одобрения.
   const [formMode, setFormMode] = useState<FormMode>('application');
@@ -782,6 +784,7 @@ export default function FormBuilder() {
         fields: cleanFields,
         qrTrackingEnabled,
         publicListed,
+        emailTemplateId,
         mode: formMode,
         active: true,
         updatedAt: serverTimestamp(),
@@ -1021,6 +1024,7 @@ export default function FormBuilder() {
               // Новая анкета не публичная, даже если прошлая была: показ
               // наружу — осознанное решение, а не наследство от соседней.
               setPublicListed(false);
+              setEmailTemplateId('');
               setFields([
                 { id: `field_${Date.now()}`, label: 'Фамилия и имя', type: 'text', required: true, placeholder: '' },
               ]);
@@ -1145,6 +1149,7 @@ export default function FormBuilder() {
                         setFormMode(form.mode === 'ticket' ? 'ticket' : 'application');
                         setQrTrackingEnabled(form.qrTrackingEnabled !== false);
                         setPublicListed(form.publicListed === true);
+                        setEmailTemplateId(String(form.emailTemplateId || ''));
                         setIsModalOpen(true);
                       }}
                       className="text-[var(--text-muted)] hover:text-emerald-500 font-bold flex items-center gap-1.5 transition cursor-pointer">
@@ -2002,6 +2007,7 @@ export default function FormBuilder() {
                       </span>
                     </span>
                   </label>
+                  {currentOrgId && <EmailTemplateSelect tenantId={currentOrgId} title="Письмо после отправки" value={emailTemplateId} onChange={setEmailTemplateId} />}
                 </div>
 
                 <div className="flex items-center justify-between">

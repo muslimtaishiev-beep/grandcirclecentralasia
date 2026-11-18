@@ -13,6 +13,7 @@ import { verifySession } from "../server/session.js";
 import { hasAnyPermission } from "../server/access.js";
 import { checkTenantOpen, requireScreen, loadTenant } from "../server/tenantAccess.js";
 import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
+import { appUrl, sendTemplated } from "../server/emailEvents.js";
 import { sendFormTicketEmail } from "../../emailService.js";
 import { tenantLogos } from "../shared/legal.js";
 
@@ -626,8 +627,15 @@ router.post("/submit", async (req: any, res: any) => {
       status: "new", qrToken, data: clean,
     }));
 
-    // ✉️ Автоматическая отправка электронного билета на почту, если указан e-mail
-    if (applicantEmail && applicantEmail.includes("@")) {
+    // ✉️ Письмо по шаблону формы, если выбран; иначе — стандартный электронный билет.
+    const templated = applicantEmail && form.emailTemplateId
+      ? await sendTemplated({
+          tenantId: String(form.tenantId || ""), templateId: String(form.emailTemplateId), to: applicantEmail,
+          event: "form", refId: ref.id,
+          vars: { имя: applicantName, форма: String(form.title || ""), ссылка: form.qrTrackingEnabled !== false ? `${await appUrl()}/track/${qrToken}` : "" },
+        })
+      : null;
+    if (applicantEmail && applicantEmail.includes("@") && (!templated || templated.reason === "Шаблон не найден")) {
       const emailDetails: Record<string, string> = {};
       if (participationFormat) emailDetails["Формат участия"] = participationFormat;
       if (teamName) emailDetails["Команда"] = teamName;

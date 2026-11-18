@@ -185,6 +185,7 @@ function ItemEditor({ i, t, parent, set, onMove, onDelete }: { i: QItem; t: QTem
             <option value="child.school">Школа, из которой переходит</option>
             <option value="parent.name">ФИО родителя</option>
             <option value="parent.phone">Телефон родителя</option>
+            <option value="parent.email">Почта родителя</option>
           </select>
         </div>
       )}

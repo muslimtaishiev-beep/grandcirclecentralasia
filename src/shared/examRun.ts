@@ -140,6 +140,8 @@ export interface ExamSettings {
     decisions: boolean;
     /** Распределение по группам (классам): список групп. Пусто — выключено. */
     groups: string[];
+    /** Шаблон письма после теста (email_templates). Пусто — письма нет. */
+    emailTemplate?: string;
   };
   display: {
     /** paged — один вопрос на экран, листается прокруткой и кнопками; list — все вопросы раздела лентой. */
@@ -157,6 +159,8 @@ export interface ExamSettings {
     levels?: { mid: number; high: number };
     /** Вместо сертификата и «Отчёта по темам» — анкета кандидата организации. */
     candidateForm?: boolean;
+    /** Шаблон письма родителю с направлением на этот экзамен. Пусто — письма нет. */
+    referralEmail?: string;
   };
   /**
    * Тест на бумаге: вопросов нет, ученик пишет в школе, администратор вносит
@@ -266,6 +270,9 @@ export function sanitizeParts(v: unknown): GradePart[] {
   });
 }
 
+/** Id шаблона письма или пусто. */
+const tplId = (v: unknown): string => (/^[A-Za-z0-9_-]{4,64}$/.test(String(v ?? "")) ? String(v) : "");
+
 export function sanitizeSettings(raw: any): ExamSettings {
   const d = DEFAULT_SETTINGS;
   const r = raw || {};
@@ -315,6 +322,7 @@ export function sanitizeSettings(raw: any): ExamSettings {
       certificateTitle: s(r.results?.certificateTitle, 120) || d.results.certificateTitle,
       decisions: b(r.results?.decisions, d.results.decisions),
       groups: [...new Set<string>((Array.isArray(r.results?.groups) ? r.results.groups : []).map((x: unknown) => s(x, 30)).filter(Boolean))].slice(0, 60),
+      emailTemplate: tplId(r.results?.emailTemplate),
     },
     display: { layout: r.display?.layout === "list" ? "list" : d.display.layout },
     admission: {
@@ -328,6 +336,7 @@ export function sanitizeSettings(raw: any): ExamSettings {
         return { mid, high: Math.max(mid, Math.round(num(r.admission?.levels?.high, 0, 100, 77))) };
       })(),
       candidateForm: b(r.admission?.candidateForm, false),
+      referralEmail: tplId(r.admission?.referralEmail),
     },
     paper: b(r.paper, false),
   };
