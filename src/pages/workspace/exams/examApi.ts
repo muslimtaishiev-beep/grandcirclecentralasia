@@ -23,6 +23,8 @@ export type Api = (path: string, init?: RequestInit) => Promise<any>;
 export interface ExamListItem {
   id: string; title: string; group: string; status: "draft" | "open" | "closed"; code: string; sections: number;
   updatedAt: number; opensAt: number | null; closesAt: number | null; total: number; live: number; done: number;
+  /** Вступительный: для поступающих в эти классы. */
+  grades?: number[]; paper?: boolean;
 }
 
 export const examLink = (code: string) => `${window.location.origin}/exam/${code}`;

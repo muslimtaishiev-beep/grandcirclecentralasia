@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
-import { ArrowLeft, Copy, Download, KeyRound, Loader2, QrCode, Trash2 } from "lucide-react";
+import { ArrowLeft, Copy, Download, KeyRound, Loader2, QrCode, Trash2, UserPlus } from "lucide-react";
 import FancyQr, { QR_THEMES, downloadQr } from "../../../components/forms/FancyQr";
 import { tenantLogos } from "../../../shared/legal";
 import type { Exam } from "../../../shared/examRun";
@@ -10,6 +10,9 @@ import AttemptsTab from "./AttemptsTab";
 import ExamAnalyticsTab from "./ExamAnalyticsTab";
 import ExamSettingsTab from "./ExamSettingsTab";
 import AttemptModal from "./AttemptModal";
+import NewApplicantModal from "../admissions/NewApplicantModal";
+import { useAdmissionApi } from "../admissions/admissionApi";
+import { resolvePermissions, type PermissionKey } from "../../../shared/permissions";
 
 /** Один экзамен: работы, аналитика, конструктор; сверху — ссылка, QR и PIN. */
 export default function ExamDetailPage() {
@@ -28,6 +31,11 @@ export default function ExamDetailPage() {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [openAttempt, setOpenAttempt] = useState<string | null>(null);
+  const [newApplicant, setNewApplicant] = useState(false);
+  const admApi = useAdmissionApi(tenantId);
+  const reception = useMemo(() => (Array.isArray(activeTenant?.effectivePermissions)
+    ? activeTenant.effectivePermissions.includes("admission:manage")
+    : resolvePermissions({ role: activeTenant?.role, permissions: activeTenant?.permissions, customPermissions: activeTenant?.customPermissions, rolePermissions: activeTenant?.customRole?.permissions, disabledModules: activeTenant?.disabledModules }).has("admission:manage" as PermissionKey)), [activeTenant]);
 
   const load = useCallback(async () => {
     try { const j = await api(`/exams/${examId}`); setExam(j.exam); setPin(j.pin); setCanEdit(j.canEdit); if (!j.exam.sections.length) setTab(t => (t === "attempts" ? "settings" : t)); }
@@ -75,6 +83,9 @@ export default function ExamDetailPage() {
             ))}
           </div>
         )}
+        {reception && !!exam.settings.admission?.grades?.length && (
+          <button className={btnPrimary} onClick={() => setNewApplicant(true)}><UserPlus className="w-4 h-4" /> Поступающий{exam.settings.admission.grades.length === 1 ? ` в ${exam.settings.admission.grades[0]} класс` : ""}</button>
+        )}
         {canEdit && <button className={btn} onClick={remove} title="Удалить"><Trash2 className="w-4 h-4" /></button>}
       </div>
       {error && <div className="text-sm text-rose-600">{error}</div>}
@@ -114,6 +125,11 @@ export default function ExamDetailPage() {
         <ExamSettingsTab exam={exam} api={api} bankApi={bankApi} canEdit={canEdit} onSaved={e => { setExam(e); void load(); }} />
       </div>
 
+      {newApplicant && (
+        <NewApplicantModal api={admApi} grade={exam.settings.admission?.grades?.length === 1 ? String(exam.settings.admission.grades[0]) : undefined}
+          onClose={() => setNewApplicant(false)}
+          onDone={id => navigate(`/workspace/${tenantId}/exams?tab=admissions&open=${id}&ctab=profile&qr=parent`)} />
+      )}
       {openAttempt && <AttemptModal attemptId={openAttempt} exam={exam} api={api} tenant={activeTenant} canEdit={canEdit} onChanged={() => {}} onClose={() => setOpenAttempt(null)} />}
       {qr && (
         <Modal title={exam.title} onClose={() => setQr(false)}>

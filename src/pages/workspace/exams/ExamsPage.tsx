@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { canAdmissions, canExamsAdmin, resolvePermissions, type PermissionKey } from "../../../shared/permissions";
 import BankTab from "./BankTab";
@@ -6,6 +6,8 @@ import ExamsListTab from "./ExamsListTab";
 import ArchiveTab from "./ArchiveTab";
 import { useExamApi } from "./examApi";
 import AdmissionsPage from "../admissions/AdmissionsPage";
+import NewApplicantModal from "../admissions/NewApplicantModal";
+import { useAdmissionApi } from "../admissions/admissionApi";
 
 /**
  * «Экзамены»: две стороны. «Админ» — экзамены из конструктора, банк вопросов
@@ -21,6 +23,8 @@ export default function ExamsPage() {
   const bankApi = useExamApi(tenantId, "exam-builder");
   const adminApi = useExamApi(tenantId, "exam-admin");
   const [params, setParams] = useSearchParams();
+  const admApi = useAdmissionApi(tenantId);
+  const [newApplicant, setNewApplicant] = useState<null | { grade?: number }>(null);
   const granted = useMemo(() => (Array.isArray(activeTenant?.effectivePermissions)
     ? new Set<PermissionKey>(activeTenant.effectivePermissions)
     : resolvePermissions({ role: activeTenant?.role, permissions: activeTenant?.permissions, customPermissions: activeTenant?.customPermissions, rolePermissions: activeTenant?.customRole?.permissions, disabledModules: activeTenant?.disabledModules })), [activeTenant]);
@@ -50,11 +54,16 @@ export default function ExamsPage() {
                 className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 -mb-px ${tab === k ? "border-[var(--accent)] text-[var(--accent)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-main)]"}`}>{l}</button>
             ))}
           </div>
-          {tenantId && tab === "list" && <ExamsListTab api={adminApi} tenantId={tenantId} />}
+          {tenantId && tab === "list" && <ExamsListTab api={adminApi} tenantId={tenantId} onNewApplicant={reception ? grade => setNewApplicant({ grade }) : undefined} />}
           {tenantId && tab === "admissions" && <AdmissionsPage embedded mode="admin" />}
           {tenantId && tab === "bank" && <BankTab api={bankApi} />}
           {tenantId && tab === "archive" && <ArchiveTab api={adminApi} />}
         </>
+      )}
+      {newApplicant && (
+        <NewApplicantModal api={admApi} grade={newApplicant.grade ? String(newApplicant.grade) : undefined} onClose={() => setNewApplicant(null)}
+          // Заведён — в «Поступающие», на его карточку, и сразу QR анкеты для родителя.
+          onDone={id => { setNewApplicant(null); setParams({ tab: "admissions", open: id, ctab: "profile", qr: "parent" }, { replace: true }); }} />
       )}
     </div>
   );

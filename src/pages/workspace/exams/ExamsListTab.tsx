@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Copy, Loader2, Plus, Radio } from "lucide-react";
+import { Copy, Loader2, Plus, Radio, UserPlus } from "lucide-react";
 import { Modal, btn, btnPrimary, card, input, label } from "../journals/components/ui";
 import type { Api, ExamListItem } from "./examApi";
 
@@ -11,7 +11,8 @@ const STATUS = {
 } as const;
 
 /** Экзамены организации, сгруппированные по папкам («Вступительные 2027»…). */
-export default function ExamsListTab({ api, tenantId }: { api: Api; tenantId: string }) {
+/** onNewApplicant — у кого право приёма: «+ Поступающий» рядом с «+ Экзамен» и у каждого вступительного теста (класс подставится). */
+export default function ExamsListTab({ api, tenantId, onNewApplicant }: { api: Api; tenantId: string; onNewApplicant?: (grade?: number) => void }) {
   const [exams, setExams] = useState<ExamListItem[]>([]);
   const [canEdit, setCanEdit] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -39,7 +40,10 @@ export default function ExamsListTab({ api, tenantId }: { api: Api; tenantId: st
       {error && <div className="text-sm text-rose-600">{error}</div>}
       <div className="flex justify-between items-center gap-3">
         <p className="text-sm text-[var(--text-muted)]">Экзамен собирается из дисциплин банка. У каждого — своя ссылка, PIN и настройки проверки.</p>
-        {canEdit && <button className={btnPrimary} onClick={() => setCreating({})}><Plus className="w-4 h-4" /> Экзамен</button>}
+        <div className="flex flex-wrap gap-2 shrink-0">
+          {onNewApplicant && <button className={btnPrimary} onClick={() => onNewApplicant()}><UserPlus className="w-4 h-4" /> Поступающий</button>}
+          {canEdit && <button className={btnPrimary} onClick={() => setCreating({})}><Plus className="w-4 h-4" /> Экзамен</button>}
+        </div>
       </div>
       {!exams.length && (
         <div className={`${card} p-10 text-center text-sm text-[var(--text-muted)]`}>
@@ -60,7 +64,10 @@ export default function ExamsListTab({ api, tenantId }: { api: Api; tenantId: st
                   <div className="text-xs text-[var(--text-muted)] mt-1">{e.sections} дисц. · сдали {e.done}</div>
                   {e.live > 0 && <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700"><Radio className="w-3.5 h-3.5 animate-pulse" /> Сейчас сдают: {e.live}</div>}
                 </Link>
-                {canEdit && <button className="mt-3 text-xs text-[var(--accent)] hover:underline inline-flex items-center gap-1" onClick={() => setCreating({ copyFrom: e.id })}><Copy className="w-3 h-3" /> Копия (например на другой класс)</button>}
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
+                  {onNewApplicant && !!e.grades?.length && <button className="text-xs font-medium text-[var(--accent)] hover:underline inline-flex items-center gap-1" onClick={() => onNewApplicant(e.grades!.length === 1 ? e.grades![0] : undefined)}><UserPlus className="w-3.5 h-3.5" /> Поступающий{e.grades!.length === 1 ? ` в ${e.grades![0]} класс` : ""}</button>}
+                  {canEdit && <button className="text-xs text-[var(--accent)] hover:underline inline-flex items-center gap-1" onClick={() => setCreating({ copyFrom: e.id })}><Copy className="w-3 h-3" /> Копия (например на другой класс)</button>}
+                </div>
               </div>
             ))}
           </div>

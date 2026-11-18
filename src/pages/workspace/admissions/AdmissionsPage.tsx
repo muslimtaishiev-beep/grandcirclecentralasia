@@ -6,6 +6,7 @@ import { gradeOf } from "../../../shared/questionnaires";
 import { Modal, btn, btnPrimary, card, input, label } from "../journals/components/ui";
 import { TONE, useAdmissionApi, type Me, type Row } from "./admissionApi";
 import ApplicantCard from "./ApplicantCard";
+import NewApplicantModal from "./NewApplicantModal";
 import QrScanModal from "./QrScanModal";
 import TemplatesTab from "./TemplatesTab";
 import { downloadSessionById } from "./sessionPdf";
@@ -163,7 +164,7 @@ export default function AdmissionsPage({ embedded, mode = "admin" }: { embedded?
         </>
       )}
 
-      {creating && <CreateModal api={api} onClose={() => setCreating(false)} onDone={async id => {
+      {creating && <NewApplicantModal api={api} onClose={() => setCreating(false)} onDone={async id => {
         setCreating(false); await load();
         // Сразу QR анкеты для родителя — сканирует на месте, печать по желанию.
         const p = new URLSearchParams(params); p.set("open", id); p.set("ctab", "profile"); p.set("qr", "parent"); setParams(p, { replace: true });
@@ -178,34 +179,3 @@ const attemptDecision = (r: Row) => r.attempt?.decision || "";
 /** Этапы после направления — академическая часть, психологу не показываются. */
 const ACADEMIC_STAGES = new Set<Stage>(["testing", "tested", "decided"]);
 
-function CreateModal({ api, onClose, onDone }: { api: ReturnType<typeof useAdmissionApi>; onClose: () => void; onDone: (id: string) => void }) {
-  const [f, setF] = useState({ name: "", birthDate: "", grade: "", parentName: "", phone: "", note: "" });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const save = async () => {
-    setBusy(true); setError(null);
-    try {
-      const j = await api("/applicants", { method: "POST", body: JSON.stringify({ child: { name: f.name, birthDate: f.birthDate, grade: f.grade }, parent: { name: f.parentName, phone: f.phone }, note: f.note }) });
-      onDone(j.id);
-    } catch (e: any) { setError(e.message); setBusy(false); }
-  };
-  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
-  return (
-    <Modal title="Новый поступающий" onClose={onClose}>
-      <div className="space-y-3">
-        <div><span className={label}>ФИО ребёнка</span><input className={input} value={f.name} onChange={set("name")} autoFocus /></div>
-        <div className="grid grid-cols-2 gap-2">
-          <div><span className={label}>Поступает в класс</span><input className={input} inputMode="numeric" value={f.grade} onChange={set("grade")} placeholder="7" /></div>
-          <div><span className={label}>Дата рождения</span><input type="date" className={input} value={f.birthDate} onChange={set("birthDate")} /></div>
-        </div>
-        <div><span className={label}>ФИО родителя</span><input className={input} value={f.parentName} onChange={set("parentName")} /></div>
-        <div><span className={label}>Телефон родителя</span><input className={input} inputMode="tel" value={f.phone} onChange={set("phone")} placeholder="+996 …" /></div>
-        {error && <div className="text-sm text-rose-600">{error}</div>}
-        <div className="flex justify-end gap-2">
-          <button className={btn} onClick={onClose}>Отмена</button>
-          <button className={btnPrimary} disabled={busy || !f.name.trim() || !f.grade.trim()} onClick={save}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Завести</button>
-        </div>
-      </div>
-    </Modal>
-  );
-}

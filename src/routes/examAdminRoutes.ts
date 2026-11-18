@@ -89,7 +89,7 @@ router.get("/:tenantId/exams", ...view, async (req: any, res: any) => {
     }
     const exams = es.docs.map(d => ({ ...(d.data() as Exam), id: d.id }))
       .filter(e => !e.archived)
-      .map(e => ({ id: e.id, title: e.title, group: e.group, status: e.status, code: e.code, sections: e.sections.length, updatedAt: e.updatedAt, opensAt: e.settings.access.opensAt, closesAt: e.settings.access.closesAt, ...(stats.get(e.id) || { total: 0, live: 0, done: 0 }) }))
+      .map(e => ({ id: e.id, title: e.title, group: e.group, status: e.status, code: e.code, sections: e.sections.length, updatedAt: e.updatedAt, opensAt: e.settings.access.opensAt, closesAt: e.settings.access.closesAt, grades: e.settings.admission?.grades || [], paper: !!e.settings.paper, ...(stats.get(e.id) || { total: 0, live: 0, done: 0 }) }))
       .sort((a, b) => a.group.localeCompare(b.group, "ru") || a.title.localeCompare(b.title, "ru", { numeric: true }));
     return res.json({ success: true, exams, canEdit: req.canEdit });
   } catch (e: any) { return fail(res, 500, e.message); }
