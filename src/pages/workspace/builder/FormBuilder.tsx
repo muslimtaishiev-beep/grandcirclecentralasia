@@ -30,7 +30,7 @@ import FileViewer, { type ViewerFile } from './FileViewer';
 import { isFileValue, fileLabel, fileInfo } from '../../../shared/uploads';
 import { useAuth } from '../../../contexts/AuthContext';
 import { tenantLogos } from '../../../shared/legal';
-import FormSummary from './FormSummary';
+import FormSummary, { WhoModal, type WhoList } from './FormSummary';
 import EmailTemplateSelect from '../../../components/workspace/EmailTemplateSelect';
 import EmailResend from '../../../components/workspace/EmailResend';
 import { TelegramIcon } from '../../../components/workspace/TelegramIcon';
@@ -350,6 +350,8 @@ export default function FormBuilder() {
   };
   const [showDeleted, setShowDeleted] = useState(false);
   const [subView, setSubView] = useState<any | null>(null);
+  /** Сводка: кто ответил выбранным вариантом — окно поверх, заявка открывается ещё выше. */
+  const [who, setWho] = useState<WhoList | null>(null);
   const [busySub, setBusySub] = useState<string | null>(null);
 
   /** Название формы заявки — текущее: форму могли переименовать после подачи. */
@@ -1418,7 +1420,9 @@ export default function FormBuilder() {
 
         {subMode === 'summary' && filterFormId ? (
           <FormSummary fields={forms.find(f => f.id === filterFormId)?.fields || []} subs={visibleSubs.filter((x: any) => x.formId === filterFormId)}
-            onPick={(id, v) => { setFieldFilters(p => ({ ...p, [id]: v })); setShowFilters(true); setSubMode('list'); }} />
+            onPick={(id, v) => { setWho(null); setFieldFilters(p => ({ ...p, [id]: v })); setShowFilters(true); setSubMode('list'); }}
+            onWho={setWho}
+            onOpen={id => { const x = submissions.find(s => s.id === id); if (x) setSubView(x); }} />
         ) : (
         <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-xs">
           {visibleSubs.length === 0 ? (
@@ -1790,6 +1794,7 @@ export default function FormBuilder() {
       )}
 
       {/* Окно с полной заявкой: в таблице видна только выжимка. */}
+      {who && <WhoModal who={who} subs={submissions} onClose={() => setWho(null)} onOpen={id => { const x = submissions.find(s => s.id === id); if (x) setSubView(x); }} />}
       {subView && (() => {
         // Окно держит живую версию: после правки или смены статуса снимок
         // приходит через onSnapshot, и окно сразу показывает новое.
