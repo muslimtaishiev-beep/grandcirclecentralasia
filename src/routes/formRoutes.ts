@@ -8,7 +8,7 @@ import {
   isFormStatus, type FormStatus, type FormMode,
 } from "../shared/formStatuses.js";
 import { checkFileValue, FILE_LIMITS } from "../shared/uploads.js";
-import { cleanMulti, fieldVisible } from "../shared/formFields.js";
+import { EMAIL_RE, cleanMulti, fieldVisible } from "../shared/formFields.js";
 import { verifySession } from "../server/session.js";
 import { hasAnyPermission } from "../server/access.js";
 import { checkTenantOpen, requireScreen, loadTenant } from "../server/tenantAccess.js";
@@ -456,6 +456,9 @@ router.post("/submit", async (req: any, res: any) => {
           }
         }
         fileChars += value.length;
+      } else if (f.type === "email") {
+        value = str(raw, 200).replace(/\s+/g, "").toLowerCase();
+        if (value && !EMAIL_RE.test(value)) return res.status(400).json({ success: false, error: `«${f.label || "Почта"}» — проверьте адрес почты.` });
       } else {
         value = str(raw, 2000);
       }
@@ -517,7 +520,9 @@ router.post("/submit", async (req: any, res: any) => {
 
     const applicantName = pick(/фамили|имя|фио|name/i, "field_1790767291933");
     const applicantPhone = pick(/телефон|phone|моб/i, "field_1790768013294");
-    const applicantEmail = pick(/e-?mail|почт/i, "field_1790767998828");
+    // Почта — из поля типа «Почта»; у старых форм — по названию поля.
+    const emailField = fields.find((x: any) => x.type === "email" && String(clean[x.id] || "").includes("@"));
+    const applicantEmail = emailField ? String(clean[emailField.id]) : pick(/e-?mail|почт/i, "field_1790767998828");
     const participationFormat = pick(/формат|format/i, "field_1790768170123");
     const teamName = pick(/название команды|team name/i, "field_1790768063759");
     const teamCode = pick(/код команды|team code/i, "field_1790768090009");
@@ -1915,6 +1920,11 @@ function coerceFieldValue(f: any, raw: unknown): Coerced {
       if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return { ok: false, error: `«${label}» — нужна дата.` };
       return { ok: true, value: v };
     }
+    case "email": {
+      const v = str(raw, 200).replace(/\s+/g, "").toLowerCase();
+      if (v && !EMAIL_RE.test(v)) return { ok: false, error: `«${label}» — проверьте адрес почты.` };
+      return { ok: true, value: v };
+    }
     case "number": {
       const v = str(raw, 50).replace(",", ".");
       if (v && !Number.isFinite(Number(v))) return { ok: false, error: `«${label}» — нужно число.` };
@@ -1934,7 +1944,7 @@ function deriveContacts(fields: any[], data: Record<string, any>) {
   return {
     applicantName: pick(/фамили|имя|фио|name/i),
     applicantPhone: pick(/телефон|phone|моб/i),
-    applicantEmail: pick(/e-?mail|почт/i),
+    applicantEmail: (() => { const f = fields.find((x: any) => x.type === "email" && String(data?.[x.id] || "").includes("@")); return f ? str(data[f.id], 200) : pick(/e-?mail|почт/i); })(),
   };
 }
 

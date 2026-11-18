@@ -2066,6 +2066,7 @@ export default function FormBuilder() {
                         <option value="text">Текст</option>
                         <option value="textarea">Многострочный текст</option>
                         <option value="number">Число</option>
+                        <option value="email">Почта</option>
                         <option value="select">Выбор из списка</option>
                         <option value="radio">Один вариант (кнопки)</option>
                         <option value="multi">Несколько вариантов (флажки)</option>

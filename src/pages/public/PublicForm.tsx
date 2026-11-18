@@ -342,7 +342,8 @@ export default function PublicForm() {
                 )
               ) : (
                 <input
-                  type={f.type === "number" ? "number" : f.type === "date" ? "date" : "text"}
+                  type={f.type === "number" ? "number" : f.type === "date" ? "date" : f.type === "email" ? "email" : "text"}
+                  {...(f.type === "email" ? { inputMode: "email" as const, autoComplete: "email", autoCapitalize: "off" } : {})}
                   value={values[f.id] || ""} onChange={e => set(f.id, e.target.value)}
                   placeholder={f.placeholder} className={base} />
               )}

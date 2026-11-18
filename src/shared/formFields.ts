@@ -10,7 +10,10 @@
  *   (как «Перейти к разделу на основе ответа» в Google Forms). Скрытое поле не
  *   обязательно и в заявку не попадает.
  */
-export type FormFieldType = "text" | "textarea" | "select" | "radio" | "multi" | "file" | "date" | "number" | "checkbox" | "section";
+export type FormFieldType = "text" | "textarea" | "select" | "radio" | "multi" | "file" | "date" | "number" | "checkbox" | "section" | "email";
+
+/** Адрес почты: на него уходят письма по шаблону формы. */
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export interface FormFieldDef {
   id: string;
