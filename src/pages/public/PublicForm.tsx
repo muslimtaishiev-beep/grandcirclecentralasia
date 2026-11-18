@@ -5,7 +5,7 @@ import LegalLinks from "../../components/public/LegalLinks";
 import FancyQr, { QR_THEMES, QrThemePicker, downloadQr, type QrTheme } from "../../components/forms/FancyQr";
 import { compressImageToDataUrl } from "../../lib/compressImage";
 import { buildFileValue, checkFileValue, fileInfo, formatSize, isFileValue, FILE_LIMITS } from "../../shared/uploads";
-import { fieldVisible, OTHER, type FormFieldDef } from "../../shared/formFields";
+import { OTHER, visibleFields, type FormFieldDef } from "../../shared/formFields";
 
 /**
  * Публичная страница заявки — то, что открывается по ссылке из конструктора.
@@ -69,8 +69,8 @@ export default function PublicForm() {
   /** Только видимые поля; «Другое» — с текстом, который вписал человек. */
   const payload = () => {
     const data: Record<string, any> = {};
-    for (const f of form?.fields || []) {
-      if (f.type === "section" || !fieldVisible(f, values)) continue;
+    for (const f of visibleFields(form?.fields || [], values)) {
+      if (f.type === "section") continue;
       let v = values[f.id];
       if (f.type === "multi") {
         const other = String(values[`${f.id}__other`] || "").trim();
@@ -230,7 +230,7 @@ export default function PublicForm() {
         </div>
 
         <div className="p-6 grid gap-4">
-          {form.fields.filter(f => fieldVisible(f, values)).map(f => f.type === "section" ? (
+          {visibleFields(form.fields, values).map(f => f.type === "section" ? (
             <div key={f.id} className="pt-4 border-t border-slate-100 first:border-0 first:pt-0">
               <h2 className="text-lg font-bold text-slate-900">{f.label}</h2>
               {f.hint && <p className="text-sm text-slate-500 mt-0.5 whitespace-pre-line">{f.hint}</p>}

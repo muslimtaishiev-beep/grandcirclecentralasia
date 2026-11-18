@@ -37,6 +37,16 @@ export function fieldVisible(f: Pick<FormFieldDef, "showIf">, values: Record<str
   return c.in.includes(String(v ?? ""));
 }
 
+/** Видимые поля по порядку: ответ скрытого поля не открывает зависящие от него. */
+export function visibleFields<F extends Pick<FormFieldDef, "id" | "showIf">>(fields: F[], values: Record<string, unknown>): F[] {
+  const eff: Record<string, unknown> = {};
+  return fields.filter(f => {
+    if (!fieldVisible(f, eff)) return false;
+    eff[f.id] = values[f.id];
+    return true;
+  });
+}
+
 /**
  * Ответ на «несколько вариантов»: только варианты поля (и «Другое: …», если
  * разрешено), без повторов, не больше maxSelect.
