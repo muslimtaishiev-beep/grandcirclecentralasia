@@ -17,7 +17,8 @@ import { downloadSessionById } from "./sessionPdf";
  */
 const no = (n: number) => String(n).padStart(4, "0");
 
-export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}) {
+/** mode: «admin» — приём (завести, QR, направление, тест, решение); «psych» — только сессии. */
+export default function AdmissionsPage({ embedded, mode = "admin" }: { embedded?: boolean; mode?: "admin" | "psych" } = {}) {
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
   const tenantId: string = activeTenant?.id || "";
   const api = useAdmissionApi(tenantId);
@@ -77,10 +78,10 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
   const excel = async () => {
     const { default: ExcelJS } = await import("exceljs");
     const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet("Поступающие");
-    ws.addRow(["№", "ФИО ребёнка", "Класс", "Дата рождения", "Родитель", "Телефон", "Анкета родителя", "Психолог", ...(me.academic ? ["Тест", "Результат", "Решение"] : []), "Этап"]);
+    ws.addRow(["№", "ФИО ребёнка", "Класс", "Дата рождения", "Родитель", "Телефон", "Анкета родителя", "Психолог", ...((me.academic && mode === "admin") ? ["Тест", "Результат", "Решение"] : []), "Этап"]);
     for (const r of visible) ws.addRow([no(r.refNo), r.child.name, r.child.grade, r.child.birthDate, r.parent.name, r.parent.phone, r.parentForm.status === "done" ? "да" : "",
       Object.values(r.stages).map(s => `${s.title}: ${s.status === "done" ? s.outcomeLabel : "идёт"}`).join("; "),
-      ...(me.academic ? [r.attempt?.examTitle || r.referral?.examTitle || (r.paperResults ? "на бумаге" : ""), r.attempt?.parts.map(p => `${p.title}: ${p.value}`).join("; ") || (r.attempt?.percent != null ? `${r.attempt.percent}%` : ""),
+      ...((me.academic && mode === "admin") ? [r.attempt?.examTitle || r.referral?.examTitle || (r.paperResults ? "на бумаге" : ""), r.attempt?.parts.map(p => `${p.title}: ${p.value}`).join("; ") || (r.attempt?.percent != null ? `${r.attempt.percent}%` : ""),
         r.decision || attemptDecision(r)] : []), STAGE_LABEL[r.stage]]);
     ws.getRow(1).font = { bold: true }; ws.columns.forEach(c => { c.width = 18; });
     const buf = await wb.xlsx.writeBuffer();
@@ -98,7 +99,7 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
           <button className={`${btn} rounded-l-none border-l-0`} type="submit"><Search className="w-4 h-4" /> Найти</button>
         </form>
         <button className={btn} onClick={() => setScan(true)}><QrCode className="w-4 h-4" /> Сканер</button>
-        {me.admission && <button className={btnPrimary} onClick={() => setCreating(true)}><UserPlus className="w-4 h-4" /> Поступающий</button>}
+        {me.admission && mode === "admin" && <button className={btnPrimary} onClick={() => setCreating(true)}><UserPlus className="w-4 h-4" /> Поступающий</button>}
       </div>
 
       <div className="flex gap-1 border-b border-[var(--border-color)]">
@@ -121,18 +122,18 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
               </select>
             )}
             <select className={`${input} !w-auto`} value={stage} onChange={e => setStage(e.target.value as any)}>
-              <option value="">Все этапы</option>{(Object.keys(STAGE_LABEL) as Stage[]).filter(s => me.academic || !ACADEMIC_STAGES.has(s)).map(s => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}
+              <option value="">Все этапы</option>{(Object.keys(STAGE_LABEL) as Stage[]).filter(s => (me.academic && mode === "admin") || !ACADEMIC_STAGES.has(s)).map(s => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}
             </select>
             <button className={btn} onClick={excel} disabled={!visible.length}><Download className="w-4 h-4" /> Excel</button>
           </div>
           {error && <div className="text-sm text-rose-600">{error}</div>}
           {loading ? <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--text-muted)]" /></div> : !rows.length ? (
-            <div className={`${card} p-10 text-center text-sm text-[var(--text-muted)]`}>Пока никого. {me.admission && <button className="text-[var(--accent)] hover:underline" onClick={() => setCreating(true)}>Завести первого поступающего</button>}</div>
+            <div className={`${card} p-10 text-center text-sm text-[var(--text-muted)]`}>Пока никого. {me.admission && mode === "admin" && <button className="text-[var(--accent)] hover:underline" onClick={() => setCreating(true)}>Завести первого поступающего</button>}</div>
           ) : (
             <div className={`${card} overflow-x-auto`}>
               <table className="w-full text-sm min-w-[860px]">
                 <thead className="text-[11px] uppercase font-mono text-[var(--text-muted)] bg-[var(--bg-panel)]">
-                  <tr>{["№", "Ребёнок", "Класс", "Анкета род.", "Психолог", ...(me.academic ? ["Тест", "Решение"] : []), "Этап"].map(h => <th key={h} className="px-3 py-2.5 text-left whitespace-nowrap">{h}</th>)}</tr>
+                  <tr>{["№", "Ребёнок", "Класс", "Анкета род.", "Психолог", ...((me.academic && mode === "admin") ? ["Тест", "Решение"] : []), "Этап"].map(h => <th key={h} className="px-3 py-2.5 text-left whitespace-nowrap">{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {visible.map(r => (
@@ -146,15 +147,15 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
                           <button className="ml-1 align-middle p-1 rounded-md text-[var(--accent)] hover:bg-[var(--accent)]/10 disabled:opacity-50" title="Скачать бланк сессии" aria-label="Скачать бланк сессии" disabled={saving === r.id}
                             onClick={e => { e.stopPropagation(); void downloadSession(r.id); }}>{saving === r.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}</button>
                         )}</td>
-                      {me.academic && <td className="px-3 py-2 text-xs">
+                      {(me.academic && mode === "admin") && <td className="px-3 py-2 text-xs">
                         {r.attempt ? <><div className="text-[var(--text-main)]">{r.attempt.examTitle}</div><div className="text-[var(--text-muted)]">{r.attempt.status === "in_progress" ? "пишет" : r.attempt.parts.map(p => `${p.title}: ${p.value}`).join(" · ") || (r.attempt.percent != null ? `${r.attempt.percent}%` : "сдан")}</div></>
                           : r.referral ? <span className="text-sky-700">направлен{r.referral.manual ? " (вручную)" : ""}</span> : r.paperResults ? "на бумаге" : <span className="text-[var(--text-muted)]">—</span>}
                       </td>}
-                      {me.academic && <td className="px-3 py-2 text-xs">{r.decision || attemptDecision(r) || "—"}</td>}
-                      <td className="px-3 py-2 text-xs whitespace-nowrap text-[var(--text-muted)]">{STAGE_LABEL[r.stage]}</td>
+                      {(me.academic && mode === "admin") && <td className="px-3 py-2 text-xs">{r.decision || attemptDecision(r) || "—"}</td>}
+                      <td className="px-3 py-2 text-xs whitespace-nowrap text-[var(--text-muted)]">{STAGE_LABEL[mode === "psych" && ACADEMIC_STAGES.has(r.stage) ? "referred" : r.stage]}</td>
                     </tr>
                   ))}
-                  {!visible.length && <tr><td colSpan={me.academic ? 8 : 6} className="py-8 text-center text-[var(--text-muted)]">Ничего не найдено</td></tr>}
+                  {!visible.length && <tr><td colSpan={(me.academic && mode === "admin") ? 8 : 6} className="py-8 text-center text-[var(--text-muted)]">Ничего не найдено</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -168,7 +169,7 @@ export default function AdmissionsPage({ embedded }: { embedded?: boolean } = {}
         const p = new URLSearchParams(params); p.set("open", id); p.set("ctab", "profile"); p.set("qr", "parent"); setParams(p, { replace: true });
       }} />}
       {scan && <QrScanModal onClose={() => setScan(false)} />}
-      {open && <ApplicantCard key={open} id={open} api={api} tenant={activeTenant} initialTab={params.get("ctab") || undefined} section={params.get("s") || undefined} autoQr={params.get("qr") === "parent" ? "parent" : undefined} onClose={() => openCard(null)} onChanged={load} />}
+      {open && <ApplicantCard key={open} id={open} api={api} tenant={activeTenant} psychMode={mode === "psych"} initialTab={params.get("ctab") || undefined} section={params.get("s") || undefined} autoQr={params.get("qr") === "parent" ? "parent" : undefined} onClose={() => openCard(null)} onChanged={load} />}
     </div>
   );
 }

@@ -100,7 +100,7 @@ function ToAdmissions() {
   const { orgId } = useParams();
   const q = new URLSearchParams(window.location.search);
   if (q.has("tab")) { q.set("ctab", q.get("tab")!); q.delete("tab"); }
-  q.set("side", "psych");
+  q.set("tab", "admissions");
   return <Navigate to={`/workspace/${orgId}/exams?${q.toString()}`} replace />;
 }
 

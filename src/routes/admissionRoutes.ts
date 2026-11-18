@@ -101,7 +101,7 @@ async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEvent, c: {
     for (const aud of ["admin", "psych"] as Audience[]) {
       const title = plan[aud];
       if (!title) continue;
-      const url = `/workspace/${t}/exams?side=psych&open=${a.id}&ctab=${aud === "admin" ? adminTab : "psych"}`;
+      const url = aud === "admin" ? `/workspace/${t}/exams?tab=admissions&open=${a.id}&ctab=${adminTab}` : `/workspace/${t}/exams?side=psych&open=${a.id}&ctab=psych`;
       for (const r of await membersWith(db(), t, AUDIENCE_PERMS[aud])) {
         if (sent.has(r.uid)) continue;
         sent.add(r.uid); n++;
@@ -745,7 +745,8 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
     const c = await staffCaller(db(), l.tenantId, req.user);
     if (c?.member && hasPerm(c, ...ANY)) {
       const tab = hasPerm(c, "admission:manage") ? (l.purpose === "parent" ? "parent" : "test") : hasPerm(c, "psych:conduct") ? "psych" : "profile";
-      return res.json({ success: true, mode: "staff", org, who: c.name, url: `/workspace/${l.tenantId}/exams?side=psych&open=${a.id}&ctab=${tab}${req.query.s ? `&s=${encodeURIComponent(String(req.query.s).slice(0, 40))}` : ""}`, child: a.child.name, refNo: a.refNo });
+      const part = hasPerm(c, "admission:manage") ? "tab=admissions" : "side=psych";
+      return res.json({ success: true, mode: "staff", org, who: c.name, url: `/workspace/${l.tenantId}/exams?${part}&open=${a.id}&ctab=${tab}${req.query.s ? `&s=${encodeURIComponent(String(req.query.s).slice(0, 40))}` : ""}`, child: a.child.name, refNo: a.refNo });
     }
     const signedIn = !!c;
     if (l.purpose === "card") return res.json({ success: true, mode: "staff_only", org, signedIn });

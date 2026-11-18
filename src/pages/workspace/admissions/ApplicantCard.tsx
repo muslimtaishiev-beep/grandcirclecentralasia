@@ -32,8 +32,10 @@ const AUDIT: Record<string, string> = {
   decision: "Решение", feedback: "Обратная связь", relink: "Перевыпущен QR", deleted: "Карточка удалена",
 };
 
-export default function ApplicantCard({ id, api, tenant, initialTab, section, autoQr, onClose, onChanged }: {
+export default function ApplicantCard({ id, api, tenant, initialTab, section, autoQr, psychMode, onClose, onChanged }: {
   id: string; api: Api; tenant: any; initialTab?: string; section?: string;
+  /** Психологическая часть «Экзаменов»: только сессия, даже у того, у кого есть и права приёма. */
+  psychMode?: boolean;
   /** Сразу показать QR (после «Завести» — анкета для родителя). */
   autoQr?: "parent";
   onClose: () => void; onChanged: () => void;
@@ -45,8 +47,12 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
   const [tab, setTab] = useState<string>(section && section !== "parent" ? section : section === "parent" ? "parent" : initialTab || "profile");
 
   const load = useCallback(async () => {
-    try { setD(await api(`/applicants/${id}`)); setError(null); } catch (e: any) { setError(e.message); }
-  }, [api, id]);
+    try {
+      const j = await api(`/applicants/${id}`);
+      if (psychMode) j.me = { ...j.me, admission: false, academic: false };
+      setD(j); setError(null);
+    } catch (e: any) { setError(e.message); }
+  }, [api, id, psychMode]);
   useEffect(() => { void load(); }, [load]);
   // Пришло уведомление про этого ребёнка — карточка обновляется сама.
   useEffect(() => {
