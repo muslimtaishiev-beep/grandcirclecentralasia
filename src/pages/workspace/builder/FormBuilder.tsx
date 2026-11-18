@@ -346,12 +346,14 @@ export default function FormBuilder() {
   const [subView, setSubView] = useState<any | null>(null);
   const [busySub, setBusySub] = useState<string | null>(null);
 
+  /** Название формы заявки — текущее: форму могли переименовать после подачи. */
+  const formTitleOf = (sub: any, fallback = 'Форма') => forms.find(f => f.id === sub?.formId)?.title || sub?.formTitle || fallback;
   const visibleSubs = submissions.filter((sub: any) => {
     if (showDeleted !== Boolean(sub.deleted)) return false;
     if (filterFormId && sub.formId !== filterFormId) return false;
     if (filterStatus && (sub.status || 'new') !== filterStatus) return false;
     if (search.trim()) {
-      const hay = [sub.applicantName, sub.applicantPhone, sub.applicantEmail, sub.qrToken]
+      const hay = [sub.applicantName, sub.applicantPhone, sub.applicantEmail, sub.qrToken, formTitleOf(sub, '')]
         .concat(Object.values(sub.data || {}).map(v => String(asText(v)).slice(0, 200)))
         .join(' ').toLowerCase();
       if (!hay.includes(search.trim().toLowerCase())) return false;
@@ -1433,7 +1435,7 @@ export default function FormBuilder() {
                       <div className="text-[11px] text-[var(--text-muted)]">{sub.applicantPhone || sub.applicantEmail || 'Без контакта'}</div>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className="font-mono text-emerald-500 font-bold">{sub.formTitle || 'Форма'}</span>
+                      <span className="font-mono text-emerald-500 font-bold">{formTitleOf(sub)}</span>
                     </td>
                     <td className="px-5 py-3.5">
                       {(() => {
@@ -1629,7 +1631,7 @@ export default function FormBuilder() {
                 <h3 className="text-lg font-bold">Смена статуса</h3>
                 <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
                   {statusDraft.subs.length === 1
-                    ? `${statusDraft.subs[0].applicantName || 'Без имени'} — ${statusDraft.subs[0].formTitle || 'Заявка'}`
+                    ? `${statusDraft.subs[0].applicantName || 'Без имени'} — ${formTitleOf(statusDraft.subs[0], 'Заявка')}`
                     : `Выбрано заявок: ${statusDraft.subs.length}`}
                 </p>
               </div>
@@ -1774,7 +1776,7 @@ export default function FormBuilder() {
               <div>
                 <h3 className="text-lg font-bold">{liveSub.applicantName || 'Без имени'}</h3>
                 <p className="text-[11px] text-[var(--text-muted)]">
-                  {liveSub.formTitle || 'Заявка'}
+                  {formTitleOf(liveSub, 'Заявка')}
                   {liveSub.createdAt?.seconds
                     ? ` · ${new Date(liveSub.createdAt.seconds * 1000).toLocaleString('ru-RU')}`
                     : ''}

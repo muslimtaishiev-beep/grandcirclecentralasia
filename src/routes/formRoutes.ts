@@ -684,7 +684,8 @@ router.post("/send-ticket", async (req: any, res: any) => {
         targetEmail = targetEmail || subData.applicantEmail;
         targetName = subData.applicantName || "Участник";
         targetToken = subData.qrToken || targetToken;
-        eventTitle = subData.formTitle || eventTitle;
+        const fsnap = subData.formId ? await db().collection(FORMS).doc(String(subData.formId)).get().catch(() => null) : null;
+        eventTitle = (fsnap?.exists ? String(fsnap.data()?.title || "") : "") || subData.formTitle || eventTitle;
         if (subData.participationFormat) details["Формат участия"] = subData.participationFormat;
         if (subData.teamName) details["Команда"] = subData.teamName;
       }
@@ -1403,7 +1404,8 @@ router.get("/track/:token", async (req: any, res: any) => {
       submission: {
         code: s.qrToken || doc0.id,
         formId: s.formId || "",
-        formTitle: s.formTitle || "Заявка",
+        // Название — текущее у формы: её могли переименовать после подачи.
+        formTitle: (formSnap?.exists ? String(formSnap.data()?.title || "") : "") || s.formTitle || "Заявка",
         applicantName: s.applicantName || "",
         status,
         statusLabel: STATUS_LABEL[status],
@@ -1536,7 +1538,7 @@ router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
         statusLabel: STATUS_LABEL[outcome.status],
         checkedInAt: "checkedInAt" in outcome ? outcome.checkedInAt : null,
       },
-      formTitle: sub.formTitle || "",
+      formTitle: (formSnap.exists ? String(formSnap.data()?.title || "") : "") || sub.formTitle || "",
     });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
