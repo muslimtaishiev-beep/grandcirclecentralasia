@@ -1144,10 +1144,6 @@ export default function FormBuilder() {
                       className="text-[var(--text-muted)] hover:text-emerald-500 font-bold flex items-center gap-1.5 transition">
                       <ExternalLink className="w-3.5 h-3.5" /> Открыть
                     </a>
-                    <button onClick={() => setNotifyForm({ id: form.id, title: form.title || 'Форма' })}
-                      className="text-[var(--text-muted)] hover:text-[#229ED9] font-bold flex items-center gap-1.5 transition cursor-pointer">
-                      <TelegramIcon className="w-3.5 h-3.5" /> Telegram
-                    </button>
                     <button onClick={() => {
                         // Редактирование существующей формы: гидратируем модалку
                         // из карточки. Раньше этой кнопки не было вовсе, и
@@ -2037,6 +2033,12 @@ export default function FormBuilder() {
                     </span>
                   </label>
                   {currentOrgId && <EmailTemplateSelect tenantId={currentOrgId} kind="form" title="Письмо после отправки" value={emailTemplateId} onChange={setEmailTemplateId} />}
+                  {currentOrgId && editingFormId && (
+                    <button type="button" onClick={() => setNotifyForm({ id: editingFormId, title: formTitle || 'Форма' })}
+                      className="flex items-center gap-2 text-sm text-[var(--text-main)] hover:text-[#229ED9] transition cursor-pointer">
+                      <TelegramIcon className="w-4 h-4" /> Уведомления о заявках в Telegram
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between">
