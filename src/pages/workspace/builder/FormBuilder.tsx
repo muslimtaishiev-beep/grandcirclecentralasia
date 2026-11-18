@@ -30,6 +30,7 @@ import FileViewer, { type ViewerFile } from './FileViewer';
 import { isFileValue, fileLabel, fileInfo } from '../../../shared/uploads';
 import { useAuth } from '../../../contexts/AuthContext';
 import { tenantLogos } from '../../../shared/legal';
+import FormSummary from './FormSummary';
 
 /**
  * Обрыв сети браузеры называют по-своему: Safari — «Load failed», Chrome —
@@ -277,12 +278,14 @@ export default function FormBuilder() {
    */
   const [fieldFilters, setFieldFilters] = useState<Record<string, any>>({});
   const [showFilters, setShowFilters] = useState(false);
+  /** Заявки списком или сводкой по вопросам (как в Google Forms). */
+  const [subMode, setSubMode] = useState<'list' | 'summary'>('list');
 
   // Поля выбранной анкеты плюс те, что есть у любой заявки.
   const filterableFields = React.useMemo(() => {
     const form = forms.find(f => f.id === filterFormId);
     const own = (form?.fields || []).filter((f: any) => f.type !== 'section').map((f: any) => ({
-      id: f.id, label: f.label || f.id, type: f.type, options: f.options || [],
+      id: f.id, label: f.label || f.id, type: f.type, options: f.options || [], allowOther: !!f.allowOther,
     }));
     return [
       { id: '__date', label: 'Дата подачи', type: 'daterange', options: [] },
@@ -320,6 +323,14 @@ export default function FormBuilder() {
       }
 
       const value = sub.data?.[key];
+      // Вариант выбора — точное совпадение («1 класс» не должен находить «11 класс»);
+      // у «нескольких вариантов» — есть ли он среди отмеченных («Другое» — любое своё).
+      const ff = (forms.find(f => f.id === sub.formId)?.fields || []).find((f: any) => f.id === key);
+      if (ff && CHOICE.includes(ff.type) && !String(cond).startsWith('__')) {
+        if (Array.isArray(value)) { if (!value.some((x: any) => String(x) === cond || (cond === 'Другое' && String(x).startsWith('Другое')))) return false; }
+        else if (String(value ?? '') !== String(cond)) return false;
+        continue;
+      }
       // Галочка: «да» и «нет» — разные условия, поэтому сравниваем строго.
       if (cond === '__true') { if (value !== true && String(value) !== 'true') return false; continue; }
       if (cond === '__false') { if (value === true || String(value) === 'true') return false; continue; }
@@ -341,7 +352,7 @@ export default function FormBuilder() {
     if (filterStatus && (sub.status || 'new') !== filterStatus) return false;
     if (search.trim()) {
       const hay = [sub.applicantName, sub.applicantPhone, sub.applicantEmail, sub.qrToken]
-        .concat(Object.values(sub.data || {}).map(v => String(v).slice(0, 200)))
+        .concat(Object.values(sub.data || {}).map(v => String(asText(v)).slice(0, 200)))
         .join(' ').toLowerCase();
       if (!hay.includes(search.trim().toLowerCase())) return false;
     }
@@ -1186,6 +1197,13 @@ export default function FormBuilder() {
                 : `${visibleSubs.length} из ${submissions.filter((x: any) => !x.deleted).length}`}
             </span>
 
+            <div className="flex rounded-lg border border-[var(--border-color)] overflow-hidden text-xs font-bold" title={filterFormId ? '' : 'Сводка — по одной форме: выберите форму'}>
+              {([['list', 'Список'], ['summary', 'Сводка']] as const).map(([k, l]) => (
+                <button key={k} type="button" disabled={k === 'summary' && !filterFormId} onClick={() => setSubMode(k)}
+                  className={`px-3 py-1.5 transition disabled:opacity-40 ${subMode === k && (k === 'list' || filterFormId) ? 'bg-emerald-600 text-white' : 'text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/10'}`}>{l}</button>
+              ))}
+            </div>
+
             <button
               onClick={() => setShowFilters(v => !v)}
               disabled={!filterFormId}
@@ -1303,10 +1321,10 @@ export default function FormBuilder() {
                           <option value="__true">Отмечено</option>
                           <option value="__false">Не отмечено</option>
                         </select>
-                      ) : f.type === 'select' ? (
+                      ) : CHOICE.includes(f.type) ? (
                         <select className={base} value={value || ''} onChange={e => set(e.target.value)}>
                           <option value="">Любой</option>
-                          {(f.options || []).map((o: string) => <option key={o} value={o}>{o}</option>)}
+                          {[...(f.options || []), ...(f.allowOther ? ['Другое'] : [])].map((o: string) => <option key={o} value={o}>{o}</option>)}
                           <option value="__empty">— не выбрано —</option>
                         </select>
                       ) : f.type === 'date' ? (
@@ -1369,6 +1387,10 @@ export default function FormBuilder() {
           );
         })()}
 
+        {subMode === 'summary' && filterFormId ? (
+          <FormSummary fields={forms.find(f => f.id === filterFormId)?.fields || []} subs={visibleSubs.filter((x: any) => x.formId === filterFormId)}
+            onPick={(id, v) => { setFieldFilters(p => ({ ...p, [id]: v })); setShowFilters(true); setSubMode('list'); }} />
+        ) : (
         <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-xs">
           {visibleSubs.length === 0 ? (
             <div className="p-12 text-center text-[var(--text-muted)] text-xs">
@@ -1525,6 +1547,7 @@ export default function FormBuilder() {
             </table>
           )}
         </div>
+        )}
         </div>
       )}
 
