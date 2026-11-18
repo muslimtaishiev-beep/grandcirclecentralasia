@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Bell, Check, Send, X } from 'lucide-react';
+import { Bell, Check, Loader2, Send, X } from 'lucide-react';
+import { emailApi } from '../../lib/emailTemplatesApi';
 import { useNotifications, type AppNotification } from '../../lib/useNotifications';
 import { useAuth } from '../../contexts/AuthContext';
 import { useOutletContext, useNavigate } from 'react-router-dom';
@@ -73,6 +74,7 @@ export default function GlobalNotifications() {
                   <span className="block text-xs text-[var(--text-muted)] mt-0.5">{n.body}</span>
                 </span>
               </button>
+              {n.type === 'email' && n.emailLogId && <ResendButton tenantId={n.tenantId} logId={n.emailLogId} />}
               <button className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-black/5 dark:hover:bg-white/5" onClick={() => dismiss(n.id)} aria-label="Закрыть"><X className="w-4 h-4" /></button>
             </div>
           ))}
@@ -130,6 +132,7 @@ export default function GlobalNotifications() {
                         <p className="text-xs text-[var(--text-muted)] mt-0.5 line-clamp-2">
                           {n.body}
                         </p>
+                        {n.type === 'email' && n.emailLogId && <ResendButton tenantId={n.tenantId} logId={n.emailLogId} />}
                         <div className="text-[10px] text-[var(--text-muted)] mt-1.5 opacity-70">
                           {n.createdAt?.toDate ? n.createdAt.toDate().toLocaleString('ru-RU') : 'Только что'}
                         </div>
@@ -144,6 +147,26 @@ export default function GlobalNotifications() {
         </div>, document.body
       )}
     </div>
+  );
+}
+
+/** «Переотправить» прямо в уведомлении «письмо не ушло». Ушло — уведомление сервер удалит сам. */
+function ResendButton({ tenantId, logId }: { tenantId: string; logId: string }) {
+  const [state, setState] = useState<'idle' | 'busy' | 'error'>('idle');
+  const [err, setErr] = useState('');
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2 mt-1.5" onClick={e => e.stopPropagation()}>
+      <button type="button" disabled={state === 'busy'}
+        onClick={async () => {
+          setState('busy');
+          try { await emailApi(tenantId, '/resend', { method: 'POST', body: JSON.stringify({ logId }) }); setState('idle'); }
+          catch (e: any) { setErr(e.message); setState('error'); }
+        }}
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold bg-[var(--accent)] text-white disabled:opacity-60">
+        {state === 'busy' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Переотправить
+      </button>
+      {state === 'error' && <span className="text-[11px] text-rose-600">{err}</span>}
+    </span>
   );
 }
 

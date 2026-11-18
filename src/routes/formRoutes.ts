@@ -13,7 +13,8 @@ import { verifySession } from "../server/session.js";
 import { hasAnyPermission } from "../server/access.js";
 import { checkTenantOpen, requireScreen, loadTenant } from "../server/tenantAccess.js";
 import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
-import { appUrl, sendTemplated } from "../server/emailEvents.js";
+import { appUrl, registerResender, sendTemplated } from "../server/emailEvents.js";
+import { notifyFormWatchers } from "../server/formWatch.js";
 import { sendFormTicketEmail } from "../../emailService.js";
 import { tenantLogos } from "../shared/legal.js";
 
@@ -381,6 +382,27 @@ router.get("/public/:formId", async (req: any, res: any) => {
 });
 
 /** POST /api/forms/submit — отправка или обновление заявки посетителем. */
+/** Письмо по шаблону формы одной заявке (после отправки и при переотправке). */
+async function emailForm(sub: { id: string; formId: string; applicantName?: string; applicantEmail?: string; qrToken?: string }, form: any, o: { force?: boolean; by?: string } = {}) {
+  const t = String(form.tenantId || "");
+  return sendTemplated({
+    tenantId: t, templateId: String(form.emailTemplateId || ""), to: String(sub.applicantEmail || ""), event: "form", refId: sub.id, force: o.force, by: o.by,
+    ctx: { submissionId: sub.id, formId: sub.formId, label: `${sub.applicantName || "Без имени"} · ${form.title || "Форма"}` },
+    actionUrl: `/workspace/${t}/builder/forms`, noRecipient: "В заявке нет почты",
+    mirror: { ref: db().collection(SUBS).doc(sub.id), field: "emailStatus" },
+    vars: { имя: String(sub.applicantName || ""), форма: String(form.title || ""), ссылка: form.qrTrackingEnabled !== false && sub.qrToken ? `${await appUrl()}/track/${sub.qrToken}` : "" },
+  });
+}
+registerResender("form", async (t, ctx, by) => {
+  if (!ctx.submissionId) return { sent: false, reason: "Нет заявки" };
+  const sub = (await db().collection(SUBS).doc(ctx.submissionId).get()).data();
+  if (!sub || sub.tenantId !== t || sub.deleted) return { sent: false, reason: "Заявка не найдена" };
+  const form = (await db().collection("custom_forms").doc(String(sub.formId)).get()).data();
+  if (!form || form.tenantId !== t) return { sent: false, reason: "Форма не найдена" };
+  if (!form.emailTemplateId) return { sent: false, reason: "У формы не выбран шаблон письма" };
+  return emailForm({ id: ctx.submissionId, formId: String(sub.formId), applicantName: sub.applicantName, applicantEmail: sub.applicantEmail, qrToken: sub.qrToken }, form, { force: true, by });
+});
+
 router.post("/submit", async (req: any, res: any) => {
   try {
     const { formId, data } = req.body || {};
@@ -627,13 +649,12 @@ router.post("/submit", async (req: any, res: any) => {
       status: "new", qrToken, data: clean,
     }));
 
+    // Telegram — сотрудникам, подписанным на заявки этой формы.
+    await notifyFormWatchers(form, String(formId), { name: applicantName, contact: applicantPhone || applicantEmail });
+
     // ✉️ Письмо по шаблону формы, если выбран; иначе — стандартный электронный билет.
     const templated = applicantEmail && form.emailTemplateId
-      ? await sendTemplated({
-          tenantId: String(form.tenantId || ""), templateId: String(form.emailTemplateId), to: applicantEmail,
-          event: "form", refId: ref.id,
-          vars: { имя: applicantName, форма: String(form.title || ""), ссылка: form.qrTrackingEnabled !== false ? `${await appUrl()}/track/${qrToken}` : "" },
-        })
+      ? await emailForm({ id: ref.id, formId: String(formId), applicantName, applicantEmail, qrToken }, form)
       : null;
     if (applicantEmail && applicantEmail.includes("@") && (!templated || templated.reason === "Шаблон не найден")) {
       const emailDetails: Record<string, string> = {};

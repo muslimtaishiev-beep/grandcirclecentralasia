@@ -161,8 +161,9 @@ service cloud.firestore {
       // Создают авто-правила и бот: только своей организации, со временем сервера,
       // ссылкой внутри кабинета. Уведомления о приёме пишет только сервер.
       allow create: if hasTenantAccessOnCreate()
-        && request.resource.data.get('type', '') != 'admission'
+        && !(request.resource.data.get('type', '') in ['admission', 'email'])
         && !('applicantId' in request.resource.data)
+        && !('emailLogId' in request.resource.data)
         && request.resource.data.createdAt == request.time
         && (!('actionUrl' in request.resource.data)
             || (request.resource.data.actionUrl is string && request.resource.data.actionUrl.matches('^/workspace/[A-Za-z0-9_-]+(/.*)?$')));
@@ -195,6 +196,8 @@ service cloud.firestore {
     // Шаблоны писем и журнал отправок — только через сервер (/api/email-templates).
     match /email_templates/{docId} { allow read, write: if false; }
     match /email_log/{docId} { allow read, write: if false; }
+    // Подписки на заявки форм в Telegram — только через сервер (/api/form-notify).
+    match /form_watchers/{docId} { allow read, write: if false; }
 
     match /departments/{docId} {
       allow read: if hasTenantAccess();

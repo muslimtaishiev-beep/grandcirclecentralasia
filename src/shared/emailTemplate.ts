@@ -24,34 +24,71 @@ export interface EmailTemplate {
   imageUrl: string;
   footer: string;
   color: string;
+  /** Для какого письма шаблон: от этого — какие подстановки сработают и где его можно выбрать. */
+  kind: EmailKind;
   updatedAt?: number;
 }
 
 export const EMPTY_EMAIL_TEMPLATE: EmailTemplate = {
   name: "", subject: "", title: "", body: "", buttonText: "", buttonUrl: "{{ссылка}}",
-  logo: "org", logoUrl: "", imageUrl: "", footer: "", color: "#4f46e5",
+  logo: "org", logoUrl: "", imageUrl: "", footer: "", color: "#4f46e5", kind: "any",
 };
 
-/** Где пригодится подстановка: в письмах приёма, теста, формы. */
+/** События, после которых уходят письма. */
 export type EmailEvent = "referral" | "tested" | "form";
+export type EmailKind = EmailEvent | "any";
 
-export interface EmailVar { key: string; label: string; sample: string; events: EmailEvent[] }
-
-export const EMAIL_VARS: EmailVar[] = [
-  { key: "имя", label: "Имя получателя", sample: "Айгуль Асанова", events: ["referral", "tested", "form"] },
-  { key: "ребёнок", label: "Ребёнок", sample: "Асанов Тимур", events: ["referral", "tested"] },
-  { key: "класс", label: "Класс", sample: "5", events: ["referral", "tested"] },
-  { key: "экзамен", label: "Экзамен", sample: "Вступительный экзамен, 5 класс", events: ["referral", "tested"] },
-  { key: "код", label: "Код экзамена", sample: "482913", events: ["referral"] },
-  { key: "балл", label: "Балл", sample: "42 из 50", events: ["tested"] },
-  { key: "процент", label: "Процент", sample: "84%", events: ["tested"] },
-  { key: "номер", label: "Номер работы", sample: "1047", events: ["tested"] },
-  { key: "форма", label: "Форма", sample: "Регистрация на форум", events: ["form"] },
-  { key: "ссылка", label: "Ссылка", sample: "https://www.studyfreeforum.com/a/demo", events: ["referral", "tested", "form"] },
-  { key: "организация", label: "Организация", sample: "Академия будущих лидеров", events: ["referral", "tested", "form"] },
+export const EMAIL_KINDS: { id: EmailKind; label: string }[] = [
+  { id: "referral", label: "Направление" },
+  { id: "tested", label: "После теста" },
+  { id: "form", label: "Заявка" },
+  { id: "any", label: "Любое" },
 ];
 
+/**
+ * Подстановка: откуда берётся в каждом письме. Нет события в from — в этом
+ * письме подстановка останется пустой.
+ */
+export interface EmailVar { key: string; sample: string; from: Partial<Record<EmailEvent, string>> }
+
+export const EMAIL_VARS: EmailVar[] = [
+  { key: "имя", sample: "Айгуль Асанова", from: { referral: "ФИО родителя из карточки", tested: "Родитель поступающего или ученик из регистрации", form: "ФИО из заявки" } },
+  { key: "ребёнок", sample: "Асанов Тимур", from: { referral: "ФИО ребёнка из карточки", tested: "ФИО ребёнка (поступающие)" } },
+  { key: "класс", sample: "5", from: { referral: "Класс поступления", tested: "Класс поступления (поступающие)" } },
+  { key: "экзамен", sample: "Вступительный экзамен, 5 класс", from: { referral: "Экзамен направления", tested: "Название экзамена" } },
+  { key: "код", sample: "482913", from: { referral: "Код входа на экзамен" } },
+  { key: "балл", sample: "42 из 50", from: { tested: "Только если результат открыт ученику сразу" } },
+  { key: "процент", sample: "84%", from: { tested: "Только если результат открыт ученику сразу" } },
+  { key: "номер", sample: "1047", from: { tested: "Номер работы — для поиска результата" } },
+  { key: "форма", sample: "Регистрация на форум", from: { form: "Название формы" } },
+  { key: "ссылка", sample: "https://www.studyfreeforum.com/a/demo", from: { referral: "Направление с QR", tested: "Направление (поступающие) или страница результата", form: "Билет с QR (если включён)" } },
+  { key: "организация", sample: "Академия будущих лидеров", from: { referral: "Название организации", tested: "Название организации", form: "Название организации" } },
+];
+
+/** Название подстановки на кнопке — по смыслу в этом письме. */
+export function varLabel(key: string, kind: EmailKind): string {
+  if (key === "имя") return kind === "referral" ? "Родитель" : kind === "form" ? "ФИО из заявки" : "Имя получателя";
+  if (key === "ссылка") return kind === "referral" ? "Ссылка на направление" : kind === "tested" ? "Ссылка на результат" : kind === "form" ? "Ссылка на билет" : "Ссылка";
+  return ({ ребёнок: "Ребёнок", класс: "Класс", экзамен: "Экзамен", код: "Код экзамена", балл: "Балл", процент: "Процент", номер: "Номер работы", форма: "Название формы", организация: "Организация" } as Record<string, string>)[key] || key;
+}
+
+/** Подстановки, которые сработают в письме этого типа. */
+export const varsFor = (kind: EmailKind): EmailVar[] => (kind === "any" ? EMAIL_VARS : EMAIL_VARS.filter(v => v.from[kind]));
+
+/** {{…}} в тексте шаблона, которые в письме этого типа останутся пустыми. */
+export function unknownVars(tpl: Pick<EmailTemplate, "subject" | "title" | "body" | "buttonText" | "buttonUrl" | "footer">, kind: EmailKind): string[] {
+  const ok = new Set(varsFor(kind).map(v => v.key));
+  const all = [tpl.subject, tpl.title, tpl.body, tpl.buttonText, tpl.buttonUrl, tpl.footer].join(" ").matchAll(/\{\{\s*([^{}]{1,30}?)\s*\}\}/g);
+  return [...new Set([...all].map(m => m[1]).filter(k => !ok.has(k)))];
+}
+
 export const sampleVars = (): Record<string, string> => Object.fromEntries(EMAIL_VARS.map(v => [v.key, v.sample]));
+
+/** О чём письмо — по этим полям его переотправляют. */
+export interface EmailCtx { applicantId?: string; attemptId?: string; examId?: string; submissionId?: string; formId?: string; label?: string }
+
+/** Запись журнала отправок события. */
+export const emailLogId = (event: EmailEvent, refId: string) => `${event}_${refId}`.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 300);
 
 /** Наш путь картинок шаблонов — его можно ставить без https. */
 export const EMAIL_IMG_PREFIX = "/api/email-templates/img/";
@@ -88,6 +125,7 @@ export function sanitizeEmailTemplate(raw: unknown): EmailTemplate {
     imageUrl: cleanImg(r.imageUrl),
     footer: str(r.footer, 500).trim(),
     color: /^#[0-9a-fA-F]{6}$/.test(String(r.color || "")) ? String(r.color) : EMPTY_EMAIL_TEMPLATE.color,
+    kind: EMAIL_KINDS.some(k => k.id === r.kind) ? (r.kind as EmailKind) : "any",
   };
 }
 

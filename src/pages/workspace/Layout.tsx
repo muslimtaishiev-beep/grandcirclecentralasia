@@ -177,7 +177,7 @@ export default function WorkspaceLayout() {
     ["departments", "Оргструктура и отделы", "/settings/departments", FolderTree],
     ["permissions", "Роли и доступы", "/settings/roles", Shield],
     ["workspaceSetup", "Настройка воркспейса", "/settings/workspace", Sparkles],
-    ["emailTemplates", "Шаблоны писем", "/settings/emails", Mail],
+    ["emailTemplates", "Письма", "/settings/emails", Mail],
     ["docs", "Документы", "/docs", FileText],
     ["sheets", "Таблицы", "/sheets", FileSpreadsheet],
     ["sites", "Конструктор сайта", "/sites", Globe],

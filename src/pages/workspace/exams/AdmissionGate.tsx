@@ -75,7 +75,7 @@ export default function AdmissionGate({ tenantId, value, onChange }: { tenantId:
         </div>
       </div>
       <label className="flex items-start gap-2 text-sm text-[var(--text-main)]"><input type="checkbox" className="mt-1" checked={!!value.candidateForm} onChange={e => set({ candidateForm: e.target.checked })} /> <span>Анкета кандидата вместо сертификата и отчёта по темам</span></label>
-      <EmailTemplateSelect tenantId={tenantId} title="Письмо родителю с направлением" value={value.referralEmail || ""} onChange={referralEmail => set({ referralEmail })} />
+      <EmailTemplateSelect tenantId={tenantId} kind="referral" title="Письмо родителю с направлением" value={value.referralEmail || ""} onChange={referralEmail => set({ referralEmail })} />
       <label className="flex items-start gap-2 text-sm text-[var(--text-main)]"><input type="checkbox" className="mt-1" checked={value.referralOnly} onChange={e => set({ referralOnly: e.target.checked })} /> <span>Вход только по направлению (QR) — без ручной регистрации</span></label>
     </div>
   );

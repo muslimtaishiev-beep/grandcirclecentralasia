@@ -1,5 +1,6 @@
+import EmailResend from "../../../components/workspace/EmailResend";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, CheckCircle2, ClipboardList, Copy, Download, ExternalLink, Loader2, Lock, Mail, Pencil, Printer, QrCode, RefreshCw, Trash2 } from "lucide-react";
+import { Camera, CheckCircle2, ClipboardList, Copy, Download, ExternalLink, Loader2, Lock, Pencil, Printer, QrCode, RefreshCw, Trash2 } from "lucide-react";
 import FormFiller from "../../../components/admissions/FormFiller";
 import { STAGE_LABEL, stageOf, type Applicant, type CandidateInfo, type PaperResult } from "../../../shared/admissions";
 import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
@@ -141,7 +142,7 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
             sub={`${a.child.name} · ${no(a.refNo)}${qr === "referral" && a.referral?.examTitle ? ` · ${a.referral.examTitle}` : ""}`}
             url={linkUrl(qr === "referral" ? a.tokens.referral! : a.tokens.parent)}
             onPrint={qr === "referral" ? printReferral! : printParent}
-            onEmail={qr === "referral" && d.me.admission ? async () => (await api(`/applicants/${a.id}/referral-email`, { method: "POST" })).to : undefined} />
+            email={qr === "referral" && d.me.admission ? <EmailResend tenantId={a.tenantId} event="referral" ctx={{ applicantId: a.id }} state={(a as any).referralEmail} onDone={changed} /> : null} />
         )}
         {tab === "profile" && <ProfileTab a={a} api={api} me={d.me} onSaved={changed} onDeleted={() => { onChanged(); onClose(); }} />}
         {tab === "parent" && parentTpl && (
@@ -170,14 +171,8 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
 }
 
 /** QR на экране — родитель или ученик сканирует сразу; бумага — только если нужна. */
-function QrModal({ title, sub, url, mark, onPrint, onEmail, onClose }: { title: string; sub: string; url: string; mark?: string | null; onPrint: () => void; onEmail?: () => Promise<string>; onClose: () => void }) {
+function QrModal({ title, sub, url, mark, onPrint, email, onClose }: { title: string; sub: string; url: string; mark?: string | null; onPrint: () => void; email?: React.ReactNode; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
-  const [mail, setMail] = useState<{ busy?: boolean; ok?: boolean; text?: string }>({});
-  const email = async () => {
-    if (!onEmail) return;
-    setMail({ busy: true });
-    try { setMail({ ok: true, text: `Отправлено: ${await onEmail()}` }); } catch (e: any) { setMail({ ok: false, text: e.message }); }
-  };
   return (
     <Modal title={title} onClose={onClose}>
       <div className="flex flex-col items-center gap-3 text-center">
@@ -187,9 +182,8 @@ function QrModal({ title, sub, url, mark, onPrint, onEmail, onClose }: { title: 
         <div className="flex flex-wrap justify-center gap-2 pt-1">
           <button className={btn} onClick={() => { navigator.clipboard?.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}><Copy className="w-4 h-4" /> {copied ? "Скопировано" : "Ссылка"}</button>
           <button className={btn} onClick={onPrint}><Printer className="w-4 h-4" /> Печать</button>
-          {onEmail && <button className={btn} disabled={mail.busy} onClick={email}>{mail.busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />} На почту</button>}
         </div>
-        {mail.text && <div className={`text-sm ${mail.ok ? "text-emerald-600" : "text-rose-600"}`}>{mail.text}</div>}
+        {email && <div className="pt-1">{email}</div>}
       </div>
     </Modal>
   );

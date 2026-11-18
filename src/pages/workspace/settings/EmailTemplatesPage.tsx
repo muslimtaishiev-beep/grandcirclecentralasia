@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { ImagePlus, Loader2, Mail, Plus, Send, Trash2, X } from "lucide-react";
 import { emailApi } from "../../../lib/emailTemplatesApi";
 import { compressImageToDataUrl } from "../../../lib/compressImage";
 import { btn, btnPrimary, card, input, label } from "../journals/components/ui";
 import {
-  EMAIL_VARS, EMPTY_EMAIL_TEMPLATE, renderEmail, sampleVars,
-  type EmailLogo, type EmailOrg, type EmailTemplate,
+  EMAIL_KINDS, EMPTY_EMAIL_TEMPLATE, renderEmail, sampleVars, unknownVars, varLabel, varsFor,
+  type EmailEvent, type EmailKind, type EmailLogo, type EmailOrg, type EmailTemplate,
 } from "../../../shared/emailTemplate";
+import EmailLog from "./EmailLog";
 
 /**
  * Шаблоны писем организации: слева список, в центре поля, справа —
@@ -16,12 +17,32 @@ import {
 type Saved = EmailTemplate & { id: string };
 
 const same = (a: EmailTemplate, b: EmailTemplate) =>
-  (["name", "subject", "title", "body", "buttonText", "buttonUrl", "logo", "logoUrl", "imageUrl", "footer", "color"] as const).every(k => a[k] === b[k]);
+  (["name", "subject", "title", "body", "buttonText", "buttonUrl", "logo", "logoUrl", "imageUrl", "footer", "color", "kind"] as const).every(k => a[k] === b[k]);
+const KIND_LABEL = Object.fromEntries(EMAIL_KINDS.map(k => [k.id, k.label])) as Record<EmailKind, string>;
 
 type Field = "subject" | "title" | "body" | "buttonText" | "footer";
 
 export default function EmailTemplatesPage() {
   const { orgId = "" } = useParams();
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") === "log" ? "log" : "templates";
+  return (
+    <div className="max-w-7xl mx-auto space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-xl md:text-2xl font-bold text-[var(--text-main)] flex items-center gap-2"><Mail className="w-6 h-6 text-[var(--accent)]" /> Письма</h1>
+        <div className="flex rounded-lg border border-[var(--border-color)] overflow-hidden text-sm">
+          {([["templates", "Шаблоны"], ["log", "Журнал"]] as const).map(([k, l]) => (
+            <button key={k} onClick={() => setParams(k === "log" ? { tab: "log" } : {}, { replace: true })}
+              className={`px-3 py-1.5 transition ${tab === k ? "bg-[var(--accent)] text-white font-semibold" : "text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]"}`}>{l}</button>
+          ))}
+        </div>
+      </div>
+      {tab === "log" ? <EmailLog tenantId={orgId} /> : <Templates orgId={orgId} />}
+    </div>
+  );
+}
+
+function Templates({ orgId }: { orgId: string }) {
   const [list, setList] = useState<Saved[] | null>(null);
   const [org, setOrg] = useState<EmailOrg>({ name: "", logoUrl: null });
   const [fromName, setFromName] = useState("");
@@ -114,11 +135,18 @@ export default function EmailTemplatesPage() {
   if (!list) return <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--text-muted)]" /></div>;
   const editing = sel !== null;
 
+  const kind = f.kind;
+  const unknown = unknownVars(f, kind);
+  const chip = (key: string, k: EmailKind, where?: string) => (
+    <button key={`${k}-${key}`} type="button" onMouseDown={e => e.preventDefault()} onClick={() => insertVar(key)} title={where}
+      className="px-2 py-0.5 rounded-full text-xs border border-[var(--border-color)] text-[var(--text-main)] hover:border-[var(--accent)] hover:text-[var(--accent)]">
+      {varLabel(key, k)}
+    </button>
+  );
   return (
-    <div className="max-w-7xl mx-auto space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl md:text-2xl font-bold text-[var(--text-main)] flex items-center gap-2"><Mail className="w-6 h-6 text-[var(--accent)]" /> Шаблоны писем</h1>
-        <button className={`${btnPrimary} ml-auto`} onClick={create}><Plus className="w-4 h-4" /> Шаблон</button>
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <button className={btnPrimary} onClick={create}><Plus className="w-4 h-4" /> Шаблон</button>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_360px] items-start">
@@ -127,7 +155,7 @@ export default function EmailTemplatesPage() {
             <button key={x.id} onClick={() => choose(x.id)}
               className={`text-left px-3 py-2 rounded-lg text-sm shrink-0 lg:shrink transition ${sel === x.id ? "bg-[var(--accent)]/10 text-[var(--accent)] font-semibold" : "text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]"}`}>
               <div className="truncate max-w-[180px]">{x.name}</div>
-              <div className="text-[11px] text-[var(--text-muted)] truncate max-w-[180px]">{x.subject}</div>
+              <div className="text-[11px] text-[var(--text-muted)] truncate max-w-[180px]">{KIND_LABEL[x.kind]} · {x.subject}</div>
             </button>
           ))}
           {sel === "new" && <div className="px-3 py-2 rounded-lg text-sm bg-[var(--accent)]/10 text-[var(--accent)] font-semibold shrink-0">{f.name || "Новый шаблон"}</div>}
@@ -136,6 +164,15 @@ export default function EmailTemplatesPage() {
 
         {editing ? (
           <section className={`${card} p-4 space-y-3 min-w-0`}>
+            <div>
+              <span className={label}>Для какого письма</span>
+              <div className="flex flex-wrap gap-1.5">
+                {EMAIL_KINDS.map(k => (
+                  <button key={k.id} onClick={() => setF({ ...f, kind: k.id })}
+                    className={`px-3 py-1.5 rounded-lg text-sm border transition ${kind === k.id ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)] font-semibold" : "border-[var(--border-color)] text-[var(--text-main)]"}`}>{k.label}</button>
+                ))}
+              </div>
+            </div>
             <div className="grid sm:grid-cols-2 gap-3">
               <div><span className={label}>Название шаблона</span><input className={input} value={f.name} onChange={e => setF({ ...f, name: e.target.value })} /></div>
               <div><span className={label}>Тема письма</span><input className={input} {...bind("subject")} /></div>
@@ -173,14 +210,23 @@ export default function EmailTemplatesPage() {
 
             <div>
               <span className={label}>Текст</span>
-              <div className="flex flex-wrap gap-1 mb-1.5">
-                {EMAIL_VARS.map(v => (
-                  <button key={v.key} type="button" onMouseDown={e => e.preventDefault()} onClick={() => insertVar(v.key)} title={v.sample}
-                    className="px-2 py-0.5 rounded-full text-xs border border-[var(--border-color)] text-[var(--text-main)] hover:border-[var(--accent)] hover:text-[var(--accent)]">
-                    {v.label}
-                  </button>
-                ))}
-              </div>
+              {kind === "any" ? (
+                <div className="space-y-1 mb-1.5">
+                  {(["referral", "tested", "form"] as EmailEvent[]).map(ev => (
+                    <div key={ev} className="flex flex-wrap items-center gap-1">
+                      <span className="text-[11px] text-[var(--text-muted)] w-24 shrink-0">{KIND_LABEL[ev]}</span>
+                      {varsFor(ev).map(v => chip(v.key, ev, v.from[ev]))}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-1 mb-1.5">{varsFor(kind).map(v => chip(v.key, kind, v.from[kind as EmailEvent]))}</div>
+              )}
+              {unknown.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1 mb-1.5 text-xs text-rose-600">
+                  Не подставится: {unknown.map(k => <span key={k} className="px-2 py-0.5 rounded-full bg-rose-500/10">{`{{${k}}}`}</span>)}
+                </div>
+              )}
               <textarea rows={9} className={`${input} font-[inherit] leading-relaxed`} {...bind("body")} />
             </div>
 
@@ -190,7 +236,7 @@ export default function EmailTemplatesPage() {
                 <span className={label}>Ссылка кнопки</span>
                 <select className={input} value={f.buttonUrl.startsWith("{{") || !f.buttonUrl ? f.buttonUrl : "custom"}
                   onChange={e => setF({ ...f, buttonUrl: e.target.value === "custom" ? "https://" : e.target.value })}>
-                  <option value="{{ссылка}}">Ссылка события</option>
+                  <option value="{{ссылка}}">{varLabel("ссылка", kind)}</option>
                   <option value="custom">Свой адрес</option>
                 </select>
               </div>
@@ -223,7 +269,12 @@ export default function EmailTemplatesPage() {
 
 /** Письмо глазами получателя: телефон, почтовая шапка, само письмо. */
 function Phone({ tpl, org, fromName }: { tpl: EmailTemplate; org: EmailOrg; fromName: string }) {
-  const { subject, html } = useMemo(() => renderEmail(tpl, sampleVars(), org, window.location.origin), [tpl, org]);
+  // Только то, что подставится в письме этого типа: остальное получатель увидит пустым — и здесь пусто.
+  const { subject, html } = useMemo(() => {
+    const ok = new Set(varsFor(tpl.kind).map(v => v.key));
+    const vars = Object.fromEntries(Object.entries(sampleVars()).filter(([k]) => ok.has(k)));
+    return renderEmail(tpl, vars, org, window.location.origin);
+  }, [tpl, org]);
   const frame = useRef<HTMLIFrameElement>(null);
   const [h, setH] = useState(600);
   const fit = () => { const d = frame.current?.contentDocument; if (d?.body) setH(Math.max(300, d.documentElement.scrollHeight)); };

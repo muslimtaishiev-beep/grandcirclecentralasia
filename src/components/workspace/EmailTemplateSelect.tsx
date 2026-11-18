@@ -2,15 +2,18 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Mail } from "lucide-react";
 import { emailApi } from "../../lib/emailTemplatesApi";
+import type { EmailEvent } from "../../shared/emailTemplate";
 
 /** Выбор шаблона письма для события: «Без письма» или шаблон организации. */
-export default function EmailTemplateSelect({ tenantId, value, onChange, title, disabled }: {
+export default function EmailTemplateSelect({ tenantId, value, onChange, title, disabled, kind }: {
   tenantId: string; value: string; onChange: (id: string) => void; title: string; disabled?: boolean;
+  /** Показывать шаблоны этого письма (и «Любое»). */
+  kind?: EmailEvent;
 }) {
-  const [list, setList] = useState<{ id: string; name: string }[] | null>(null);
+  const [list, setList] = useState<{ id: string; name: string; kind: string }[] | null>(null);
   useEffect(() => {
     let live = true;
-    emailApi(tenantId).then(j => live && setList(j.templates)).catch(() => live && setList([]));
+    emailApi(tenantId).then(j => live && setList(j.templates.filter((x: any) => !kind || x.kind === kind || x.kind === "any" || x.id === value))).catch(() => live && setList([]));
     return () => { live = false; };
   }, [tenantId]);
   const missing = value && list && !list.some(x => x.id === value);

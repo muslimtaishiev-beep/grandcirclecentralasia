@@ -8,11 +8,13 @@ export interface AppNotification {
   userId: string; // The user receiving the notification
   title: string;
   body: string;
-  type: 'task' | 'chat' | 'crm' | 'system' | 'mention' | 'admission';
+  type: 'task' | 'chat' | 'crm' | 'system' | 'mention' | 'admission' | 'email';
   read: boolean;
   actionUrl?: string;
   /** Приём: чья карточка — открытый список и карточка обновляются сами. */
   applicantId?: string;
+  /** Письмо не ушло: запись журнала — для «Переотправить». */
+  emailLogId?: string;
   createdAt: any;
 }
 

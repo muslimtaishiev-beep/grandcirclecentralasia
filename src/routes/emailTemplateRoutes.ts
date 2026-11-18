@@ -4,8 +4,8 @@ import { randomBytes } from "crypto";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { hasPerm, staffCaller } from "../server/access.js";
 import { sendMail } from "../server/mail.js";
-import { appUrl, orgMail } from "../server/emailEvents.js";
-import { EMAIL_IMG_PREFIX, renderEmail, sampleVars, sanitizeEmailTemplate } from "../shared/emailTemplate.js";
+import { EVENT_PERMS, appUrl, orgMail, resend, type SendResult } from "../server/emailEvents.js";
+import { EMAIL_IMG_PREFIX, renderEmail, sampleVars, sanitizeEmailTemplate, varsFor, type EmailCtx, type EmailEvent } from "../shared/emailTemplate.js";
 import type { PermissionKey } from "../shared/permissions.js";
 
 /**
@@ -129,11 +129,73 @@ router.post("/:t/test", requireFirebaseAuth, async (req: any, res: any) => {
     lastTest.set(a.c.uid, Date.now());
     const tpl = sanitizeEmailTemplate(req.body);
     const [m, base] = await Promise.all([orgMail(a.t), appUrl()]);
-    const { subject, html } = renderEmail(tpl, { ...sampleVars(), организация: m.org.name }, m.org, base);
+    const ok = new Set(varsFor(tpl.kind).map(v => v.key));
+    const vars = Object.fromEntries(Object.entries(sampleVars()).filter(([k]) => ok.has(k)));
+    const { subject, html } = renderEmail(tpl, { ...vars, организация: m.org.name }, m.org, base);
     const r = await sendMail({ to, subject: `[Проба] ${subject}`, html, fromName: m.fromName, replyTo: m.replyTo });
     if (!r.sent) return fail(res, 502, r.reason || "Не отправилось");
     return res.json({ success: true, to });
   } catch (e) { console.error("[email-templates] test", e); return fail(res, 500, "Не получилось отправить"); }
+});
+
+// ── Журнал отправок и переотправка ─────────────────────────────────────
+
+const EVENTS: EmailEvent[] = ["referral", "tested", "form"];
+const SAFE_ID = /^[A-Za-z0-9_-]{1,120}$/;
+const cleanCtx = (raw: any): EmailCtx => {
+  const out: EmailCtx = {};
+  for (const k of ["applicantId", "attemptId", "examId", "submissionId", "formId"] as const) if (SAFE_ID.test(String(raw?.[k] || ""))) out[k] = String(raw[k]);
+  return out;
+};
+
+router.get("/:t/log", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const a = await caller(req, res); if (!a) return;
+    const s = await db().collection("email_log").where("tenantId", "==", a.t).get();
+    const log = s.docs.map(d => {
+      const x = d.data();
+      return { id: d.id, event: x.event, to: x.to || "", status: x.status, reason: x.reason || "", at: x.at || 0, tries: x.tries || 1, subject: x.subject || "", templateId: x.templateId || "", label: x.ctx?.label || "", canResend: !!x.ctx && EVENTS.includes(x.event), actionUrl: x.actionUrl || "" };
+    }).sort((x, y) => y.at - x.at).slice(0, 500);
+    return res.json({ success: true, log });
+  } catch (e) { console.error("[email-log]", e); return fail(res, 500, "Не получилось загрузить журнал"); }
+});
+
+const lastResend = new Map<string, number>();
+/**
+ * Переотправить: по записям журнала (logIds), по событию (event + ctx) или
+ * пачкой заявок формы (event: "form", submissionIds). Письмо собирается
+ * заново из свежих данных — исправленная почта подхватится.
+ */
+router.post("/:t/resend", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const t = String(req.params.t || "");
+    if (!TENANT.test(t)) return fail(res, 400, "Неверная организация");
+    const c = await staffCaller(db(), t, req.user);
+    if (!c?.member) return fail(res, 403, "Нет доступа");
+    const jobs: { event: EmailEvent; ctx: EmailCtx }[] = [];
+    const logIds = (Array.isArray(req.body?.logIds) ? req.body.logIds : req.body?.logId ? [req.body.logId] : []).map(String).filter((x: string) => /^[A-Za-z0-9_-]{1,300}$/.test(x)).slice(0, 100);
+    if (logIds.length) {
+      const snaps = await db().getAll(...logIds.map((id: string) => db().collection("email_log").doc(id)));
+      for (const d of snaps) { const x = d.data(); if (x && x.tenantId === t && EVENTS.includes(x.event) && x.ctx) jobs.push({ event: x.event, ctx: cleanCtx(x.ctx) }); }
+    } else if (EVENTS.includes(req.body?.event)) {
+      const event = req.body.event as EmailEvent;
+      const ids = Array.isArray(req.body?.submissionIds) ? req.body.submissionIds.map(String).filter((x: string) => SAFE_ID.test(x)).slice(0, 100) : null;
+      if (event === "form" && ids) ids.forEach((submissionId: string) => jobs.push({ event, ctx: { submissionId } }));
+      else jobs.push({ event, ctx: cleanCtx(req.body.ctx) });
+    }
+    if (!jobs.length) return fail(res, 400, "Нечего отправлять");
+    for (const j of jobs) if (!hasPerm(c, ...EVENT_PERMS[j.event])) return fail(res, 403, "Нет прав переотправлять эти письма");
+    const results: (SendResult & { ctx: EmailCtx })[] = [];
+    for (const j of jobs) {
+      const key = `${t}_${j.event}_${j.ctx.applicantId || ""}_${j.ctx.attemptId || ""}_${j.ctx.submissionId || ""}`;
+      if (Date.now() - (lastResend.get(key) || 0) < 15_000) { results.push({ sent: false, reason: "Только что отправлялось — подождите", ctx: j.ctx }); continue; }
+      lastResend.set(key, Date.now());
+      results.push({ ...(await resend(t, j.event, j.ctx, c.uid)), ctx: j.ctx });
+    }
+    const sent = results.filter(r => r.sent).length;
+    if (jobs.length === 1 && !sent) return fail(res, 400, results[0].reason || "Не отправилось", { results });
+    return res.json({ success: true, sent, failed: results.length - sent, results });
+  } catch (e) { console.error("[email-resend]", e); return fail(res, 500, "Не получилось отправить"); }
 });
 
 export default router;

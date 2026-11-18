@@ -32,6 +32,10 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { tenantLogos } from '../../../shared/legal';
 import FormSummary from './FormSummary';
 import EmailTemplateSelect from '../../../components/workspace/EmailTemplateSelect';
+import EmailResend from '../../../components/workspace/EmailResend';
+import { TelegramIcon } from '../../../components/workspace/TelegramIcon';
+import FormNotifyModal from './FormNotifyModal';
+import { emailApi } from '../../../lib/emailTemplatesApi';
 
 /**
  * Обрыв сети браузеры называют по-своему: Safari — «Load failed», Chrome —
@@ -788,7 +792,7 @@ export default function FormBuilder() {
         mode: formMode,
         active: true,
         updatedAt: serverTimestamp(),
-        ...(!editingFormId && { createdAt: serverTimestamp() })
+        ...(!editingFormId && { createdAt: serverTimestamp(), createdBy: user?.uid || '' })
       }, { merge: true });
 
       setIsModalOpen(false);
@@ -829,6 +833,8 @@ export default function FormBuilder() {
    * после смены фильтра невидимые заявки не должны меняться «втихую».
    */
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkMail, setBulkMail] = useState(false);
+  const [notifyForm, setNotifyForm] = useState<{ id: string; title: string } | null>(null);
   const toggleSelected = (id: string) => setSelected(prev => {
     const next = new Set(prev);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -1138,6 +1144,10 @@ export default function FormBuilder() {
                       className="text-[var(--text-muted)] hover:text-emerald-500 font-bold flex items-center gap-1.5 transition">
                       <ExternalLink className="w-3.5 h-3.5" /> Открыть
                     </a>
+                    <button onClick={() => setNotifyForm({ id: form.id, title: form.title || 'Форма' })}
+                      className="text-[var(--text-muted)] hover:text-[#229ED9] font-bold flex items-center gap-1.5 transition cursor-pointer">
+                      <TelegramIcon className="w-3.5 h-3.5" /> Telegram
+                    </button>
                     <button onClick={() => {
                         // Редактирование существующей формы: гидратируем модалку
                         // из карточки. Раньше этой кнопки не было вовсе, и
@@ -1386,6 +1396,22 @@ export default function FormBuilder() {
                 className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-bold">
                 Изменить поле
               </button>
+              {(() => {
+                const mailable = picked.filter((x: any) => forms.find(f => f.id === x.formId)?.emailTemplateId);
+                if (!mailable.length) return null;
+                return (
+                  <button disabled={bulkMail}
+                    onClick={async () => {
+                      if (!confirm(`Отправить письмо ещё раз ${mailable.length} заявителям?`)) return;
+                      setBulkMail(true);
+                      try { const j = await emailApi(currentOrgId, '/resend', { method: 'POST', body: JSON.stringify({ event: 'form', submissionIds: mailable.map((x: any) => x.id) }) }); alert(j.failed ? `Отправлено: ${j.sent}. Не ушло: ${j.failed} — причины в «Письма → Журнал».` : `Отправлено: ${j.sent}`); }
+                      catch (e: any) { alert(e.message); } finally { setBulkMail(false); }
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-bold disabled:opacity-50">
+                    {bulkMail ? 'Отправка…' : `Переотправить письмо (${mailable.length})`}
+                  </button>
+                );
+              })()}
               <button onClick={() => setSelected(new Set())}
                 className="ml-auto px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-white/15">
                 Снять выделение
@@ -1502,6 +1528,9 @@ export default function FormBuilder() {
                           className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 px-3 py-1 rounded-lg font-bold text-[11px] inline-flex items-center gap-1.5 transition cursor-pointer mr-2 disabled:opacity-50">
                           📎 Файл
                         </button>
+                      )}
+                      {forms.find(f => f.id === sub.formId)?.emailTemplateId && !sub.deleted && (
+                        <span className="mr-2 align-middle"><EmailResend tenantId={currentOrgId} event="form" ctx={{ submissionId: sub.id }} state={sub.emailStatus} compact /></span>
                       )}
                       <button 
                         onClick={() => setSelectedSubmissionForQr(sub)}
@@ -2007,7 +2036,7 @@ export default function FormBuilder() {
                       </span>
                     </span>
                   </label>
-                  {currentOrgId && <EmailTemplateSelect tenantId={currentOrgId} title="Письмо после отправки" value={emailTemplateId} onChange={setEmailTemplateId} />}
+                  {currentOrgId && <EmailTemplateSelect tenantId={currentOrgId} kind="form" title="Письмо после отправки" value={emailTemplateId} onChange={setEmailTemplateId} />}
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -2219,6 +2248,7 @@ export default function FormBuilder() {
       )}
 
       {/* Modal: View QR Pass */}
+      {notifyForm && currentOrgId && <FormNotifyModal tenantId={currentOrgId} form={notifyForm} onClose={() => setNotifyForm(null)} />}
       {selectedSubmissionForQr && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-3xl max-w-sm w-full p-6 space-y-5 text-center shadow-2xl relative">

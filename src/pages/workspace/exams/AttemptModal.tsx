@@ -10,6 +10,7 @@ import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui"
 import type { Api } from "./examApi";
 import { useAdmissionApi } from "../admissions/admissionApi";
 import { candidateDoc, latestTest, saveCandidate, testOfAttempt } from "../admissions/candidateForm";
+import EmailResend from "../../../components/workspace/EmailResend";
 import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
 
 type Full = Attempt & { questions: Record<string, FrozenQuestion> };
@@ -157,6 +158,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
             {r && !admission && s.results.certificate && printData && <button className={btn} onClick={() => openPrint(certificateHTML(printData)) || alert("Разрешите всплывающие окна")}><Award className="w-4 h-4" /> Сертификат</button>}
             {r && !admission && printData && <button className={btn} onClick={() => openPrint(reportHTML(printData)) || alert("Разрешите всплывающие окна")}><FileText className="w-4 h-4" /> Отчёт по темам</button>}
             {pr.enabled && <button className={btn} onClick={() => setDossier(true)}><ShieldAlert className="w-4 h-4" /> Досье прокторинга</button>}
+            {a.status === "finished" && s.results.emailTemplate && <EmailResend tenantId={exam.tenantId} event="tested" ctx={{ attemptId: a.id }} state={(a as any).resultEmail} />}
             {a.status === "in_progress" && <button className={btn} disabled={!!busy} onClick={() => act("finish", {}, "Завершить работу сейчас и посчитать результат?")}><Square className="w-4 h-4" /> Завершить сейчас</button>}
             {a.status === "finished" && !(a as any).paper && <button className={btn} disabled={!!busy} onClick={() => act("recheck")}>{busy === "recheck" ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Перепроверить</button>}
             {!a.retakeAllowed && a.status === "finished" && !a.superseded && <button className={btn} disabled={!!busy} onClick={() => act("allow_retake", {}, "Разрешить ещё одну попытку? Новая сданная работа заменит эту.")}><RotateCcw className="w-4 h-4" /> Разрешить пересдачу</button>}

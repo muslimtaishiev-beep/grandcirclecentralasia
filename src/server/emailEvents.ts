@@ -1,16 +1,20 @@
 import admin from "firebase-admin";
 import { sendMail } from "./mail.js";
+import { membersWith } from "./access.js";
+import { notifyTelegram } from "./telegram.js";
 import { tenantLogos } from "../shared/legal.js";
 import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
-import { renderEmail, sanitizeEmailTemplate, type EmailTemplate } from "../shared/emailTemplate.js";
+import { emailLogId, renderEmail, sanitizeEmailTemplate, type EmailCtx, type EmailEvent, type EmailTemplate } from "../shared/emailTemplate.js";
+import type { PermissionKey } from "../shared/permissions.js";
 
 /**
  * Письма по шаблонам организации — после направления, теста, формы.
  *
- * Каждое событие пишется в email_log/{event}_{refId}: что, кому, ушло или
- * почему нет. Тот же журнал не даёт отправить письмо за одно событие дважды
- * (повторное «Завершить сессию», повторный финиш). Ошибки не бросаются —
- * основное действие (сессия, тест, заявка) не должно ломаться из-за почты.
+ * Каждое событие пишется в email_log/{event}_{refId}: что, кому, о ком,
+ * ушло или почему нет. Тот же журнал не даёт отправить письмо за одно
+ * событие дважды. Письмо не ушло — уведомление тем, кто за это отвечает,
+ * с кнопкой «Переотправить». Ошибки не бросаются: основное действие
+ * (сессия, тест, заявка) не должно ломаться из-за почты.
  */
 const db = () => admin.firestore();
 const DEFAULT_APP_URL = "https://www.studyfreeforum.com";
@@ -45,45 +49,118 @@ export async function orgMail(tenantId: string) {
   };
 }
 
+/** Кто отвечает за письма события — им уведомление, если письмо не ушло; они же переотправляют. */
+export const EVENT_PERMS: Record<EmailEvent, PermissionKey[]> = {
+  referral: ["admission:manage"],
+  tested: ["admission:manage", "tests:manage"],
+  form: ["team:manage", "certificates:issue", "crm:manage"],
+};
+const EVENT_TITLE: Record<EmailEvent, string> = { referral: "Направление", tested: "Письмо после теста", form: "Письмо по заявке" };
+
 export interface TemplatedSend {
   tenantId: string;
   templateId: string;
   to: string;
   vars: Record<string, string>;
-  event: string;
+  event: EmailEvent;
   refId: string;
+  /** Что это было: по этим полям письмо переотправляют. */
+  ctx: EmailCtx;
   /** Отправить ещё раз, даже если уже уходило (ручная кнопка). */
   force?: boolean;
   by?: string;
+  /** Куда ведёт уведомление «не ушло» (карточка, где поправить почту). */
+  actionUrl?: string;
+  /** Документ, в котором показать статус письма (заявка, работа, карточка). */
+  mirror?: { ref: FirebaseFirestore.DocumentReference; field: string };
+  /** Текст причины, когда нет адреса («Нет почты родителя»). */
+  noRecipient?: string;
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export type SendResult = { sent: boolean; reason?: string; skipped?: boolean; to?: string };
 
-export async function sendTemplated(p: TemplatedSend): Promise<{ sent: boolean; reason?: string; skipped?: boolean }> {
-  const ref = db().collection("email_log").doc(`${p.event}_${p.refId}`.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 300));
+export async function sendTemplated(p: TemplatedSend): Promise<SendResult> {
+  const logId = emailLogId(p.event, p.refId);
+  const ref = db().collection("email_log").doc(logId);
+  const to = String(p.to || "").trim().toLowerCase();
   try {
     // Захват события: второй вызов за то же событие ничего не шлёт.
     const claimed = await db().runTransaction(async tx => {
       const cur = (await tx.get(ref)).data();
       if (cur && !p.force && (cur.status === "sent" || (cur.status === "pending" && Date.now() - (cur.at || 0) < 120_000))) return false;
-      tx.set(ref, { tenantId: p.tenantId, templateId: p.templateId, event: p.event, refId: p.refId, to: p.to, status: "pending", at: Date.now(), by: p.by || "" });
+      tx.set(ref, {
+        tenantId: p.tenantId, templateId: p.templateId, event: p.event, refId: p.refId, ctx: p.ctx, to, status: "pending",
+        at: Date.now(), by: p.by || "", actionUrl: p.actionUrl || "", tries: (cur?.tries || 0) + 1, firstAt: cur?.firstAt || Date.now(),
+      });
       return true;
     });
     if (!claimed) return { sent: false, skipped: true, reason: "Уже отправлено" };
-    const done = async (r: { sent: boolean; reason?: string }) => {
-      await ref.set({ status: r.sent ? "sent" : "failed", reason: r.reason || "", at: Date.now() }, { merge: true });
-      return r;
-    };
-    const to = String(p.to || "").trim().toLowerCase();
-    if (!EMAIL.test(to)) return done({ sent: false, reason: "Нет почты получателя" });
-    const tpl = await loadTemplate(p.tenantId, p.templateId);
-    if (!tpl) return done({ sent: false, reason: "Шаблон не найден" });
-    const [m, base] = await Promise.all([orgMail(p.tenantId), appUrl()]);
-    const { subject, html } = renderEmail(tpl, p.vars, m.org, base);
-    return done(await sendMail({ to, subject, html, fromName: m.fromName, replyTo: m.replyTo }));
+    let r: SendResult;
+    if (!EMAIL.test(to)) r = { sent: false, reason: p.noRecipient || "Нет почты получателя" };
+    else {
+      const tpl = await loadTemplate(p.tenantId, p.templateId);
+      if (!tpl) r = { sent: false, reason: "Шаблон не найден" };
+      else {
+        const [m, base] = await Promise.all([orgMail(p.tenantId), appUrl()]);
+        const { subject, html } = renderEmail(tpl, p.vars, m.org, base);
+        r = await sendMail({ to, subject, html, fromName: m.fromName, replyTo: m.replyTo });
+        await ref.set({ subject }, { merge: true });
+      }
+    }
+    await finish(p, logId, r, to);
+    return { ...r, to };
   } catch (e: any) {
     console.error("[email] templated:", e);
-    await ref.set({ status: "failed", reason: String(e?.message || e).slice(0, 300), at: Date.now() }, { merge: true }).catch(() => {});
-    return { sent: false, reason: "Не удалось отправить" };
+    const r = { sent: false, reason: "Не удалось отправить" };
+    await finish(p, logId, r, to).catch(() => {});
+    return r;
   }
+}
+
+async function finish(p: TemplatedSend, logId: string, r: SendResult, to: string) {
+  const status = r.sent ? "sent" : "failed";
+  await db().collection("email_log").doc(logId).set({ status, reason: r.reason || "", at: Date.now() }, { merge: true });
+  if (p.mirror) await p.mirror.ref.set({ [p.mirror.field]: { status, reason: r.reason || "", at: Date.now(), to, logId } }, { merge: true }).catch(() => {});
+  if (r.sent) await clearFailNotices(logId);
+  else await notifyFailed(p, logId, r.reason || "");
+}
+
+/** Письмо не ушло — колокольчик и Telegram тем, кто отвечает за событие. */
+async function notifyFailed(p: TemplatedSend, logId: string, reason: string) {
+  try {
+    const people = await membersWith(db(), p.tenantId, EVENT_PERMS[p.event]);
+    if (!people.length) return;
+    const title = `${EVENT_TITLE[p.event]} не ушло`;
+    const body = [p.ctx.label, p.to ? `на ${p.to}` : "", reason].filter(Boolean).join(" · ");
+    const url = p.actionUrl || `/workspace/${p.tenantId}/settings/emails?tab=log`;
+    const batch = db().batch();
+    for (const r of people) {
+      batch.set(db().collection("notifications").doc(`email_${logId}_${r.uid}`.slice(0, 1400)), {
+        tenantId: p.tenantId, userId: r.uid, type: "email", title, body, actionUrl: url, emailLogId: logId,
+        ...(p.ctx.applicantId ? { applicantId: p.ctx.applicantId } : {}), read: false, createdAt: admin.firestore.Timestamp.now(),
+      });
+    }
+    await batch.commit();
+    await notifyTelegram(people.map(x => x.uid), title, body, url);
+  } catch (e) { console.error("[email] notify failed:", e); }
+}
+
+/** Ушло после переотправки — уведомления «не ушло» больше не нужны. */
+async function clearFailNotices(logId: string) {
+  const s = await db().collection("notifications").where("emailLogId", "==", logId).get().catch(() => null);
+  if (s && !s.empty) await Promise.all(s.docs.map(d => d.ref.delete()));
+}
+
+// ── Переотправка ────────────────────────────────────────────────────────
+
+type Resender = (tenantId: string, ctx: EmailCtx, by: string) => Promise<SendResult>;
+const resenders = new Map<EmailEvent, Resender>();
+/** Маршруты регистрируют, как заново собрать письмо своего события (свежие данные: исправленная почта и т.п.). */
+export function registerResender(event: EmailEvent, fn: Resender) { resenders.set(event, fn); }
+
+export async function resend(tenantId: string, event: EmailEvent, ctx: EmailCtx, by: string): Promise<SendResult> {
+  const fn = resenders.get(event);
+  if (!fn) return { sent: false, reason: "Это письмо нельзя переотправить" };
+  return fn(tenantId, ctx, by);
 }

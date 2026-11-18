@@ -32,6 +32,8 @@ export type PermissionKey =
   | "admission:manage" | "psych:conduct" | "psych:view"
   // Приём заявок и бронирование
   | "intake:manage"
+  // Заявки: кому из сотрудников слать уведомления в Telegram
+  | "forms:notify"
   // Администрирование
   | "team:manage" | "settings:manage";
 
@@ -68,6 +70,7 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: "presentations:manage", label: "Управление презентациями", description: "Загрузка презентаций, удаление и настройка доступа ко всем презентациям организации", category: "Работа" },
 
   { key: "intake:manage", label: "Приём заявок и бронирование", description: "Потоки приёма с внешних сайтов, занимаемые ресурсы и брони", category: "CRM и продажи" },
+  { key: "forms:notify", label: "Уведомления по заявкам", description: "Подключать сотрудников к уведомлениям о новых заявках формы в Telegram (сотрудник подтверждает)", category: "CRM и продажи" },
 
   { key: "team:manage", label: "Управление сотрудниками", description: "Приглашения, должности, назначение прав", category: "Администрирование" },
   { key: "settings:manage", label: "Настройки организации", description: "Название, терминология экранов, модули, интеграции", category: "Администрирование" },
@@ -102,7 +105,7 @@ export const isPermissionKey = (v: unknown): v is PermissionKey =>
 export const PERMISSION_CODES: Record<PermissionKey, string> = {
   "tests:read": "tr", "tests:manage": "tm", "tests:review": "tv", "certificates:issue": "ci", "placement:manage": "pm",
   "edu:schedule": "es", "edu:payroll": "ep",
-  "crm:read": "cr", "crm:manage": "cm", "intake:manage": "ik",
+  "crm:read": "cr", "crm:manage": "cm", "intake:manage": "ik", "forms:notify": "fn",
   "chat:use": "ch", "tasks:use": "ta", "docs:use": "dc", "sheets:use": "sh", "tickets:check": "tk", "journals:manage": "jm", "presentations:manage": "pr",
   "admission:manage": "ad", "psych:conduct": "ps", "psych:view": "pv",
   "team:manage": "tg", "settings:manage": "sg",
@@ -214,7 +217,7 @@ export const WORKSPACE_SCREENS: { key: string; label: string; group: string }[] 
   { key: "departments", label: "Оргструктура и отделы", group: "Администрирование" },
   { key: "permissions", label: "Роли, доступы и сотрудники", group: "Администрирование" },
   { key: "workspaceSetup", label: "Настройка воркспейса", group: "Администрирование" },
-  { key: "emailTemplates", label: "Шаблоны писем", group: "Администрирование" },
+  { key: "emailTemplates", label: "Письма: шаблоны и журнал", group: "Администрирование" },
 ];
 
 /** Экраны, которые нельзя выключать: без них воркспейс становится тупиком. */

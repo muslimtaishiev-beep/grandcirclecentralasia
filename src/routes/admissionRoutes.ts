@@ -4,7 +4,7 @@ import { randomBytes, randomInt } from "crypto";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { hasPerm, membersWith, optionalAuth, requirePerm, staffCaller, type StaffCaller } from "../server/access.js";
 import { notifyTelegram } from "../server/telegram.js";
-import { appUrl, sendTemplated } from "../server/emailEvents.js";
+import { appUrl, registerResender, sendTemplated, type SendResult } from "../server/emailEvents.js";
 import { verifySession } from "../server/session.js";
 import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
 import { tenantLogos } from "../shared/legal.js";
@@ -155,10 +155,10 @@ export async function notifyTested(t: string, x: TestedAttempt, exam: Exam) {
  * Остальным — на почту из регистрации; балл — только если результат
  * показывается ученику сразу и без проверки.
  */
-async function emailTested(t: string, x: TestedAttempt, exam: Exam, a: Applicant | null) {
+async function emailTested(t: string, x: TestedAttempt, exam: Exam, a: Applicant | null, o: { force?: boolean; by?: string } = {}): Promise<SendResult> {
   const settings = sanitizeSettings(exam.settings);
   const templateId = settings.results.emailTemplate || "";
-  if (!templateId || !x.id) return;
+  if (!templateId || !x.id) return { sent: false, reason: "В настройках экзамена не выбран шаблон письма" };
   const base = await appUrl();
   const vars: Record<string, string> = { экзамен: exam.title || "", номер: x.shortId || "" };
   let to = "";
@@ -167,12 +167,32 @@ async function emailTested(t: string, x: TestedAttempt, exam: Exam, a: Applicant
     Object.assign(vars, { имя: a.parent.name, ребёнок: a.child.name, класс: a.child.grade, ссылка: `${base}/a/${await referralTokenFor(t, a)}` });
   } else {
     to = String(x.student?.email || "");
+    // Почту на этом экзамене не спрашивали — писать некуда, и это не ошибка.
+    if (!to && !o.force) return { sent: false, skipped: true, reason: "Почту у ученика не спрашивали" };
     Object.assign(vars, { имя: String(x.student?.name || ""), ссылка: exam.code ? `${base}/exam/${exam.code}/result` : "" });
     const open = settings.results.showToStudent === "immediately" && !settings.results.requireReview;
     if (open && x.result) Object.assign(vars, { балл: `${x.result.earned} из ${x.result.max}`, процент: `${x.result.percent}%` });
   }
-  await sendTemplated({ tenantId: t, templateId, to, vars, event: "tested", refId: `${t}_${x.id}` });
+  const who = a ? `${a.child.name}, ${a.child.grade} класс` : String(x.student?.name || "");
+  return sendTemplated({
+    tenantId: t, templateId, to, vars, event: "tested", refId: `${t}_${x.id}`, force: o.force, by: o.by,
+    ctx: { attemptId: x.id, examId: exam.id, ...(a ? { applicantId: a.id } : {}), label: `${who} · ${exam.title || ""}` },
+    actionUrl: a ? await adminCardUrl(t, a, "profile") : `/workspace/${t}/exams/${exam.id}`,
+    noRecipient: a ? "Нет почты родителя" : "Нет почты ученика",
+    mirror: { ref: col(t, "exam_attempts").doc(x.id), field: "resultEmail" },
+  });
 }
+registerResender("tested", async (t, ctx, by) => {
+  if (!ctx.attemptId) return { sent: false, reason: "Нет работы" };
+  const s = await col(t, "exam_attempts").doc(ctx.attemptId).get();
+  const x = s.data();
+  if (!x || x.status !== "finished") return { sent: false, reason: "Работа не завершена" };
+  const es = await col(t, "exams").doc(String(x.examId)).get();
+  if (!es.exists) return { sent: false, reason: "Экзамен удалён" };
+  const exam = { ...(es.data() as Exam), id: es.id };
+  const a = x.applicantId ? await loadApplicant(t, x.applicantId).catch(() => null) : null;
+  return emailTested(t, { ...(x as any), id: s.id }, exam, a, { force: true, by });
+});
 
 /** Карточка без академической части: этап — не дальше направления. */
 const withoutAcademic = (a: Applicant): Applicant => ({ ...a, decision: null, candidate: null, paperResults: [] });
@@ -279,17 +299,19 @@ export async function syncReferral(t: string, a: Applicant, templates?: QTemplat
  * экзамена направления. Одно письмо на направление (журнал email_log);
  * force — ручная кнопка «На почту», отправит повторно.
  */
-export async function emailReferral(t: string, applicantId: string, o: { force?: boolean; by?: string } = {}): Promise<{ sent: boolean; reason?: string; skipped?: boolean }> {
+export async function emailReferral(t: string, applicantId: string, o: { force?: boolean; by?: string } = {}): Promise<SendResult> {
   try {
     const a = await loadApplicant(t, applicantId);
     if (!a?.referral?.examId) return { sent: false, reason: "Нет направления на экзамен" };
     const es = await col(t, "exams").doc(a.referral.examId).get();
     const templateId = sanitizeSettings(es.data()?.settings).admission?.referralEmail || "";
     if (!templateId) return { sent: false, reason: "В настройках экзамена не выбран шаблон письма" };
-    if (!a.parent.email) return { sent: false, reason: "Нет почты родителя" };
     const token = await referralTokenFor(t, a);
     return await sendTemplated({
-      tenantId: t, templateId, to: a.parent.email, event: "referral", refId: `${t}_${a.id}_${a.referral.examId}`, force: o.force, by: o.by,
+      tenantId: t, templateId, to: a.parent.email || "", event: "referral", refId: `${t}_${a.id}_${a.referral.examId}`, force: o.force, by: o.by,
+      ctx: { applicantId: a.id, examId: a.referral.examId, label: `${a.child.name}, ${a.child.grade} класс` },
+      actionUrl: await adminCardUrl(t, a, "profile"), noRecipient: "Нет почты родителя",
+      mirror: { ref: col(t, "applicants").doc(a.id), field: "referralEmail" },
       vars: {
         имя: a.parent.name, ребёнок: a.child.name, класс: a.child.grade, экзамен: a.referral.examTitle || String(es.data()?.title || ""),
         код: a.referral.examCode || "", ссылка: `${await appUrl()}/a/${token}`,
@@ -297,6 +319,7 @@ export async function emailReferral(t: string, applicantId: string, o: { force?:
     });
   } catch (e) { console.error("[admissions] referral email", e); return { sent: false, reason: "Не удалось отправить" }; }
 }
+registerResender("referral", (t, ctx, by) => (ctx.applicantId ? emailReferral(t, ctx.applicantId, { force: true, by }) : Promise.resolve({ sent: false, reason: "Нет карточки" })));
 
 /** Экзамен сохранили (поменяли классы или этапы) — подставить тест всем, кто его ждёт. */
 export async function syncAllReferrals(t: string) {

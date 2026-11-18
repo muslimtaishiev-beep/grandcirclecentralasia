@@ -5,6 +5,7 @@ import { requireFirebaseAuth } from "./authRoutes.js";
 import { sendTelegram, telegramConfig, tgCall } from "../server/telegram.js";
 import { revokeAllSessions } from "../server/session.js";
 import { timeText } from "../server/loginAlerts.js";
+import { onWatchCallback } from "../server/formWatch.js";
 
 /**
  * /api/telegram — привязка Telegram сотрудника к его аккаунту и вебхук бота.
@@ -93,8 +94,9 @@ async function onCallback(cq: any) {
   const chatId = cq.message?.chat?.id;
   const data = String(cq.data || "");
   const answer = (text: string) => tgCall("answerCallbackQuery", { callback_query_id: cq.id, text });
-  const m = data.match(/^lg:(ok|no):(\d{6,12})$/);
   const uid = chatId ? await uidOfChat(chatId) : null;
+  if (await onWatchCallback(data, uid, cq)) return;
+  const m = data.match(/^lg:(ok|no):(\d{6,12})$/);
   if (!m || !uid) { await answer("Кнопка устарела"); return; }
   const ref = db().collection("login_events").doc(`${uid}_${m[2]}`);
   const ev = (await ref.get()).data();
