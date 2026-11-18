@@ -22,7 +22,7 @@ export default function EmailResend({ tenantId, event, ctx, state, compact, onDo
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5 text-xs">
       {st === "sent" && <span className="inline-flex items-center gap-1 text-emerald-600" title={text}><CheckCircle2 className="w-3.5 h-3.5" />{!compact && text}</span>}
-      {st === "failed" && <span className="inline-flex items-center gap-1 text-rose-600" title={text}><XCircle className="w-3.5 h-3.5" />{!compact && text}</span>}
+      {st === "failed" && <span className="inline-flex items-center gap-1 text-rose-600" title={text}><XCircle className="w-3.5 h-3.5" />{(!compact || res) && text}</span>}
       <button type="button" onClick={go} disabled={busy} title={compact ? text || "Отправить письмо ещё раз" : undefined}
         className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-[var(--border-color)] text-[var(--text-main)] hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-50 whitespace-nowrap">
         {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} {state?.status || res ? "Переотправить" : "Отправить письмо"}

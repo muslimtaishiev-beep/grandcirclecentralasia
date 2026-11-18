@@ -1393,7 +1393,7 @@ export default function FormBuilder() {
                 Изменить поле
               </button>
               {(() => {
-                const mailable = picked.filter((x: any) => forms.find(f => f.id === x.formId)?.emailTemplateId);
+                const mailable = picked.filter((x: any) => forms.find(f => f.id === x.formId)?.emailTemplateId && String(x.applicantEmail || '').includes('@'));
                 if (!mailable.length) return null;
                 return (
                   <button disabled={bulkMail}
@@ -1525,7 +1525,7 @@ export default function FormBuilder() {
                           📎 Файл
                         </button>
                       )}
-                      {forms.find(f => f.id === sub.formId)?.emailTemplateId && !sub.deleted && (
+                      {forms.find(f => f.id === sub.formId)?.emailTemplateId && !sub.deleted && String(sub.applicantEmail || '').includes('@') && (
                         <span className="mr-2 align-middle"><EmailResend tenantId={currentOrgId} event="form" ctx={{ submissionId: sub.id }} state={sub.emailStatus} compact /></span>
                       )}
                       <button 
