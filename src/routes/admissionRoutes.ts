@@ -97,11 +97,12 @@ async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEvent, c: {
       : [who, c.name].filter(Boolean).join(" · ");
     const adminTab = ev === "new" ? "profile" : ev === "parent" ? "parent" : ev === "tested" || ev === "results" ? "test" : o.tid || "psych";
     const sent = new Set<string>([c.uid]);
+    const adminUrl = plan.admin ? await adminCardUrl(t, a, adminTab) : "";
     const batch = db().batch(); let n = 0;
     for (const aud of ["admin", "psych"] as Audience[]) {
       const title = plan[aud];
       if (!title) continue;
-      const url = aud === "admin" ? `/workspace/${t}/exams?tab=admissions&open=${a.id}&ctab=${adminTab}` : `/workspace/${t}/exams?side=psych&open=${a.id}&ctab=psych`;
+      const url = aud === "admin" ? adminUrl : `/workspace/${t}/exams?side=psych&open=${a.id}&ctab=psych`;
       for (const r of await membersWith(db(), t, AUDIENCE_PERMS[aud])) {
         if (sent.has(r.uid)) continue;
         sent.add(r.uid); n++;
@@ -113,6 +114,16 @@ async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEvent, c: {
     }
     if (n) await batch.commit();
   } catch (e) { console.error("[admissions] notify:", e); }
+}
+
+/** Адрес ребёнка у администрации — на странице экзамена его класса (иначе — «Поступающие»). */
+async function adminCardUrl(t: string, a: Pick<Applicant, "id" | "child" | "referral">, ctab: string, exams?: Exam[]) {
+  const g = gradeOf(a.child.grade);
+  const list = exams || await tenantExams(t);
+  const exam = list.find(e => e.id === a.referral?.examId && !e.archived)
+    || list.filter(e => !e.archived && g !== null && (e.settings.admission?.grades || []).includes(g))
+      .sort((x, y) => (x.status === "open" ? 0 : 1) - (y.status === "open" ? 0 : 1))[0];
+  return exam ? `/workspace/${t}/exams/${exam.id}?open=${a.id}&ctab=${ctab}` : `/workspace/${t}/exams?tab=admissions&open=${a.id}&ctab=${ctab}`;
 }
 
 /** Итог теста одной строкой — для уведомления. */
@@ -745,8 +756,9 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
     const c = await staffCaller(db(), l.tenantId, req.user);
     if (c?.member && hasPerm(c, ...ANY)) {
       const tab = hasPerm(c, "admission:manage") ? (l.purpose === "parent" ? "parent" : "test") : hasPerm(c, "psych:conduct") ? "psych" : "profile";
-      const part = hasPerm(c, "admission:manage") ? "tab=admissions" : "side=psych";
-      return res.json({ success: true, mode: "staff", org, who: c.name, url: `/workspace/${l.tenantId}/exams?${part}&open=${a.id}&ctab=${tab}${req.query.s ? `&s=${encodeURIComponent(String(req.query.s).slice(0, 40))}` : ""}`, child: a.child.name, refNo: a.refNo });
+      const sec = req.query.s ? `&s=${encodeURIComponent(String(req.query.s).slice(0, 40))}` : "";
+      const url = hasPerm(c, "admission:manage") ? await adminCardUrl(l.tenantId, a, tab) : `/workspace/${l.tenantId}/exams?side=psych&open=${a.id}&ctab=${tab}`;
+      return res.json({ success: true, mode: "staff", org, who: c.name, url: `${url}${sec}`, child: a.child.name, refNo: a.refNo });
     }
     const signedIn = !!c;
     if (l.purpose === "card") return res.json({ success: true, mode: "staff_only", org, signedIn });

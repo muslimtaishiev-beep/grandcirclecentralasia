@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
+import { Link, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Copy, Download, KeyRound, Loader2, QrCode, Trash2, UserPlus } from "lucide-react";
 import FancyQr, { QR_THEMES, downloadQr } from "../../../components/forms/FancyQr";
 import { tenantLogos } from "../../../shared/legal";
@@ -12,7 +12,8 @@ import ExamSettingsTab from "./ExamSettingsTab";
 import AttemptModal from "./AttemptModal";
 import NewApplicantModal from "../admissions/NewApplicantModal";
 import { useAdmissionApi } from "../admissions/admissionApi";
-import { resolvePermissions, type PermissionKey } from "../../../shared/permissions";
+import { canAdmissions, resolvePermissions, type PermissionKey } from "../../../shared/permissions";
+import AdmissionsPage from "../admissions/AdmissionsPage";
 
 /** Один экзамен: работы, аналитика, конструктор; сверху — ссылка, QR и PIN. */
 export default function ExamDetailPage() {
@@ -26,16 +27,25 @@ export default function ExamDetailPage() {
   const [pin, setPin] = useState("");
   const [canEdit, setCanEdit] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"attempts" | "analytics" | "settings">("attempts");
+  const [params, setParams] = useSearchParams();
+  // Ученик из уведомления или QR (?open=) — сразу во вкладке учеников класса.
+  const [tab, setTab] = useState<"students" | "attempts" | "analytics" | "settings">(params.get("open") ? "students" : "attempts");
+  const picked = React.useRef(!!params.get("open"));
   const [qr, setQr] = useState(false);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [openAttempt, setOpenAttempt] = useState<string | null>(null);
   const [newApplicant, setNewApplicant] = useState(false);
   const admApi = useAdmissionApi(tenantId);
-  const reception = useMemo(() => (Array.isArray(activeTenant?.effectivePermissions)
-    ? activeTenant.effectivePermissions.includes("admission:manage")
-    : resolvePermissions({ role: activeTenant?.role, permissions: activeTenant?.permissions, customPermissions: activeTenant?.customPermissions, rolePermissions: activeTenant?.customRole?.permissions, disabledModules: activeTenant?.disabledModules }).has("admission:manage" as PermissionKey)), [activeTenant]);
+  const granted = useMemo(() => (Array.isArray(activeTenant?.effectivePermissions)
+    ? new Set<PermissionKey>(activeTenant.effectivePermissions)
+    : resolvePermissions({ role: activeTenant?.role, permissions: activeTenant?.permissions, customPermissions: activeTenant?.customPermissions, rolePermissions: activeTenant?.customRole?.permissions, disabledModules: activeTenant?.disabledModules })), [activeTenant]);
+  const reception = granted.has("admission:manage");
+  /** Вступительный тест класса и права на поступающих — вкладка «Ученики класса». */
+  const classGrades = exam?.settings.admission?.grades || [];
+  const students = classGrades.length > 0 && canAdmissions(granted);
+  useEffect(() => { if (params.get("open")) { picked.current = true; setTab("students"); } }, [params]);
+  useEffect(() => { if (students && !picked.current) setTab("students"); }, [students]);
 
   const load = useCallback(async () => {
     try { const j = await api(`/exams/${examId}`); setExam(j.exam); setPin(j.pin); setCanEdit(j.canEdit); if (!j.exam.sections.length) setTab(t => (t === "attempts" ? "settings" : t)); }
@@ -114,11 +124,12 @@ export default function ExamDetailPage() {
       )}
 
       <div className="flex gap-1 border-b border-[var(--border-color)] overflow-x-auto hide-scrollbar">
-        {([["attempts", "Работы"], ["analytics", "Аналитика"], ["settings", "Конструктор"]] as const).map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 -mb-px ${tab === k ? "border-[var(--accent)] text-[var(--accent)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-main)]"}`}>{l}</button>
+        {([...(students ? [["students", "Ученики класса"]] as const : []), ["attempts", "Работы"], ["analytics", "Аналитика"], ["settings", "Конструктор"]] as const).map(([k, l]) => (
+          <button key={k} onClick={() => { picked.current = true; setTab(k); }} className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 -mb-px ${tab === k ? "border-[var(--accent)] text-[var(--accent)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-main)]"}`}>{l}</button>
         ))}
       </div>
 
+      {tab === "students" && students && <AdmissionsPage embedded mode="admin" classGrades={classGrades} />}
       {tab === "attempts" && <AttemptsTab exam={exam} api={api} tenant={activeTenant} canEdit={canEdit} />}
       {tab === "analytics" && <ExamAnalyticsTab exam={exam} api={api} onOpen={setOpenAttempt} />}
       <div className={tab === "settings" ? "" : "hidden"}>
@@ -128,7 +139,7 @@ export default function ExamDetailPage() {
       {newApplicant && (
         <NewApplicantModal api={admApi} grade={exam.settings.admission?.grades?.length === 1 ? String(exam.settings.admission.grades[0]) : undefined}
           onClose={() => setNewApplicant(false)}
-          onDone={id => navigate(`/workspace/${tenantId}/exams?tab=admissions&open=${id}&ctab=profile&qr=parent`)} />
+          onDone={id => { setNewApplicant(false); setParams({ open: id, ctab: "profile", qr: "parent" }, { replace: true }); }} />
       )}
       {openAttempt && <AttemptModal attemptId={openAttempt} exam={exam} api={api} tenant={activeTenant} canEdit={canEdit} onChanged={() => {}} onClose={() => setOpenAttempt(null)} />}
       {qr && (

@@ -10,6 +10,7 @@ import FancyQr from "../../../components/forms/FancyQr";
 import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui";
 import { TONE, type Api, type Me } from "./admissionApi";
 import { saveSessions, sessionsOf } from "./sessionPdf";
+import AttemptViewer from "../exams/AttemptViewer";
 import { candidateDoc, latestTest, saveCandidate, topicFeedback, type TestSummary } from "./candidateForm";
 
 /**
@@ -155,7 +156,7 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
             onPrintBlank={() => print(() => staffBlankHTML(org, child, { cardToken: a.tokens.card, template: t, grade }))}
             onPrintSheets={() => attachmentsFor(t, grade).filter(m => m.kind === "sheet").forEach(m => void print(() => sheetHTML(org, child, { cardToken: a.tokens.card, attachment: m, templateId: t.id })))} />
         ))}
-        {tab === "test" && d.me.academic && <TestTab a={a} d={d} api={api} onSaved={changed} onDownload={downloadCandidate} />}
+        {tab === "test" && d.me.academic && <TestTab a={a} d={d} api={api} tenant={tenant} onSaved={changed} onDownload={downloadCandidate} />}
         {tab === "history" && (
           <ul className="text-sm divide-y divide-[var(--border-color)]">
             {d.audit.map((x: any, k: number) => <li key={k} className="py-2 flex gap-3"><span className="text-[var(--text-muted)] tabular-nums whitespace-nowrap">{new Date(x.at).toLocaleString("ru-RU")}</span><span className="flex-1"><b className="font-medium">{x.byName}</b> — {AUDIT[x.action] || x.action}{x.detail ? `: ${x.detail}` : ""}</span></li>)}
@@ -321,8 +322,9 @@ function FormTab({ api, a, tpl, form, canFill, canSee, grade, onSaved, onMateria
   );
 }
 
-function TestTab({ a, d, api, onSaved, onDownload }: { a: Applicant; d: Data; api: Api; onSaved: () => void; onDownload: () => void }) {
+function TestTab({ a, d, api, tenant, onSaved, onDownload }: { a: Applicant; d: Data; api: Api; tenant: any; onSaved: () => void; onDownload: () => void }) {
   const [reason, setReason] = useState("");
+  const [result, setResult] = useState<{ id: string; examId: string } | null>(null);
   const [paper, setPaper] = useState<PaperResult | null>(null);
   const canManage = d.me.admission;
   /** Вручную направляет только администрация: психолог ставит итог, тест по классу выбирает система. */
@@ -355,7 +357,8 @@ function TestTab({ a, d, api, onSaved, onDownload }: { a: Applicant; d: Data; ap
             <b>{x.examTitle}</b><span className="text-[var(--text-muted)]">{x.paper ? "на бумаге" : `№ работы ${x.shortId}`}</span>
             <span>{x.status === "in_progress" ? "пишет сейчас" : x.status === "annulled" ? "аннулирована" : x.sections.map(p => `${p.title}: ${p.percent}%`).join(" · ") || (x.percent != null ? `${x.percent}%` : "сдан")}</span>
             {x.parts.filter(p => p.kind === "labels" || p.kind === "band").map(p => <span key={p.title} className="text-xs px-2 py-0.5 rounded bg-[var(--bg-surface-hover)]">{p.title}: {p.value}</span>)}
-            <a className="ml-auto text-[var(--accent)] text-xs inline-flex items-center gap-1 hover:underline" href={`/workspace/${t}/exams/${x.examId}`}><ExternalLink className="w-3.5 h-3.5" /> Открыть экзамен</a>
+            <button className="ml-auto px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20" onClick={() => setResult({ id: x.id, examId: x.examId })}>Результаты</button>
+            <a className="text-[var(--accent)] text-xs inline-flex items-center gap-1 hover:underline" href={`/workspace/${t}/exams/${x.examId}`}><ExternalLink className="w-3.5 h-3.5" /> Экзамен</a>
           </div>
         )) : <p className="text-sm text-[var(--text-muted)]">{d.testExam?.paper ? "Тест пишут на бумаге в школе — внесите результаты ниже." : "Онлайн-теста ещё не было."}</p>}
         {d.testExam?.paper && canManage && <PaperTestForm key={d.testExam.id + (test?.finishedAt || 0)} exam={d.testExam} prev={d.attempts.find(x => x.paper && x.examId === d.testExam!.id) || null}
@@ -375,6 +378,7 @@ function TestTab({ a, d, api, onSaved, onDownload }: { a: Applicant; d: Data; ap
       <CandidateEditor a={a} me={d.me} test={test} cfg={d.candidateForm || NEUTRAL_CANDIDATE_FORM} canManage={canManage} onDownload={onDownload}
         onSave={c => act(() => api(`/applicants/${a.id}/candidate`, { method: "PUT", body: JSON.stringify(c) }))} />
 
+      {result && <AttemptViewer tenant={tenant} attemptId={result.id} examId={result.examId} onClose={() => setResult(null)} onChanged={onSaved} />}
       {paper && <PaperModal p={paper} onClose={() => setPaper(null)} onSave={async x => { await api(`/applicants/${a.id}/paper`, { method: "POST", body: JSON.stringify(x) }); setPaper(null); onSaved(); }} />}
     </div>
   );

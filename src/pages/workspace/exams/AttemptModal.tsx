@@ -112,7 +112,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
           <div className="flex-1 min-w-[220px] text-sm space-y-0.5">
             <div className="text-[var(--text-muted)]">{[a.student.level && `${s.registration.levelLabel}: ${a.student.level}`, a.student.phone, a.student.email].filter(Boolean).join(" · ")}</div>
             {extraRowsOf(a, exam).length > 0 && <div className="text-xs text-[var(--text-muted)]">{extraRowsOf(a, exam).map(x => `${x.label}: ${x.value}`).join(" · ")}</div>}
-            {a.applicantId && <a href={`/workspace/${exam.tenantId}/exams?tab=admissions&open=${a.applicantId}&ctab=test`} className="text-xs text-[var(--accent)] hover:underline">Поступающий{a.refNo ? ` № ${String(a.refNo).padStart(4, "0")}` : ""} — карточка</a>}
+            {a.applicantId && <a href={`/workspace/${exam.tenantId}/exams/${exam.id}?open=${a.applicantId}&ctab=test`} className="text-xs text-[var(--accent)] hover:underline">Поступающий{a.refNo ? ` № ${String(a.refNo).padStart(4, "0")}` : ""} — карточка</a>}
             <div className="text-[var(--text-muted)]">Начал {new Date(a.startedAt).toLocaleString("ru-RU")}{a.finishedAt ? ` · сдал ${new Date(a.finishedAt).toLocaleString("ru-RU")} (${Math.round((a.finishedAt - a.startedAt) / 60000)} мин)` : ""}</div>
             <div className="flex flex-wrap gap-1.5 pt-1">
               {a.status === "in_progress" && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700">Сдаёт: {a.sections[a.current]?.title}</span>}

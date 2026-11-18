@@ -7,7 +7,7 @@ import type { Api } from "./admissionApi";
  * «Новый поступающий» — заводит администрация: с главной страницы экзаменов,
  * со страницы вступительного теста (класс уже подставлен) или из «Поступающих».
  */
-export default function NewApplicantModal({ api, grade, onClose, onDone }: { api: Api; grade?: string; onClose: () => void; onDone: (id: string) => void }) {
+export default function NewApplicantModal({ api, grade, onClose, onDone }: { api: Api; grade?: string; onClose: () => void; onDone: (id: string, grade: string) => void }) {
   const [f, setF] = useState({ name: "", birthDate: "", grade: grade || "", parentName: "", phone: "", note: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -15,7 +15,7 @@ export default function NewApplicantModal({ api, grade, onClose, onDone }: { api
     setBusy(true); setError(null);
     try {
       const j = await api("/applicants", { method: "POST", body: JSON.stringify({ child: { name: f.name, birthDate: f.birthDate, grade: f.grade }, parent: { name: f.parentName, phone: f.phone }, note: f.note }) });
-      onDone(j.id);
+      onDone(j.id, f.grade);
     } catch (e: any) { setError(e.message); setBusy(false); }
   };
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });

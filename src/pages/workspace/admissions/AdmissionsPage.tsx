@@ -7,6 +7,7 @@ import { Modal, btn, btnPrimary, card, input, label } from "../journals/componen
 import { TONE, useAdmissionApi, type Me, type Row } from "./admissionApi";
 import ApplicantCard from "./ApplicantCard";
 import NewApplicantModal from "./NewApplicantModal";
+import AttemptViewer from "../exams/AttemptViewer";
 import QrScanModal from "./QrScanModal";
 import TemplatesTab from "./TemplatesTab";
 import { downloadSessionById } from "./sessionPdf";
@@ -18,8 +19,11 @@ import { downloadSessionById } from "./sessionPdf";
  */
 const no = (n: number) => String(n).padStart(4, "0");
 
-/** mode: «admin» — приём (завести, QR, направление, тест, решение); «psych» — только сессии. */
-export default function AdmissionsPage({ embedded, mode = "admin" }: { embedded?: boolean; mode?: "admin" | "psych" } = {}) {
+/**
+ * mode: «admin» — приём (завести, QR, направление, тест, решение); «psych» — только сессии.
+ * classGrades — страница класса (вступительный тест): только его поступающие, без вкладки «Анкеты».
+ */
+export default function AdmissionsPage({ embedded, mode = "admin", classGrades }: { embedded?: boolean; mode?: "admin" | "psych"; classGrades?: number[] } = {}) {
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
   const tenantId: string = activeTenant?.id || "";
   const api = useAdmissionApi(tenantId);
@@ -33,7 +37,8 @@ export default function AdmissionsPage({ embedded, mode = "admin" }: { embedded?
   const [stage, setStage] = useState<"" | Stage>("");
   const [creating, setCreating] = useState(false);
   const [scan, setScan] = useState(false);
-  const tab = params.get("view") === "templates" ? "templates" : "list";
+  const [result, setResult] = useState<{ id: string; examId: string } | null>(null);
+  const tab = !classGrades && params.get("view") === "templates" ? "templates" : "list";
   const open = params.get("open");
 
   const load = useCallback(async () => {
@@ -57,6 +62,7 @@ export default function AdmissionsPage({ embedded, mode = "admin" }: { embedded?
 
   const grades = useMemo(() => [...new Set(rows.map(r => gradeOf(r.child.grade)).filter((g): g is number => g !== null))].sort((a, b) => a - b), [rows]);
   const visible = rows.filter(r => {
+    if (classGrades) { const g = gradeOf(r.child.grade); if (g === null || !classGrades.includes(g)) return false; }
     const t = q.trim().toLowerCase();
     if (t && !(`${r.child.name} ${r.parent.name} ${r.parent.phone}`.toLowerCase().includes(t) || no(r.refNo).includes(t.replace(/\D/g, "") || "—"))) return false;
     if (grade && String(gradeOf(r.child.grade)) !== grade) return false;
@@ -100,15 +106,15 @@ export default function AdmissionsPage({ embedded, mode = "admin" }: { embedded?
           <button className={`${btn} rounded-l-none border-l-0`} type="submit"><Search className="w-4 h-4" /> Найти</button>
         </form>
         <button className={btn} onClick={() => setScan(true)}><QrCode className="w-4 h-4" /> Сканер</button>
-        {me.admission && mode === "admin" && <button className={btnPrimary} onClick={() => setCreating(true)}><UserPlus className="w-4 h-4" /> Поступающий</button>}
+        {me.admission && mode === "admin" && !classGrades && <button className={btnPrimary} onClick={() => setCreating(true)}><UserPlus className="w-4 h-4" /> Поступающий</button>}
       </div>
 
-      <div className="flex gap-1 border-b border-[var(--border-color)]">
+      {!classGrades && <div className="flex gap-1 border-b border-[var(--border-color)]">
         {([["list", "Поступающие"], ["templates", "Анкеты"]] as const).map(([k, l]) => (
           <button key={k} onClick={() => { const p = new URLSearchParams(params); if (k === "templates") p.set("view", k); else p.delete("view"); setParams(p, { replace: true }); }}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${tab === k ? "border-[var(--accent)] text-[var(--accent)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-main)]"}`}>{l}</button>
         ))}
-      </div>
+      </div>}
 
       {tab === "templates" ? <TemplatesTab api={api} /> : (
         <>
@@ -117,7 +123,7 @@ export default function AdmissionsPage({ embedded, mode = "admin" }: { embedded?
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
               <input className={`${input} pl-9`} placeholder="ФИО, телефон или № поступающего" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && /^\D*\d+\D*$/.test(q)) void findNo(); }} />
             </div>
-            {grades.length > 0 && (
+            {grades.length > 0 && !classGrades && (
               <select className={`${input} !w-auto`} value={grade} onChange={e => setGrade(e.target.value)}>
                 <option value="">Все классы</option>{grades.map(g => <option key={g} value={g}>{g} класс</option>)}
               </select>
@@ -143,13 +149,14 @@ export default function AdmissionsPage({ embedded, mode = "admin" }: { embedded?
                       <td className="px-3 py-2"><div className="font-medium text-[var(--text-main)]">{r.child.name}</div><div className="text-[11px] text-[var(--text-muted)]">{r.parent.name}{r.parent.phone ? ` · ${r.parent.phone}` : ""}</div></td>
                       <td className="px-3 py-2">{r.child.grade}</td>
                       <td className="px-3 py-2">{r.parentForm.status === "done" ? <span className="text-emerald-700">✓</span> : <span className="text-[var(--text-muted)]">—</span>}</td>
-                      <td className="px-3 py-2">{Object.values(r.stages).map(s => <span key={s.templateId} className={`inline-block mr-1 mb-0.5 px-2 py-0.5 rounded text-[11px] font-medium ${s.status === "done" && s.tone ? TONE[s.tone] : "text-[var(--text-muted)] bg-[var(--bg-surface-hover)]"}`}>{s.status === "done" ? s.outcomeLabel : "идёт"}</span>)}{!Object.keys(r.stages).length && <span className="text-[var(--text-muted)]">—</span>}
+                      <td className="px-3 py-2">{Object.values(r.stages).map(s => <span key={s.templateId} className={`inline-block mr-1 mb-0.5 px-2 py-0.5 rounded text-[11px] font-medium ${s.status === "done" && s.tone ? TONE[s.tone] : s.status === "draft" ? "text-emerald-700 bg-emerald-500/10" : "text-[var(--text-muted)] bg-[var(--bg-surface-hover)]"}`}>{s.status === "done" ? s.outcomeLabel : "● у психолога"}</span>)}{!Object.keys(r.stages).length && <span className="text-[var(--text-muted)]">—</span>}
                         {(me.psych || me.psychView) && Object.values(r.stages).some(s => s.status === "done") && (
                           <button className="ml-1 align-middle p-1 rounded-md text-[var(--accent)] hover:bg-[var(--accent)]/10 disabled:opacity-50" title="Скачать бланк сессии" aria-label="Скачать бланк сессии" disabled={saving === r.id}
                             onClick={e => { e.stopPropagation(); void downloadSession(r.id); }}>{saving === r.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}</button>
                         )}</td>
                       {(me.academic && mode === "admin") && <td className="px-3 py-2 text-xs">
-                        {r.attempt ? <><div className="text-[var(--text-main)]">{r.attempt.examTitle}</div><div className="text-[var(--text-muted)]">{r.attempt.status === "in_progress" ? "пишет" : r.attempt.parts.map(p => `${p.title}: ${p.value}`).join(" · ") || (r.attempt.percent != null ? `${r.attempt.percent}%` : "сдан")}</div></>
+                        {r.attempt ? <><div className="text-[var(--text-main)]">{r.attempt.examTitle}</div><div className="text-[var(--text-muted)]">{r.attempt.status === "in_progress" ? <span className="text-emerald-700 font-medium">● пишет сейчас</span> : r.attempt.parts.map(p => `${p.title}: ${p.value}`).join(" · ") || (r.attempt.percent != null ? `${r.attempt.percent}%` : "сдан")}</div>
+                          <button className="mt-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20" onClick={e => { e.stopPropagation(); setResult({ id: r.attempt!.id, examId: r.attempt!.examId }); }}>Результаты</button></>
                           : r.referral ? <span className="text-sky-700">направлен{r.referral.manual ? " (вручную)" : ""}</span> : r.paperResults ? "на бумаге" : <span className="text-[var(--text-muted)]">—</span>}
                       </td>}
                       {(me.academic && mode === "admin") && <td className="px-3 py-2 text-xs">{r.decision || attemptDecision(r) || "—"}</td>}
@@ -164,12 +171,13 @@ export default function AdmissionsPage({ embedded, mode = "admin" }: { embedded?
         </>
       )}
 
-      {creating && <NewApplicantModal api={api} onClose={() => setCreating(false)} onDone={async id => {
+      {creating && <NewApplicantModal api={api} grade={classGrades?.length === 1 ? String(classGrades[0]) : undefined} onClose={() => setCreating(false)} onDone={async id => {
         setCreating(false); await load();
         // Сразу QR анкеты для родителя — сканирует на месте, печать по желанию.
         const p = new URLSearchParams(params); p.set("open", id); p.set("ctab", "profile"); p.set("qr", "parent"); setParams(p, { replace: true });
       }} />}
       {scan && <QrScanModal onClose={() => setScan(false)} />}
+      {result && <AttemptViewer tenant={activeTenant} attemptId={result.id} examId={result.examId} onClose={() => setResult(null)} onChanged={load} />}
       {open && <ApplicantCard key={open} id={open} api={api} tenant={activeTenant} psychMode={mode === "psych"} initialTab={params.get("ctab") || undefined} section={params.get("s") || undefined} autoQr={params.get("qr") === "parent" ? "parent" : undefined} onClose={() => openCard(null)} onChanged={load} />}
     </div>
   );

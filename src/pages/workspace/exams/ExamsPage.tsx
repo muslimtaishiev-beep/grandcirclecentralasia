@@ -1,9 +1,12 @@
 import React, { useMemo, useState } from "react";
-import { useOutletContext, useSearchParams } from "react-router-dom";
+import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { canAdmissions, canExamsAdmin, resolvePermissions, type PermissionKey } from "../../../shared/permissions";
 import BankTab from "./BankTab";
 import ExamsListTab from "./ExamsListTab";
 import ArchiveTab from "./ArchiveTab";
+import LiveTab from "./LiveTab";
+import { gradeOf } from "../../../shared/questionnaires";
+import type { ExamListItem } from "./examApi";
 import { useExamApi } from "./examApi";
 import AdmissionsPage from "../admissions/AdmissionsPage";
 import NewApplicantModal from "../admissions/NewApplicantModal";
@@ -15,7 +18,7 @@ import { useAdmissionApi } from "../admissions/admissionApi";
  * диагностика и направления на тест. Кто что видит — по правам: психолог
  * без тестовых прав сразу попадает на свою сторону.
  */
-const TABS = [["list", "Экзамены"], ["admissions", "Поступающие"], ["bank", "Банк вопросов"], ["archive", "Архив прежнего теста"]] as const;
+const TABS = [["list", "Экзамены"], ["live", "Сейчас"], ["admissions", "Поступающие"], ["bank", "Банк вопросов"], ["archive", "Архив прежнего теста"]] as const;
 
 export default function ExamsPage() {
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
@@ -24,7 +27,19 @@ export default function ExamsPage() {
   const adminApi = useExamApi(tenantId, "exam-admin");
   const [params, setParams] = useSearchParams();
   const admApi = useAdmissionApi(tenantId);
-  const [newApplicant, setNewApplicant] = useState<null | { grade?: number }>(null);
+  const [newApplicant, setNewApplicant] = useState<null | { grade?: number; examId?: string }>(null);
+  const navigate = useNavigate();
+  /** Заведён — на страницу экзамена его класса, к его карточке, и сразу QR анкеты для родителя. */
+  const openNew = async (id: string, grade: string, examId?: string) => {
+    let target = examId;
+    if (!target) {
+      const g = gradeOf(grade);
+      const exams: ExamListItem[] = await adminApi("/exams").then(j => j.exams).catch(() => []);
+      target = exams.filter(e => g !== null && (e.grades || []).includes(g)).sort((a, b) => (a.status === "open" ? 0 : 1) - (b.status === "open" ? 0 : 1))[0]?.id;
+    }
+    if (target) navigate(`/workspace/${tenantId}/exams/${target}?open=${id}&ctab=profile&qr=parent`);
+    else setParams({ tab: "admissions", open: id, ctab: "profile", qr: "parent" }, { replace: true });
+  };
   const granted = useMemo(() => (Array.isArray(activeTenant?.effectivePermissions)
     ? new Set<PermissionKey>(activeTenant.effectivePermissions)
     : resolvePermissions({ role: activeTenant?.role, permissions: activeTenant?.permissions, customPermissions: activeTenant?.customPermissions, rolePermissions: activeTenant?.customRole?.permissions, disabledModules: activeTenant?.disabledModules })), [activeTenant]);
@@ -35,6 +50,7 @@ export default function ExamsPage() {
   const psych = admissionsOn && (granted.has("psych:conduct") || granted.has("psych:view"));
   const side = psych && (params.get("side") === "psych" || !admin) ? "psych" : "admin";
   const tabs = TABS.filter(([k]) => (k === "admissions" ? reception : tests));
+  const admForLive = reception || granted.has("psych:view") ? admApi : null;
   const tab = (tabs.find(t => t[0] === params.get("tab"))?.[0] || tabs[0]?.[0] || "list") as (typeof TABS)[number][0];
   const sideBtn = (k: "admin" | "psych", l: string) => (
     <button onClick={() => setParams(k === "psych" ? { side: "psych" } : {}, { replace: true })}
@@ -54,7 +70,8 @@ export default function ExamsPage() {
                 className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 -mb-px ${tab === k ? "border-[var(--accent)] text-[var(--accent)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-main)]"}`}>{l}</button>
             ))}
           </div>
-          {tenantId && tab === "list" && <ExamsListTab api={adminApi} tenantId={tenantId} onNewApplicant={reception ? grade => setNewApplicant({ grade }) : undefined} />}
+          {tenantId && tab === "list" && <ExamsListTab api={adminApi} tenantId={tenantId} onNewApplicant={reception ? (grade, examId) => setNewApplicant({ grade, examId }) : undefined} />}
+          {tenantId && tab === "live" && <LiveTab api={adminApi} admApi={admissionsOn ? admForLive : null} tenant={activeTenant} />}
           {tenantId && tab === "admissions" && <AdmissionsPage embedded mode="admin" />}
           {tenantId && tab === "bank" && <BankTab api={bankApi} />}
           {tenantId && tab === "archive" && <ArchiveTab api={adminApi} />}
@@ -63,7 +80,7 @@ export default function ExamsPage() {
       {newApplicant && (
         <NewApplicantModal api={admApi} grade={newApplicant.grade ? String(newApplicant.grade) : undefined} onClose={() => setNewApplicant(null)}
           // Заведён — в «Поступающие», на его карточку, и сразу QR анкеты для родителя.
-          onDone={id => { setNewApplicant(null); setParams({ tab: "admissions", open: id, ctab: "profile", qr: "parent" }, { replace: true }); }} />
+          onDone={(id, grade) => { const examId = newApplicant.examId; setNewApplicant(null); void openNew(id, grade, examId); }} />
       )}
     </div>
   );
