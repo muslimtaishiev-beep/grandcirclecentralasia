@@ -29,10 +29,13 @@ export async function recordLogin(req: any, uid: string, user: { loginAlerts?: b
   if (!authTime) return;
   const id = `${uid}_${authTime}`;
   const ref = db().collection("login_events").doc(id);
-  if ((await ref.get()).exists) return; // этот вход уже записан — обновление токена или открытие страницы
   const ua = String(req.headers?.["user-agent"] || "").slice(0, 300);
   const ev = { uid, authTime, at: authTime * 1000, ip: ipOf(req).slice(0, 64), ua, device: deviceOf(ua), provider: String(req.user?.firebase?.sign_in_provider || ""), status: "new" };
-  await ref.set(ev);
+  // create, а не «проверить и записать»: сайт при входе спрашивает /me дважды
+  // одновременно, и оба запроса видели «ещё не записан» — оповещение уходило дважды.
+  // Уже записан (второй запрос, обновление токена) — молчим.
+  try { await ref.create(ev); }
+  catch (e: any) { if (e?.code === 6 || /already exists/i.test(String(e?.message))) return; throw e; }
   if (user.loginAlerts === false) return;
   const chat = await chatOf(uid);
   if (!chat) {

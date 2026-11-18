@@ -134,6 +134,10 @@ async function notifyFailed(p: TemplatedSend, logId: string, reason: string) {
     const title = `${EVENT_TITLE[p.event]} не ушло`;
     const body = [p.ctx.label, p.to ? `на ${p.to}` : "", reason].filter(Boolean).join(" · ");
     const url = p.actionUrl || `/workspace/${p.tenantId}/settings/emails?tab=log`;
+    // Уже есть непрочитанное «не ушло» по этому письму — в Telegram второй раз не пишем.
+    const refs = people.map(r => db().collection("notifications").doc(`email_${logId}_${r.uid}`.slice(0, 1400)));
+    const prev = await db().getAll(...refs);
+    const fresh = people.filter((_, i) => !(prev[i].exists && prev[i].data()?.read === false));
     const batch = db().batch();
     for (const r of people) {
       batch.set(db().collection("notifications").doc(`email_${logId}_${r.uid}`.slice(0, 1400)), {
@@ -142,7 +146,7 @@ async function notifyFailed(p: TemplatedSend, logId: string, reason: string) {
       });
     }
     await batch.commit();
-    await notifyTelegram(people.map(x => x.uid), title, body, url);
+    if (fresh.length) await notifyTelegram(fresh.map(x => x.uid), title, body, url);
   } catch (e) { console.error("[email] notify failed:", e); }
 }
 
