@@ -8,6 +8,7 @@ import {
   isFormStatus, type FormStatus, type FormMode,
 } from "../shared/formStatuses.js";
 import { checkFileValue, FILE_LIMITS } from "../shared/uploads.js";
+import { cleanMulti, fieldVisible } from "../shared/formFields.js";
 import { hasAnyPermission } from "../server/access.js";
 import { checkTenantOpen, requireScreen, loadTenant } from "../server/tenantAccess.js";
 import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
@@ -402,8 +403,19 @@ router.post("/submit", async (req: any, res: any) => {
     const missing: string[] = [];
     let fileChars = 0;
     for (const f of fields) {
+      // Заголовок раздела — не поле; скрытое условием поле (раздел не для
+      // этого ответа) не обязательно и в заявку не попадает.
+      if (f.type === "section") continue;
+      if (!fieldVisible(f, clean)) continue;
       const raw = (data as any)[f.id];
       let value: any;
+      if (f.type === "multi") {
+        const m = cleanMulti(f, raw);
+        if (m.error) return res.status(400).json({ success: false, error: m.error });
+        if (f.required && !m.value.length) { missing.push(f.label || f.id); continue; }
+        clean[f.id] = m.value;
+        continue;
+      }
       if (f.type === "checkbox") {
         value = Boolean(raw);
       } else if (f.type === "file") {
@@ -1026,8 +1038,8 @@ router.post("/submissions/upsert", formsApiLimiter, authenticateFormApi, async (
     const clean: Record<string, any> = {};
     for (const f of fields) {
       const raw = inputData[f.id] ?? inputData[f.label];
-      if (raw !== undefined) {
-        clean[f.id] = f.type === "checkbox" ? Boolean(raw) : str(raw, 2000);
+      if (raw !== undefined && f.type !== "section") {
+        clean[f.id] = f.type === "checkbox" ? Boolean(raw) : f.type === "multi" ? cleanMulti(f, raw).value : str(raw, 2000);
       }
     }
     // Те же рамки, что и при обычной подаче: ключи сверх объявленных полей

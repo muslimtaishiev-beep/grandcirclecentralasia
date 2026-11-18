@@ -5,6 +5,7 @@ import LegalLinks from "../../components/public/LegalLinks";
 import FancyQr, { QR_THEMES, QrThemePicker, downloadQr, type QrTheme } from "../../components/forms/FancyQr";
 import { compressImageToDataUrl } from "../../lib/compressImage";
 import { buildFileValue, checkFileValue, fileInfo, formatSize, isFileValue, FILE_LIMITS } from "../../shared/uploads";
+import { fieldVisible, OTHER, type FormFieldDef } from "../../shared/formFields";
 
 /**
  * Публичная страница заявки — то, что открывается по ссылке из конструктора.
@@ -17,11 +18,7 @@ import { buildFileValue, checkFileValue, fileInfo, formatSize, isFileValue, FILE
  * нет и быть не должно.
  */
 
-type Field = {
-  id: string; label: string; required: boolean;
-  type: "text" | "textarea" | "select" | "file" | "date" | "number" | "checkbox";
-  options?: string[]; placeholder?: string;
-};
+type Field = FormFieldDef & { required: boolean };
 type Form = {
   id: string; title: string; description: string;
   fields: Field[]; qrTrackingEnabled: boolean;
@@ -69,13 +66,28 @@ export default function PublicForm() {
 
   useEffect(() => { void load(); }, [load]);
 
+  /** Только видимые поля; «Другое» — с текстом, который вписал человек. */
+  const payload = () => {
+    const data: Record<string, any> = {};
+    for (const f of form?.fields || []) {
+      if (f.type === "section" || !fieldVisible(f, values)) continue;
+      let v = values[f.id];
+      if (f.type === "multi") {
+        const other = String(values[`${f.id}__other`] || "").trim();
+        v = (Array.isArray(v) ? v : []).map((o: string) => (o === OTHER ? (other ? `${OTHER}: ${other}` : "") : o)).filter(Boolean);
+      }
+      if (v !== undefined) data[f.id] = v;
+    }
+    return data;
+  };
+
   const submit = async () => {
     if (!form) return;
     setBusy(true); setError(null);
     try {
       const res = await fetch("/api/forms/submit", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ formId: form.id, data: values }),
+        body: JSON.stringify({ formId: form.id, data: payload() }),
       });
       const j = await res.json();
       if (!j.success) { setError(j.error || "Не удалось отправить заявку."); return; }
@@ -214,18 +226,58 @@ export default function PublicForm() {
             </div>
           )}
           <h1 className="text-2xl font-bold text-slate-900">{form.title}</h1>
-          {form.description && <p className="text-slate-500 text-sm mt-1">{form.description}</p>}
+          {form.description && <p className="text-slate-500 text-sm mt-1 whitespace-pre-line">{form.description}</p>}
         </div>
 
         <div className="p-6 grid gap-4">
-          {form.fields.map(f => (
+          {form.fields.filter(f => fieldVisible(f, values)).map(f => f.type === "section" ? (
+            <div key={f.id} className="pt-4 border-t border-slate-100 first:border-0 first:pt-0">
+              <h2 className="text-lg font-bold text-slate-900">{f.label}</h2>
+              {f.hint && <p className="text-sm text-slate-500 mt-0.5 whitespace-pre-line">{f.hint}</p>}
+            </div>
+          ) : (
             <div key={f.id}>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">
                 {f.label}
                 {f.required && <span className="text-red-500 ml-0.5">*</span>}
               </label>
+              {f.hint && <p className="text-xs text-slate-500 -mt-1 mb-2 whitespace-pre-line">{f.hint}</p>}
 
-              {f.type === "textarea" ? (
+              {f.type === "multi" ? (() => {
+                const picked: string[] = Array.isArray(values[f.id]) ? values[f.id] : [];
+                const max = Number(f.maxSelect) || 0;
+                const full = max > 0 && picked.length >= max;
+                return (
+                  <div className="grid gap-2">
+                    {[...(f.options || []), ...(f.allowOther ? [OTHER] : [])].map(o => {
+                      const on = picked.includes(o);
+                      return (
+                        <label key={o} className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 ${on ? "border-blue-500 bg-blue-50/60" : "border-slate-200"} ${!on && full ? "opacity-50" : "cursor-pointer"}`}>
+                          <input type="checkbox" className="w-5 h-5 rounded border-slate-300 shrink-0" checked={on} disabled={!on && full}
+                            onChange={e => set(f.id, e.target.checked ? [...picked, o] : picked.filter(x => x !== o))} />
+                          <span className="text-sm text-slate-700">{o}</span>
+                        </label>
+                      );
+                    })}
+                    {f.allowOther && picked.includes(OTHER) && (
+                      <input value={values[`${f.id}__other`] || ""} onChange={e => set(`${f.id}__other`, e.target.value)} placeholder="Ваш вариант" className={base} />
+                    )}
+                    {max > 0 && <div className="text-xs text-slate-400">Выбрано {picked.length} из {max}</div>}
+                  </div>
+                );
+              })() : f.type === "radio" ? (
+                <div className="grid gap-2">
+                  {(f.options || []).map(o => {
+                    const on = values[f.id] === o;
+                    return (
+                      <label key={o} className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 cursor-pointer ${on ? "border-blue-500 bg-blue-50/60" : "border-slate-200"}`}>
+                        <input type="radio" name={f.id} className="w-5 h-5 shrink-0" checked={on} onChange={() => set(f.id, o)} />
+                        <span className="text-sm text-slate-700">{o}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : f.type === "textarea" ? (
                 <textarea value={values[f.id] || ""} onChange={e => set(f.id, e.target.value)}
                   placeholder={f.placeholder} rows={4} className={base} />
               ) : f.type === "select" ? (

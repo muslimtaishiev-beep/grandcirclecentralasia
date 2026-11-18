@@ -42,7 +42,10 @@ const humanError = (e: any): string =>
     : String(e?.message || e);
 
 /** Поле анкеты, которое можно править из кабинета (файлы — нет). */
-const editableField = (f: any) => f && f.type !== 'file';
+const editableField = (f: any) => f && f.type !== 'file' && f.type !== 'multi' && f.type !== 'section';
+/** Несколько вариантов — через «; » (в таблице, CSV, Excel, истории). */
+const asText = (v: unknown) => (Array.isArray(v) ? v.join('; ') : v);
+const CHOICE = ['select', 'radio', 'multi'];
 
 /**
  * Как показать ссылку внутри кабинета. Сайты сами решают, пускать ли себя
@@ -278,7 +281,7 @@ export default function FormBuilder() {
   // Поля выбранной анкеты плюс те, что есть у любой заявки.
   const filterableFields = React.useMemo(() => {
     const form = forms.find(f => f.id === filterFormId);
-    const own = (form?.fields || []).map((f: any) => ({
+    const own = (form?.fields || []).filter((f: any) => f.type !== 'section').map((f: any) => ({
       id: f.id, label: f.label || f.id, type: f.type, options: f.options || [],
     }));
     return [
@@ -521,7 +524,7 @@ export default function FormBuilder() {
     const rows = visibleSubs.filter((s: any) => s.formId === formId && !s.deleted);
     if (!rows.length) { alert('Под выбранные условия не подошла ни одна заявка.'); return; }
 
-    const fields = (form?.fields || []).filter((f: any) => f.type !== 'file');
+    const fields = (form?.fields || []).filter((f: any) => f.type !== 'file' && f.type !== 'section');
     const head = ['Дата', 'Имя', 'Телефон', 'Почта', 'Статус', 'Код']
       .concat(fields.map((f: any) => f.label || f.id));
 
@@ -534,7 +537,7 @@ export default function FormBuilder() {
       lines.push([
         when, r.applicantName || '', r.applicantPhone || '', r.applicantEmail || '',
         STATUS_LABEL[(r.status || 'new') as keyof typeof STATUS_LABEL] || r.status || '', r.qrToken || '',
-      ].concat(fields.map((f: any) => r.data?.[f.id] ?? '')).map(esc).join(';'));
+      ].concat(fields.filter((f: any) => f.type !== 'section').map((f: any) => asText(r.data?.[f.id]) ?? '')).map(esc).join(';'));
     }
 
     const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -572,7 +575,7 @@ export default function FormBuilder() {
     setBusySub(formId);
     try {
       const { sheetService } = await import('../../../services/collab/sheetService');
-      const fields = (form?.fields || []).filter((f: any) => f.type !== 'file');
+      const fields = (form?.fields || []).filter((f: any) => f.type !== 'file' && f.type !== 'section');
       const head = ['Дата', 'Имя', 'Телефон', 'Почта', 'Статус', 'Код']
         .concat(fields.map((f: any) => f.label || f.id));
 
@@ -582,7 +585,7 @@ export default function FormBuilder() {
           r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toLocaleString('ru-RU') : '',
           r.applicantName || '', r.applicantPhone || '', r.applicantEmail || '',
           STATUS_LABEL[(r.status || 'new') as keyof typeof STATUS_LABEL] || '', r.qrToken || '',
-        ].concat(fields.map((f: any) => String(r.data?.[f.id] ?? ''))));
+        ].concat(fields.filter((f: any) => f.type !== 'section').map((f: any) => String(asText(r.data?.[f.id]) ?? ''))));
       }
 
       // Ячейки в формате «A1»: буква колонки + номер строки.
@@ -745,12 +748,12 @@ export default function FormBuilder() {
     // выпадающем списке выглядит как сбой и выбрать её нельзя. Убираем их
     // здесь, а не при вводе, — иначе поле схлопывалось бы под руками.
     const cleanFields = fields.map((f: any) => (
-      f.type === 'select'
+      CHOICE.includes(f.type)
         ? { ...f, options: optionsOf(f).map((o: string) => String(o).trim()).filter(Boolean) }
         : f
     ));
 
-    const brokenSelect = cleanFields.find((f: any) => f.type === 'select' && f.options.length < 2);
+    const brokenSelect = cleanFields.find((f: any) => CHOICE.includes(f.type) && f.options.length < 2);
     if (brokenSelect) {
       alert(`У поля «${brokenSelect.label || 'без названия'}» нужно минимум два варианта ответа.`);
       return;
@@ -1855,7 +1858,7 @@ export default function FormBuilder() {
               // Одна лента: смены статуса (с ответом заявителю) и правки
               // ответов. Новое сверху; у каждой записи — кто и когда.
               const ts = (x: any) => x?.seconds ? x.seconds * 1000 : (typeof x === 'string' ? Date.parse(x) : 0);
-              const show = (v: any) => v === true ? 'да' : v === false ? 'нет' : (v == null || v === '' ? '—' : String(v));
+              const show = (v: any) => v === true ? 'да' : v === false ? 'нет' : (v == null || v === '' ? '—' : String(asText(v)));
               const items = [
                 ...(Array.isArray(liveSub.history) ? liveSub.history : []).map((h: any) => ({ kind: 'status', at: ts(h.at), by: h.by, h })),
                 ...(Array.isArray(liveSub.changes) ? liveSub.changes : []).map((c: any) => ({ kind: 'field', at: ts(c.at), by: c.by, c })),
@@ -2002,7 +2005,10 @@ export default function FormBuilder() {
                         <option value="textarea">Многострочный текст</option>
                         <option value="number">Число</option>
                         <option value="select">Выбор из списка</option>
+                        <option value="radio">Один вариант (кнопки)</option>
+                        <option value="multi">Несколько вариантов (флажки)</option>
                         <option value="checkbox">Галочка</option>
+                        <option value="section">Раздел (заголовок)</option>
                         <option value="file">Загрузка файла (фото)</option>
                         <option value="date">Дата</option>
                       </select>
@@ -2015,7 +2021,40 @@ export default function FormBuilder() {
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
-                    {field.type === 'select' && (() => {
+                    <input type="text" value={field.hint || ''} onChange={(e) => updateField(idx, 'hint', e.target.value)}
+                      placeholder={field.type === 'section' ? 'Описание раздела' : 'Подпись под вопросом'}
+                      className="w-full px-3 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg text-xs" />
+                    {field.type === 'multi' && (
+                      <div className="flex flex-wrap items-center gap-3 text-[11px] text-[var(--text-muted)]">
+                        <label className="flex items-center gap-1.5">не больше
+                          <input type="number" min={0} value={field.maxSelect || ''} onChange={(e) => updateField(idx, 'maxSelect', Number(e.target.value) || undefined)}
+                            placeholder="∞" className="w-14 px-2 py-1 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg text-xs" />
+                        </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" checked={!!field.allowOther} onChange={(e) => updateField(idx, 'allowOther', e.target.checked)} /> «Другое» со своим ответом</label>
+                      </div>
+                    )}
+                    {(() => {
+                      // Условие показа: поле (или раздел) — только при выбранных ответах на поле выше.
+                      const prior = fields.slice(0, idx).filter((x: any) => CHOICE.includes(x.type));
+                      if (!prior.length) return null;
+                      const src = prior.find((x: any) => x.id === field.showIf?.field);
+                      const on: string[] = field.showIf?.in || [];
+                      return (
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
+                          <span>Показывать, если</span>
+                          <select value={field.showIf?.field || ''} onChange={(e) => updateField(idx, 'showIf', e.target.value ? { field: e.target.value, in: [] } : undefined)}
+                            className="px-2 py-1 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg text-[11px] max-w-[220px]">
+                            <option value="">всегда</option>
+                            {prior.map((x: any) => <option key={x.id} value={x.id}>{x.label}</option>)}
+                          </select>
+                          {src && optionsOf(src).filter(Boolean).map((o: string) => (
+                            <button key={o} type="button" onClick={() => updateField(idx, 'showIf', { field: src.id, in: on.includes(o) ? on.filter(v => v !== o) : [...on, o] })}
+                              className={`px-2 py-0.5 rounded-full border ${on.includes(o) ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-[var(--border-color)]'}`}>{o}</button>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                    {CHOICE.includes(field.type) && (() => {
                       const options = optionsOf(field);
                       const dupes = duplicateOptions(field);
                       const filled = options.filter(o => String(o).trim()).length;
