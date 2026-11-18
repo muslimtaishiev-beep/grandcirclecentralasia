@@ -153,14 +153,14 @@ router.get("/me", requireFirebaseAuth, async (req: any, res: any) => {
 /**
  * Техническая причина отказа почты → понятная фраза для руководителя.
  *
- * «RESEND_API_KEY not configured» ничего не говорит человеку, который
+ * «Microsoft 365: Access denied» ничего не говорит человеку, который
  * добавляет сотрудника: ему нужно знать, что делать дальше.
  */
 function emailInviteHint(reason?: string): string {
   const raw = String(reason || "");
-  if (/not configured/i.test(raw)) return "Отправка писем не настроена в организации.";
+  if (/not configured|не настроена/i.test(raw)) return "Отправка писем не настроена.";
   if (/domain|verif/i.test(raw)) return "Домен отправителя не подтверждён у почтового сервиса.";
-  if (/invalid recipient/i.test(raw)) return "Адрес почты записан с ошибкой.";
+  if (/invalid recipient|recipient|Нет адреса/i.test(raw)) return "Адрес почты записан с ошибкой.";
   if (/rate|limit|quota/i.test(raw)) return "Почтовый сервис временно ограничил отправку — попробуйте позже.";
   return raw ? `Почтовый сервис отказал: ${raw}` : "Письмо отправить не удалось.";
 }
@@ -286,7 +286,7 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
     // после первого обновления токена.
     await syncClaims(db, uid);
 
-    // 4. Send a branded Russian invite email (via Resend) carrying a real Firebase
+    // 4. Send a branded Russian invite email (via Microsoft 365) carrying a real Firebase
     // password-reset link — replaces the old sendOobCode call, which only fires
     // Firebase's default (unbranded, English-first) template with no control over
     // content or language.

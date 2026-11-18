@@ -1,5 +1,6 @@
 import admin from "firebase-admin";
 import { chatOf, sendTelegram } from "./telegram.js";
+import { sendMail } from "./mail.js";
 
 /**
  * Журнал входов и оповещение «Вход в аккаунт» в Telegram.
@@ -34,7 +35,19 @@ export async function recordLogin(req: any, uid: string, user: { loginAlerts?: b
   await ref.set(ev);
   if (user.loginAlerts === false) return;
   const chat = await chatOf(uid);
-  if (!chat) return;
+  if (!chat) {
+    // Нет Telegram — письмо, но только при входе с нового устройства или IP: иначе почта засорится.
+    const email = String(req.user?.email || "");
+    if (!email) return;
+    const prev = (await db().collection("login_events").where("uid", "==", uid).get()).docs.map(d => d.data()).filter(x => x.authTime !== authTime);
+    if (prev.some(x => x.device === ev.device && x.ip === ev.ip)) return;
+    const esc = (v: string) => v.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
+    await sendMail({
+      to: email, fromName: "StudyFree", subject: "Вход в ваш аккаунт с нового устройства",
+      html: `<div style="font-family:Arial,sans-serif;font-size:15px;color:#111"><p>В ваш аккаунт StudyFree вошли:</p><p><b>${esc(ev.device)}</b><br>IP ${esc(ev.ip || "—")} · ${esc(timeText(ev.at))}</p><p>Если это были не вы — откройте сайт, профиль → «Выйти на всех устройствах» и смените пароль.</p></div>`,
+    });
+    return;
+  }
   await sendTelegram(chat, "Вход в аккаунт", `${ev.device}\nIP ${ev.ip || "—"} · ${timeText(ev.at)}`, undefined, [[
     { text: "Это я", data: `lg:ok:${authTime}` },
     { text: "Это не я — выйти везде", data: `lg:no:${authTime}` },

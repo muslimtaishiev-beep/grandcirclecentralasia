@@ -110,7 +110,7 @@ export default function ProfilePage() {
         <label className="flex items-center gap-2 text-sm text-[var(--text-main)]">
           <input type="checkbox" checked={p.loginAlerts} disabled={busy === "alerts"}
             onChange={e => run("alerts", () => api("/profile", { method: "PUT", body: JSON.stringify({ loginAlerts: e.target.checked }) }))} />
-          Сообщать в Telegram о каждом входе в аккаунт
+          Сообщать о входе в аккаунт (Telegram, без него — письмо о новом устройстве)
         </label>
         <div>
           <span className={label}>Последние входы</span>
