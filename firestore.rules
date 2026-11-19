@@ -56,6 +56,26 @@ service cloud.firestore {
       return isSuperadmin() || (isAuthenticated()
         && (permCodes(tenantId) == '*' || code in permCodes(tenantId).split(',')));
     }
+    function hasAnyPerm(tenantId, codes) {
+      return isSuperadmin() || (isAuthenticated()
+        && (permCodes(tenantId) == '*' || permCodes(tenantId).split(',').hasAny(codes)));
+    }
+
+    // Общие коллекции: организация записи — в поле tenantId. Права —
+    // по кодам из токена, как в подколлекциях организации. При правке
+    // tenantId менять нельзя: раньше проверялась только старая организация,
+    // и запись можно было «перевезти» в чужую школу.
+    function permRead(codes)   { return hasAnyPerm(resource.data.tenantId, codes); }
+    function permCreate(codes) { return hasAnyPerm(request.resource.data.tenantId, codes); }
+    function sameTenant()      { return request.resource.data.tenantId == resource.data.tenantId; }
+    function permUpdate(codes) { return permRead(codes) && sameTenant(); }
+
+    // Наборы кодов (PERMISSION_CODES в src/shared/permissions.ts).
+    function CRM_VIEW()   { return ['cr', 'cm']; }
+    function EXAMS_VIEW() { return ['tr', 'tm', 'tv', 'pm']; }
+    // Формы и заявки: ведут tg/ci/cm (canManageForms), смотрят ещё и cr.
+    function FORMS_EDIT() { return ['tg', 'ci', 'cm']; }
+    function FORMS_VIEW() { return ['tg', 'ci', 'cm', 'cr']; }
 
     // -------------------------------------------------------------
     // 1. TENANTS & SUBCOLLECTIONS
@@ -69,8 +89,12 @@ service cloud.firestore {
     // Документ организации хранит ключи интеграций и почтовые настройки —
     // читать его могут только сотрудники и суперадмин. Анонимным страницам
     // сервер отдаёт публичный срез (GET /api/tenant/config).
+    // Читают только администраторы организации: в документе ещё лежат старые
+    // ключи (apiKey и т. п.), а интерфейс берёт организацию через сервер
+    // (/api/tenants/my). Раньше документ читал любой сотрудник, вплоть до
+    // волонтёра проверки билетов.
     match /tenants/{tenantId} {
-      allow read: if isTenantUser(tenantId) || isSuperadmin();
+      allow read: if isTenantAdmin(tenantId);
       allow write: if isSuperadmin();
 
       function member() { return isTenantUser(tenantId) || isSuperadmin(); }
@@ -82,20 +106,23 @@ service cloud.firestore {
       match /payroll_settings/{d}  { allow read: if hasPerm(tenantId, 'ep'); allow write: if false; }
       match /payroll_employees/{d} { allow read: if hasPerm(tenantId, 'ep'); allow write: if false; }
       match /payroll_records/{d}   { allow read: if hasPerm(tenantId, 'ep'); allow write: if false; }
-      match /edu_payroll/{d}       { allow read: if member(); allow write: if hasPerm(tenantId, 'ep'); }
-      match /edu_payroll_rates/{d} { allow read: if member(); allow write: if hasPerm(tenantId, 'ep'); }
-      match /billing/{d}           { allow read: if member(); allow write: if isSuperadmin(); }
+      match /edu_payroll/{d}       { allow read, write: if hasPerm(tenantId, 'ep'); }
+      match /edu_payroll_rates/{d} { allow read, write: if hasPerm(tenantId, 'ep'); }
+      match /billing/{d}           { allow read: if isTenantAdmin(tenantId); allow write: if isSuperadmin(); }
       match /edu_schedule/{d}      { allow read: if member(); allow write: if hasPerm(tenantId, 'es'); }
       match /edu_attendance/{d}    { allow read: if member(); allow write: if hasPerm(tenantId, 'es'); }
-      match /edu_subscriptions/{d} { allow read: if member(); allow write: if hasPerm(tenantId, 'es'); }
-      match /students/{d}          { allow read: if member(); allow write: if hasPerm(tenantId, 'es'); }
-      match /crm_contacts/{d}      { allow read: if member(); allow write: if hasPerm(tenantId, 'cm'); }
-      match /crm_deals/{d}         { allow read: if member(); allow write: if hasPerm(tenantId, 'cm'); }
-      match /crm_pipelines/{d}     { allow read: if member(); allow write: if hasPerm(tenantId, 'cm'); }
-      match /crm_logs/{d}          { allow read, write: if member(); }
+      match /edu_subscriptions/{d} { allow read, write: if hasPerm(tenantId, 'es'); }
+      match /students/{d}          { allow read: if hasPerm(tenantId, 'es') || isTenantAdmin(tenantId); allow write: if hasPerm(tenantId, 'es'); }
+      // CRM: смотреть — «CRM: просмотр» или «управление», менять — «управление».
+      match /crm_contacts/{d}      { allow read: if hasAnyPerm(tenantId, CRM_VIEW()); allow write: if hasPerm(tenantId, 'cm'); }
+      match /crm_deals/{d}         { allow read: if hasAnyPerm(tenantId, CRM_VIEW()); allow write: if hasPerm(tenantId, 'cm'); }
+      match /crm_pipelines/{d}     { allow read: if hasAnyPerm(tenantId, CRM_VIEW()); allow write: if hasPerm(tenantId, 'cm'); }
+      // Журнал сделок: дописывается, не правится.
+      match /crm_logs/{d}          { allow read: if hasAnyPerm(tenantId, CRM_VIEW()); allow create: if hasPerm(tenantId, 'cm'); allow update, delete: if false; }
       match /automation_rules/{d}  { allow read: if member(); allow write: if hasPerm(tenantId, 'sg'); }
       match /automation_logs/{d}   { allow read, write: if member(); }
-      match /submissions/{d}       { allow read: if member(); allow write: if hasPerm(tenantId, 'tv'); }
+      // Результаты старых тестов: пишет только сервер.
+      match /submissions/{d}       { allow read: if hasAnyPerm(tenantId, EXAMS_VIEW()); allow write: if false; }
       // Журналы: доступ задаётся в самом журнале, проверяет его сервер.
       match /journals/{d}          { allow read, write: if false; }
       match /journal_entries/{d}   { allow read, write: if false; }
@@ -116,11 +143,108 @@ service cloud.firestore {
       match /exam_evidence/{d}     { allow read, write: if false; }
       match /exam_photos/{d}       { allow read, write: if false; }
       match /members/{d}           { allow read: if member(); allow write: if isTenantAdmin(tenantId); }
-      match /chat_channels/{d=**}      { allow read, write: if member(); }
-      match /chat_messages/{d=**}      { allow read, write: if member(); }
-      match /workspace_tasks/{d=**}    { allow read, write: if member(); }
-      match /workspace_documents/{d=**} { allow read, write: if member(); }
-      match /workspace_sheets/{d=**}   { allow read, write: if member(); }
+
+      // Новая запись — только в свою организацию (поле tenantId, если есть).
+      function ownTenant(d) { return d.get('tenantId', tenantId) == tenantId; }
+      function me() { return request.auth.uid; }
+
+      // ── Чаты ──
+      // Общие каналы видят все с правом «Чат»; закрытые каналы и личные
+      // переписки — только участники (memberStaffIds). Раньше база отдавала
+      // все переписки любому сотруднику, а прятал их только экран.
+      function chanOpen(c) { return c.get('type', '') == 'public_channel' || me() in c.get('memberStaffIds', []); }
+      function chanOf(id) { return get(/databases/$(database)/documents/tenants/$(tenantId)/chat_channels/$(id)).data; }
+      match /chat_channels/{c} {
+        allow read: if hasPerm(tenantId, 'ch') && chanOpen(resource.data);
+        allow create: if hasPerm(tenantId, 'ch') && ownTenant(request.resource.data)
+          && request.resource.data.type in ['public_channel', 'private_channel', 'direct_message']
+          && me() in request.resource.data.memberStaffIds;
+        // Участник: последнее сообщение, звонок и добавление участников
+        // (убрать никого нельзя). Название, тип и состав целиком — создатель
+        // канала или администратор.
+        allow update: if hasPerm(tenantId, 'ch') && chanOpen(resource.data) && ownTenant(request.resource.data) && (
+          resource.data.get('createdByStaffId', '') == me() || isTenantAdmin(tenantId)
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessage', 'memberStaffIds', 'activeCallSessionId'])
+              && request.resource.data.get('memberStaffIds', []).hasAll(resource.data.get('memberStaffIds', []))));
+        allow delete: if hasPerm(tenantId, 'ch') && (resource.data.get('createdByStaffId', '') == me() || isTenantAdmin(tenantId));
+      }
+      match /chat_messages/{m} {
+        allow read: if hasPerm(tenantId, 'ch') && chanOpen(chanOf(resource.data.channelId));
+        // Пишет только от своего имени и только туда, где состоит.
+        allow create: if hasPerm(tenantId, 'ch') && ownTenant(request.resource.data)
+          && request.resource.data.senderStaffId == me()
+          && chanOpen(chanOf(request.resource.data.channelId));
+        // Своё сообщение — целиком (без смены автора и канала); чужое — только реакции и отметки «прочитано».
+        allow update: if hasPerm(tenantId, 'ch') && chanOpen(chanOf(resource.data.channelId)) && (
+          (resource.data.senderStaffId == me()
+            && request.resource.data.senderStaffId == me()
+            && request.resource.data.channelId == resource.data.channelId
+            && ownTenant(request.resource.data))
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions', 'readByStaffIds']));
+        allow delete: if hasPerm(tenantId, 'ch') && (resource.data.senderStaffId == me() || isTenantAdmin(tenantId));
+      }
+
+      // ── Задачи ──
+      match /workspace_tasks/{t} {
+        allow read: if hasPerm(tenantId, 'ta');
+        allow create: if hasPerm(tenantId, 'ta') && ownTenant(request.resource.data)
+          && request.resource.data.get('creatorStaffId', me()) == me();
+        allow update: if hasPerm(tenantId, 'ta') && ownTenant(request.resource.data)
+          && request.resource.data.get('creatorStaffId', '') == resource.data.get('creatorStaffId', '');
+        allow delete: if hasPerm(tenantId, 'ta') && (resource.data.get('creatorStaffId', '') == me() || isTenantAdmin(tenantId));
+        // Комментарий — только от своего имени; править и удалять — только свой.
+        match /comments/{cm} {
+          allow read: if hasPerm(tenantId, 'ta');
+          allow create: if hasPerm(tenantId, 'ta') && request.resource.data.authorStaffId == me();
+          allow update: if hasPerm(tenantId, 'ta') && resource.data.authorStaffId == me() && request.resource.data.authorStaffId == me();
+          allow delete: if hasPerm(tenantId, 'ta') && (resource.data.authorStaffId == me() || isTenantAdmin(tenantId));
+        }
+      }
+
+      // ── Документы ──
+      // Доступ задаётся в документе: accessLevel (private — только автор,
+      // company_view/company_edit — все с правом «Документы», specific_users —
+      // те, кто есть в permissionsMap). Документ без поля доступа видят автор
+      // и администратор. Значение по умолчанию здесь нельзя: get(…, 'company_edit')
+      // пропускал запрос по всей коллекции целиком — вместе с чужими личными.
+      // «Видит всё» — тот, у кого «Управление сотрудниками» (как в списке).
+      function docAdmin() { return hasPerm(tenantId, 'tg'); }
+      function docLevel(d) { return d.accessLevel; }
+      function docRole(d) { return d.get('permissionsMap', {}).get(me(), ''); }
+      function docAuthor(d) { return d.get('authorStaffId', '') == me(); }
+      function docCanRead(d) {
+        return docAdmin() || docAuthor(d)
+          || docLevel(d) in ['company_view', 'company_edit']
+          || (docLevel(d) == 'specific_users' && docRole(d) in ['editor', 'commenter', 'viewer']);
+      }
+      function docCanEdit(d) {
+        return docAdmin() || docAuthor(d) || docLevel(d) == 'company_edit'
+          || (docLevel(d) == 'specific_users' && docRole(d) == 'editor');
+      }
+      match /workspace_documents/{dd} {
+        allow read: if hasPerm(tenantId, 'dc') && docCanRead(resource.data);
+        allow create: if hasPerm(tenantId, 'dc') && ownTenant(request.resource.data)
+          && request.resource.data.authorStaffId == me();
+        // Доступ (accessLevel, permissionsMap) меняет только автор или администратор.
+        allow update: if hasPerm(tenantId, 'dc') && docCanEdit(resource.data) && ownTenant(request.resource.data)
+          && request.resource.data.get('authorStaffId', '') == resource.data.get('authorStaffId', '')
+          && (docAdmin() || docAuthor(resource.data)
+              || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['accessLevel', 'permissionsMap']));
+        allow delete: if hasPerm(tenantId, 'dc') && (docAdmin() || docAuthor(resource.data));
+      }
+
+      // ── Таблицы ──
+      // Все с правом «Таблицы». Ведущий заявки без этого права может создать
+      // таблицу для выгрузки заявок и работать со своей таблицей.
+      match /workspace_sheets/{sh} {
+        allow read: if hasPerm(tenantId, 'sh') || (member() && docAuthor(resource.data));
+        allow create: if (hasPerm(tenantId, 'sh') || hasAnyPerm(tenantId, FORMS_EDIT()))
+          && ownTenant(request.resource.data) && request.resource.data.authorStaffId == me();
+        allow update: if (hasPerm(tenantId, 'sh') || (member() && docAuthor(resource.data)))
+          && ownTenant(request.resource.data)
+          && request.resource.data.get('authorStaffId', '') == resource.data.get('authorStaffId', '');
+        allow delete: if hasPerm(tenantId, 'sh') && (docAuthor(resource.data) || isTenantAdmin(tenantId));
+      }
       match /rooms/{d=**}              { allow read, write: if member(); }
     }
 
@@ -128,31 +252,73 @@ service cloud.firestore {
     // 2. FLAT COLLECTIONS (Tenant-isolated via fields)
     // -------------------------------------------------------------
     
-    // CRM
-    match /crm_contacts/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    match /crm_deals/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-
-    // Tasks & Collab (Docs, Sheets)
-    match /tasks/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    match /documents/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    match /workspace_documents/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    match /spreadsheets/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    match /document_templates/{docId} {
-      allow read: if isAuthenticated() && (resource.data.tenantId == 'GLOBAL' || hasTenantAccess());
-      allow update, delete: if hasTenantAccess();
-      allow create: if hasTenantAccessOnCreate();
+    // CRM (общие копии). Контакты нужны и для выдачи абонементов (es).
+    match /crm_contacts/{docId} {
+      allow read: if permRead(['cr', 'cm', 'es']);
+      allow create: if permCreate(['cm']);
+      allow update: if permUpdate(['cm']);
+      allow delete: if permRead(['cm']);
+    }
+    match /crm_deals/{docId} {
+      allow read: if permRead(CRM_VIEW());
+      allow create: if permCreate(['cm']);
+      allow update: if permUpdate(['cm']);
+      allow delete: if permRead(['cm']);
     }
 
-    // Edu Core
-    match /edu_groups/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    match /schedule_events/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    match /attendance_logs/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    match /subscriptions/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    match /edu_subscriptions/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    // Chat & Automations
-    match /chat_channels/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    match /chat_messages/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    match /automations/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    // Старые общие копии задач, документов и таблиц: интерфейс работает с
+    // подколлекциями организации; здесь — только по праву раздела.
+    match /tasks/{docId} {
+      allow read, delete: if permRead(['ta']);
+      allow create: if permCreate(['ta']);
+      allow update: if permUpdate(['ta']);
+    }
+    match /documents/{docId} {
+      allow read, delete: if permRead(['dc']);
+      allow create: if permCreate(['dc']);
+      allow update: if permUpdate(['dc']);
+    }
+    // Старая копия документов: читает только поиск, пишет только сервер.
+    // Те же правила доступа, что у документов организации, здесь не
+    // повторить без лишних чтений — открываем её лишь тем, кто видит всё.
+    match /workspace_documents/{docId} {
+      allow read: if permRead(['tg']);
+      allow write: if false;
+    }
+    match /spreadsheets/{docId} {
+      allow read, delete: if permRead(['sh']);
+      allow create: if permCreate(['sh']);
+      allow update: if permUpdate(['sh']);
+    }
+    // Шаблоны документов: общие (GLOBAL) читают все, создаёт и правит их
+    // только платформа. Своя организация — с правом «Документы» или
+    // «Настройки»; перевести шаблон в чужую организацию или в GLOBAL нельзя.
+    match /document_templates/{docId} {
+      allow read: if isAuthenticated() && (resource.data.tenantId == 'GLOBAL' || hasTenantAccess());
+      allow create: if isSuperadmin()
+        || (request.resource.data.tenantId != 'GLOBAL' && permCreate(['dc', 'sg']));
+      allow update: if isSuperadmin()
+        || (resource.data.tenantId != 'GLOBAL' && permUpdate(['dc', 'sg']));
+      allow delete: if isSuperadmin()
+        || (resource.data.tenantId != 'GLOBAL' && permRead(['dc', 'sg']));
+    }
+
+    // Обучение (общие копии) — по праву «Расписание».
+    match /edu_groups/{docId}        { allow read, delete: if permRead(['es']); allow create: if permCreate(['es']); allow update: if permUpdate(['es']); }
+    match /schedule_events/{docId}   { allow read, delete: if permRead(['es']); allow create: if permCreate(['es']); allow update: if permUpdate(['es']); }
+    match /attendance_logs/{docId}   { allow read, delete: if permRead(['es']); allow create: if permCreate(['es']); allow update: if permUpdate(['es']); }
+    match /subscriptions/{docId}     { allow read, delete: if permRead(['es']); allow create: if permCreate(['es']); allow update: if permUpdate(['es']); }
+    match /edu_subscriptions/{docId} { allow read, delete: if permRead(['es']); allow create: if permCreate(['es']); allow update: if permUpdate(['es']); }
+    // Старые общие копии чатов интерфейс не использует. Открытые всем, они
+    // отдавали чужие личные переписки — закрыты.
+    match /chat_channels/{docId} { allow read, write: if false; }
+    match /chat_messages/{docId} { allow read, write: if false; }
+    match /automations/{docId} {
+      allow read: if hasTenantAccess();
+      allow create: if hasTenantAccessOnCreate();
+      allow update: if hasTenantAccess() && sameTenant();
+      allow delete: if hasTenantAccess();
+    }
     // Уведомление видит и отмечает прочитанным только адресат: в них бывают ФИО детей.
     // Лента изменений организации: только время и id изменённой записи.
     // Читают свои сотрудники, пишет только сервер.
@@ -218,7 +384,8 @@ service cloud.firestore {
 
     match /departments/{docId} {
       allow read: if hasTenantAccess();
-      allow update, delete: if isTenantAdmin(resource.data.tenantId);
+      allow update: if isTenantAdmin(resource.data.tenantId) && sameTenant();
+      allow delete: if isTenantAdmin(resource.data.tenantId);
       allow create: if isTenantAdmin(request.resource.data.tenantId);
     }
 
@@ -228,12 +395,20 @@ service cloud.firestore {
     // через /api/forms/*, где сервер отдаёт строго то, что можно показать
     // постороннему. Не открывайте здесь публичный доступ — иначе чужие
     // заявки с телефонами и адресами станут читаемы всему интернету.
-    match /custom_forms/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    // Формы: смотрят «ведущие заявки» и «CRM: просмотр», меняют — ведущие.
+    match /custom_forms/{docId} {
+      allow read: if permRead(FORMS_VIEW());
+      allow create: if permCreate(FORMS_EDIT());
+      allow update: if permUpdate(FORMS_EDIT());
+      allow delete: if permRead(FORMS_EDIT());
+    }
     // Заявки читает кабинет (onSnapshot), но пишет ТОЛЬКО сервер: смена
     // статуса идёт через /api/forms/status (там история и проверка прав),
     // отправка и чек-ин — через публичные эндпоинты. Прямая запись с клиента
     // позволяла менять статусы мимо истории и аудита.
-    match /form_submissions/{docId} { allow read: if hasTenantAccess(); allow write: if false; }
+    // Читать — по праву на формы: волонтёр с одной «Проверкой билетов»
+    // не должен выгрузить все заявки с телефонами и кодами билетов.
+    match /form_submissions/{docId} { allow read: if permRead(FORMS_VIEW()); allow write: if false; }
 
     // Приём заявок с внешних сайтов и бронирование ресурсов.
     // Пишет ТОЛЬКО сервер: счётчик занятых мест живёт внутри транзакции
@@ -253,10 +428,10 @@ service cloud.firestore {
     // Волонтёр, которому выдали только проверку билетов, не должен иметь
     // возможности выгрузить токены всех участников.
     match /intake_entries/{docId}     { allow read: if hasPerm(resource.data.tenantId, 'ik'); allow write: if false; }
-    match /custom_business_functions/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    match /testimonials/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    match /app_screens/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
-    match /decisions/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /custom_business_functions/{docId} { allow read, delete: if hasTenantAccess(); allow update: if hasTenantAccess() && sameTenant(); allow create: if hasTenantAccessOnCreate(); }
+    match /testimonials/{docId} { allow read, delete: if hasTenantAccess(); allow update: if hasTenantAccess() && sameTenant(); allow create: if hasTenantAccessOnCreate(); }
+    match /app_screens/{docId} { allow read, delete: if hasTenantAccess(); allow update: if hasTenantAccess() && sameTenant(); allow create: if hasTenantAccessOnCreate(); }
+    match /decisions/{docId} { allow read, delete: if hasTenantAccess(); allow update: if hasTenantAccess() && sameTenant(); allow create: if hasTenantAccessOnCreate(); }
     // `users` documents are keyed by uid and have no tenantId field (only defaultTenantId).
     // Read stays open to any authenticated user (chat participant lookups, legacy Admin.tsx
     // roster) since these are profile-only docs with no sensitive tenant data; writes are
@@ -277,7 +452,12 @@ service cloud.firestore {
           ['firstName','lastName','displayName','phone','avatarUrl','updatedAt','lastLoginAt']);
       allow delete: if false;
     }
-    match /crm_pipelines/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
+    match /crm_pipelines/{docId} {
+      allow read: if permRead(CRM_VIEW());
+      allow create: if permCreate(['cm']);
+      allow update: if permUpdate(['cm']);
+      allow delete: if permRead(['cm']);
+    }
     
     // -------------------------------------------------------------
     // 3. PUBLIC & EVALUATION COLLECTIONS
@@ -288,8 +468,13 @@ service cloud.firestore {
       allow read: if resource.data.status == 'published' || hasTenantAccess();
       // Раньше — isAuthenticated(): сотрудник любой организации мог переписать
       // чужой опубликованный сайт.
-      allow create: if hasTenantAccessOnCreate();
-      allow update, delete: if hasTenantAccess();
+      // Имя документа — «<организация>_<адрес>». Раньше проверялось только
+      // поле tenantId, и чужая организация могла занять адрес сайта школы.
+      allow create: if permCreate(['sg', 'tg'])
+        && pageId.matches('^' + request.resource.data.tenantId + '_.+$');
+      allow update: if permUpdate(['sg', 'tg'])
+        && pageId.matches('^' + resource.data.tenantId + '_.+$');
+      allow delete: if permRead(['sg', 'tg']);
     }
 
     // Коллекцию sites использовал только неподключённый старый конструктор.
@@ -299,18 +484,22 @@ service cloud.firestore {
     }
     
     // Tests (published tests are readable by public for execution)
+    // Старые тесты и вопросы: интерфейс в них не пишет (экзамены живут в
+    // tenants/{t}/exams…). Раньше любой сотрудник мог переписать тест,
+    // по которому сервер считает баллы.
     match /tests/{testId} {
-      allow read, write: if hasTenantAccess();
+      allow read: if permRead(EXAMS_VIEW());
+      allow write: if false;
     }
-    
     match /questions/{questionId} {
-      allow read, write: if hasTenantAccess();
+      allow read: if permRead(['tm', 'pm']);
+      allow write: if false;
     }
     
     // Сессии экзамена пишет сервер (Admin SDK). Раньше read,create были
     // открыты всем: аноним мог перечислить сессии всех организаций.
     match /exam_sessions/{sessionId} {
-      allow read: if hasTenantAccess();
+      allow read: if permRead(EXAMS_VIEW());
       allow write: if false;
     }
     
@@ -323,7 +512,7 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /exam_blueprints/{bpId} {
-      allow read: if hasTenantAccess();
+      allow read: if permRead(EXAMS_VIEW());
       allow write: if false;
     }
     match /placement_sessions/{sid} {
@@ -333,11 +522,11 @@ service cloud.firestore {
     // suspension panel; they contain no answer keys.
     // Архив попыток при пересдаче: только сервер пишет, читает персонал тенанта.
     match /placement_attempts/{aid} {
-      allow read: if hasTenantAccess();
+      allow read: if permRead(EXAMS_VIEW());
       allow write: if false;
     }
     match /placement_results/{rid} {
-      allow read: if hasTenantAccess();
+      allow read: if permRead(EXAMS_VIEW());
       allow write: if false;
     }
 
@@ -348,20 +537,25 @@ service cloud.firestore {
     // these rules — letting a client write here would let anyone unblock
     // themselves.
     match /exam_suspensions/{shortId} {
-      allow read: if hasTenantAccess();
+      allow read: if permRead(EXAMS_VIEW());
       allow write: if false;
     }
 
+    // Работы старых тестов: пишет только сервер. Раньше любой сотрудник
+    // (и сменой tenantId — чужой организации) правил баллы и решения,
+    // которым верят сводка и финансы.
     match /submissions/{subId} {
-      allow read, write: if hasTenantAccess();
+      allow read: if permRead(EXAMS_VIEW());
+      allow write: if false;
     }
     
     // Proctoring snapshots for a session. Written only by the server (Admin
     // SDK bypasses rules); managers of the owning tenant read them from the
     // review cabinet. Kept out of the submission document because that one is
     // re-read on every dashboard render and base64 frames would bloat it.
+    // Снимки камер детей — только проверяющим.
     match /proctoring_evidence/{evidenceId} {
-      allow read: if hasTenantAccess();
+      allow read: if permRead(['tv', 'tm', 'pm']);
       allow write: if false;
     }
 

@@ -94,7 +94,8 @@ export default function RolesAndAccess() {
       });
       const j = await res.json();
       if (!j.success) { setError(j.error || "Не удалось сохранить"); return; }
-      setEditing(null); say("Должность сохранена"); void loadRoles();
+      setEditing(null); void loadRoles();
+      if (j.warning) setError(j.warning); else say("Должность сохранена");
     } catch { setError("Нет связи с сервером"); }
     finally { setBusy(false); }
   };
@@ -123,7 +124,8 @@ export default function RolesAndAccess() {
       const j = await res.json();
       if (!j.success) { setError(j.error || "Не удалось сохранить"); return; }
       setAccess(null);
-      say("Доступ сохранён. Сотрудник увидит изменения после перезагрузки страницы.");
+      if (j.warning) setError(j.warning);
+      else say("Доступ сохранён. Сотрудник увидит изменения после перезагрузки страницы.");
       void loadRoles();
     } catch { setError("Нет связи с сервером"); }
     finally { setBusy(false); }
@@ -153,8 +155,12 @@ export default function RolesAndAccess() {
       setInviteMsg({
         ok: true,
         text: j.emailSent
-          ? `Сотрудник добавлен. Письмо со ссылкой для входа отправлено на ${invite.email}.`
-          : `Сотрудник добавлен, но письмо не ушло. ${j.emailError || ""} Передайте ему ссылку ниже — она открывает вход и задаёт пароль.`.trim(),
+          ? `Сотрудник добавлен. Письмо отправлено на ${invite.email}.`
+          : j.inviteLink
+            ? `Сотрудник добавлен, но письмо не ушло. ${j.emailError || ""} Передайте ему ссылку ниже — она открывает вход и задаёт пароль.`.trim()
+            : j.existingAccount
+              ? "Сотрудник добавлен. У него уже есть учётная запись — пусть войдёт как обычно."
+              : `Сотрудник добавлен, но письмо не ушло. ${j.emailError || ""}`.trim(),
         link: j.emailSent ? undefined : (j.inviteLink || undefined),
       });
       setInvite({ fullName: "", email: "", customRoleId: "" });

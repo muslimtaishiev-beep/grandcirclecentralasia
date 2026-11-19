@@ -3,11 +3,25 @@ import { Mic, MicOff, Video, VideoOff, PhoneOff, Monitor, Maximize2, Users, Radi
 
 interface VideoCallProps {
   channelName: string;
+  /** Организация и канал: из них строится имя комнаты, название канала не участвует. */
+  tenantId: string;
+  channelId: string;
   userName: string;
   onClose: () => void;
 }
 
-export default function VideoCall({ channelName, userName, onClose }: VideoCallProps) {
+/**
+ * Комната Jitsi — хэш организации и канала. id канала случайный (Firestore),
+ * поэтому имя не угадать по названию и не пересечь с другой организацией.
+ */
+async function callRoomName(tenantId: string, channelId: string): Promise<string> {
+  const data = new TextEncoder().encode(`studyfree-call:${tenantId}:${channelId}`);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  const hex = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+  return `sf-${hex.slice(0, 40)}`;
+}
+
+export default function VideoCall({ channelName, tenantId, channelId, userName, onClose }: VideoCallProps) {
   const [micOn, setMicOn] = useState(true);
   const [videoOn, setVideoOn] = useState(true);
   const [screenSharing, setScreenSharing] = useState(false);
@@ -81,7 +95,13 @@ export default function VideoCall({ channelName, userName, onClose }: VideoCallP
     }
   };
 
-  const roomSlug = `GrandCircle-${channelName.replace(/[^a-zA-Z0-9]/g, '') || 'Room'}`;
+  const [roomSlug, setRoomSlug] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setRoomSlug(null);
+    callRoomName(tenantId, channelId).then(r => { if (alive) setRoomSlug(r); }).catch(() => { if (alive) setRoomSlug(null); });
+    return () => { alive = false; };
+  }, [tenantId, channelId]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex flex-col justify-between p-4 sm:p-6 animate-fade-in">
@@ -124,7 +144,7 @@ export default function VideoCall({ channelName, userName, onClose }: VideoCallP
       <div className="flex-1 my-4 relative rounded-2xl overflow-hidden border border-white/10 bg-slate-900 flex items-center justify-center">
         
         {callMode === 'conference' ? (
-          <iframe
+          !roomSlug ? <div className="text-white/60 text-sm">Подключение…</div> : <iframe
             src={`https://meet.jit.si/${roomSlug}#userInfo.displayName="${encodeURIComponent(userName)}"`}
             className="w-full h-full border-0 rounded-2xl"
             allow="camera; microphone; display-capture; autoplay; clipboard-write; self; fullscreen"

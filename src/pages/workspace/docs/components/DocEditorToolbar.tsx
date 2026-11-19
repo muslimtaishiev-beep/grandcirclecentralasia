@@ -9,6 +9,7 @@ import {
   Scissors, Copy, Clipboard, BarChart2, Globe, HelpCircle, Keyboard, Info, Check, ShieldCheck, UserCheck, Users, Edit3, Upload, FileCheck
 } from 'lucide-react';
 import { db } from '../../../../lib/firebase';
+import { cleanDocHtml } from '../../../../lib/docHtml';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { DocBlock, DocAccessLevel, UserDocRole, WorkspaceDocument } from '../../../../types/collab';
 
@@ -180,7 +181,7 @@ export default function DocEditorToolbar({
     if (activeBlock) {
       const el = document.getElementById(`block-${activeBlock.id}`);
       if (el) {
-        onUpdateStyle({ content: el.innerHTML });
+        onUpdateStyle({ content: cleanDocHtml(el.innerHTML) });
       }
     }
   };
@@ -249,6 +250,8 @@ export default function DocEditorToolbar({
 
   // Corporate Document Templates Generator
   const applyTemplate = (type: 'order' | 'certificate' | 'contract' | 'protocol') => {
+    const hasContent = (docBlocks || []).some(b => b.type === 'image' || b.type === 'divider' || (b.content || '').replace(/<[^>]*>/g, '').trim());
+    if (hasContent && !window.confirm('Шаблон заменит весь текст документа. Продолжить?')) return;
     const nowStr = new Date().toLocaleDateString('ru-RU');
     setShowTemplatesModal(false);
 

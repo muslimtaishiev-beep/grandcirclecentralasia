@@ -15,27 +15,40 @@ export interface OrgStaffMember {
 }
 
 class ChatService {
+  /**
+   * Каналы, которые видит сотрудник: все общие плюс те, где он участник.
+   *
+   * Два запроса, а не один на всю коллекцию: правила базы отдают закрытые
+   * каналы и личные переписки только участникам, и запрос «всё подряд»
+   * был бы отклонён целиком.
+   */
   subscribeToChannels(tenantId: string, staffId: string, onUpdate: (channels: ChatChannel[]) => void) {
-    const q = query(
-      collection(db, 'tenants', tenantId, 'chat_channels')
-    );
-    return onSnapshot(q, async (snap) => {
-      let allChannels = snap.docs.map(d => ({ ...d.data(), id: d.id } as ChatChannel));
-      
-      // Auto-seed default channels if empty
-      if (allChannels.length === 0) {
-        await this.seedDefaultChannels(tenantId, staffId);
+    const col = collection(db, 'tenants', tenantId, 'chat_channels');
+    let open: ChatChannel[] | null = null;
+    let mine: ChatChannel[] | null = null;
+    let seeding = false;
+    const emit = () => {
+      if (open === null || mine === null) return;
+      const byId = new Map<string, ChatChannel>();
+      for (const c of [...open, ...mine]) byId.set(c.id, c);
+      onUpdate([...byId.values()]);
+    };
+    const onErr = (err: unknown) => console.warn("Chat channels listener notice:", err);
+    const unsubOpen = onSnapshot(query(col, where('type', '==', 'public_channel')), async (snap) => {
+      open = snap.docs.map(d => ({ ...d.data(), id: d.id } as ChatChannel));
+      // Общих каналов нет — заводим стандартные (один раз за подписку).
+      if (!open.length && !seeding) {
+        seeding = true;
+        await this.seedDefaultChannels(tenantId, staffId).catch(onErr);
         return;
       }
-
-      const filtered = allChannels.filter(c => 
-        c.type === 'public_channel' || 
-        (c.memberStaffIds || []).includes(staffId)
-      );
-      onUpdate(filtered);
-    }, (err) => {
-      console.warn("Chat channels listener notice:", err);
-    });
+      emit();
+    }, onErr);
+    const unsubMine = onSnapshot(query(col, where('memberStaffIds', 'array-contains', staffId)), (snap) => {
+      mine = snap.docs.map(d => ({ ...d.data(), id: d.id } as ChatChannel));
+      emit();
+    }, onErr);
+    return () => { unsubOpen(); unsubMine(); };
   }
 
   async seedDefaultChannels(tenantId: string, initialStaffId: string) {
@@ -290,6 +303,8 @@ class ChatService {
       name: channelData.name,
       type: channelData.type,
       memberStaffIds: channelData.memberStaffIds,
+      // Создатель может переименовать канал и менять состав целиком.
+      ...(channelData.creatorStaffId ? { createdByStaffId: channelData.creatorStaffId } : {}),
       createdAt: Date.now()
     });
 

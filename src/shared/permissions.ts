@@ -220,8 +220,13 @@ export const WORKSPACE_SCREENS: { key: string; label: string; group: string }[] 
   { key: "emailTemplates", label: "Письма: шаблоны и журнал", group: "Администрирование" },
 ];
 
-/** Экраны, которые нельзя выключать: без них воркспейс становится тупиком. */
-export const NON_HIDEABLE_SCREENS = new Set(["dashboard"]);
+/**
+ * Экраны, которые нельзя выключать: без них воркспейс становится тупиком.
+ * «Роли и доступы» и «Настройка воркспейса» — иначе организация закрывает
+ * себе экран, где разделы включаются обратно, и вернуть его может только
+ * платформа. Кто их видит, по-прежнему решают права.
+ */
+export const NON_HIDEABLE_SCREENS = new Set(["dashboard", "permissions", "workspaceSetup"]);
 
 export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | null> = {
   dashboard: null,

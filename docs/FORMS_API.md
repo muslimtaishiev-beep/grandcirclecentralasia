@@ -107,8 +107,8 @@ Content-Type: application/json
 }
 ```
 
-### Автоматическое обновление существующей заявки (Upsert по токену или полю):
-Чтобы обновить ранее поданную заявку (например, при повторной отправке с известным `token` / `code` или при уникальном email), передайте `token` или объект `upsert_by`:
+### Обновление своей заявки
+Обновить ранее поданную заявку можно только по её секрету: `editToken` из ответа на подачу (храните его у себя) или код QR (`token`). Поиск идёт только в этой форме; удалённые заявки не обновляются. `upsert_by` без секрета ничего не обновляет — будет создана новая заявка. Обновление по полю (почта и т. п.) — через защищённый `POST /api/forms/submissions/upsert` с ключом API организации.
 
 ```json
 POST https://www.studyfreeforum.com/api/forms/submit
@@ -116,14 +116,8 @@ Content-Type: application/json
 
 {
   "formId": "form_1789491208354",
-  "token": "T7L97QJLPR",
-  "upsert_by": {
-    "field_id": "field_1789491192330",
-    "value": "alexey@example.com"
-  },
+  "editToken": "q3Jv…",
   "data": {
-    "field_1789491136160": "Алексей Иванов",
-    "field_1789491192330": "alexey@example.com",
     "field_presentation_url": "https://example.com/slides.pdf"
   }
 }
@@ -136,11 +130,15 @@ Content-Type: application/json
   "updated": false,
   "submissionId": "sub_9876543210",
   "qrToken": "T7L97QJLPR",
+  "editToken": "q3Jv…",
   "trackUrl": "/track/T7L97QJLPR",
   "mode": "ticket",
   "message": "Заявка принята."
 }
 ```
+
+### Повторная отправка билета (`POST /api/forms/send-ticket`)
+Тело: `{ "qrToken": "…" }`, или `{ "email": "…", "formId": "…" }`, или `{ "submissionId": "…", "email": "…" }`. Письмо уходит только на почту, сохранённую в заявке; присланный адрес лишь сверяется с ней. Не чаще одного письма на заявку в 2 минуты и 5 запросов с адреса за 10 минут.
 
 ---
 
@@ -232,7 +230,7 @@ X-Api-Key: <TENANT_API_KEY>
 
 ## 5. Проверка кода и пароля команды (`POST /api/forms/team/check`)
 
-Оптимизированный сервис для командных соревнований и хакатонов:
+Для командных соревнований. Без верного пароля ответ — только `{ "found": true, "passwordMatches": false }` (или без `passwordMatches`, если пароль не передан): ни ответов заявки, ни кода. Данные ниже приходят только при верном пароле.
 
 ```http
 POST https://www.studyfreeforum.com/api/forms/team/check
@@ -308,9 +306,9 @@ GET https://www.studyfreeforum.com/api/forms/track/T7L97QJLPR
 const BASE = "https://www.studyfreeforum.com";
 const FORM_ID = "form_1789491208354";
 
-async function submitOrUpdate(data, existingToken = null) {
+async function submitOrUpdate(data, editToken = null) {
   const payload = { formId: FORM_ID, data };
-  if (existingToken) payload.token = existingToken;
+  if (editToken) payload.editToken = editToken; // из ответа на первую подачу
 
   const res = await fetch(`${BASE}/api/forms/submit`, {
     method: "POST",

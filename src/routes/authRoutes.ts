@@ -2,7 +2,9 @@ import { Router } from "express";
 import { hasFullAccess, isPermissionKey } from "../shared/permissions.js";
 import admin from "firebase-admin";
 import { sendStaffInviteEmail } from "../../emailService.js";
-import { accessChangeDenied, callerPermissions, rolePermissions } from "../server/access.js";
+import { accessChangeDenied, callerPermissions, existingMembership, rolePermissions } from "../server/access.js";
+import { appUrl } from "../server/emailEvents.js";
+import { randomBytes } from "crypto";
 import { syncClaims } from "../server/claims.js";
 import { verifySession } from "../server/session.js";
 import { recordLogin } from "../server/loginAlerts.js";
@@ -208,39 +210,44 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
     const invitedPerms = invitedRole ? [...invitedRole.perms] : (Array.isArray(permissions) ? permissions : []).filter(isPermissionKey);
     const deniedInvite = await accessChangeDenied(db, { uid: req.user.uid, isSuperadmin: callerIsSA }, targetTenantId, null, invitedPerms);
     if (deniedInvite) return res.status(403).json({ success: false, error: deniedInvite });
-    // Уже сотрудник — повторное приглашение меняет его доступ: те же правила, что при смене должности.
-    try {
-      const known = await admin.auth().getUserByEmail(email);
-      const was = await db.collection("memberships").doc(`mem_${known.uid}_${targetTenantId}`).get();
-      if (was.exists) {
-        const deniedExisting = await accessChangeDenied(db, { uid: req.user.uid, isSuperadmin: callerIsSA }, targetTenantId, was.data(), invitedPerms);
-        if (deniedExisting) return res.status(403).json({ success: false, error: deniedExisting });
+    // Уже сотрудник — повторное приглашение меняет его доступ: те же правила,
+    // что при смене должности. Членство ищем по паре «пользователь +
+    // организация»: у старых организаций id не mem_<uid>_<org>, и поиск по
+    // номеру не видел владельца — появлялся дубль «Работник».
+    let known: any = null;
+    try { known = await admin.auth().getUserByEmail(email); }
+    catch (e: any) { if (e?.code !== "auth/user-not-found") throw e; }
+    const was = known ? await existingMembership(db, known.uid, targetTenantId) : null;
+    if (was) {
+      if (hasFullAccess(was.role) && !callerIsSA) {
+        return res.status(403).json({ success: false, error: "Этот сотрудник — владелец или администратор организации" });
       }
-    } catch { /* нового человека ещё нет — проверять нечего */ }
+      const deniedExisting = await accessChangeDenied(db, { uid: req.user.uid, isSuperadmin: callerIsSA }, targetTenantId, was, invitedPerms);
+      if (deniedExisting) return res.status(403).json({ success: false, error: deniedExisting });
+    }
 
-    // 1. Create or get user in Firebase Auth
-    let userRecord;
-    try {
-      userRecord = await admin.auth().getUserByEmail(email);
+    // 1. Create or get user in Firebase Auth. createdNow — аккаунт заведён
+    // этим запросом: только тогда допустима ссылка «установить пароль».
+    let userRecord: any = known;
+    let createdNow = false;
+    if (userRecord) {
       if (fullName && !userRecord.displayName) {
         await admin.auth().updateUser(userRecord.uid, { displayName: fullName });
       }
-    } catch (e: any) {
-      if (e.code === 'auth/user-not-found') {
-        userRecord = await admin.auth().createUser({
-          email,
-          displayName: fullName,
-          password: Math.random().toString(36).slice(-10) + "A1!"
-        });
-      } else {
-        throw e;
-      }
+    } else {
+      userRecord = await admin.auth().createUser({
+        email,
+        displayName: fullName,
+        password: `${randomBytes(18).toString("base64url")}aA1!`,
+      });
+      createdNow = true;
     }
 
     const uid = userRecord.uid;
 
-    // 2. Set user document in Firestore with tenant association
-    await db.collection("users").doc(uid).set({
+    // 2. Профиль users — только для нового аккаунта: чужой существующий
+    // профиль (имя, организация по умолчанию) приглашение не переписывает.
+    if (createdNow) await db.collection("users").doc(uid).set({
       id: uid,
       email: email.trim().toLowerCase(),
       displayName: fullName || email.split("@")[0],
@@ -257,12 +264,9 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
     // показывали разное. Название роли берём из документа должности, чтобы в
     // карточке сотрудника сразу читалось «Волонтёр», а не «Работник».
     const resolvedRole = String(role || "Работник").trim().slice(0, 40);
-    const membershipId = `mem_${uid}_${targetTenantId}`;
-    // Повторное приглашение не должно понижать владельца до «Работника».
-    const existingMem = await db.collection("memberships").doc(membershipId).get();
-    if (existingMem.exists && hasFullAccess(existingMem.data()?.role) && !callerIsSA) {
-      return res.status(403).json({ success: false, error: "Этот сотрудник — владелец или администратор организации" });
-    }
+    // Одно членство на человека в организации: повторное приглашение правит
+    // существующий документ (каким бы ни был его id), а не создаёт второй.
+    const membershipId = was?.id || `mem_${uid}_${targetTenantId}`;
     const membershipDoc: Record<string, any> = {
       id: membershipId,
       userId: uid,
@@ -287,7 +291,12 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
 
     // Claims приглашённого — из его прав, чтобы правила Firestore применились
     // после первого обновления токена.
-    await syncClaims(db, uid);
+    let claimsSynced = true;
+    try { await syncClaims(db, uid); }
+    catch (e: any) {
+      claimsSynced = false;
+      console.error("[Auth/Invite] пересчёт прав не удался:", e?.message);
+    }
 
     // 4. Send a branded Russian invite email (via Microsoft 365) carrying a real Firebase
     // password-reset link — replaces the old sendOobCode call, which only fires
@@ -296,7 +305,9 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
     let emailResult: { sent: boolean; reason?: string } = { sent: false, reason: "not attempted" };
     let resetLink = "";
     try {
-      resetLink = await admin.auth().generatePasswordResetLink(email);
+      // Существовавшему аккаунту ссылку сброса не создаём вовсе: письмо
+      // «вас добавили» со ссылкой на вход.
+      resetLink = createdNow ? await admin.auth().generatePasswordResetLink(email) : `${await appUrl()}/login`;
       emailResult = await sendStaffInviteEmail({
         email: resolveWorkspaceConfig(targetTenantDoc.data()?.workspaceConfig).email,
         to: email,
@@ -304,6 +315,7 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
         tenantName: orgName,
         role: membershipDoc.role || resolvedRole,
         resetLink,
+        existingAccount: !createdNow,
       });
       if (!emailResult.sent) {
         console.warn("[Auth/Invite] Branded invite email not sent:", emailResult.reason);
@@ -321,7 +333,10 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
       // сервера: без них пригласивший видел «письмо не ушло» и не мог ни
       // понять почему, ни дать сотруднику войти.
       emailError: emailResult.sent ? null : emailInviteHint(emailResult.reason),
-      inviteLink: emailResult.sent ? null : (resetLink || null),
+      // Ссылка «установить пароль» — только для аккаунта, созданного сейчас.
+      inviteLink: !emailResult.sent && createdNow ? (resetLink || null) : null,
+      existingAccount: !createdNow,
+      claimsSynced,
     });
   } catch (error: any) {
     console.error("[Auth/Invite] Error:", error);

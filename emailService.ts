@@ -1,4 +1,5 @@
 import { sendMail } from "./src/server/mail.js";
+import { appUrl } from "./src/server/emailEvents.js";
 
 
 
@@ -119,12 +120,16 @@ interface StaffInviteEmailParams {
   tenantName: string;
   role: string;
   resetLink: string;
+  /** Учётная запись уже была: в письме — «Войти», а не «Установить пароль». */
+  existingAccount?: boolean;
 }
 
 export async function sendStaffInviteEmail(params: StaffInviteEmailParams): Promise<{ sent: boolean; reason?: string }> {
   if (!params.to || !params.to.includes("@")) return { sent: false, reason: "Invalid recipient email" };
 
-  const { fullName, tenantName, role, resetLink } = params;
+  const { fullName, tenantName, role, resetLink, existingAccount } = params;
+  const lead = existingAccount ? "Войдите своей учётной записью — организация появится в списке." : "Чтобы начать работу, задайте пароль для вашего аккаунта по кнопке ниже.";
+  const cta = existingAccount ? "Войти" : "Установить пароль и войти";
 
   const body = `
     <p style="margin:0 0 4px;font-size:13px;color:#64748b;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;">Приглашение в команду</p>
@@ -135,13 +140,13 @@ export async function sendStaffInviteEmail(params: StaffInviteEmailParams): Prom
       <strong style="color:#0f172a;">${escapeHtml(role)}</strong>.
     </p>
     <p style="margin:0 0 28px;font-size:14px;line-height:22px;color:#475569;">
-      Чтобы начать работу, задайте пароль для вашего аккаунта по кнопке ниже.
+      ${lead}
     </p>
     <table role="presentation" cellpadding="0" cellspacing="0">
       <tr>
         <td style="border-radius:10px;background:linear-gradient(135deg,#4f46e5,#7c3aed);">
           <a href="${escapeHtml(resetLink)}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">
-            Установить пароль и войти
+            ${cta}
           </a>
         </td>
       </tr>
@@ -178,7 +183,8 @@ export async function sendFormTicketEmail(params: FormTicketEmailParams): Promis
   if (!params.to || !params.to.includes("@")) return { sent: false, reason: "Invalid recipient email" };
 
   const { applicantName, eventTitle, qrToken, ticketUrl, details } = params;
-  const link = ticketUrl || `https://logoshackathon.com/track/${encodeURIComponent(qrToken)}`;
+  // Ссылка — на адрес платформы из настроек; своего домена у организаций в коде нет.
+  const link = ticketUrl || `${await appUrl()}/track/${encodeURIComponent(qrToken)}`;
 
   let detailsRows = "";
   if (details && Object.keys(details).length > 0) {

@@ -67,17 +67,17 @@ export default function ChatLayout() {
     );
   };
 
-  const [activeCallRoom, setActiveCallRoom] = useState<{ channelName: string } | null>(null);
+  const [activeCallRoom, setActiveCallRoom] = useState<{ channelName: string; channelId: string } | null>(null);
 
   const handleStartCall = async () => {
     if (!activeChannel) return;
     await startCall();
-    setActiveCallRoom({ channelName: activeChannel.name });
+    setActiveCallRoom({ channelName: activeChannel.name, channelId: activeChannel.id });
   };
 
   const handleJoinCall = () => {
     if (!activeChannel) return;
-    setActiveCallRoom({ channelName: activeChannel.name });
+    setActiveCallRoom({ channelName: activeChannel.name, channelId: activeChannel.id });
   };
 
   return (
@@ -161,9 +161,11 @@ export default function ChatLayout() {
       </div>
 
       {/* Real-time Video Call Modal Container */}
-      {activeCallRoom && createPortal(
+      {activeCallRoom && activeTenant?.id && createPortal(
         <VideoCall 
           channelName={activeCallRoom.channelName}
+          tenantId={activeTenant.id}
+          channelId={activeCallRoom.channelId}
           userName={user?.displayName || user?.email?.split('@')[0] || 'Коллега'}
           onClose={() => setActiveCallRoom(null)}
         />,

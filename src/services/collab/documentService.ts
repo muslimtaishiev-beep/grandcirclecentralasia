@@ -1,5 +1,5 @@
 import { db } from '../../lib/firebase';
-import { collection, doc, query, onSnapshot, setDoc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { collection, doc, query, where, onSnapshot, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { WorkspaceDocument, DocBlock, DocAccessLevel, UserDocRole } from '../../types/collab';
 import { generateShortId } from '../../lib/utils';
 
@@ -19,35 +19,45 @@ function sanitizeData(obj: any): any {
 }
 
 class DocumentService {
+  /**
+   * Документы, которые сотрудник вправе видеть.
+   *
+   * Правила базы отдают документ только по его доступу (accessLevel,
+   * permissionsMap), поэтому запрос «всё подряд» разрешён лишь тому, кто
+   * видит всё. Остальным — три запроса: общие документы, свои и те, куда
+   * его добавили по имени.
+   */
   subscribeToList(
-    tenantId: string, 
-    staffId: string, 
-    isFullAdmin: boolean, 
+    tenantId: string,
+    staffId: string,
+    isFullAdmin: boolean,
     onUpdate: (docs: WorkspaceDocument[]) => void
   ) {
-    const q = query(collection(db, 'tenants', tenantId, 'workspace_documents'));
-    return onSnapshot(q, (snap) => {
-      const allDocs = snap.docs.map(d => ({ ...d.data(), id: d.id } as WorkspaceDocument));
-      
-      const filtered = allDocs.filter(d => {
-        if (isFullAdmin || d.authorStaffId === staffId) return true;
+    const col = collection(db, 'tenants', tenantId, 'workspace_documents');
+    const onErr = (err: unknown) => console.warn("Docs list notice:", err);
+    const read = (snap: { docs: { id: string; data: () => unknown }[] }) =>
+      snap.docs.map(d => ({ ...(d.data() as object), id: d.id } as WorkspaceDocument));
 
-        const level = d.accessLevel || 'company_edit';
+    if (isFullAdmin) {
+      return onSnapshot(query(col), snap => onUpdate(read(snap)), onErr);
+    }
 
-        if (level === 'private') return false;
-        if (level === 'company_view' || level === 'company_edit') return true;
+    const parts: (WorkspaceDocument[] | null)[] = [null, null, null];
+    const emit = () => {
+      if (parts.some(p => p === null)) return;
+      const byId = new Map<string, WorkspaceDocument>();
+      for (const d of parts.flat() as WorkspaceDocument[]) byId.set(d.id, d);
+      onUpdate([...byId.values()]);
+    };
+    const listen = (i: number, q: ReturnType<typeof query>) =>
+      onSnapshot(q, snap => { parts[i] = read(snap); emit(); }, err => { parts[i] = []; emit(); onErr(err); });
 
-        if (level === 'specific_users') {
-          return d.permissionsMap && Boolean(d.permissionsMap[staffId]);
-        }
-
-        return true;
-      });
-
-      onUpdate(filtered);
-    }, (err) => {
-      console.warn("Docs list notice:", err);
-    });
+    const unsubs = [
+      listen(0, query(col, where('accessLevel', 'in', ['company_view', 'company_edit']))),
+      listen(1, query(col, where('authorStaffId', '==', staffId))),
+      listen(2, query(col, where('accessLevel', '==', 'specific_users'), where(`permissionsMap.${staffId}`, 'in', ['editor', 'commenter', 'viewer']))),
+    ];
+    return () => unsubs.forEach(u => u());
   }
 
   subscribeToDocument(tenantId: string, docId: string, onUpdate: (doc: WorkspaceDocument | null) => void) {

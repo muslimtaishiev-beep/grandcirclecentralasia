@@ -56,6 +56,10 @@ export async function searchGlobal(tenantId: string, searchQuery: string): Promi
       }
     });
 
+  } catch {
+    // Нет права на этот раздел — правила базы отказали; ищем в остальных.
+  }
+  try {
     // 2. Search Submissions
     const subSnap = await getDocs(query(collection(db, 'submissions'), where('tenantId', '==', activeOrgId), limit(25)));
     subSnap.forEach(doc => {
@@ -76,6 +80,10 @@ export async function searchGlobal(tenantId: string, searchQuery: string): Promi
       }
     });
 
+  } catch {
+    // Нет права на этот раздел — правила базы отказали; ищем в остальных.
+  }
+  try {
     // 3. Search CRM Deals
     const dealsSnap = await getDocs(query(collection(db, 'crm_deals'), where('tenantId', '==', activeOrgId), limit(25)));
     dealsSnap.forEach(doc => {
@@ -97,6 +105,10 @@ export async function searchGlobal(tenantId: string, searchQuery: string): Promi
       }
     });
 
+  } catch {
+    // Нет права на этот раздел — правила базы отказали; ищем в остальных.
+  }
+  try {
     // 4. Search Workspace Documents & Spreadsheets
     const docsSnap = await getDocs(query(collection(db, 'workspace_documents'), where('tenantId', '==', activeOrgId), limit(25)));
     docsSnap.forEach(doc => {
@@ -116,6 +128,10 @@ export async function searchGlobal(tenantId: string, searchQuery: string): Promi
       }
     });
 
+  } catch {
+    // Нет права на этот раздел — правила базы отказали; ищем в остальных.
+  }
+  try {
     // 5. Search Tasks
     const tasksSnap = await getDocs(query(collection(db, 'tasks'), where('tenantId', '==', activeOrgId), limit(25)));
     tasksSnap.forEach(doc => {

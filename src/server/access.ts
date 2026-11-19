@@ -24,13 +24,54 @@ export async function membershipPermissions(db: Db, m: any): Promise<Set<Permiss
   return own;
 }
 
-/** Активное членство пользователя в организации или null. */
+/** Сила членства: владелец > администратор > прочие; при равенстве — каноничный id. */
+const ROLE_RANK = (m: any): number => {
+  const r = String(m?.role || "");
+  if (r === "owner" || r === "org:owner") return 3;
+  if (hasFullAccess(r)) return 2;
+  return 1;
+};
+const strongest = (docs: any[], uid: string, tenantId: string): any | null => {
+  if (!docs.length) return null;
+  const canon = `mem_${uid}_${tenantId}`;
+  return pickStrongestBy(docs, canon);
+};
+const pickStrongestBy = (docs: any[], canon: string): any | null => {
+  if (!docs.length) return null;
+  return [...docs].sort((a, b) => ROLE_RANK(b) - ROLE_RANK(a) || Number(b.id === canon) - Number(a.id === canon))[0];
+};
+
+/** Самое сильное из членств одной пары (данные с полем id). */
+export const pickStrongest = (docs: any[]): any | null =>
+  docs.length ? pickStrongestBy(docs, `mem_${docs[0].userId}_${docs[0].tenantId}`) : null;
+
+/**
+ * Все членства пары «пользователь + организация» (у старых организаций id
+ * бывает не mem_<uid>_<org>, поэтому ищем по полям, а не по номеру).
+ */
+export async function membershipsOf(db: Db, uid: string, tenantId: string): Promise<any[]> {
+  if (!uid || !tenantId) return [];
+  const ms = await db.collection("memberships").where("userId", "==", uid).where("tenantId", "==", tenantId).get();
+  return ms.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+/** Членство пары в любом статусе (активное — в приоритете), самое сильное; или null. */
+export async function existingMembership(db: Db, uid: string, tenantId: string): Promise<any | null> {
+  const all = await membershipsOf(db, uid, tenantId);
+  const active = all.filter(m => m.status === "active");
+  return strongest(active.length ? active : all, uid, tenantId);
+}
+
+/**
+ * Активное членство пользователя в организации или null. Если из-за старых
+ * данных их несколько — самое сильное: дубль «Работник» не понижает владельца.
+ */
 export async function activeMembership(db: Db, uid: string, tenantId: string): Promise<any | null> {
   if (!uid || !tenantId) return null;
   const ms = await db.collection("memberships")
     .where("userId", "==", uid).where("tenantId", "==", tenantId)
-    .where("status", "==", "active").limit(1).get();
-  return ms.empty ? null : { id: ms.docs[0].id, ...ms.docs[0].data() };
+    .where("status", "==", "active").get();
+  return strongest(ms.docs.map(d => ({ id: d.id, ...d.data() })), uid, tenantId);
 }
 
 /** Права вызывающего в организации — для защиты от эскалации. */

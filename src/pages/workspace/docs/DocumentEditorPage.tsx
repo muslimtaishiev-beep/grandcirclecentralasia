@@ -8,6 +8,7 @@ import { DocBlockType, DocBlock, DocAccessLevel, UserDocRole } from '../../../ty
 import { useAuth } from '../../../contexts/AuthContext';
 import { documentService } from '../../../services/collab/documentService';
 import { Lock, ShieldAlert } from 'lucide-react';
+import { cleanDocHtml } from '../../../lib/docHtml';
 
 export default function DocumentEditorPage() {
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
@@ -129,7 +130,7 @@ export default function DocumentEditorPage() {
     } else {
       let md = `# ${doc.title}\n\n`;
       doc.blocks.forEach(b => {
-        const text = b.content ? b.content.replace(/<[^>]*>/g, '') : '';
+        const text = b.content ? cleanDocHtml(b.content).replace(/<[^>]*>/g, '') : '';
         if (b.type === 'heading_1') md += `# ${text}\n\n`;
         else if (b.type === 'heading_2') md += `## ${text}\n\n`;
         else if (b.type === 'heading_3') md += `### ${text}\n\n`;
@@ -329,7 +330,10 @@ function EditableBlock({ id, editable, html, onFocus, onInput, onKeyDown, style,
   const ref = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
     const el = ref.current;
-    if (el && el.innerHTML !== html) el.innerHTML = html;
+    // Свой ввод уже в DOM — не трогаем (курсор). Чужое изменение — только очищенным.
+    if (!el) return;
+    const next = cleanDocHtml(html);
+    if (cleanDocHtml(el.innerHTML) !== next) el.innerHTML = next;
   }, [html]);
   return (
     <div
@@ -338,7 +342,7 @@ function EditableBlock({ id, editable, html, onFocus, onInput, onKeyDown, style,
       contentEditable={editable}
       suppressContentEditableWarning
       onFocus={onFocus}
-      onInput={(e) => onInput(e.currentTarget.innerHTML)}
+      onInput={(e) => onInput(cleanDocHtml(e.currentTarget.innerHTML))}
       onKeyDown={onKeyDown}
       style={style}
       className={className}

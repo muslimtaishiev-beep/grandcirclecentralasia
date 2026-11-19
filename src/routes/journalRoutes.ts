@@ -163,17 +163,24 @@ async function prepareValues(
         // есть, кто ввёл — записываем. Имя сотрудника — только своё: иначе
         // любой ведущий записи мог подписаться за куратора.
         let hit = matchName(typed, c.allowedNames || []);
+        let signerUid: string | undefined;
         if (!hit && c.allowEmployees) {
           employees = employees || await listEmployees(t);
           const emp = matchName(typed, employees.map(e => e.name));
           if (emp) {
             const owners = employees.filter(e => e.name === emp).map(e => e.uid);
             if (!owners.includes(caller.uid) && !caller.full) return { error: `«${c.label}»: подписать именем сотрудника «${emp}» может только он сам` };
+            // Имя сотрудник меняет сам в профиле, поэтому одно совпадение
+            // имени — не доказательство. Если такое имя у нескольких
+            // сотрудников, подпись по имени не принимается: иначе любой,
+            // назвавшись «как куратор», подписывал бы за него.
+            if (owners.length > 1 && !caller.full) return { error: `«${c.label}»: имя «${emp}» есть у нескольких сотрудников — подпись по имени невозможна` };
+            signerUid = owners.includes(caller.uid) ? caller.uid : owners[0];
             hit = emp;
           }
         }
         if (!hit) return { error: `«${c.label}»: имя «${typed}» не найдено среди разрешённых. Напишите фамилию и имя полностью.` };
-        next = { name: hit, typed, by: caller.uid, byName: caller.name, at: now } as NameSignature;
+        next = { name: hit, typed, by: caller.uid, byName: caller.name, at: now, ...(signerUid ? { signerUid } : {}) } as NameSignature;
       }
     } else {
       const r = normalizeValue(c, raw);

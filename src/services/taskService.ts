@@ -1,4 +1,4 @@
-import { db } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
 import { collection, doc, onSnapshot, query, setDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
 import { WorkspaceTask, TaskStatus, TaskComment, TaskSubItem } from '../types/tasks';
 
@@ -10,10 +10,12 @@ class TaskService {
     });
   }
 
-  async createTask(tenantId: string, task: Omit<WorkspaceTask, 'id' | 'createdAt' | 'updatedAt' | 'commentsCount'>) {
+  async createTask(tenantId: string, task: Omit<WorkspaceTask, 'id' | 'createdAt' | 'updatedAt' | 'commentsCount' | 'creatorStaffId'>) {
     const ref = doc(collection(db, 'tenants', tenantId, 'workspace_tasks'));
     await setDoc(ref, {
       ...task,
+      // Автор задачи: правила базы дают ему удалить задачу.
+      creatorStaffId: auth.currentUser?.uid || null,
       commentsCount: 0,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()

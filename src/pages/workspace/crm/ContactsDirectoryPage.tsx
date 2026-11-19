@@ -1,16 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { useWorkspaceTerms } from '../../../lib/useWorkspaceConfig';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useNavigate, useParams } from 'react-router-dom';
 import { Search, Plus, Filter, MoreHorizontal, Mail, Phone, X, Check, Trash2 } from 'lucide-react';
 import { db } from '../../../lib/firebase';
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp, setDoc, doc, deleteDoc, getDocs, limit } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, setDoc, doc, deleteDoc, limit } from 'firebase/firestore';
 import { CrmContact } from '../../../types/crm';
 import ContactProfileDrawer from './components/ContactProfileDrawer';
 import toast from 'react-hot-toast';
 
+/** Тип «сотрудник» есть в форме создания, но не в CrmContact. */
+const isStaffContact = (c: CrmContact) => String(c.type) === 'employee';
+
 export default function ContactsDirectoryPage() {
   const terms = useWorkspaceTerms();
   const { activeTenant } = useOutletContext<any>();
+  const navigate = useNavigate();
+  const { orgId } = useParams();
   const [contacts, setContacts] = useState<CrmContact[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -100,35 +105,24 @@ export default function ContactsDirectoryPage() {
 
   const handleDeleteContact = async (contact: CrmContact, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (!window.confirm(`Вы уверены, что хотите безвозвратно удалить контакт "${contact.fullName}" из базы данных?`)) return;
+    // Доступ сотрудника снимается только в «Сотрудниках» (сервер, журнал,
+    // проверка прав). Удаление карточки контакта его не трогает.
+    if (isStaffContact(contact)) {
+      toast('Сотрудник удаляется в разделе «Роли и доступы»');
+      navigate(`/workspace/${orgId || activeTenant?.id}/settings/roles`);
+      return;
+    }
+    if (!window.confirm(`Удалить контакт «${contact.fullName}»?`)) return;
 
     try {
-      // 1. Delete root crm_contacts doc
       await deleteDoc(doc(db, 'crm_contacts', contact.id));
-
-      // 2. Delete nested tenant crm_contacts doc
       if (activeTenant?.id) {
-        try { await deleteDoc(doc(db, 'tenants', activeTenant.id, 'crm_contacts', contact.id)); } catch (err) {}
+        try { await deleteDoc(doc(db, 'tenants', activeTenant.id, 'crm_contacts', contact.id)); } catch { /* вложенной копии может не быть */ }
       }
-
-      // 3. Delete memberships doc if employee
-      if (contact.type === 'employee' || contact.type === 'partner') {
-        // Только СВОЯ организация: раньше по совпадению почты удалялись
-        // членства этого человека во всех организациях платформы.
-        const memSnap = await getDocs(query(
-          collection(db, 'memberships'),
-          where('userEmail', '==', contact.email),
-          where('tenantId', '==', activeTenant.id),
-        ));
-        // await для каждого удаления: forEach с async молча терял ошибки, и
-        // «успешно удалён» показывался до фактического удаления.
-        await Promise.all(memSnap.docs.map(d => deleteDoc(d.ref)));
-      }
-
-      toast.success(`Контакт "${contact.fullName}" полностью удален`);
+      toast.success(`Контакт «${contact.fullName}» удалён`);
       if (selectedContact?.id === contact.id) setSelectedContact(null);
     } catch (err: any) {
-      alert(`Ошибка удаления контакта: ${err.message}`);
+      toast.error(`Не удалось удалить контакт: ${err?.message || 'ошибка'}`);
     }
   };
 
@@ -223,7 +217,7 @@ export default function ContactsDirectoryPage() {
                     <button 
                       className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition cursor-pointer" 
                       onClick={(e) => handleDeleteContact(contact, e)}
-                      title="Удалить контакт из базы данных"
+                      title={isStaffContact(contact) ? 'Сотрудники — в «Роли и доступы»' : 'Удалить контакт'}
                     >
                       <Trash2 className="w-4.5 h-4.5" />
                     </button>

@@ -152,6 +152,8 @@ export interface NameSignature {
   by: string;
   byName: string;
   at: number;
+  /** Подписано именем сотрудника — его учётная запись (сверка по uid, не по тексту). */
+  signerUid?: string;
 }
 
 export interface JournalChange {

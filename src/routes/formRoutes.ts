@@ -179,6 +179,31 @@ async function appendToSheet(form: any, _formId: string, submission: Record<stri
   return upsertSheetRows(form, [submission]);
 }
 
+/** Ключ правки заявки: отдаётся только заявителю, в QR и в таблицу не попадает. */
+const makeEditToken = () => crypto.randomBytes(18).toString("base64url");
+
+/**
+ * Заявка, которую заявитель правит повторной отправкой: по ключу правки или
+ * коду QR, только в этой форме и организации и не удалённая.
+ */
+async function findOwnSubmission(formId: string, tenantId: string, secret: string): Promise<any | null> {
+  if (!secret || secret.length < 8) return null;
+  const mine = (d: any) => {
+    const s = d?.data?.() || {};
+    return !s.deleted && s.formId === formId && String(s.tenantId || "") === tenantId;
+  };
+  const byEdit = await db().collection(SUBS).where("formId", "==", formId).where("editToken", "==", secret).limit(1).get();
+  if (!byEdit.empty && mine(byEdit.docs[0])) return byEdit.docs[0];
+  for (const code of [...new Set([secret, secret.toUpperCase()])]) {
+    const byQr = await db().collection(SUBS).where("formId", "==", formId).where("qrToken", "==", code).limit(1).get();
+    if (!byQr.empty && mine(byQr.docs[0])) return byQr.docs[0];
+  }
+  return null;
+}
+
+/** Код заявки на витрине: не QR и не id документа — по нему ничего не открыть. */
+const publicCode = (id: string) => crypto.createHash("sha256").update(`showcase:${id}`).digest("hex").slice(0, 10).toUpperCase();
+
 // ─────────────────────────── Публичная часть ───────────────────────────
 
 /**
@@ -288,7 +313,7 @@ router.get("/public/:formId/submissions", async (req: any, res: any) => {
         const last = notes[notes.length - 1];
 
         return {
-          code: sub.qrToken || d.id,
+          code: publicCode(d.id),
           createdAt: sub.createdAt || null,
           status,
           statusLabel: STATUS_LABEL[status],
@@ -529,63 +554,18 @@ router.post("/submit", async (req: any, res: any) => {
     const teamPassword = pick(/пароль команды|team password/i, "field_1790768091708");
     const presentationUrl = pick(/презентаци|presentation/i, "field_1790940529090");
 
-    // ПРОВЕРКА RE-SUBMISSION / UPDATE ПО TOKEN, CODE, QRTOKEN ИЛИ UPSERT_BY
-    const upsertObj = req.body.upsert_by || req.body.upsertBy;
-    const inputToken = str(
-      req.body.token || req.body.code || req.body.qrToken || req.body.submissionId ||
-      data?.token || data?.code || data?.qrToken, 100
+    // Повторная отправка правит СВОЮ заявку — только по её секрету: ключу
+    // правки (editToken, выдаётся при подаче) или коду QR, который знает лишь
+    // сам заявитель. Поиск — строго в этой форме и организации. Раньше
+    // находили по id документа из любой школы и по `upsert_by` (почта, любое
+    // поле, даже status=approved) — без входа переписывали чужую заявку и
+    // получали её билет. `upsert_by` без секрета теперь не правит ничего:
+    // заявка создаётся новой (для правки по полю — защищённый /submissions/upsert).
+    const secret = str(
+      req.body.editToken || req.body.token || req.body.code || req.body.qrToken ||
+      data?.editToken || data?.token || data?.code || data?.qrToken, 100
     );
-
-    let existingDocSnap: any = null;
-
-    if (inputToken) {
-      // Ищем существующую заявку по qrToken или по ID документа
-      const byTokenSnap = await db().collection(SUBS)
-        .where("formId", "==", String(formId))
-        .where("qrToken", "==", inputToken)
-        .limit(1).get();
-
-      if (!byTokenSnap.empty) {
-        existingDocSnap = byTokenSnap.docs[0];
-      } else {
-        const byIdSnap = await db().collection(SUBS).doc(inputToken).get();
-        if (byIdSnap.exists) {
-          existingDocSnap = byIdSnap;
-        }
-      }
-    }
-
-    if (!existingDocSnap && upsertObj && upsertObj.value) {
-      const upsertField = str(upsertObj.field_id || upsertObj.fieldId, 200);
-      const upsertVal = str(upsertObj.value, 500).toLowerCase();
-      const cleanUpsertVal = upsertVal.replace(/[^a-z0-9а-яё]/gi, "");
-
-      const allSubSnap = await db().collection(SUBS).where("formId", "==", String(formId)).limit(500).get();
-      for (const d of allSubSnap.docs) {
-        const subData = d.data();
-        if (subData.deleted) continue;
-        const dataMap = subData.data || {};
-
-        const checkMatch = (val: any) => {
-          if (!val) return false;
-          const s = String(val).trim().toLowerCase();
-          const cleanS = s.replace(/[^a-z0-9а-яё]/gi, "");
-          return s === upsertVal || (cleanUpsertVal && cleanS === cleanUpsertVal);
-        };
-
-        if (upsertField) {
-          if (checkMatch(dataMap[upsertField]) || checkMatch(subData[upsertField])) {
-            existingDocSnap = d;
-            break;
-          }
-        } else {
-          if (checkMatch(subData.qrToken) || checkMatch(subData.teamCode) || checkMatch(subData.applicantEmail)) {
-            existingDocSnap = d;
-            break;
-          }
-        }
-      }
-    }
+    const existingDocSnap = await findOwnSubmission(String(formId), String(form.tenantId || ""), secret);
 
       if (existingDocSnap) {
         const existingRef = existingDocSnap.ref;
@@ -626,6 +606,7 @@ router.post("/submit", async (req: any, res: any) => {
           updated: true,
           submissionId: existingDocSnap.id,
           qrToken: existingData.qrToken,
+          ...(existingData.editToken ? { editToken: existingData.editToken } : {}),
           trackUrl: `/track/${existingData.qrToken}`,
           mode: formMode(form),
           message: "Заявка успешно обновлена!",
@@ -634,12 +615,14 @@ router.post("/submit", async (req: any, res: any) => {
 
     // Если токена нет или документа не нашлось — создаём новую запись
     const qrToken = makeToken();
+    const editToken = makeEditToken();
     const ref = db().collection(SUBS).doc();
     await ref.set({
       tenantId: form.tenantId || "",
       formId: String(formId),
       formTitle: form.title || "Заявка",
       qrToken,
+      editToken,
       applicantName, applicantPhone, applicantEmail,
       participationFormat, teamName, teamCode, teamPassword, presentationUrl,
       status: "new" as Status,
@@ -671,6 +654,7 @@ router.post("/submit", async (req: any, res: any) => {
         applicantName: applicantName || "Участник",
         eventTitle: form.title || "Мероприятие",
         qrToken,
+        ticketUrl: `${await appUrl()}/track/${encodeURIComponent(qrToken)}`,
         details: emailDetails,
       }).catch(err => console.warn("[Forms/Submit] Ticket email send notice:", err?.message)));
     }
@@ -680,6 +664,7 @@ router.post("/submit", async (req: any, res: any) => {
       updated: false,
       submissionId: ref.id,
       qrToken,
+      editToken,
       trackUrl: `/track/${qrToken}`,
       mode: formMode(form),
       message: "Заявка принята.",
@@ -689,60 +674,84 @@ router.post("/submit", async (req: any, res: any) => {
   }
 });
 
-/** POST /api/forms/send-ticket — ручная или вызывная отправка билета на почту по qrToken, submissionId или email */
-router.post("/send-ticket", async (req: any, res: any) => {
+/**
+ * POST /api/forms/send-ticket — повторно прислать билет на почту.
+ *
+ * Без входа, поэтому письмо уходит ТОЛЬКО на почту, сохранённую в самой
+ * заявке: присланный адрес служит лишь для поиска своей заявки и сверяется с
+ * ней. Раньше адрес из запроса был важнее сохранённого — чужой билет уходил
+ * на любую почту, а с одним адресом и выдуманным кодом сервер рассылал
+ * «билеты» от имени организации кому угодно. Частота ограничена: с адреса —
+ * 5 запросов за 10 минут, на одну заявку — одно письмо в 2 минуты.
+ */
+const sendTicketLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  message: { success: false, error: "Слишком много запросов. Попробуйте позже." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const TICKET_RESEND_COOLDOWN_MS = 2 * 60 * 1000;
+
+router.post("/send-ticket", sendTicketLimiter, async (req: any, res: any) => {
   try {
-    const { qrToken, submissionId, email } = req.body || {};
+    const qrToken = str(req.body?.qrToken || req.body?.code, 100);
+    const submissionId = str(req.body?.submissionId, 100);
+    const email = str(req.body?.email, 200).replace(/\s+/g, "").toLowerCase();
+    const formId = str(req.body?.formId, 200);
     if (!qrToken && !submissionId && !email) {
-      return res.status(400).json({ success: false, error: "Укажите qrToken, submissionId или email" });
+      return res.status(400).json({ success: false, error: "Укажите код заявки или почту" });
     }
 
-    let targetEmail = email;
-    let targetName = "";
-    let targetToken = qrToken;
-    let eventTitle = "Мероприятие";
-    let details: Record<string, string> = {};
-
-    if (qrToken || submissionId) {
-      let snap: any = null;
-      if (qrToken) {
-        const qSnap = await db().collection(SUBS).where("qrToken", "==", String(qrToken)).limit(1).get();
-        if (!qSnap.empty) snap = qSnap.docs[0];
-      }
-      if (!snap && submissionId) {
-        const dSnap = await db().collection(SUBS).doc(String(submissionId)).get();
-        if (dSnap.exists) snap = dSnap;
-      }
-
-      if (snap) {
-        const subData = snap.data() || {};
-        targetEmail = targetEmail || subData.applicantEmail;
-        targetName = subData.applicantName || "Участник";
-        targetToken = subData.qrToken || targetToken;
-        const fsnap = subData.formId ? await db().collection(FORMS).doc(String(subData.formId)).get().catch(() => null) : null;
-        eventTitle = (fsnap?.exists ? String(fsnap.data()?.title || "") : "") || subData.formTitle || eventTitle;
-        if (subData.participationFormat) details["Формат участия"] = subData.participationFormat;
-        if (subData.teamName) details["Команда"] = subData.teamName;
-      }
+    // Своя заявка: по коду QR, по id (только вместе с совпадающей почтой) или по почте.
+    let snap: any = null;
+    if (qrToken) {
+      const q = await db().collection(SUBS).where("qrToken", "==", qrToken.toUpperCase()).limit(1).get();
+      if (!q.empty) snap = q.docs[0];
+    } else if (submissionId && email) {
+      const d = await db().collection(SUBS).doc(submissionId).get();
+      if (d.exists) snap = d;
+    } else if (email) {
+      let q: any = db().collection(SUBS).where("applicantEmail", "==", email);
+      if (formId) q = q.where("formId", "==", formId);
+      const all = (await q.limit(20).get()).docs.filter((d: any) => !d.data().deleted);
+      all.sort((x: any, y: any) => (y.data().createdAt?.toMillis?.() || 0) - (x.data().createdAt?.toMillis?.() || 0));
+      snap = all[0] || null;
     }
-
-    if (!targetEmail || !targetEmail.includes("@")) {
-      return res.status(400).json({ success: false, error: "Укажите корректный email получателя" });
+    const sub = snap?.data?.() || null;
+    const stored = String(sub?.applicantEmail || "").trim().toLowerCase();
+    // Один ответ на «не нашли» и «адрес не тот» — по нему не перебрать, чья это заявка.
+    if (!sub || sub.deleted || !sub.qrToken || (formId && sub.formId !== formId) || !stored.includes("@") || (email && email !== stored)) {
+      return res.status(404).json({ success: false, error: "Заявка с такими данными не найдена" });
     }
+    const gate = await checkTenantOpen(String(sub.tenantId || ""), "forms");
+    if (!gate.ok) return res.status(410).json({ success: false, error: "Приём заявок закрыт." });
+
+    const t = sub.ticketSentAt;
+    const last = typeof t?.toMillis === "function" ? t.toMillis() : Number(t?.seconds ?? t?._seconds ?? 0) * 1000;
+    if (Date.now() - last < TICKET_RESEND_COOLDOWN_MS) {
+      return res.status(429).json({ success: false, error: "Билет только что отправлен. Проверьте почту, в том числе «Спам»." });
+    }
+    await snap.ref.update({ ticketSentAt: admin.firestore.Timestamp.now() });
+
+    const fsnap = sub.formId ? await db().collection(FORMS).doc(String(sub.formId)).get().catch(() => null) : null;
+    const eventTitle = (fsnap?.exists ? String(fsnap.data()?.title || "") : "") || sub.formTitle || "Мероприятие";
+    const details: Record<string, string> = {};
+    if (sub.participationFormat) details["Формат участия"] = sub.participationFormat;
+    if (sub.teamName) details["Команда"] = sub.teamName;
 
     const result = await sendFormTicketEmail({
-      to: targetEmail,
-      applicantName: targetName || "Участник",
-      eventTitle: eventTitle || "Мероприятие",
-      qrToken: targetToken || "TICKET",
+      to: stored,
+      applicantName: sub.applicantName || "Участник",
+      eventTitle,
+      qrToken: String(sub.qrToken || ""),
+      ticketUrl: `${await appUrl()}/track/${encodeURIComponent(String(sub.qrToken || ""))}`,
       details,
     });
-
     if (!result.sent) {
       return res.status(500).json({ success: false, error: result.reason || "Ошибка отправки письма" });
     }
-
-    return res.json({ success: true, message: `Билет успешно отправлен на адрес ${targetEmail}` });
+    return res.json({ success: true, message: "Билет отправлен на почту из заявки" });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }
@@ -781,6 +790,7 @@ function sanitizeSubmissionFields(sub: any): any {
   if (!sub || typeof sub !== "object") return sub;
   const cleanSub = { ...sub };
 
+  delete cleanSub.editToken;
   delete cleanSub.teamPassword;
   delete cleanSub.team_password;
   delete cleanSub.password;
@@ -846,10 +856,11 @@ function safeEq(a: string, b: string): boolean {
  */
 async function tenantKeys(tenantId: string): Promise<string[]> {
   const [s, t] = await Promise.all([db().collection("tenant_secrets").doc(tenantId).get(), db().collection("tenants").doc(tenantId).get()]);
-  return [s.data()?.apiKey, s.data()?.secretKey, t.data()?.apiKey, t.data()?.secretKey].filter((k): k is string => typeof k === "string" && k.length >= 16);
+  return [s.data()?.apiKey, s.data()?.secretKey, t.data()?.apiKey, t.data()?.secretKey].filter((k): k is string => typeof k === "string" && k.length >= 16 && !isCompromised(k));
 }
-const LEGACY_LOGOS_SECRET = "sf_sec_logos_2026";
-const LEGACY_LOGOS_TENANT = "org_logoshack";
+/** Хэши секретов, побывавших в коде (sha256): такие ключи считаются раскрытыми. */
+const COMPROMISED_SECRETS = new Set(["3e8e1ddeb8df23cc78218f00f217ce6e03223e404a85806506bd09eaf2d726fe"]);
+const isCompromised = (v: string) => COMPROMISED_SECRETS.has(crypto.createHash("sha256").update(String(v)).digest("hex"));
 async function authenticateFormApi(req: any, res: any, next: any) {
   try {
     const { tenantId, apiKey, userToken } = extractTenantContext(req);
@@ -858,15 +869,10 @@ async function authenticateFormApi(req: any, res: any, next: any) {
     const bind = (t: string) => { req.headers["x-tenant-id"] = t; };
 
     const isSecret = (sec: string) => !!sec && [userToken, apiKey, secretHeader].some(v => !!v && (safeEq(v, sec) || safeEq(v, `Bearer ${sec}`)));
-    if (SERVER_SECRET && SERVER_SECRET !== LEGACY_LOGOS_SECRET && isSecret(SERVER_SECRET)) return next();
-    // Старый секрет из кода (он виден в публичном репозитории) пускает только
-    // в организацию Logos — её интеграция им пользуется. Заявки остальных школ
-    // по нему больше не открываются. Заменить на ключ API организации.
-    if (isSecret(LEGACY_LOGOS_SECRET)) {
-      if (tenantId && tenantId !== LEGACY_LOGOS_TENANT) return res.status(403).json({ success: false, error: "FORBIDDEN", message: "Этот ключ действует только для своей организации" });
-      bind(LEGACY_LOGOS_TENANT);
-      return next();
-    }
+    // Секрет платформы — только из окружения. Ключей отдельных организаций в
+    // коде нет: они лежат в tenant_secrets. Значения, которые когда-то были в
+    // публичном репозитории, не принимаются ни в какой роли.
+    if (SERVER_SECRET && !isCompromised(SERVER_SECRET) && isSecret(SERVER_SECRET)) return next();
 
     let user = req.user;
     if (!user && userToken) { try { user = await verifySession(userToken); } catch { /* не токен входа — может быть ключ */ } }
@@ -880,7 +886,7 @@ async function authenticateFormApi(req: any, res: any, next: any) {
     }
 
     const providedKey = apiKey || (secretHeader.startsWith("Bearer ") ? secretHeader.slice(7) : secretHeader);
-    if (providedKey) {
+    if (providedKey && providedKey.length >= 16 && !isCompromised(providedKey)) {
       if (tenantId) {
         if ((await tenantKeys(tenantId)).some(k => safeEq(k, providedKey))) { bind(tenantId); return next(); }
       } else {
@@ -1296,10 +1302,17 @@ router.post("/team/check", formsApiLimiter, async (req: any, res: any) => {
 
     let passwordMatches: boolean | undefined = undefined;
     if (password) {
-      passwordMatches = storedPassword === password.trim();
+      passwordMatches = !!storedPassword && safeEq(storedPassword, password.trim());
     }
 
-    void logApiAudit(req, "TEAM_CHECK", { formId, code, found: true });
+    void logApiAudit(req, "TEAM_CHECK", { formId, code, found: true, passwordMatches: !!passwordMatches });
+
+    // Без верного пароля — только «такая команда есть»: ни ответов заявки,
+    // ни кода QR, ни id. Раньше по одному коду команды (его выбирают сами,
+    // вроде «team1») отдавались все ответы и код билета.
+    if (!passwordMatches) {
+      return res.json({ success: true, found: true, passwordMatches: password ? false : undefined });
+    }
 
     return res.json({
       success: true,
@@ -1420,7 +1433,8 @@ router.get("/track/:token", async (req: any, res: any) => {
       const byId = await db().collection(SUBS).doc(token).get();
       if (byId.exists) doc0 = byId;
     }
-    if (!doc0) {
+    // Удалённая заявка — не найдена: её билет больше не действует.
+    if (!doc0 || doc0.data()?.deleted) {
       return res.status(404).json({ success: false, error: "Заявка по этому коду не найдена." });
     }
 
@@ -1503,6 +1517,9 @@ router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
   try {
     const { token, requestId } = req.body || {};
     if (!token) return res.status(400).json({ success: false, error: "Нужен код билета" });
+    // Мероприятия смены: сканер может передать формы, на которые сейчас пускают.
+    const allowedForms: string[] = (Array.isArray(req.body?.formIds) ? req.body.formIds : req.body?.formId ? [req.body.formId] : [])
+      .map((x: unknown) => str(x, 200)).filter(Boolean).slice(0, 50);
 
     const byToken = await db().collection(SUBS).where("qrToken", "==", String(token).trim().toUpperCase()).limit(1).get();
     mark("поиск билета");
@@ -1511,6 +1528,10 @@ router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
     }
     const subRef = byToken.docs[0].ref;
     const sub = byToken.docs[0].data();
+    // Удалённая заявка (дубль, подделка) — не билет.
+    if (sub.deleted) {
+      return res.status(404).json({ success: false, error: "Билет не найден" });
+    }
 
     // Организация должна быть активна, а раздел билетов — не закрыт платформой.
     const gate = await checkTenantOpen(sub.tenantId, req.user?.isSuperadmin ? undefined : "tickets");
@@ -1525,13 +1546,19 @@ router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
     const form = formSnap.exists ? formSnap.data()! : null;
     mark("форма");
     const guestName = sub.applicantName || "Без имени";
-    if (!form || formMode(form) !== "ticket") {
+    if (!form || formMode(form) !== "ticket" || String(form.tenantId || "") !== String(sub.tenantId || "")) {
       return res.json({ success: true, result: "notticket", guest: { name: guestName } });
+    }
+    // Билет на другое мероприятие: не пускаем и не «сжигаем» его.
+    if (allowedForms.length && !allowedForms.includes(String(sub.formId || ""))) {
+      const title = String(form.title || sub.formTitle || "");
+      return res.json({ success: false, result: "wrongevent", error: `Билет на другое мероприятие${title ? `: «${title}»` : ""}`, guest: { name: guestName }, formTitle: title });
     }
 
     const outcome = await db().runTransaction(async tx => {
       const fresh = await tx.get(subRef);
       const cur = fresh.data()!;
+      if (cur.deleted) return { result: "inactive" as const, status: (isFormStatus(cur.status) ? cur.status : "new") as Status };
       const curStatus: Status = isFormStatus(cur.status) ? cur.status : "new";
       if (curStatus === "checked_in") {
         // Та же самая попытка, повторённая после обрыва связи: сканер не
