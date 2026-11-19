@@ -24,6 +24,8 @@ export default function FormSummary({ fields, subs, onPick, onWho, onOpen }: {
   onWho: (w: WhoList) => void; onOpen: (id: string) => void;
 }) {
   const data = useMemo(() => summarize(fields, subs), [fields, subs]);
+  const names = useMemo(() => new Map(subs.map(x => [x.id, String(x.applicantName || "").trim()])), [subs]);
+  const nameOf = (id: string) => names.get(id) || "";
   if (!data.total) return <div className={`${card} text-center text-xs text-[var(--text-muted)] py-12`}>Под условия не подошёл ни один ответ.</div>;
   const peak = Math.max(1, ...data.byDay.map(d => d.count));
   return (
@@ -52,14 +54,14 @@ export default function FormSummary({ fields, subs, onPick, onWho, onOpen }: {
         </div>
       </div>
       {data.fields.map(s => (
-        <FieldCard key={s.field.id} s={s} onOpen={onOpen}
+        <FieldCard key={s.field.id} s={s} onOpen={onOpen} nameOf={nameOf}
           onWho={(b: SummaryBar) => onWho({ title: `${s.field.label} — ${b.label}`, ids: b.ids || [], filter: b.value ? () => onPick(s.field.id, b.value) : undefined })} />
       ))}
     </div>
   );
 }
 
-function FieldCard({ s, onWho, onOpen }: { s: FieldSummary; onWho: (b: SummaryBar) => void; onOpen: (id: string) => void }) {
+function FieldCard({ s, onWho, onOpen, nameOf }: { s: FieldSummary; onWho: (b: SummaryBar) => void; onOpen: (id: string) => void; nameOf: (id: string) => string }) {
   const f = s.field;
   const sub = [
     `${s.answered} ${plural(s.answered, "ответ", "ответа", "ответов")}`,
@@ -85,11 +87,11 @@ function FieldCard({ s, onWho, onOpen }: { s: FieldSummary; onWho: (b: SummaryBa
             <Bars onPick={onWho} bars={(s.buckets || []).map(b => ({ value: "", label: new Date(`${b.label}-01`).toLocaleDateString("ru-RU", { month: "long", year: "numeric" }), count: b.count, ids: b.ids, pct: Math.round((b.count / Math.max(1, s.answered)) * 1000) / 10 }))} />
           </> : <Empty />
         ) : s.kind === "file" ? <div className="text-xs text-[var(--text-muted)]">Файл приложили: {s.answered}</div>
-        : <Texts s={s} onOpen={onOpen} onWho={onWho} />}
+        : <Texts s={s} onOpen={onOpen} onWho={onWho} nameOf={nameOf} />}
       {s.others && s.others.length > 0 && (
         <details className="text-xs">
           <summary className="cursor-pointer text-[var(--accent)]">Что вписали в «Другое» · {s.others.length}</summary>
-          <ul className="mt-1.5 space-y-1 text-[var(--text-main)]">{s.others.map((t, i) => <li key={i}><Answer text={t.text} onClick={() => onOpen(t.id)} /></li>)}</ul>
+          <ul className="mt-1.5 space-y-1 text-[var(--text-main)]">{s.others.map((t, i) => <li key={i}><Answer text={t.text} who={nameOf(t.id)} onClick={() => onOpen(t.id)} /></li>)}</ul>
         </details>
       )}
     </div>
@@ -175,16 +177,19 @@ function Bars({ bars, onPick }: { bars: SummaryBar[]; onPick?: (b: SummaryBar) =
   );
 }
 
-/** Текст ответа — кнопка: открывает заявку этого человека. */
-const Answer = ({ text, onClick }: { text: string; onClick: () => void }) => (
-  <button type="button" onClick={onClick}
+/** Текст ответа и кто его написал — кнопка: открывает заявку этого человека. */
+const Answer = ({ text, who, onClick }: { text: string; who?: string; onClick: () => void }) => (
+  <button type="button" onClick={onClick} title={who ? `Открыть заявку: ${who}` : "Открыть заявку"}
     className="group w-full flex items-start gap-2 text-left px-2.5 py-1.5 rounded-lg bg-[var(--bg-surface-hover)] hover:ring-1 hover:ring-[var(--accent)] transition">
-    <span className="flex-1 min-w-0 whitespace-pre-line">{text}</span>
+    <span className="flex-1 min-w-0">
+      <span className="block whitespace-pre-line">{text}</span>
+      {who && <span className="block mt-0.5 text-[10px] text-[var(--text-muted)] group-hover:text-[var(--accent)] truncate">{who}</span>}
+    </span>
     <ChevronRight className="w-3.5 h-3.5 shrink-0 mt-0.5 text-[var(--text-muted)] group-hover:text-[var(--accent)]" />
   </button>
 );
 
-function Texts({ s, onOpen, onWho }: { s: FieldSummary; onOpen: (id: string) => void; onWho: (b: SummaryBar) => void }) {
+function Texts({ s, onOpen, onWho, nameOf }: { s: FieldSummary; onOpen: (id: string) => void; onWho: (b: SummaryBar) => void; nameOf: (id: string) => string }) {
   const [all, setAll] = useState(false);
   const list = s.texts || [];
   if (!list.length) return <Empty />;
@@ -194,7 +199,7 @@ function Texts({ s, onOpen, onWho }: { s: FieldSummary; onOpen: (id: string) => 
         <div className="flex flex-wrap gap-1.5">{s.top.map(t => <button type="button" key={t.text} onClick={() => onWho({ value: "", label: t.text, count: t.count, pct: 0, ids: t.ids })} className="px-2 py-0.5 rounded-full text-[11px] bg-[var(--bg-surface-hover)] text-[var(--text-main)] hover:ring-1 hover:ring-[var(--accent)]">{t.text} · {t.count}</button>)}</div>
       )}
       <ul className="space-y-1 text-xs text-[var(--text-main)]">
-        {(all ? list : list.slice(0, 10)).map((t, i) => <li key={i}><Answer text={t.text} onClick={() => onOpen(t.id)} /></li>)}
+        {(all ? list : list.slice(0, 10)).map((t, i) => <li key={i}><Answer text={t.text} who={nameOf(t.id)} onClick={() => onOpen(t.id)} /></li>)}
       </ul>
       {list.length > 10 && <button type="button" className="text-xs text-[var(--accent)] hover:underline" onClick={() => setAll(v => !v)}>{all ? "Свернуть" : `Показать все ${list.length}`}</button>}
     </div>
