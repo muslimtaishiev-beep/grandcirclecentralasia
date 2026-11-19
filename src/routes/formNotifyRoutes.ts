@@ -6,11 +6,12 @@ import { telegramConfig } from "../server/telegram.js";
 import { WATCHERS, newWatchId, sendInvite, watchersOf, type Watcher } from "../server/formWatch.js";
 
 /**
- * /api/form-notify/:t/:formId — кто получает заявки формы в Telegram.
+ * /api/form-notify/:t/:formId — кто получает новые заявки формы.
  *
- * Себя подключает тот, кто работает с формами (или её автор), если у него
- * привязан Telegram. Других — только с правом «Уведомления по заявкам»:
- * человеку приходит приглашение, и он сам принимает или отклоняет.
+ * Себя подключает тот, кто работает с формами (или её автор): заявки идут
+ * в колокольчик на сайте и в Telegram, если он привязан. Других — только с
+ * правом «Уведомления по заявкам» и Telegram: человеку приходит приглашение,
+ * и он сам принимает или отклоняет.
  */
 const router = Router();
 const db = () => admin.firestore();
@@ -64,8 +65,9 @@ router.post("/:t/:formId", requireFirebaseAuth, async (req: any, res: any) => {
     const self = uid === x.c.uid;
     if (!self && !x.canAssign) return fail(res, 403, "Подключать других может сотрудник с правом «Уведомления по заявкам»");
     if (!self && !(await activeMembership(db(), uid, x.t))) return fail(res, 404, "Сотрудник не найден");
-    const tg = (await db().collection("user_telegram").doc(uid).get()).data();
-    if (!tg?.chatId) return fail(res, 400, self ? "Сначала подключите Telegram в профиле" : "У сотрудника не подключён Telegram");
+    // Себе — без Telegram тоже можно: заявки придут в колокольчик на сайте.
+    // Другому — только с Telegram: приглашение он принимает там.
+    if (!self && !(await db().collection("user_telegram").doc(uid).get()).data()?.chatId) return fail(res, 400, "У сотрудника не подключён Telegram");
     const existing = (await watchersOf(x.formId)).find(w => w.uid === uid && w.tenantId === x.t);
     if (existing?.status === "active") return res.json({ success: true, status: "active" });
     const w: Watcher = existing || { id: newWatchId(), tenantId: x.t, formId: x.formId, uid, status: self ? "active" : "pending", by: x.c.uid, byName: x.c.name, at: Date.now() };

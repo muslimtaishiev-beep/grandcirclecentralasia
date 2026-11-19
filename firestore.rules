@@ -154,6 +154,18 @@ service cloud.firestore {
     match /chat_messages/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
     match /automations/{docId} { allow read, update, delete: if hasTenantAccess(); allow create: if hasTenantAccessOnCreate(); }
     // Уведомление видит и отмечает прочитанным только адресат: в них бывают ФИО детей.
+    // Лента изменений организации: только время и id изменённой записи.
+    // Читают свои сотрудники, пишет только сервер.
+    // Личные настройки уведомлений — только через сервер (/api/notify).
+    match /notify_prefs/{docId} {
+      allow read, write: if false;
+    }
+
+    match /live/{tenantId} {
+      allow read: if isSuperadmin() || isTenantUser(tenantId);
+      allow write: if false;
+    }
+
     match /notifications/{docId} {
       allow read, delete: if isSuperadmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid
@@ -161,7 +173,8 @@ service cloud.firestore {
       // Создают авто-правила и бот: только своей организации, со временем сервера,
       // ссылкой внутри кабинета. Уведомления о приёме пишет только сервер.
       allow create: if hasTenantAccessOnCreate()
-        && !(request.resource.data.get('type', '') in ['admission', 'email'])
+        && !(request.resource.data.get('type', '') in ['admission', 'email', 'exam', 'form'])
+        && !('event' in request.resource.data)
         && !('applicantId' in request.resource.data)
         && !('emailLogId' in request.resource.data)
         && request.resource.data.createdAt == request.time

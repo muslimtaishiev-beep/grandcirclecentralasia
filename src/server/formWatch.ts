@@ -1,4 +1,5 @@
 import admin from "firebase-admin";
+import { deliver } from "./notify.js";
 import { randomBytes } from "crypto";
 import { activeMembership } from "./access.js";
 import { chatOf, sendTelegram, tgCall } from "./telegram.js";
@@ -32,17 +33,27 @@ export async function sendInvite(w: Watcher, formTitle: string): Promise<boolean
   return true;
 }
 
-/** Новая заявка — тем, кто подписан и всё ещё работает в организации. */
-export async function notifyFormWatchers(form: { tenantId?: string; title?: string }, formId: string, sub: { name: string; contact: string }) {
+/** Новая заявка — тем, кто подписан и всё ещё работает в организации: колокольчик и Telegram (если подключён). */
+export async function notifyFormWatchers(form: { tenantId?: string; title?: string }, formId: string, sub: { name: string; contact: string }, subId = "") {
   try {
     const t = String(form.tenantId || "");
     const list = (await watchersOf(formId)).filter(w => w.status === "active" && w.tenantId === t);
-    for (const w of list) {
-      if (!(await activeMembership(db(), w.uid, t))) continue;
+    const active: Watcher[] = [];
+    for (const w of list) if (await activeMembership(db(), w.uid, t)) active.push(w);
+    if (!active.length) return;
+    const title = `📝 Новая заявка · ${form.title || "Форма"}`;
+    const body = [sub.name || "Без имени", sub.contact].filter(Boolean).join(" · ");
+    const url = `/workspace/${t}/builder/forms?form=${encodeURIComponent(formId)}${subId ? `&sub=${encodeURIComponent(subId)}` : ""}`;
+    const to = new Set(await deliver({
+      tenantId: t, event: "form.submission", uids: active.map(w => w.uid), title, body, url, type: "form", telegram: false,
+      docId: u => `form_${subId || formId}_${u}`, extra: { formId },
+    }));
+    // Telegram — со своей кнопкой «Отключить уведомления» этой формы.
+    for (const w of active) {
+      if (!to.has(w.uid)) continue;
       const chat = await chatOf(w.uid);
       if (!chat) continue;
-      await sendTelegram(chat, `📝 Новая заявка · ${form.title || "Форма"}`, [sub.name || "Без имени", sub.contact].filter(Boolean).join(" · "),
-        `/workspace/${t}/builder/forms`, [[{ text: "Отключить уведомления", data: `fw:off:${w.id}` }]]).catch(() => {});
+      await sendTelegram(chat, title, body, url, [[{ text: "Отключить уведомления", data: `fw:off:${w.id}` }]]).catch(() => {});
     }
   } catch (e) { console.error("[form-watch] notify:", e); }
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useOutletContext, useParams, useNavigate } from 'react-router-dom';
+import { useOutletContext, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   FileCheck2, 
   Plus, 
@@ -19,7 +19,8 @@ import {
   CheckCircle2,
   AlertCircle,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  Bell,
 } from 'lucide-react';
 import { collection, query, where, onSnapshot, doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
@@ -33,7 +34,6 @@ import { tenantLogos } from '../../../shared/legal';
 import FormSummary, { WhoModal, type WhoList } from './FormSummary';
 import EmailTemplateSelect from '../../../components/workspace/EmailTemplateSelect';
 import EmailResend from '../../../components/workspace/EmailResend';
-import { TelegramIcon } from '../../../components/workspace/TelegramIcon';
 import FormNotifyModal from './FormNotifyModal';
 import { emailApi } from '../../../lib/emailTemplatesApi';
 
@@ -350,6 +350,20 @@ export default function FormBuilder() {
   };
   const [showDeleted, setShowDeleted] = useState(false);
   const [subView, setSubView] = useState<any | null>(null);
+  // Из уведомления «Новая заявка»: ?form=…&sub=… — сразу открыть эту заявку.
+  const [deepLink, setDeepLink] = useSearchParams();
+  useEffect(() => {
+    const formParam = deepLink.get('form');
+    const subParam = deepLink.get('sub');
+    if (!formParam && !subParam) return;
+    if (loading) return;
+    setActiveTab('submissions');
+    if (formParam) setFilterFormId(formParam);
+    const x = subParam ? submissions.find(v => v.id === subParam) : null;
+    if (x) { setSubMode('list'); setSubView(x); }
+    const p = new URLSearchParams(deepLink); p.delete('form'); p.delete('sub');
+    setDeepLink(p, { replace: true });
+  }, [deepLink, loading, submissions, setDeepLink]);
   /** Сводка: кто ответил выбранным вариантом — окно поверх, заявка открывается ещё выше. */
   const [who, setWho] = useState<WhoList | null>(null);
   const [busySub, setBusySub] = useState<string | null>(null);
@@ -2040,8 +2054,8 @@ export default function FormBuilder() {
                   {currentOrgId && <EmailTemplateSelect tenantId={currentOrgId} kind="form" title="Письмо после отправки" value={emailTemplateId} onChange={setEmailTemplateId} />}
                   {currentOrgId && editingFormId && (
                     <button type="button" onClick={() => setNotifyForm({ id: editingFormId, title: formTitle || 'Форма' })}
-                      className="flex items-center gap-2 text-sm text-[var(--text-main)] hover:text-[#229ED9] transition cursor-pointer">
-                      <TelegramIcon className="w-4 h-4" /> Уведомления о заявках в Telegram
+                      className="flex items-center gap-2 text-sm text-[var(--text-main)] hover:text-[var(--accent)] transition cursor-pointer">
+                      <Bell className="w-4 h-4" /> Уведомления о заявках
                     </button>
                   )}
                 </div>

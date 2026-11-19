@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useLive } from "../../../lib/useLive";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { Download, FileDown, Loader2, Plus, QrCode, Search, UserPlus } from "lucide-react";
 import { STAGE_LABEL, type Stage } from "../../../shared/admissions";
@@ -48,6 +49,8 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
     finally { setLoading(false); }
   }, [api, tenantId]);
   useEffect(() => { void load(); }, [load]);
+  // Кто угодно изменил поступающего или ученик прошёл тест — список обновляется сам.
+  useLive(tenantId, ["admissions", "exams"], () => { void load(); });
   // Психолог завёл ученика или завершил сессию — список обновляется без перезагрузки.
   useEffect(() => {
     const on = (e: Event) => { if ((e as CustomEvent).detail?.type === "admission") void load(); };

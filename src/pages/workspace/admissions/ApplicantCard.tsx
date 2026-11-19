@@ -1,5 +1,6 @@
 import EmailResend from "../../../components/workspace/EmailResend";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLive } from "../../../lib/useLive";
 import { Camera, CheckCircle2, ClipboardList, Copy, Download, ExternalLink, Loader2, Lock, Pencil, Printer, QrCode, RefreshCw, Trash2 } from "lucide-react";
 import FormFiller from "../../../components/admissions/FormFiller";
 import { STAGE_LABEL, stageOf, type Applicant, type CandidateInfo, type PaperResult } from "../../../shared/admissions";
@@ -56,6 +57,9 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
     } catch (e: any) { setError(e.message); }
   }, [api, id, psychMode]);
   useEffect(() => { void load(); }, [load]);
+  // Изменения этого ребёнка (кто угодно, тест, родитель) — карточка обновляется сама.
+  // Черновики анкет не сбиваются: у вкладок свои состояния.
+  useLive(tenant?.id, ["admissions"], m => { if (!m || !m.id || m.id === id) void load(); });
   // Пришло уведомление про этого ребёнка — карточка обновляется сама.
   useEffect(() => {
     const on = (e: Event) => { if ((e as CustomEvent).detail?.applicantId === id) void load(); };

@@ -654,8 +654,8 @@ router.post("/submit", async (req: any, res: any) => {
       status: "new", qrToken, data: clean,
     }));
 
-    // Telegram — сотрудникам, подписанным на заявки этой формы.
-    await notifyFormWatchers(form, String(formId), { name: applicantName, contact: applicantPhone || applicantEmail });
+    // Колокольчик и Telegram — сотрудникам, подписанным на заявки этой формы.
+    await notifyFormWatchers(form, String(formId), { name: applicantName, contact: applicantPhone || applicantEmail }, ref.id);
 
     // ✉️ Письмо по шаблону формы, если выбран; иначе — стандартный электронный билет.
     const templated = applicantEmail && form.emailTemplateId

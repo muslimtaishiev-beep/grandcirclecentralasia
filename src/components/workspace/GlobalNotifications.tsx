@@ -6,12 +6,33 @@ import { useNotifications, type AppNotification } from '../../lib/useNotificatio
 import { useAuth } from '../../contexts/AuthContext';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
+import { clientTypeEvent } from '../../shared/notifyEvents';
+import { loadNotifyPrefs } from '../../pages/workspace/profile/NotifySettings';
 
 export default function GlobalNotifications() {
   const { user } = useAuth();
   const { activeTenant } = useOutletContext<any>() || {};
-  const { notifications, unreadCount, loaded, markAsRead, markAllAsRead } = useNotifications(activeTenant?.id, user?.uid);
+  const { notifications: all, loaded, markAsRead, markAllAsRead } = useNotifications(activeTenant?.id, user?.uid);
   const navigate = useNavigate();
+
+  // Задачи, чат, упоминания, CRM создаются на клиенте — отключённое в профиле здесь просто не показываем.
+  const [prefs, setPrefs] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    const t = activeTenant?.id;
+    if (!t || !user) return;
+    const load = () => { loadNotifyPrefs(t).then(setPrefs).catch(() => {}); };
+    load();
+    window.addEventListener('sf:notify-prefs', load);
+    return () => window.removeEventListener('sf:notify-prefs', load);
+  }, [activeTenant?.id, user]);
+  const notifications = all.filter(n => { const k = clientTypeEvent(n.type); return !k || prefs[k] !== false; });
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  // Непрочитанные — числом во вкладке браузера: видно, даже когда открыта другая вкладка.
+  useEffect(() => {
+    const strip = (t: string) => t.replace(/^\(\d+\) /, '');
+    document.title = unreadCount ? `(${unreadCount}) ${strip(document.title)}` : strip(document.title);
+  }, [unreadCount]);
   
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -33,6 +54,15 @@ export default function GlobalNotifications() {
     notifications.forEach(n => at.set(n.id, stamp(n)));
     if (!fresh.length) return;
     setToasts(t => [...fresh, ...t.filter(x => !fresh.some(f => f.id === x.id))].slice(0, 3));
+    // Вкладка в фоне — окно уведомления системы (если разрешено в профиле → «На рабочий стол»).
+    if (document.hidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      fresh.slice(0, 3).forEach(n => {
+        try {
+          const w = new Notification(n.title, { body: n.body, tag: n.id, icon: '/favicon.ico' });
+          w.onclick = () => { window.focus(); w.close(); openToastRef.current(n); };
+        } catch { /* браузер без системных уведомлений */ }
+      });
+    }
     // Открытый список поступающих и карточка обновляются сами.
     fresh.forEach(n => window.dispatchEvent(new CustomEvent('sf:notification', { detail: n })));
   }, [notifications, loaded, activeTenant?.id]);
@@ -47,6 +77,8 @@ export default function GlobalNotifications() {
     if (!n.read) void markAsRead(n.id);
     if (n.actionUrl) navigate(n.actionUrl);
   };
+  const openToastRef = useRef(openToast);
+  openToastRef.current = openToast;
 
   // Close dropdown on click outside
   useEffect(() => {

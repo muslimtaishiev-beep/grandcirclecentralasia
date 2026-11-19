@@ -1,4 +1,7 @@
-import { notifyTested, syncReferral } from "./admissionRoutes.js";
+import { bumpLive } from "../server/live.js";
+import { notifyApplicantStep, notifyTested, syncReferral } from "./admissionRoutes.js";
+import { notifyEvent } from "../server/notify.js";
+import type { PermissionKey } from "../shared/permissions.js";
 import { Router } from "express";
 import admin from "firebase-admin";
 import { randomBytes, randomInt } from "crypto";
@@ -66,7 +69,7 @@ async function advance(t: string, exam: Exam, attemptId: string, expected: numbe
   const out = await db().runTransaction(async tx => {
     const snap = await tx.get(ref);
     const a = { ...(snap.data() as Full), id: snap.id };
-    if (a.status !== "in_progress" || a.current !== expected) return { a, finished: false };
+    if (a.status !== "in_progress" || a.current !== expected) return { a, finished: false, changed: false };
     const sections = a.sections.map(s => ({ ...s }));
     const cur = sections[a.current];
     if (cur && !cur.finishedAt) cur.finishedAt = now;
@@ -84,12 +87,34 @@ async function advance(t: string, exam: Exam, attemptId: string, expected: numbe
       patch.result = gradeAttempt(sections, a.questions, a.answers, exam.settings, a.review?.overrides || {});
     }
     tx.update(ref, JSON.parse(JSON.stringify(patch)));
-    return { a: { ...a, ...patch } as Full, finished: patch.status === "finished" };
+    return { a: { ...a, ...patch } as Full, finished: patch.status === "finished", changed: true };
   });
+  if (out.changed) await bumpLive(t, out.a.applicantId ? ["exams", "admissions"] : ["exams"], out.a.applicantId || attemptId);
   // Ученик сдал повторную попытку — прежняя больше не считается.
   if (out.finished) await supersedeOthers(t, out.a);
   if (out.finished) await notifyTested(t, out.a, exam);
+  if (out.finished && !out.a.applicantId) {
+    const pct = out.a.result?.percent;
+    await notifyEvent({
+      tenantId: t, event: "exam.finished", perms: EXAM_STAFF, title: "Тест сдан", type: "exam",
+      body: [out.a.student.name, exam.title, pct != null ? `${String(pct).replace(".", ",")}%` : ""].filter(Boolean).join(" · "),
+      url: `/workspace/${t}/exams/${exam.id}`, docId: u => `exam_${attemptId}_${u}`,
+    });
+  }
+  if (out.changed && !out.finished) await notifyTestStep(t, exam, out.a, "section", `часть ${expected + 1} из ${out.a.sections.length} · ${out.a.sections[expected]?.title || ""}`);
   return out.a;
+}
+
+const EXAM_STAFF: PermissionKey[] = ["tests:manage", "tests:review"];
+/** Начал тест, закончил часть — поступающему через приём, остальным — тем, кто ведёт экзамены. */
+async function notifyTestStep(t: string, exam: Exam, a: Full, step: "start" | "section", summary = "") {
+  if (a.applicantId) return notifyApplicantStep(t, a.applicantId, step === "start" ? "test_start" : "section", summary);
+  await notifyEvent({
+    tenantId: t, event: step === "start" ? "exam.start" : "exam.section", perms: EXAM_STAFF, type: "exam",
+    title: step === "start" ? "Начал тест" : "Закончил часть теста",
+    body: [a.student.name, exam.title, summary].filter(Boolean).join(" · "),
+    url: `/workspace/${t}/exams/${exam.id}`, docId: u => `exam_${a.id}_${u}`,
+  });
 }
 
 export async function supersedeOthers(t: string, a: Full) {
@@ -308,6 +333,8 @@ async function createAttempt(exam: Exam, tenant: any, student: Attempt["student"
       return null;
     });
     if (refused) return { error: refused, status: 409 };
+    await bumpLive(t, attempt.applicantId ? ["exams", "admissions"] : ["exams"], attempt.applicantId || attempt.id);
+    await notifyTestStep(t, exam, attempt, "start", exam.title);
   return { attempt };
 }
 

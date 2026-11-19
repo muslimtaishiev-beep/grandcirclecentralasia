@@ -4,6 +4,8 @@ import { signOut } from "firebase/auth";
 import { auth } from "../../../lib/firebase";
 import { btn, btnPrimary, card, input, label } from "../journals/components/ui";
 import { TelegramIcon } from "../../../components/workspace/TelegramIcon";
+import { useParams } from "react-router-dom";
+import NotifySettings from "./NotifySettings";
 export { TelegramIcon };
 
 /**
@@ -26,6 +28,7 @@ const api = async (path: string, init: RequestInit = {}) => {
 const when = (ms: number) => new Date(ms).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 
 export default function ProfilePage() {
+  const { orgId } = useParams<{ orgId: string }>();
   const [d, setD] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -96,6 +99,8 @@ export default function ProfilePage() {
           <p className="text-xs text-[var(--text-muted)]">Уведомления сайта и оповещения о входе в аккаунт.</p>
         </section>
       )}
+
+      {orgId && <NotifySettings tenantId={orgId} />}
 
       <section className={`${card} p-4 space-y-3`}>
         <h2 className="font-bold text-[var(--text-main)] flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-emerald-600" /> Безопасность</h2>

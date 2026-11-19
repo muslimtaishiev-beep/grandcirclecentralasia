@@ -38,6 +38,7 @@ import {
   X,
 } from "lucide-react";
 import GlobalNotifications from "../../components/workspace/GlobalNotifications";
+import UpdateBanner from "../../components/workspace/UpdateBanner";
 import QuickSetupWizard from "../../components/workspace/QuickSetupWizard";
 import { isPsychOnly, resolvePermissions, resolveScreens, normalizeTenantStatus, type PermissionKey } from "../../shared/permissions";
 import SpotlightCommandBar from "../../components/common/SpotlightCommandBar";
@@ -271,6 +272,7 @@ export default function WorkspaceLayout() {
             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
           </button>
           <GlobalNotifications />
+          <UpdateBanner />
           
           {/* Профиль: при наведении — меню «Профиль» и «Выйти» */}
           <div className="hidden sm:block relative group pl-2 border-l border-[var(--border-color)]">

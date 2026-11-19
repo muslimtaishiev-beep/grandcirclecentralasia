@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useLive } from "../../../lib/useLive";
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, Loader2, Radio } from "lucide-react";
 import { gradeOf } from "../../../shared/questionnaires";
@@ -37,6 +38,7 @@ export default function LiveTab({ api, admApi, tenant }: { api: Api; admApi: Api
     if (admApi) admApi("/applicants").then(j => setPsych((j.applicants as Row[]).filter(r => Object.values(r.stages).some(s => s.status === "draft")))).catch(() => {});
   }, [api, admApi]);
   useEffect(() => { void load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
+  useLive(tenant?.id, ["exams"], () => { void load(); });
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
 
   /** Ученик — на странице экзамена его класса. */

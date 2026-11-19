@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useLive } from "../../../lib/useLive";
 import { Link, useNavigate } from "react-router-dom";
 import { Copy, Loader2, Plus, Radio, UserPlus } from "lucide-react";
 import { Modal, btn, btnPrimary, card, input, label } from "../journals/components/ui";
@@ -26,6 +27,7 @@ export default function ExamsListTab({ api, tenantId, onNewApplicant }: { api: A
     finally { setLoading(false); }
   }, [api]);
   useEffect(() => { void load(); const t = setInterval(load, 20000); return () => clearInterval(t); }, [load]);
+  useLive(tenantId, ["exams"], () => { void load(); });
 
   const groups = useMemo(() => {
     const m = new Map<string, ExamListItem[]>();

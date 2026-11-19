@@ -1,7 +1,6 @@
 import admin from "firebase-admin";
 import { sendMail } from "./mail.js";
-import { membersWith } from "./access.js";
-import { notifyTelegram } from "./telegram.js";
+import { notifyEvent } from "./notify.js";
 import { tenantLogos } from "../shared/legal.js";
 import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
 import { emailLogId, renderEmail, sanitizeEmailTemplate, type EmailCtx, type EmailEvent, type EmailTemplate } from "../shared/emailTemplate.js";
@@ -126,28 +125,17 @@ async function finish(p: TemplatedSend, logId: string, r: SendResult, to: string
   else await notifyFailed(p, logId, r.reason || "");
 }
 
-/** Письмо не ушло — колокольчик и Telegram тем, кто отвечает за событие. */
+/** Письмо не ушло — колокольчик и Telegram тем, кто отвечает за событие (если не отключили в профиле). */
 async function notifyFailed(p: TemplatedSend, logId: string, reason: string) {
-  try {
-    const people = await membersWith(db(), p.tenantId, EVENT_PERMS[p.event]);
-    if (!people.length) return;
-    const title = `${EVENT_TITLE[p.event]} не ушло`;
-    const body = [p.ctx.label, p.to ? `на ${p.to}` : "", reason].filter(Boolean).join(" · ");
-    const url = p.actionUrl || `/workspace/${p.tenantId}/settings/emails?tab=log`;
-    // Уже есть непрочитанное «не ушло» по этому письму — в Telegram второй раз не пишем.
-    const refs = people.map(r => db().collection("notifications").doc(`email_${logId}_${r.uid}`.slice(0, 1400)));
-    const prev = await db().getAll(...refs);
-    const fresh = people.filter((_, i) => !(prev[i].exists && prev[i].data()?.read === false));
-    const batch = db().batch();
-    for (const r of people) {
-      batch.set(db().collection("notifications").doc(`email_${logId}_${r.uid}`.slice(0, 1400)), {
-        tenantId: p.tenantId, userId: r.uid, type: "email", title, body, actionUrl: url, emailLogId: logId,
-        ...(p.ctx.applicantId ? { applicantId: p.ctx.applicantId } : {}), read: false, createdAt: admin.firestore.Timestamp.now(),
-      });
-    }
-    await batch.commit();
-    if (fresh.length) await notifyTelegram(fresh.map(x => x.uid), title, body, url);
-  } catch (e) { console.error("[email] notify failed:", e); }
+  const title = `${EVENT_TITLE[p.event]} не ушло`;
+  const body = [p.ctx.label, p.to ? `на ${p.to}` : "", reason].filter(Boolean).join(" · ");
+  const url = p.actionUrl || `/workspace/${p.tenantId}/settings/emails?tab=log`;
+  // Уже есть непрочитанное «не ушло» по этому письму — в Telegram второй раз не пишем.
+  await notifyEvent({
+    tenantId: p.tenantId, event: "email.failed", perms: EVENT_PERMS[p.event], title, body, url, type: "email",
+    docId: u => `email_${logId}_${u}`, quietIfUnread: true,
+    extra: { emailLogId: logId, ...(p.ctx.applicantId ? { applicantId: p.ctx.applicantId } : {}) },
+  });
 }
 
 /** Ушло после переотправки — уведомления «не ушло» больше не нужны. */

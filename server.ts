@@ -266,11 +266,13 @@ import payrollRoutes from "./src/routes/payrollRoutes.js";
 import journalRoutes from "./src/routes/journalRoutes.js";
 import examRoutes from "./src/routes/examRoutes.js";
 import presentationRoutes from "./src/routes/presentationRoutes.js";
+import { notifyEvent } from "./src/server/notify.js";
 import admissionRoutes from "./src/routes/admissionRoutes.js";
 import telegramRoutes from "./src/routes/telegramRoutes.js";
 import profileRoutes from "./src/routes/profileRoutes.js";
 import emailTemplateRoutes from "./src/routes/emailTemplateRoutes.js";
 import formNotifyRoutes from "./src/routes/formNotifyRoutes.js";
+import notifyRoutes from "./src/routes/notifyRoutes.js";
 import { verifySession } from "./src/server/session.js";
 import examAdminRoutes from "./src/routes/examAdminRoutes.js";
 import examPublicRoutes from "./src/routes/examPublicRoutes.js";
@@ -291,6 +293,7 @@ app.use("/api/telegram", telegramRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/email-templates", emailTemplateRoutes);
 app.use("/api/form-notify", formNotifyRoutes);
+app.use("/api/notify", notifyRoutes);
 app.use("/api/exam-admin", examAdminRoutes);
 app.use("/api/exam-public", examPublicRoutes);
 
@@ -526,17 +529,15 @@ app.post("/api/proctoring/upload-evidence", authLimiter, async (req, res) => {
     };
     admin.firestore().collection('audit_logs').add(auditEntry).catch(e => console.error('Audit log write error:', e));
 
-    // 🔔 REAL-TIME PUSH NOTIFICATION FOR TENANT MANAGERS
+    // 🔔 Нарушение прокторинга — тем, кто ведёт экзамены (по их настройкам уведомлений).
     if ((body.totalViolations ?? 0) > 0 || (body.honestyIndex ?? 100) < 85) {
-      admin.firestore().collection("notifications").add({
-        tenantId: tenant.org_id,
+      await notifyEvent({
+        tenantId: tenant.org_id, event: "exam.proctoring", perms: ["tests:manage", "tests:review"], type: "exam",
         title: "🚨 Нарушение прокторинга",
-        body: `Ученик ${body.studentName || 'Студент'} (${body.studentShortId}) совершил ${body.totalViolations || 1} нарушений. Индекс честности: ${body.honestyIndex ?? 100}%. Папка доказательств создана.`,
-        type: "system",
-        read: false,
-        actionUrl: `/workspace/${tenant.org_id}/tests/check/${body.studentShortId}`,
-        createdAt: admin.firestore.Timestamp.now(),
-      }).catch(e => console.error("Notification creation error:", e));
+        body: `${body.studentName || 'Ученик'} (${body.studentShortId}): нарушений ${body.totalViolations || 1}, индекс честности ${body.honestyIndex ?? 100}%`,
+        url: `/workspace/${tenant.org_id}/tests/check/${body.studentShortId}`,
+        docId: u => `proct_${String(body.studentShortId || body.sessionId || "x").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 60)}_${u}`,
+      });
     }
 
 

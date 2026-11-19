@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useLive } from "../../../lib/useLive";
 import { Download, Loader2, Radio, RefreshCw, Search, Send, ShieldAlert } from "lucide-react";
 import { DECISION_LABEL, partResults, type AttemptRow, type Exam } from "../../../shared/examRun";
 import { btn, btnPrimary, card, input } from "../journals/components/ui";
@@ -30,6 +31,7 @@ export default function AttemptsTab({ exam, api, tenant, canEdit }: { exam: Exam
     finally { setLoading(false); }
   }, [api, exam.id]);
   useEffect(() => { void load(); const t = setInterval(load, 10000); return () => clearInterval(t); }, [load]);
+  useLive(tenant?.id, ["exams"], () => { void load(); });
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
 
   const flagged = (r: AttemptRow) => (r.proctoring?.bySeverity?.HIGH || 0) > 0 || (typeof r.proctoring?.honestyIndex === "number" && r.proctoring.honestyIndex < 60);

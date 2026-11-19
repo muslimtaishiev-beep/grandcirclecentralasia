@@ -1,3 +1,4 @@
+import { liveOnWrite } from "../server/live.js";
 import { notifyTested, syncAllReferrals } from "./admissionRoutes.js";
 import { Router } from "express";
 import admin from "firebase-admin";
@@ -19,6 +20,9 @@ import { finalizeIfExpired, supersedeOthers } from "./examPublicRoutes.js";
  * оценками считает по тем же ключам, что видел ученик.
  */
 const router = Router();
+// Изменения экзаменов и работ — открытые экраны (работы, поступающие) обновляются сами.
+router.use("/:tenantId/exams", liveOnWrite(["exams", "admissions"]));
+router.use("/:tenantId/attempts", liveOnWrite(["exams", "admissions"], /^\/([^/]+)/));
 const db = () => admin.firestore();
 const col = (t: string, name: string) => db().collection("tenants").doc(t).collection(name);
 const str = (v: unknown, max = 200) => String(v ?? "").trim().slice(0, max);

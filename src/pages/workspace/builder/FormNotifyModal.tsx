@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Clock, Loader2, Plus, X } from "lucide-react";
+import { Bell, Clock, Loader2, Plus, X } from "lucide-react";
 import { auth } from "../../../lib/firebase";
 import { Modal, btn, btnPrimary } from "../journals/components/ui";
 import { TelegramIcon } from "../../../components/workspace/TelegramIcon";
 
-/** Кто получает новые заявки формы в Telegram: себя — сразу, других — по их согласию. */
+/** Кто получает новые заявки формы (колокольчик и Telegram): себя — сразу, других — по их согласию в Telegram. */
 interface Data {
   canAssign: boolean;
   me: { uid: string; telegram: boolean };
@@ -33,24 +33,24 @@ export default function FormNotifyModal({ tenantId, form, onClose }: { tenantId:
 
   const mine = d?.watchers.find(w => w.uid === d.me.uid);
   return (
-    <Modal title={`Telegram · ${form.title}`} onClose={onClose}>
+    <Modal title={`Уведомления · ${form.title}`} onClose={onClose}>
       {!d ? <div className="py-10 flex justify-center">{error ? <span className="text-sm text-rose-600">{error}</span> : <Loader2 className="w-6 h-6 animate-spin text-[var(--text-muted)]" />}</div> : (
         <div className="space-y-4">
           {/* Себе */}
-          {!d.me.telegram ? (
-            <Link to={`/workspace/${tenantId}/profile`} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#229ED9] hover:bg-[#1c8cc2] text-white font-semibold text-sm">
-              <TelegramIcon /> Подключить Telegram в профиле
-            </Link>
-          ) : mine?.status === "active" ? (
-            <div className="flex items-center gap-2 text-sm text-[var(--text-main)]">
-              <TelegramIcon /> Заявки приходят вам
+          {mine?.status === "active" ? (
+            <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--text-main)]">
+              <Bell className="w-4 h-4 text-[var(--accent)]" /> Заявки приходят вам{d.me.telegram && <span className="inline-flex items-center gap-1 text-[#229ED9]">· <TelegramIcon className="w-4 h-4" /></span>}
               <button className={`${btn} ml-auto`} disabled={!!busy} onClick={() => run("me", () => call(`/${d.me.uid}`, { method: "DELETE" }))}>Отключить</button>
             </div>
           ) : (
-            <button className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#229ED9] hover:bg-[#1c8cc2] text-white font-semibold text-sm disabled:opacity-60" disabled={!!busy}
-              onClick={() => run("me", () => call("", { method: "POST", body: JSON.stringify({}) }))}>
-              {busy === "me" ? <Loader2 className="w-4 h-4 animate-spin" /> : <TelegramIcon />} Получать заявки в Telegram
+            <button className={btnPrimary} disabled={!!busy} onClick={() => run("me", () => call("", { method: "POST", body: JSON.stringify({}) }))}>
+              {busy === "me" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />} Получать заявки
             </button>
+          )}
+          {!d.me.telegram && (
+            <Link to={`/workspace/${tenantId}/profile`} className="inline-flex items-center gap-1.5 text-xs font-medium text-[#229ED9] hover:underline">
+              <TelegramIcon className="w-4 h-4" /> + Telegram
+            </Link>
           )}
 
           {/* Кто ещё получает */}

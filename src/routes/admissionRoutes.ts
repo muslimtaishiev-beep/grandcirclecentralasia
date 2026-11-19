@@ -1,9 +1,10 @@
+import { bumpLive, liveOnWrite } from "../server/live.js";
+import { deliver } from "../server/notify.js";
 import { Router } from "express";
 import admin from "firebase-admin";
 import { randomBytes, randomInt } from "crypto";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { hasPerm, membersWith, optionalAuth, requirePerm, staffCaller, type StaffCaller } from "../server/access.js";
-import { notifyTelegram } from "../server/telegram.js";
 import { appUrl, registerResender, sendTemplated, type SendResult } from "../server/emailEvents.js";
 import { verifySession } from "../server/session.js";
 import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
@@ -37,6 +38,8 @@ import type { PermissionKey } from "../shared/permissions.js";
  */
 const router = Router();
 const db = () => admin.firestore();
+// Любое изменение поступающих — открытые списки и карточка обновляются сами.
+router.use("/:tenantId/applicants", liveOnWrite(["admissions"], /^\/([^/]+)/));
 const col = (t: string, name: string) => db().collection("tenants").doc(t).collection(name);
 const LINKS = "applicant_links";
 const str = (v: unknown, max = 200) => String(v ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max);
@@ -69,58 +72,59 @@ const LEVEL_WORD = ["Низкий", "Средний", "Отличный"] as con
 
 // ── Уведомления администрации ───────────────────────────────────────────
 
-type AdmissionEvent = "new" | "parent" | "session" | "done" | "tested" | "results";
+type AdmissionEvent = "new" | "parent" | "session" | "done" | "test_start" | "section" | "tested" | "results" | "decision";
 type Audience = "admin" | "psych";
 /**
  * Кому и с каким заголовком. Администрация (право приёма) — обо всём ходе
  * приёма; психологи (проводят диагностику) — о новом ученике и о готовой
- * анкете родителя: это их работа на сессию.
+ * анкете родителя: это их работа на сессию. Что кому приходит на самом
+ * деле — по личным настройкам (профиль → «Уведомления»).
  */
 const EVENT_PLAN: Record<AdmissionEvent, Partial<Record<Audience, string>>> = {
   new: { admin: "Новый поступающий", psych: "К вам новый ученик" },
   parent: { admin: "Анкета родителя заполнена", psych: "Анкета родителя заполнена" },
   session: { admin: "Новая сессия у психолога" },
   done: { admin: "Сессия завершена — выдайте направление" },
+  test_start: { admin: "Начал тест" },
+  section: { admin: "Закончил часть теста" },
   tested: { admin: "Тест сдан" },
   results: { admin: "Результаты теста внесены" },
+  decision: { admin: "Решение по кандидату" },
 };
 const AUDIENCE_PERMS: Record<Audience, PermissionKey[]> = { admin: ["admission:manage"], psych: ["psych:conduct"] };
 /**
- * Ход приёма — в колокольчик (кроме автора). Одна запись на ребёнка и
- * адресата: показывает последний шаг, а не копит десяток строк про одного
- * ученика. У кого оба права (или полный доступ) — получает как администрация.
- * Ошибка рассылки не ломает сохранение.
+ * Ход приёма — в колокольчик и Telegram (кроме автора). Одна запись на
+ * ребёнка и адресата: показывает последний шаг, а не копит десяток строк
+ * про одного ученика. У кого оба права (или полный доступ) — получает как
+ * администрация. Ошибка рассылки не ломает сохранение.
  */
-async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEvent, c: { uid: string; name: string }, o: { tid?: string; outcome?: string; referral?: boolean; summary?: string } = {}) {
+export async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEvent, c: { uid: string; name: string }, o: { tid?: string; outcome?: string; referral?: boolean; summary?: string } = {}) {
+  // Шаг пришёл и без сотрудника (анкета родителя, тест) — открытые экраны всё равно обновятся.
+  await bumpLive(t, ["admissions"], a.id);
   try {
     const plan = EVENT_PLAN[ev];
     const who = `${a.child.name}, ${a.child.grade} класс`;
     const body = ev === "done" ? [who, o.outcome, o.referral ? "направление готово" : ""].filter(Boolean).join(" · ")
-      : ev === "tested" || ev === "results" ? [who, o.summary, ev === "results" ? c.name : ""].filter(Boolean).join(" · ")
+      : ev === "tested" || ev === "results" || ev === "section" || ev === "decision" ? [who, o.summary, ev === "results" || ev === "decision" ? c.name : ""].filter(Boolean).join(" · ")
       : [who, c.name].filter(Boolean).join(" · ");
-    const adminTab = ev === "new" ? "profile" : ev === "parent" ? "parent" : ev === "tested" || ev === "results" ? "test" : o.tid || "psych";
+    const adminTab = ev === "new" ? "profile" : ev === "parent" ? "parent" : ["test_start", "section", "tested", "results", "decision"].includes(ev) ? "test" : o.tid || "psych";
     const sent = new Set<string>([c.uid]);
     const adminUrl = plan.admin ? await adminCardUrl(t, a, adminTab) : "";
-    const batch = db().batch(); let n = 0;
-    const tg: { uids: string[]; title: string; url: string }[] = [];
     for (const aud of ["admin", "psych"] as Audience[]) {
       const title = plan[aud];
       if (!title) continue;
       const url = aud === "admin" ? adminUrl : `/workspace/${t}/exams?side=psych&open=${a.id}&ctab=psych`;
-      for (const r of await membersWith(db(), t, AUDIENCE_PERMS[aud])) {
-        if (sent.has(r.uid)) continue;
-        sent.add(r.uid); n++;
-        (tg.find(x => x.title === title && x.url === url) || (tg.push({ uids: [], title, url }), tg[tg.length - 1])).uids.push(r.uid);
-        batch.set(db().collection("notifications").doc(`adm_${a.id}_${r.uid}`), {
-          tenantId: t, userId: r.uid, type: "admission", title, body, actionUrl: url, applicantId: a.id, read: false,
-          createdAt: admin.firestore.Timestamp.now(),
-        });
-      }
+      const uids = (await membersWith(db(), t, AUDIENCE_PERMS[aud])).map(r => r.uid).filter(u => !sent.has(u));
+      uids.forEach(u => sent.add(u));
+      await deliver({ tenantId: t, event: `adm.${ev}`, uids, title, body, url, type: "admission", docId: u => `adm_${a.id}_${u}`, extra: { applicantId: a.id } });
     }
-    if (n) await batch.commit();
-    // То же — в Telegram тем, кто его привязал.
-    await Promise.all(tg.map(x => notifyTelegram(x.uids, x.title, body, x.url)));
   } catch (e) { console.error("[admissions] notify:", e); }
+}
+
+/** Шаг теста поступающего (начал, закончил часть) — уведомление администрации. */
+export async function notifyApplicantStep(t: string, applicantId: string, ev: "test_start" | "section", summary: string) {
+  const a = await loadApplicant(t, applicantId).catch(() => null);
+  if (a) await notifyAdmission(t, a, ev, { uid: "", name: "" }, { summary });
 }
 
 /** Адрес ребёнка у администрации — на странице экзамена его класса (иначе — «Поступающие»). */
@@ -743,7 +747,10 @@ router.put("/:tenantId/applicants/:id/candidate", ...staff, async (req: any, res
     const form = await loadCandidateForm(t);
     const candidate: CandidateInfo = { ...sanitizeCandidate(req.body, form.decisions), by: c.name, at: Date.now() };
     await col(t, "applicants").doc(a.id).update({ candidate, decision: null, updatedAt: Date.now() });
-    if ((prev?.decision || null) !== candidate.decision) await audit(t, a.id, c, "decision", candidate.decision ? candidate.decisionLabel : "снято");
+    if ((prev?.decision || null) !== candidate.decision) {
+      await audit(t, a.id, c, "decision", candidate.decision ? candidate.decisionLabel : "снято");
+      if (candidate.decision) await notifyAdmission(t, a, "decision", c, { summary: candidate.decisionLabel });
+    }
     if (!!prev?.feedbackGiven !== candidate.feedbackGiven) await audit(t, a.id, c, "feedback", candidate.feedbackGiven ? "дана — ученик видит результаты по QR" : "снята");
     return res.json({ success: true, candidate });
   } catch (e: any) { return oops(res, e); }
