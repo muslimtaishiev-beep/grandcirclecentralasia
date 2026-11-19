@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { PERMISSIONS, type PermissionKey } from "../../../shared/permissions";
 import { SCALES, type QItem, type QKind, type QNorm, type QSection, type QTemplate } from "../../../shared/questionnaires";
@@ -17,7 +17,41 @@ const fmtGrades = (g?: number[]) => {
   for (const x of [...g.slice(1), NaN]) { if (x === p + 1) { p = x; continue; } out.push(s === p ? `${s}` : `${s}–${p}`); s = p = x; }
   return out.join(", ");
 };
-const parseGrades = (v: string) => [...new Set(v.split(/[,;\s]+/).flatMap(part => { const m = part.match(/^(\d{1,2})(?:[-–](\d{1,2}))?$/); if (!m) return []; const a = Number(m[1]), b = Number(m[2] ?? m[1]); return Array.from({ length: Math.max(0, b - a + 1) }, (_, i) => a + i); }))].filter(n => n <= 12).sort((a, b) => a - b);
+const GRADES = Array.from({ length: 11 }, (_, i) => i + 1);
+
+/** Для каких классов: кнопка → сетка классов. Пусто — для всех. */
+function GradesPicker({ value, onChange, className = "" }: { value?: number[]; onChange: (g: number[]) => void; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const [right, setRight] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    // Раскрыть туда, где хватает места: у правого края — влево, у левого — вправо.
+    const r = ref.current?.getBoundingClientRect();
+    setRight(!!r && r.left + 240 > window.innerWidth - 8);
+    const off = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    // Esc закрывает только выбор, не окно редактора с несохранёнными правками.
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
+    document.addEventListener("mousedown", off); document.addEventListener("keydown", esc, true);
+    return () => { document.removeEventListener("mousedown", off); document.removeEventListener("keydown", esc, true); };
+  }, [open]);
+  const g = value || [];
+  const toggle = (n: number) => onChange(g.includes(n) ? g.filter(x => x !== n) : [...g, n].sort((a, b) => a - b));
+  const chip = (on: boolean) => `h-8 rounded-lg text-sm tabular-nums transition ${on ? "bg-[var(--accent)] text-white" : "bg-[var(--bg-surface-hover)] text-[var(--text-main)] hover:opacity-80"}`;
+  return (
+    <div ref={ref} className={`relative ${className}`}>
+      <button type="button" className={`${btn} w-full justify-between whitespace-nowrap ${g.length ? "!border-[var(--accent)] !text-[var(--accent)]" : ""}`} onClick={() => setOpen(v => !v)}>
+        {g.length ? `${fmtGrades(g)} кл.` : "Все классы"}<ChevronDown className={`w-3.5 h-3.5 transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className={`absolute z-30 ${right ? "right-0" : "left-0"} mt-1 w-60 rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] shadow-lg p-2 grid grid-cols-6 gap-1`}>
+          {GRADES.map(n => <button key={n} type="button" className={chip(g.includes(n))} onClick={() => toggle(n)}>{n}</button>)}
+          <button type="button" className={chip(!g.length)} onClick={() => onChange([])}>Все</button>
+        </div>
+      )}
+    </div>
+  );
+}
 const permLabel = (k: PermissionKey | null) => (k ? PERMISSIONS.find(p => p.key === k)?.label || k : "—");
 
 export default function TemplatesTab({ api }: { api: Api }) {
@@ -96,7 +130,7 @@ function Editor({ t: initial, api, parent, onClose, onSaved }: { t: QTemplate; a
           <div key={s.id} className="rounded-xl border border-[var(--border-color)] p-3 space-y-2">
             <div className="flex flex-wrap gap-2 items-center">
               <input className={`${input} flex-1 min-w-[200px] font-semibold`} value={s.title} onChange={e => setSec(k, { title: e.target.value })} />
-              <input className={`${input} !w-32`} placeholder="Классы: все" value={fmtGrades(s.grades)} onChange={e => setSec(k, { grades: parseGrades(e.target.value) })} title="Например 2–11 или 1, 3, 5" />
+              <GradesPicker className="w-36" value={s.grades} onChange={g => setSec(k, { grades: g })} />
               <button className={btn} onClick={() => setT({ ...t, sections: move(t.sections, k, -1) })}><ChevronUp className="w-4 h-4" /></button>
               <button className={btn} onClick={() => setT({ ...t, sections: move(t.sections, k, 1) })}><ChevronDown className="w-4 h-4" /></button>
               <button className={btn} onClick={() => confirm("Удалить блок?") && setT({ ...t, sections: t.sections.filter((_, j) => j !== k) })}><Trash2 className="w-4 h-4 text-rose-600" /></button>
@@ -139,11 +173,11 @@ function Editor({ t: initial, api, parent, onClose, onSaved }: { t: QTemplate; a
         <div className="rounded-xl border border-[var(--border-color)] p-3 space-y-2">
           <div className="font-semibold text-sm">Материалы</div>
           {t.attachments.map((m, k) => (
-            <div key={m.id} className="grid sm:grid-cols-[1fr_1.4fr_auto_7rem_auto] gap-1.5 items-center">
+            <div key={m.id} className="grid sm:grid-cols-[1fr_1.4fr_auto_9rem_auto] gap-1.5 items-center">
               <input className={input} value={m.name} onChange={e => setT({ ...t, attachments: t.attachments.map((x, j) => (j === k ? { ...x, name: e.target.value } : x)) })} />
               <input className={input} placeholder="Ссылка на картинку или PDF" value={m.url} onChange={e => setT({ ...t, attachments: t.attachments.map((x, j) => (j === k ? { ...x, url: e.target.value } : x)) })} />
               <select className={`${input} !w-auto`} value={m.kind} onChange={e => setT({ ...t, attachments: t.attachments.map((x, j) => (j === k ? { ...x, kind: e.target.value as any } : x)) })}><option value="show">показать ребёнку</option><option value="sheet">лист ребёнку (с QR)</option></select>
-              <input className={input} placeholder="Классы" value={fmtGrades(m.grades)} onChange={e => setT({ ...t, attachments: t.attachments.map((x, j) => (j === k ? { ...x, grades: parseGrades(e.target.value) } : x)) })} />
+              <GradesPicker value={m.grades} onChange={g => setT({ ...t, attachments: t.attachments.map((x, j) => (j === k ? { ...x, grades: g } : x)) })} />
               <button className={btn} onClick={() => setT({ ...t, attachments: t.attachments.filter((_, j) => j !== k) })}><Trash2 className="w-4 h-4" /></button>
             </div>
           ))}
@@ -165,10 +199,10 @@ function ItemEditor({ i, t, parent, set, onMove, onDelete }: { i: QItem; t: QTem
   const measures = i.measures || [];
   return (
     <div className="border-t border-[var(--border-color)] p-3 space-y-2.5">
-      <div className="grid sm:grid-cols-[1fr_auto_8rem] gap-2">
+      <div className="grid sm:grid-cols-[1fr_auto_9rem] gap-2">
         <input className={input} value={i.label} onChange={e => set({ label: e.target.value })} />
         <select className={`${input} !w-auto`} value={i.kind} onChange={e => set({ kind: e.target.value as QKind, ...(e.target.value === "rating" ? { scale: i.scale || "norm4" } : {}) })}>{(Object.keys(KIND_LABEL) as QKind[]).map(k => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}</select>
-        <input className={input} placeholder="Классы: все" value={fmtGrades(i.grades)} onChange={e => set({ grades: parseGrades(e.target.value) })} />
+        <GradesPicker value={i.grades} onChange={g => set({ grades: g })} />
       </div>
       <input className={input} placeholder="Подсказка" value={i.hint || ""} onChange={e => set({ hint: e.target.value })} />
       <div className="flex flex-wrap gap-3 text-sm">
@@ -198,7 +232,7 @@ function ItemEditor({ i, t, parent, set, onMove, onDelete }: { i: QItem; t: QTem
           <span className={label}>Вопросы методики по классам</span>
           {(i.prompts || []).map((p, k) => (
             <div key={k} className="flex gap-1.5">
-              <input className={`${input} !w-24`} placeholder="Все классы" value={fmtGrades(p.grades)} onChange={e => set({ prompts: (i.prompts || []).map((x, j) => (j === k ? { ...x, grades: parseGrades(e.target.value) } : x)) })} />
+              <GradesPicker className="w-32 shrink-0" value={p.grades} onChange={g => set({ prompts: (i.prompts || []).map((x, j) => (j === k ? { ...x, grades: g } : x)) })} />
               <textarea rows={2} className={`${input} flex-1`} value={p.text} onChange={e => set({ prompts: (i.prompts || []).map((x, j) => (j === k ? { ...x, text: e.target.value } : x)) })} />
               <button className={btn} onClick={() => set({ prompts: (i.prompts || []).filter((_, j) => j !== k) })}><Trash2 className="w-4 h-4" /></button>
             </div>
@@ -226,7 +260,7 @@ function ItemEditor({ i, t, parent, set, onMove, onDelete }: { i: QItem; t: QTem
                 const metricKey = "measure" in n.metric ? n.metric.measure : "sum" in n.metric ? `sum:${n.metric.sum.join("+")}` : `ratio:${n.metric.ratio.join("/")}`;
                 return (
                   <div key={k} className="flex flex-wrap gap-1.5 items-center text-sm">
-                    <input className={`${input} !w-24`} placeholder="Классы" value={fmtGrades(n.grades)} onChange={e => upd({ grades: parseGrades(e.target.value) })} />
+                    <GradesPicker className="w-32" value={n.grades} onChange={g => upd({ grades: g })} />
                     <select className={`${input} !w-auto`} value={metricKey} onChange={e => { const v = e.target.value; upd({ metric: v.startsWith("sum:") ? { sum: v.slice(4).split("+") } : v.startsWith("ratio:") ? { ratio: v.slice(6).split("/") as [string, string] } : { measure: v } }); }}>
                       {measures.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
                       {measures.length > 1 && <option value={`sum:${measures.map(m => m.id).join("+")}`}>сумма всех</option>}
