@@ -2,7 +2,7 @@ import { Router } from "express";
 import { hasFullAccess, isPermissionKey } from "../shared/permissions.js";
 import admin from "firebase-admin";
 import { sendStaffInviteEmail } from "../../emailService.js";
-import { callerPermissions } from "../server/access.js";
+import { accessChangeDenied, callerPermissions, rolePermissions } from "../server/access.js";
 import { syncClaims } from "../server/claims.js";
 import { verifySession } from "../server/session.js";
 import { recordLogin } from "../server/loginAlerts.js";
@@ -201,6 +201,22 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
     if (hasFullAccess(role)) {
       return res.status(400).json({ success: false, error: "Системную роль назначает владелец в разделе «Роли и доступы»" });
     }
+    // Доступ проверяется ДО создания учётной записи: отказ не должен оставлять
+    // пустой аккаунт. Должность и личные права — не шире прав приглашающего.
+    const invitedRole = customRoleId ? await rolePermissions(db, targetTenantId, String(customRoleId)) : null;
+    if (customRoleId && !invitedRole) return res.status(400).json({ success: false, error: "Должность не найдена в этой организации" });
+    const invitedPerms = invitedRole ? [...invitedRole.perms] : (Array.isArray(permissions) ? permissions : []).filter(isPermissionKey);
+    const deniedInvite = await accessChangeDenied(db, { uid: req.user.uid, isSuperadmin: callerIsSA }, targetTenantId, null, invitedPerms);
+    if (deniedInvite) return res.status(403).json({ success: false, error: deniedInvite });
+    // Уже сотрудник — повторное приглашение меняет его доступ: те же правила, что при смене должности.
+    try {
+      const known = await admin.auth().getUserByEmail(email);
+      const was = await db.collection("memberships").doc(`mem_${known.uid}_${targetTenantId}`).get();
+      if (was.exists) {
+        const deniedExisting = await accessChangeDenied(db, { uid: req.user.uid, isSuperadmin: callerIsSA }, targetTenantId, was.data(), invitedPerms);
+        if (deniedExisting) return res.status(403).json({ success: false, error: deniedExisting });
+      }
+    } catch { /* нового человека ещё нет — проверять нечего */ }
 
     // 1. Create or get user in Firebase Auth
     let userRecord;
@@ -257,28 +273,15 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
       invitedBy: req.user?.uid || "admin",
       joinedAt: admin.firestore.FieldValue.serverTimestamp()
     };
-    if (customRoleId) {
-      const roleDoc = await db.collection("custom_roles").doc(String(customRoleId)).get();
-      // Должность обязана принадлежать этой же организации — иначе через инвайт
-      // можно было бы прицепить чужую роль.
-      if (roleDoc.exists && roleDoc.data()?.tenantId === targetTenantId) {
-        membershipDoc.customRoleId = customRoleId;
-        membershipDoc.role = roleDoc.data()?.name || resolvedRole;
-        membershipDoc.permissions = [];
-      } else {
-        return res.status(400).json({ success: false, error: "Должность не найдена в этой организации" });
-      }
+    if (invitedRole) {
+      // Должность этой же организации (проверено выше) — доступ идёт от неё.
+      membershipDoc.customRoleId = String(customRoleId);
+      membershipDoc.role = invitedRole.name || resolvedRole;
+      membershipDoc.permissions = [];
     } else {
       membershipDoc.role = resolvedRole;
-      // Права выдаём ровно те, что отметили галочками (и только из каталога);
-      // без выбора — пусто, а не легаси-набор, который тихо открывал лишнее.
-      const wanted = (Array.isArray(permissions) ? permissions : []).filter(isPermissionKey);
-      // Нельзя выдать то, чего нет у самого.
-      const excess = wanted.filter((p: string) => !mine.has(p as any));
-      if (excess.length && !callerIsSA) {
-        return res.status(403).json({ success: false, error: `Нельзя выдать права, которых нет у вас: ${excess.join(", ")}` });
-      }
-      membershipDoc.permissions = wanted;
+      // Права — ровно отмеченные галочками (проверены выше).
+      membershipDoc.permissions = invitedPerms;
     }
     await db.collection("memberships").doc(membershipId).set(membershipDoc, { merge: true });
 

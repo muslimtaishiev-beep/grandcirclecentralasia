@@ -535,8 +535,9 @@ export default function SuperAdminDashboard() {
       const data = await res.json();
       if (data.success || res.ok) {
         setDirectorSuccess(true);
-        if (data.tempPassword) {
-          setGeneratedPasswordShow(data.tempPassword);
+        // Сервер пароль не возвращает: письмо не ушло — показываем ссылку для входа.
+        if (data.inviteLink) {
+          setGeneratedPasswordShow(data.inviteLink);
         } else if (customPassword) {
           setGeneratedPasswordShow(customPassword);
         }
@@ -1356,17 +1357,17 @@ export default function SuperAdminDashboard() {
                       <div className="p-4 bg-emerald-950/80 border border-emerald-500 text-emerald-200 rounded-xl space-y-2">
                         <div className="font-bold flex items-center gap-2 text-xs">
                           <Key className="w-4 h-4 text-emerald-400" />
-                          <span>Пароль для входа Руководителя:</span>
+                          <span>{generatedPasswordShow.startsWith("http") ? "Ссылка для входа руководителя:" : "Пароль для входа руководителя:"}</span>
                         </div>
                         <div className="flex items-center justify-between bg-black/60 p-2.5 rounded-lg border border-emerald-800/60 font-mono text-sm">
-                          <span className="font-bold text-white select-all">{generatedPasswordShow}</span>
+                          <span className="font-bold text-white select-all break-all">{generatedPasswordShow}</span>
                           <button
                             type="button"
                             onClick={() => copyKey(generatedPasswordShow, "dir_pass")}
                             className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs transition flex items-center gap-1 cursor-pointer"
                           >
                             {copiedKeyId === "dir_pass" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                            <span>{copiedKeyId === "dir_pass" ? "Скопировано!" : "Скопировать Пароль"}</span>
+                            <span>{copiedKeyId === "dir_pass" ? "Скопировано" : "Скопировать"}</span>
                           </button>
                         </div>
                       </div>

@@ -248,6 +248,11 @@ async function canManagePlacement(user: any, tenantId: string): Promise<boolean>
   if (user?.isSuperadmin) return true;
   return hasAnyPermission(db(), user, tenantId, ["placement:manage", "tests:manage", "tests:review"]);
 }
+/** Настройки, классы, вопросы, импорт, решения и публикация — без «Проверки»: проверяющий только смотрит и проверяет. */
+async function canEditPlacement(user: any, tenantId: string): Promise<boolean> {
+  if (user?.isSuperadmin) return true;
+  return hasAnyPermission(db(), user, tenantId, ["placement:manage", "tests:manage"]);
+}
 
 // GET blueprint + how many questions the bank can actually supply, so the
 // cabinet can warn when someone asks for more questions than exist.
@@ -290,7 +295,7 @@ router.put("/blueprint", requireFirebaseAuth, requireScreen("placement"), async 
     if (!tenantId || !grade || !Array.isArray(sections)) {
       return res.status(400).json({ success: false, error: "Нужны tenantId, grade и sections" });
     }
-    if (!(await canManagePlacement(req.user, tenantId))) {
+    if (!(await canEditPlacement(req.user, tenantId))) {
       return res.status(403).json({ success: false, error: "Нет прав на управление срезом" });
     }
 
@@ -1248,7 +1253,7 @@ router.post("/decide", requireFirebaseAuth, requireScreen("placement"), async (r
   try {
     const { tenantId, resultId, finalDecision } = req.body || {};
     if (!tenantId || !resultId) return res.status(400).json({ success: false, error: "Bad request" });
-    if (!(await canManagePlacement(req.user, tenantId))) {
+    if (!(await canEditPlacement(req.user, tenantId))) {
       return res.status(403).json({ success: false, error: "Нет прав" });
     }
     const ref = db().collection("placement_results").doc(String(resultId));
@@ -1407,7 +1412,7 @@ router.post("/annul", requireFirebaseAuth, requireScreen("placement"), async (re
   try {
     const { tenantId, resultId, annulled, reason } = req.body || {};
     if (!tenantId || !resultId) return res.status(400).json({ success: false, error: "Bad request" });
-    if (!(await canManagePlacement(req.user, tenantId))) {
+    if (!(await canEditPlacement(req.user, tenantId))) {
       return res.status(403).json({ success: false, error: "Нет прав" });
     }
     const ref = db().collection("placement_results").doc(String(resultId));
@@ -1452,7 +1457,7 @@ router.get("/classes", requireFirebaseAuth, requireScreen("placement"), async (r
 router.put("/classes", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, groups } = req.body || {};
-    if (!(await canManagePlacement(req.user, tenantId))) {
+    if (!(await canEditPlacement(req.user, tenantId))) {
       return res.status(403).json({ success: false, error: "Нет прав" });
     }
     if (!Array.isArray(groups) || !groups.length) {
@@ -1488,7 +1493,7 @@ router.put("/classes", requireFirebaseAuth, requireScreen("placement"), async (r
 router.post("/propose-classes", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, grade } = req.body || {};
-    if (!(await canManagePlacement(req.user, tenantId))) {
+    if (!(await canEditPlacement(req.user, tenantId))) {
       return res.status(403).json({ success: false, error: "Нет прав" });
     }
     const structure = await loadClassStructure(tenantId);
@@ -1526,7 +1531,7 @@ router.post("/propose-classes", requireFirebaseAuth, requireScreen("placement"),
 router.post("/assign-class", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, resultId, assignedClass } = req.body || {};
-    if (!(await canManagePlacement(req.user, tenantId))) {
+    if (!(await canEditPlacement(req.user, tenantId))) {
       return res.status(403).json({ success: false, error: "Нет прав" });
     }
     const ref = db().collection("placement_results").doc(String(resultId));
@@ -1567,7 +1572,7 @@ router.post("/publish", requireFirebaseAuth, requireScreen("placement"), async (
   try {
     const { tenantId, grade, resultIds, force } = req.body || {};
     if (!tenantId) return res.status(400).json({ success: false, error: "Нужен tenantId" });
-    if (!(await canManagePlacement(req.user, tenantId))) {
+    if (!(await canEditPlacement(req.user, tenantId))) {
       return res.status(403).json({ success: false, error: "Нет прав на публикацию" });
     }
 
@@ -1747,7 +1752,7 @@ router.post("/import", requireFirebaseAuth, requireScreen("placement"), async (r
   try {
     const { tenantId, csv, includeWarnings } = req.body || {};
     if (!tenantId || typeof csv !== "string") return res.status(400).json({ success: false, error: "Нужны tenantId и содержимое файла" });
-    if (!(await canManagePlacement(req.user, tenantId))) {
+    if (!(await canEditPlacement(req.user, tenantId))) {
       return res.status(403).json({ success: false, error: "Нет прав на загрузку вопросов" });
     }
 
@@ -1797,7 +1802,7 @@ router.post("/allow-retake", requireFirebaseAuth, requireScreen("placement"), as
   try {
     const { tenantId, shortId, reason } = req.body || {};
     if (!tenantId || !shortId) return res.status(400).json({ success: false, error: "Нужны tenantId и shortId" });
-    if (!(await canManagePlacement(req.user, tenantId))) {
+    if (!(await canEditPlacement(req.user, tenantId))) {
       return res.status(403).json({ success: false, error: "Нет прав на разрешение пересдачи" });
     }
 
@@ -1861,7 +1866,7 @@ router.get("/questions", requireFirebaseAuth, requireScreen("placement"), async 
 router.put("/questions/:id", requireFirebaseAuth, requireScreen("placement"), async (req: any, res: any) => {
   try {
     const { tenantId, text, options, answer, topic, difficulty, grades, type, active } = req.body || {};
-    if (!(await canManagePlacement(req.user, tenantId))) {
+    if (!(await canEditPlacement(req.user, tenantId))) {
       return res.status(403).json({ success: false, error: "Нет прав" });
     }
     const ref = db().collection("exam_questions").doc(String(req.params.id));

@@ -1588,6 +1588,12 @@ router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
  */
 async function canManageForms(user: any, tenantId: string): Promise<boolean> {
   if (user?.isSuperadmin) return true;
+  // «CRM: просмотр» менять и удалять заявки не даёт — только смотреть (canViewForms).
+  return hasAnyPermission(db(), user, tenantId, ["team:manage", "certificates:issue", "crm:manage"]);
+}
+/** Смотреть заявки и статистику: те, кто ведёт заявки, плюс «CRM: просмотр». */
+async function canViewForms(user: any, tenantId: string): Promise<boolean> {
+  if (user?.isSuperadmin) return true;
   return hasAnyPermission(db(), user, tenantId, ["team:manage", "certificates:issue", "crm:manage", "crm:read"]);
 }
 /** Проверка билетов на входе: волонтёр с «Проверка билетов» или кто ведёт заявки. */
@@ -2246,7 +2252,7 @@ router.get("/stats", requireFirebaseAuth, requireScreen("forms"), async (req: an
   try {
     const tenantId = String(req.query.tenantId || "");
     if (!tenantId) return res.status(400).json({ success: false, error: "Нужен tenantId" });
-    if (!(await canManageForms(req.user, tenantId))) {
+    if (!(await canViewForms(req.user, tenantId))) {
       return res.status(403).json({ success: false, error: "Нет прав" });
     }
 

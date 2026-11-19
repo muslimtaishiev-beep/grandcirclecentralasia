@@ -36,6 +36,7 @@ export default function WorkspaceDashboard() {
   });
 
   const [loading, setLoading] = useState(true);
+  const [financeOk, setFinanceOk] = useState(false);
 
   useEffect(() => {
     if (!orgId) return;
@@ -66,6 +67,7 @@ export default function WorkspaceDashboard() {
         });
         const j = await res.json();
         if (!cancelled && j && j.success) {
+          setFinanceOk(true);
           setFinanceSummary({
             totalCashCollected: j.totalCashCollected || 0,
             totalInitialFees: j.totalInitialFees || 0,
@@ -104,7 +106,8 @@ export default function WorkspaceDashboard() {
         </div>
       </div>
 
-      {/* Financial Analytics Widget of Tenant */}
+      {/* Финансы — только тем, кому сервер их отдал (право на зарплаты и кассу). */}
+      {financeOk && (<>
       <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] p-6 rounded-2xl shadow-sm space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
@@ -161,6 +164,7 @@ export default function WorkspaceDashboard() {
           </div>
         </div>
       </div>
+      </>)}
 
       {/* Real-time Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">

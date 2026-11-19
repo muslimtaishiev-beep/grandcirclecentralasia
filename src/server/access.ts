@@ -1,5 +1,5 @@
 import {
-  ALL_PERMISSION_KEYS, hasFullAccess, isPermissionKey, migrateLegacyPermissions,
+  ALL_PERMISSION_KEYS, PERMISSIONS, hasFullAccess, isPermissionKey, migrateLegacyPermissions,
   type PermissionKey,
 } from "../shared/permissions.js";
 
@@ -68,6 +68,45 @@ export async function membersWith(db: Db, tenantId: string, anyOf: PermissionKey
 export async function hasAnyPermission(db: Db, user: any, tenantId: string, anyOf: PermissionKey[]): Promise<boolean> {
   const mine = await callerPermissions(db, user?.uid, tenantId, user);
   return anyOf.some(p => mine.has(p));
+}
+
+/** Права должности этой организации; null — должности нет или она чужая. */
+export async function rolePermissions(db: Db, tenantId: string, roleId: string): Promise<{ name: string; perms: Set<PermissionKey> } | null> {
+  if (!roleId) return null;
+  const r = await db.collection("custom_roles").doc(String(roleId)).get();
+  if (!r.exists || r.data()?.tenantId !== tenantId) return null;
+  return { name: String(r.data()?.name || "Сотрудник"), perms: new Set((r.data()?.permissions || []).filter(isPermissionKey)) };
+}
+
+const isOwnerRole = (r: unknown) => ["owner", "org:owner"].includes(String(r || ""));
+const permNames = (xs: PermissionKey[]) => xs.map(k => PERMISSIONS.find(p => p.key === k)?.label || k).join(", ");
+
+/**
+ * Единая защита от повышения прав — для смены должности, личных прав,
+ * приглашения и правки должностей. Текст отказа или null, если можно.
+ *
+ *  — свой доступ не меняют (единственный владелец не запрёт организацию);
+ *  — владельца меняет только владелец, администратора — владелец или администратор;
+ *  — нельзя трогать сотрудника, у которого есть права шире ваших;
+ *  — нельзя выдать то, чего нет у самого (grant — права ПОСЛЕ изменения).
+ */
+export async function accessChangeDenied(db: Db, caller: { uid: string; isSuperadmin?: boolean }, tenantId: string, target: any | null, grant: Iterable<PermissionKey>): Promise<string | null> {
+  if (caller.isSuperadmin === true) return null;
+  const me = await activeMembership(db, caller.uid, tenantId);
+  if (!me) return "Доступно только сотрудникам организации";
+  const meFull = hasFullAccess(me.role);
+  const mine = await membershipPermissions(db, me);
+  if (target) {
+    if (target.userId && String(target.userId) === caller.uid) return "Свой доступ меняет другой владелец или администратор";
+    if (isOwnerRole(target.role) && !isOwnerRole(me.role)) return "Доступ владельца меняет только владелец";
+    if (hasFullAccess(target.role) && !meFull) return "Доступ администратора меняет только владелец или администратор";
+    if (!meFull) {
+      const over = [...(await membershipPermissions(db, target))].filter(p => !mine.has(p));
+      if (over.length) return `У сотрудника есть права, которых нет у вас: ${permNames(over)}`;
+    }
+  }
+  const excess = [...grant].filter(p => !mine.has(p));
+  return excess.length ? `Нельзя выдать права, которых нет у вас: ${permNames(excess)}` : null;
 }
 
 /** Системные роли, которые может выдать вызывающий (владелец — только владелец/суперадмин). */

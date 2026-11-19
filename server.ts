@@ -734,6 +734,13 @@ app.get("/api/tenant/finance-summary", requireFirebaseAuth, async (req: any, res
 
     const db = admin.firestore();
 
+    // Деньги организации — только её сотрудникам с правом на зарплаты и кассу
+    // (полный доступ его включает). Раньше хватало любого входа на платформу:
+    // посторонний читал выручку и список учеников любой школы по её id.
+    if (!(await hasAnyPermission(db, req.user, tenantId, ["edu:payroll"]))) {
+      return res.status(403).json({ success: false, error: "Недостаточно прав" });
+    }
+
     // 1. Принятые ученики строго в рамках этого tenantId
     const subSnap = await db.collection("submissions")
       .where("tenantId", "==", tenantId)

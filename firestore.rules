@@ -192,10 +192,14 @@ service cloud.firestore {
     // Staff invitation/role changes go through the server (POST /api/tenants/:id/invite,
     // requireTenantAdmin) which uses the Admin SDK and bypasses these rules entirely;
     // this rule only stops a member from writing memberships directly via the client SDK.
+    // Членства меняет только сервер (/api/tenants/*, /api/auth/*): там
+    // проверяется, что нельзя повысить себя, тронуть владельца или выдать
+    // права шире своих. Прямая запись давала любому с «Управлением
+    // сотрудниками» записать себе org:owner. Суперадмин — для создания
+    // организации из панели платформы.
     match /memberships/{docId} {
       allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || hasTenantAccess());
-      allow update, delete: if isTenantAdmin(resource.data.tenantId);
-      allow create: if isTenantAdmin(request.resource.data.tenantId);
+      allow create, update, delete: if isSuperadmin();
     }
     // Org structure changes (who reports to whom) are admin-only; reads stay tenant-wide.
     // Должности организации: читают все сотрудники (чтобы видеть названия
@@ -260,8 +264,10 @@ service cloud.firestore {
     // Записывать можно только поля профиля. Раньше пользователь мог записать
     // себе globalRole: "superadmin" (сервер этому верил) или defaultTenantId
     // чужой организации (сервер сам создавал по нему членство).
+    // Профиль читает сам человек и платформа. Раньше любой вошедший читал
+    // почту и телефоны всех пользователей всех организаций.
     match /users/{uid} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isSuperadmin());
       allow create: if isAuthenticated() && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(
           ['id','email','firstName','lastName','displayName','phone','avatarUrl',
@@ -359,9 +365,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Журнал пишет только сервер — иначе записи можно подделать. Читает
+    // платформа; журнал организации для владельца — через сервер.
     match /audit_logs/{logId} {
-      allow read: if hasTenantAccess();
-      allow create: if hasTenantAccessOnCreate();
+      allow read: if isSuperadmin();
+      allow create, update, delete: if false;
     }
     
   }
