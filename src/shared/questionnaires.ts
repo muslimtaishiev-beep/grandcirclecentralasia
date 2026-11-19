@@ -1,4 +1,5 @@
 import { isPermissionKey, type PermissionKey } from "./permissions.js";
+import { describeWhen, evalWhen, sanitizeWhen, UNKNOWN, type CondField, type CondValue, type When } from "./conditions.js";
 
 /**
  * Анкеты приёма — общий движок.
@@ -74,8 +75,10 @@ export interface QItem {
   bind?: QBind;
   /** Материалы (id вложений шаблона), которые нужны для этого пункта. */
   materials?: string[];
+  /** Показывать, если… (вместе с классами — через «и»). */
+  when?: When;
 }
-export interface QSection { id: string; title: string; hint?: string; grades?: number[]; items: QItem[] }
+export interface QSection { id: string; title: string; hint?: string; grades?: number[]; when?: When; items: QItem[] }
 export interface QOutcomeOption { id: string; label: string; description: string; allowsTest: boolean; tone: "good" | "warn" | "bad" }
 /**
  * Материал методики: show — показать ребёнку (таблица образов, картинки);
@@ -121,11 +124,97 @@ export function gradeOf(v: unknown): number | null {
 }
 const inGrades = (grades: number[] | undefined, g: number | null) => !grades?.length || g === null || grades.includes(g);
 export const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+export { SCHOOL_GRADES } from "./conditions.js";
 
 export const sectionVisible = (s: QSection, g: number | null) => inGrades(s.grades, g);
 export const itemVisible = (i: QItem, g: number | null) => inGrades(i.grades, g);
-export function visibleSections(t: Pick<QTemplate, "sections">, g: number | null): QSection[] {
-  return t.sections.filter(s => sectionVisible(s, g)).map(s => ({ ...s, items: s.items.filter(i => itemVisible(i, g)) })).filter(s => s.items.length);
+
+/**
+ * Ответы для условий: answers — этой анкеты, parent — анкеты родителя.
+ * Не передали — условия по ним не скрывают (пустой бланк, предпросмотр).
+ */
+export interface QCtx { answers?: QAnswers; parent?: QAnswers }
+
+/**
+ * Что видно ребёнку этого класса при этих ответах. По порядку: условие
+ * смотрит только на пункты выше, а ответ скрытого пункта ничего не открывает.
+ */
+export function visibleSections(t: Pick<QTemplate, "sections">, g: number | null, ctx: QCtx = {}): QSection[] {
+  const shown = new Map<string, QItem>();
+  const get = (f: string): CondValue => {
+    if (f === "grade") return g === null ? UNKNOWN : String(g);
+    if (f.startsWith("q:")) {
+      if (!ctx.answers) return UNKNOWN;
+      const i = shown.get(f.slice(2));
+      if (!i) return undefined;
+      const a = ctx.answers[i.id];
+      return i.kind === "rating" ? a?.rating : a?.value;
+    }
+    if (f.startsWith("parent:")) return ctx.parent ? ctx.parent[f.slice(7)]?.value : UNKNOWN;
+    return UNKNOWN;
+  };
+  const out: QSection[] = [];
+  for (const s of t.sections) {
+    if (!sectionVisible(s, g) || !evalWhen(s.when, get)) continue;
+    const items = s.items.filter(i => {
+      const ok = itemVisible(i, g) && evalWhen(i.when, get);
+      if (ok) shown.set(i.id, i);
+      return ok;
+    });
+    if (items.length) out.push({ ...s, items });
+  }
+  return out;
+}
+export const visibleItemIds = (t: Pick<QTemplate, "sections">, g: number | null, ctx: QCtx = {}) =>
+  new Set(visibleSections(t, g, ctx).flatMap(s => s.items.map(i => i.id)));
+
+/** Ответы только видимых пунктов: скрытое условием не хранится и не идёт в карточку. */
+export function dropHidden(t: Pick<QTemplate, "sections">, a: QAnswers, g: number | null, parent?: QAnswers): QAnswers {
+  const ids = visibleItemIds(t, g, { answers: a, parent });
+  return Object.fromEntries(Object.entries(a).filter(([k]) => ids.has(k)));
+}
+
+// ── Поля для условий ────────────────────────────────────────────────────
+
+export const GRADE_FIELD: CondField = { id: "grade", label: "Класс", kind: "grade" };
+function itemField(i: QItem, prefix: string, group?: string): CondField | null {
+  const base = { id: `${prefix}${i.id}`, label: i.label, ...(group ? { group } : {}) };
+  switch (i.kind) {
+    case "choice": case "multi": return { ...base, kind: i.kind, options: (i.options || []).map(o => ({ id: o.id, label: o.label })) };
+    case "rating": return { ...base, kind: "rating", options: SCALES[i.scale || "norm4"].map(x => ({ id: x.id, label: x.short })) };
+    case "number": return { ...base, kind: "number" };
+    case "date": return { ...base, kind: "date" };
+    case "note": return null;
+    default: return { ...base, kind: "text" };
+  }
+}
+/** Поля анкеты родителя — для условий в анкетах сотрудников. */
+export const parentFields = (p?: Pick<QTemplate, "sections" | "title"> | null): CondField[] =>
+  (p?.sections || []).flatMap(s => s.items).map(i => itemField(i, "parent:", p!.title || "Анкета родителя")).filter(Boolean) as CondField[];
+
+/** Условие словами — для печати пустых бланков: «(если 1–3 класс и „Детский сад“ = Да)». */
+export function whenText(t: Pick<QTemplate, "sections">, w: When | undefined, parent?: Pick<QTemplate, "sections" | "title"> | null): string {
+  if (!w) return "";
+  const all = [GRADE_FIELD, ...parentFields(parent), ...t.sections.flatMap(s => s.items).map(i => itemField(i, "q:")).filter(Boolean) as CondField[]];
+  return describeWhen(w, all);
+}
+
+/**
+ * Каталог для условия пункта (или блока, если item не задан): класс, ответы
+ * родителя (в анкетах сотрудников) и вопросы этой анкеты выше по порядку.
+ */
+export function fieldsBefore(t: Pick<QTemplate, "sections" | "audience">, sectionId: string, itemId?: string, parent?: Pick<QTemplate, "sections" | "title"> | null): CondField[] {
+  const own: CondField[] = [];
+  for (const s of t.sections) {
+    if (s.id === sectionId && !itemId) break;
+    let stop = false;
+    for (const i of s.items) {
+      if (s.id === sectionId && i.id === itemId) { stop = true; break; }
+      const f = itemField(i, "q:"); if (f) own.push(f);
+    }
+    if (stop || s.id === sectionId) break;
+  }
+  return [GRADE_FIELD, ...(t.audience === "staff" ? parentFields(parent) : []), ...own];
 }
 /** Вопросы методики для класса: общие (без классов) + своей полосы. */
 export const promptsFor = (i: QItem, g: number | null) => (i.prompts || []).filter(p => !p.grades.length || g === null || p.grades.includes(g));
@@ -163,9 +252,9 @@ export function normText(n: QNorm): string {
 export const outcomeOf = (t: Pick<QTemplate, "outcome">, id: string | null | undefined) => t.outcome?.options.find(o => o.id === id) || null;
 
 /** Сколько пунктов с трудностями — сводка для списка и карточки. */
-export function ratingSummary(t: Pick<QTemplate, "sections">, a: QAnswers, g: number | null) {
+export function ratingSummary(t: Pick<QTemplate, "sections">, a: QAnswers, g: number | null, parent?: QAnswers) {
   const out = { norm: 0, mild: 0, severe: 0, na: 0, empty: 0 };
-  for (const s of visibleSections(t, g)) for (const i of s.items) {
+  for (const s of visibleSections(t, g, { answers: a, parent })) for (const i of s.items) {
     if (i.kind !== "rating") continue;
     const r = a[i.id]?.rating;
     if (r) out[r]++; else out.empty++;
@@ -174,9 +263,9 @@ export function ratingSummary(t: Pick<QTemplate, "sections">, a: QAnswers, g: nu
 }
 
 /** Чего не хватает до сдачи: обязательные пункты, оценки, итог. */
-export function missingFor(t: QTemplate, a: QAnswers, g: number | null, outcome: string | null): string[] {
+export function missingFor(t: QTemplate, a: QAnswers, g: number | null, outcome: string | null, parent?: QAnswers): string[] {
   const miss: string[] = [];
-  for (const s of visibleSections(t, g)) for (const i of s.items) {
+  for (const s of visibleSections(t, g, { answers: a, parent })) for (const i of s.items) {
     const x = a[i.id];
     if (i.kind === "rating" && !x?.rating) miss.push(i.label);
     else if (i.required && i.kind !== "note" && i.kind !== "rating") {
@@ -235,12 +324,17 @@ function sanitizeItem(r: any, k: number): QItem | null {
   if (BINDS.includes(r?.bind)) item.bind = r.bind;
   const mats = (Array.isArray(r?.materials) ? r.materials : []).map(String).filter((x: string) => ID.test(x)).slice(0, 6);
   if (mats.length) item.materials = mats;
+  if (r?.when) (item as any).__when = r.when; // проверяется во втором проходе, когда известны все пункты
   return item;
 }
 
 const ASSET_URL = /^(\/[A-Za-z0-9/_.-]{1,200}|https:\/\/[^\s"'<>]{1,500})$/;
 
-export function sanitizeTemplate(raw: any, prev?: QTemplate): QTemplate {
+/**
+ * parent — анкета родителя организации: на её ответы могут ссылаться
+ * условия в анкетах сотрудников.
+ */
+export function sanitizeTemplate(raw: any, prev?: QTemplate, parent?: Pick<QTemplate, "sections" | "title"> | null): QTemplate {
   const perm = (v: unknown) => (isPermissionKey(v) ? v : null);
   const usedIds = new Set<string>();
   const uniq = (x: string) => { let v = x, n = 2; while (usedIds.has(v)) v = `${x}_${n++}`; usedIds.add(v); return v; };
@@ -248,8 +342,22 @@ export function sanitizeTemplate(raw: any, prev?: QTemplate): QTemplate {
     const items = (Array.isArray(s?.items) ? s.items : []).slice(0, 60).map(sanitizeItem).filter(Boolean)
       .map((i: QItem) => ({ ...i, id: uniq(i.id) }));
     const g = grades(s?.grades);
-    return { id: id(s?.id, `s${k + 1}`), title: str(s?.title, 200) || `Блок ${k + 1}`, ...(s?.hint ? { hint: str(s.hint, 1000) } : {}), ...(g.length ? { grades: g } : {}), items };
+    return { id: id(s?.id, `s${k + 1}`), title: str(s?.title, 200) || `Блок ${k + 1}`, ...(s?.hint ? { hint: str(s.hint, 1000) } : {}), ...(g.length ? { grades: g } : {}), ...(s?.when ? { __when: s.when } : {}), items };
   }).filter((s: QSection) => s.items.length);
+  // Условия: только на класс, ответы родителя (анкеты сотрудников) и пункты выше.
+  const audience0 = raw?.audience === "parent" ? "parent" : "staff";
+  const before: CondField[] = [GRADE_FIELD, ...(audience0 === "staff" ? parentFields(parent) : [])];
+  for (const s of sections as (QSection & { __when?: unknown })[]) {
+    const sw = s.__when ? sanitizeWhen(s.__when, before) : undefined;
+    delete s.__when;
+    if (sw) s.when = sw;
+    for (const i of s.items as (QItem & { __when?: unknown })[]) {
+      const iw = i.__when ? sanitizeWhen(i.__when, before) : undefined;
+      delete i.__when;
+      if (iw) i.when = iw;
+      const f = itemField(i, "q:"); if (f) before.push(f);
+    }
+  }
   const options = (Array.isArray(raw?.outcome?.options) ? raw.outcome.options : []).slice(0, 8).map((o: any, k: number) => ({
     id: id(o?.id, `r${k + 1}`), label: str(o?.label, 120), description: str(o?.description, 600),
     allowsTest: o?.allowsTest === true, tone: (["good", "warn", "bad"].includes(o?.tone) ? o.tone : "warn") as QOutcomeOption["tone"],

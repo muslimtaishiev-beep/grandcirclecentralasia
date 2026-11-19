@@ -13,7 +13,7 @@ import { LEGAL_VERSION } from "../shared/legalDocs.js";
 import { DECISION_LABEL, paperResult, partResults, sanitizeSections, sanitizeSettings, type Decision, type Exam, type ExamResult } from "../shared/examRun.js";
 import { NEUTRAL_CANDIDATE_FORM, sanitizeCandidateForm, type CandidateFormConfig } from "../shared/candidateForm.js";
 import {
-  answerText, gradeOf, missingFor, outcomeOf, sanitizeAnswers, sanitizeTemplate,
+  answerText, dropHidden, gradeOf, missingFor, outcomeOf, sanitizeAnswers, sanitizeTemplate,
   type QAnswers, type QBind, type QTemplate,
 } from "../shared/questionnaires.js";
 import { applicantAudit, diffRows, STUDENT, SYSTEM, type AuditChange, type AuditWho } from "../server/applicantAudit.js";
@@ -227,6 +227,14 @@ async function loadCandidateForm(t: string): Promise<CandidateFormConfig> {
   return s.exists ? (s.data() as CandidateFormConfig) : NEUTRAL_CANDIDATE_FORM;
 }
 const byId = (ts: QTemplate[]) => Object.fromEntries(ts.map(x => [x.id, x]));
+/** Действующая анкета родителя: на её ответы ссылаются условия в анкетах сотрудников. */
+const parentTemplate = (ts: QTemplate[]) => ts.find(x => x.audience === "parent" && !x.archived) || null;
+/** Ответы родителя по поступающему — для условий в анкетах сотрудников. */
+async function parentAnswers(t: string, applicantId: string): Promise<QAnswers | undefined> {
+  const snap = await col(t, "applicant_forms").where("applicantId", "==", applicantId).get();
+  const f = snap.docs.map(d => d.data() as ApplicantForm).find(x => x.template?.audience === "parent");
+  return f?.answers || {};
+}
 
 async function loadApplicant(t: string, id: string): Promise<Applicant | null> {
   if (!ID.test(id)) return null;
@@ -432,7 +440,7 @@ router.post("/:tenantId/templates", ...staff, async (req: any, res: any) => {
   try {
     if (!canEditTemplate(req.caller)) return fail(res, 403, "Создавать анкеты может приёмная или администратор");
     const id = `tpl_${randomBytes(5).toString("hex")}`;
-    const tpl = sanitizeTemplate({ ...req.body, id });
+    const tpl = sanitizeTemplate({ ...req.body, id }, undefined, parentTemplate(await loadTemplates(req.params.tenantId)));
     await col(req.params.tenantId, "questionnaire_templates").doc(id).create(tpl);
     return res.json({ success: true, template: tpl });
   } catch (e: any) { return oops(res, e); }
@@ -442,7 +450,7 @@ router.put("/:tenantId/templates/:tid", ...staff, async (req: any, res: any) => 
   try {
     const t = req.params.tenantId; const tid = String(req.params.tid);
     if (!ID.test(tid)) return fail(res, 400, "Неверная анкета");
-    await loadTemplates(t);
+    const all = await loadTemplates(t);
     const ref = col(t, "questionnaire_templates").doc(tid);
     const snap = await ref.get();
     if (!snap.exists) return fail(res, 404, "Анкета не найдена");
@@ -454,7 +462,7 @@ router.put("/:tenantId/templates/:tid", ...staff, async (req: any, res: any) => 
     let body = hasPerm(c, "settings:manage") ? req.body : { ...req.body, fillPermission: prev.fillPermission, viewPermission: prev.viewPermission, sensitive: prev.sensitive };
     // Какие итоги пускают к тесту — решает администрация, не тот, кто заполняет анкету.
     if (!hasPerm(c, "settings:manage", "admission:manage")) body = { ...body, outcome: prev.outcome };
-    const tpl = { ...sanitizeTemplate({ ...body, id: tid, audience: prev.audience }, prev), updatedBy: c.name, updatedAt: Date.now() };
+    const tpl = { ...sanitizeTemplate({ ...body, id: tid, audience: prev.audience }, prev, parentTemplate(all)), updatedBy: c.name, updatedAt: Date.now() };
     await ref.set(tpl);
     return res.json({ success: true, template: tpl });
   } catch (e: any) { return oops(res, e); }
@@ -625,11 +633,15 @@ router.put("/:tenantId/applicants/:id/forms/:tid", ...staff, async (req: any, re
     const g = gradeOf(a.child.grade);
     const now = Date.now();
     const reopen = req.body?.reopen === true;
-    const answers = reopen && prev ? prev.answers : sanitizeAnswers(tpl, req.body?.answers);
     const outcome = reopen && prev ? prev.outcome : (tpl.outcome && outcomeOf(tpl, req.body?.outcome) ? String(req.body.outcome) : null);
     const done = !reopen && req.body?.done === true;
+    const pAns = tpl.audience === "staff" ? await parentAnswers(t, a.id) : undefined;
+    // Черновик хранит всё (переключил ответ туда-обратно — не потерял); сданная — только видимое.
+    const raw = reopen && prev ? prev.answers : sanitizeAnswers(tpl, req.body?.answers);
+    const final = done || (!reopen && prev?.status === "done");
+    const answers = final ? dropHidden(tpl, raw, g, pAns) : raw;
     if (done) {
-      const miss = missingFor(tpl, answers, g, outcome);
+      const miss = missingFor(tpl, answers, g, outcome, pAns);
       if (miss.length) return fail(res, 400, `Не заполнено: ${miss.slice(0, 4).join(", ")}${miss.length > 4 ? ` и ещё ${miss.length - 4}` : ""}`, { missing: miss });
     }
     const status: "draft" | "done" = done ? "done" : reopen ? "draft" : (prev?.status === "done" ? "done" : "draft");
@@ -1028,7 +1040,8 @@ router.post("/link/:token/parent", async (req: any, res: any) => {
     const prev = fsnap.exists ? (fsnap.data() as ApplicantForm) : null;
     const tpl = prev?.template || templates.find(x => x.audience === "parent" && !x.archived);
     if (!tpl) return fail(res, 404, "Анкета для родителей не настроена");
-    const answers = sanitizeAnswers(tpl, req.body?.answers);
+    // Ответы скрытых условием пунктов не хранятся и не попадают в карточку.
+    const answers = dropHidden(tpl, sanitizeAnswers(tpl, req.body?.answers), gradeOf(a.child.grade));
     const miss = missingFor(tpl, answers, gradeOf(a.child.grade), null);
     if (miss.length) return fail(res, 400, `Заполните: ${miss.slice(0, 4).join(", ")}`, { missing: miss });
     const now = Date.now();

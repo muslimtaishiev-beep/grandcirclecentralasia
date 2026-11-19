@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { PERMISSIONS, type PermissionKey } from "../../../shared/permissions";
-import { SCALES, type QItem, type QKind, type QNorm, type QSection, type QTemplate } from "../../../shared/questionnaires";
+import { SCALES, SCHOOL_GRADES, fieldsBefore, type QItem, type QKind, type QNorm, type QSection, type QTemplate } from "../../../shared/questionnaires";
+import { ConditionsButton } from "../../../components/conditions/ConditionBuilder";
 import { Modal, btn, btnPrimary, card, input, label } from "../journals/components/ui";
 import type { Api } from "./admissionApi";
 import { CandidateFormCard } from "./CandidateFormEditor";
@@ -17,7 +18,6 @@ const fmtGrades = (g?: number[]) => {
   for (const x of [...g.slice(1), NaN]) { if (x === p + 1) { p = x; continue; } out.push(s === p ? `${s}` : `${s}–${p}`); s = p = x; }
   return out.join(", ");
 };
-const GRADES = Array.from({ length: 11 }, (_, i) => i + 1);
 
 /** Для каких классов: кнопка → сетка классов. Пусто — для всех. */
 function GradesPicker({ value, onChange, className = "" }: { value?: number[]; onChange: (g: number[]) => void; className?: string }) {
@@ -28,7 +28,7 @@ function GradesPicker({ value, onChange, className = "" }: { value?: number[]; o
     if (!open) return;
     // Раскрыть туда, где хватает места: у правого края — влево, у левого — вправо.
     const r = ref.current?.getBoundingClientRect();
-    setRight(!!r && r.left + 240 > window.innerWidth - 8);
+    setRight(!!r && r.left + 256 > window.innerWidth - 8);
     const off = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
     // Esc закрывает только выбор, не окно редактора с несохранёнными правками.
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
@@ -44,8 +44,8 @@ function GradesPicker({ value, onChange, className = "" }: { value?: number[]; o
         {g.length ? `${fmtGrades(g)} кл.` : "Все классы"}<ChevronDown className={`w-3.5 h-3.5 transition ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className={`absolute z-30 ${right ? "right-0" : "left-0"} mt-1 w-60 rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] shadow-lg p-2 grid grid-cols-6 gap-1`}>
-          {GRADES.map(n => <button key={n} type="button" className={chip(g.includes(n))} onClick={() => toggle(n)}>{n}</button>)}
+        <div className={`absolute z-30 ${right ? "right-0" : "left-0"} mt-1 w-64 rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] shadow-lg p-2 grid grid-cols-7 gap-1`}>
+          {SCHOOL_GRADES.map(n => <button key={n} type="button" className={chip(g.includes(n))} onClick={() => toggle(n)}>{n}</button>)}
           <button type="button" className={chip(!g.length)} onClick={() => onChange([])}>Все</button>
         </div>
       )}
@@ -131,6 +131,7 @@ function Editor({ t: initial, api, parent, onClose, onSaved }: { t: QTemplate; a
             <div className="flex flex-wrap gap-2 items-center">
               <input className={`${input} flex-1 min-w-[200px] font-semibold`} value={s.title} onChange={e => setSec(k, { title: e.target.value })} />
               <GradesPicker className="w-36" value={s.grades} onChange={g => setSec(k, { grades: g })} />
+              <ConditionsButton value={s.when} fields={fieldsBefore(t, s.id, undefined, parent)} onChange={w => setSec(k, { when: w })} />
               <button className={btn} onClick={() => setT({ ...t, sections: move(t.sections, k, -1) })}><ChevronUp className="w-4 h-4" /></button>
               <button className={btn} onClick={() => setT({ ...t, sections: move(t.sections, k, 1) })}><ChevronDown className="w-4 h-4" /></button>
               <button className={btn} onClick={() => confirm("Удалить блок?") && setT({ ...t, sections: t.sections.filter((_, j) => j !== k) })}><Trash2 className="w-4 h-4 text-rose-600" /></button>
@@ -141,7 +142,7 @@ function Editor({ t: initial, api, parent, onClose, onSaved }: { t: QTemplate; a
                 <div key={i.id} className="rounded-lg border border-[var(--border-color)]">
                   <button type="button" className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm" onClick={() => setOpen(open === key ? null : key)}>
                     <span className="flex-1 truncate text-[var(--text-main)]">{i.label}</span>
-                    <span className="text-xs text-[var(--text-muted)]">{KIND_LABEL[i.kind]}{i.grades?.length ? ` · ${fmtGrades(i.grades)} кл.` : ""}{i.norms?.length ? " · нормы" : ""}</span>
+                    <span className="text-xs text-[var(--text-muted)]">{KIND_LABEL[i.kind]}{i.grades?.length ? ` · ${fmtGrades(i.grades)} кл.` : ""}{i.norms?.length ? " · нормы" : ""}{i.when ? " · условие" : ""}</span>
                     <ChevronDown className={`w-4 h-4 transition ${open === key ? "rotate-180" : ""}`} />
                   </button>
                   {open === key && <ItemEditor i={i} t={t} parent={parent} set={p => setItem(k, n, p)}
@@ -199,10 +200,11 @@ function ItemEditor({ i, t, parent, set, onMove, onDelete }: { i: QItem; t: QTem
   const measures = i.measures || [];
   return (
     <div className="border-t border-[var(--border-color)] p-3 space-y-2.5">
-      <div className="grid sm:grid-cols-[1fr_auto_9rem] gap-2">
+      <div className="grid sm:grid-cols-[1fr_auto_9rem_auto] gap-2">
         <input className={input} value={i.label} onChange={e => set({ label: e.target.value })} />
         <select className={`${input} !w-auto`} value={i.kind} onChange={e => set({ kind: e.target.value as QKind, ...(e.target.value === "rating" ? { scale: i.scale || "norm4" } : {}) })}>{(Object.keys(KIND_LABEL) as QKind[]).map(k => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}</select>
         <GradesPicker value={i.grades} onChange={g => set({ grades: g })} />
+        <ConditionsButton value={i.when} fields={fieldsBefore(t, t.sections.find(s => s.items.some(x => x.id === i.id))?.id || "", i.id, parent)} onChange={w => set({ when: w })} />
       </div>
       <input className={input} placeholder="Подсказка" value={i.hint || ""} onChange={e => set({ hint: e.target.value })} />
       <div className="flex flex-wrap gap-3 text-sm">

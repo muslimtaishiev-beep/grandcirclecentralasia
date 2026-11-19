@@ -1,6 +1,6 @@
 import QRCode from "qrcode";
 import DOMPurify from "dompurify";
-import { SCALES, answerText, itemVisible, normFor, normText, visibleSections, type QAnswers, type QAttachment, type QTemplate } from "../shared/questionnaires";
+import { SCALES, answerText, gradeOf, normFor, normText, visibleSections, whenText, type QAnswers, type QAttachment, type QItem, type QSection, type QTemplate } from "../shared/questionnaires";
 
 /**
  * Печать по приёму. На каждой бумаге — QR и № поступающего: любую бумагу
@@ -13,6 +13,8 @@ export interface PrintChild { refNo: number; name: string; grade: string; birthD
 
 const esc = (v: unknown) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const no = (n: number) => `№ ${String(n).padStart(4, "0")}`;
+/** Пометка условия на пустом бланке: ответов ещё нет — пункт печатается, а рядом сказано, когда его заполнять. */
+const ifText = (t: QTemplate, x: QItem | QSection) => { const w = whenText(t, x.when); return w ? ` <span class="hint">(если ${esc(w)})</span>` : ""; };
 const today = () => new Date().toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
 export const linkUrl = (token: string, section?: string) => `${window.location.origin}/a/${token}${section ? `?s=${encodeURIComponent(section)}` : ""}`;
 const qr = (value: string) => QRCode.toDataURL(value, { errorCorrectionLevel: "M", margin: 1, width: 360 });
@@ -77,9 +79,10 @@ export async function referralHTML(org: PrintOrg, c: PrintChild, o: { token: str
 export async function parentHTML(org: PrintOrg, c: PrintChild, o: { parentToken: string; cardToken: string; template: QTemplate }) {
   const url = linkUrl(o.parentToken);
   const big = await qr(url);
-  const rows = o.template.sections.map(s => `<h2>${esc(s.title)}</h2>` + s.items.map(i => {
-    if (i.kind === "multi" || i.kind === "choice") return `<div>${esc(i.label)}: ${(i.options || []).map(x => `<span class="box"></span>${esc(x.label)}`).join(" &nbsp; ")}</div><div class="field"></div>`;
-    return `<div>${esc(i.label)}</div><div class="field"${i.kind === "longtext" ? ' style="min-height:48px"' : ""}></div>`;
+  const T = o.template;
+  const rows = visibleSections(T, gradeOf(c.grade)).map(s => `<h2>${esc(s.title)}${ifText(T, s)}</h2>` + s.items.map(i => {
+    if (i.kind === "multi" || i.kind === "choice") return `<div>${esc(i.label)}${ifText(T, i)}: ${(i.options || []).map(x => `<span class="box"></span>${esc(x.label)}`).join(" &nbsp; ")}</div><div class="field"></div>`;
+    return `<div>${esc(i.label)}${ifText(T, i)}</div><div class="field"${i.kind === "longtext" ? ' style="min-height:48px"' : ""}></div>`;
   }).join("")).join("");
   return page(`Анкета для родителей ${no(c.refNo)}`, `<div class="sheet">
     ${await head(org, c, url, "Анкета для родителей")}
@@ -104,8 +107,8 @@ export async function staffBlankHTML(org: PrintOrg, c: PrintChild, o: { cardToke
     const ratings = s.items.filter(i => i.kind === "rating");
     const other = s.items.filter(i => i.kind !== "rating" && i.kind !== "note");
     const scale = SCALES[ratings[0]?.scale || "norm4"];
-    const table = ratings.length ? `<table><tr><th style="width:34%">Показатель</th>${scale.map(x => `<th style="width:8%">${esc(x.short)}</th>`).join("")}<th>Результат, характер трудностей, помощь</th></tr>${ratings.map(i => `<tr><td>${esc(i.label)}${i.measures?.length ? `<div class="hint">${i.measures.map(m => `${esc(m.label)}: ____`).join("; ")}</div>` : ""}</td>${scale.map(() => `<td style="text-align:center"><span class="box"></span></td>`).join("")}<td></td></tr>`).join("")}</table>` : "";
-    return `<h2>${esc(s.title)}</h2>${table}${other.map(i => `<div>${esc(i.label)}</div><div class="field"></div>`).join("")}`;
+    const table = ratings.length ? `<table><tr><th style="width:34%">Показатель</th>${scale.map(x => `<th style="width:8%">${esc(x.short)}</th>`).join("")}<th>Результат, характер трудностей, помощь</th></tr>${ratings.map(i => `<tr><td>${esc(i.label)}${ifText(o.template, i)}${i.measures?.length ? `<div class="hint">${i.measures.map(m => `${esc(m.label)}: ____`).join("; ")}</div>` : ""}</td>${scale.map(() => `<td style="text-align:center"><span class="box"></span></td>`).join("")}<td></td></tr>`).join("")}</table>` : "";
+    return `<h2>${esc(s.title)}${ifText(o.template, s)}</h2>${table}${other.map(i => `<div>${esc(i.label)}${ifText(o.template, i)}</div><div class="field"></div>`).join("")}`;
   }).join("");
   const outcome = o.template.outcome ? `<h2>${esc(o.template.outcome.label)}</h2>${o.template.outcome.options.map(x => `<p><span class="box"></span><b>${esc(x.label)}.</b> ${esc(x.description)}</p>`).join("")}` : "";
   return page(`${o.template.title} ${no(c.refNo)}`, `<div class="sheet">
@@ -122,8 +125,8 @@ export async function staffBlankHTML(org: PrintOrg, c: PrintChild, o: { cardToke
  */
 export async function sessionSheet(org: PrintOrg, c: PrintChild, o: { cardToken: string; template: QTemplate; grade: number | null; answers: QAnswers; outcome: string | null; byName: string; at: number | null }) {
   const t = o.template;
-  const body = visibleSections(t, o.grade).map(s => {
-    const items = s.items.filter(i => itemVisible(i, o.grade));
+  const body = visibleSections(t, o.grade, { answers: o.answers }).map(s => {
+    const items = s.items;
     const ratings = items.filter(i => i.kind === "rating");
     const other = items.filter(i => i.kind !== "rating" && i.kind !== "note");
     const scale = SCALES[ratings[0]?.scale || "norm4"];

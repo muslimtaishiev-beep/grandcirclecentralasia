@@ -35,7 +35,8 @@ export default function FormFiller({ template, grade, answers, onChange, outcome
   /** Сотрудник: показывать вопросы методики и подсказки по нормам. */
   staff?: boolean;
 }) {
-  const sections = visibleSections(template, grade);
+  // Условия «показывать, если…» пересчитываются на каждый ответ.
+  const sections = visibleSections(template, grade, { answers, parent: parent?.answers });
   const set = (id: string, p: Partial<QAnswer>) => onChange({ ...answers, [id]: { ...answers[id], ...p } });
   const parentItems = new Map((parent?.template.sections || []).flatMap(s => s.items).map(i => [i.id, i]));
   const mats = new Map(template.attachments.map(a => [a.id, a]));

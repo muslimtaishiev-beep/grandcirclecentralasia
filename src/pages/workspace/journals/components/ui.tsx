@@ -9,12 +9,19 @@ export const label = "block text-[11px] uppercase font-mono font-bold text-[var(
 export const btn = "inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-[var(--border-color)] text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)] transition disabled:opacity-50 cursor-pointer";
 export const btnPrimary = "inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white transition disabled:opacity-50 cursor-pointer";
 
+/** Открытые окна по порядку: Esc закрывает только верхнее, а не всю стопку. */
+const openModals: symbol[] = [];
+
 export function Modal({ title, onClose, children, wide, xwide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean; xwide?: boolean }) {
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const me = Symbol("modal");
+    openModals.push(me);
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape" && openModals[openModals.length - 1] === me) close.current(); };
     window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
-  }, [onClose]);
+    return () => { window.removeEventListener("keydown", k); openModals.splice(openModals.indexOf(me), 1); };
+  }, []);
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 sm:p-3 overflow-y-auto" onMouseDown={onClose}>
       {/* Телефон — на весь экран: окно с отступами по краям там лишь отнимает место.

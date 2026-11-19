@@ -1,7 +1,7 @@
 import { candidateOf, subjectLevel, type Applicant } from "../../../shared/admissions";
 import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
 import { partResults, type Attempt, type Exam } from "../../../shared/examRun";
-import { answerText, gradeOf, itemVisible, type QAnswers, type QTemplate } from "../../../shared/questionnaires";
+import { answerText, gradeOf, visibleItemIds, type QAnswers, type QTemplate } from "../../../shared/questionnaires";
 import { candidateSheet, downloadPdf, linkUrl, type CandidateDoc, type PrintOrg } from "../../../lib/admissionPrint";
 
 /**
@@ -51,11 +51,16 @@ export function topicFeedback(topics: TestSummary["topics"], th: CandidateFormCo
 
 type ParentForm = { template: QTemplate; answers?: QAnswers } | null | undefined;
 
-/** Поля «Сведений об ученике», которые показываются этому ребёнку (по классу и анкете родителя). */
-function visibleFields(cfg: CandidateFormConfig, g: number | null, items: QTemplate["sections"][number]["items"]) {
+/**
+ * Поля «Сведений об ученике», которые показываются этому ребёнку: по классу
+ * и по анкете родителя — вопрос, скрытый условием, не попадает и сюда.
+ */
+function visibleFields(cfg: CandidateFormConfig, g: number | null, pf: ParentForm) {
+  const items = pf?.template.sections.flatMap(s => s.items) || [];
+  const shown = pf ? visibleItemIds(pf.template, g, pf.answers && Object.keys(pf.answers).length ? { answers: pf.answers } : {}) : new Set<string>();
   return cfg.fields
     .filter(x => !x.grades?.length || (g !== null && x.grades.includes(g)))
-    .filter(x => !x.source.startsWith("answer:") || items.some(i => i.id === x.source.slice(7) && itemVisible(i, g)) || !items.length);
+    .filter(x => !x.source.startsWith("answer:") || shown.has(x.source.slice(7)) || !items.length);
 }
 
 /** Поле анкеты для правки: откуда, что сейчас стоит, какие варианты. */
@@ -76,7 +81,7 @@ export function sheetFields(o: { form: CandidateFormConfig; applicant: Applicant
   const items = o.parentForm?.template.sections.flatMap(s => s.items) || [];
   const doc = candidateDoc({ form: o.form, orgName: "", applicant: a, parentForm: o.parentForm, test: o.test });
   const over = candidateOf(a)?.overrides || {};
-  return visibleFields(o.form, gradeOf(a.child.grade), items).map((f, i) => {
+  return visibleFields(o.form, gradeOf(a.child.grade), o.parentForm).map((f, i) => {
     const shown = doc.fields[i];
     const card = CARD_FIELDS.has(f.source);
     const item = f.source.startsWith("answer:") ? items.find(x => x.id === f.source.slice(7)) : undefined;
@@ -150,7 +155,7 @@ export function candidateDoc(o: {
     refNo: a?.refNo ?? null,
     qrUrl: a?.tokens.referral ? linkUrl(a.tokens.referral) : null,
     photo: cfg.showPhoto !== false ? o.photo || null : null,
-    fields: visibleFields(cfg, g, items).map(x => ({ label: x.label, half: x.half, ...withOverride(x.id, x.source) })),
+    fields: visibleFields(cfg, g, o.parentForm).map(x => ({ label: x.label, half: x.half, ...withOverride(x.id, x.source) })),
     stages: cfg.showStages ? { consult: !!a && Object.values(a.stages).some(s => s.status === "done"), tested: !!t, feedback: !!c?.feedbackGiven } : null,
     levels: cfg.levels,
     subjects: (t?.sections || []).map(s => { const lv = subjectLevel(s, t!.parts, t!.levels); return { title: s.title, percent: s.percent, band: lv.band, own: lv.own }; }),
