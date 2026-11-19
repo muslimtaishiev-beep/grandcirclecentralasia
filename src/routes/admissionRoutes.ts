@@ -13,9 +13,10 @@ import { LEGAL_VERSION } from "../shared/legalDocs.js";
 import { DECISION_LABEL, paperResult, partResults, sanitizeSections, sanitizeSettings, type Decision, type Exam, type ExamResult } from "../shared/examRun.js";
 import { NEUTRAL_CANDIDATE_FORM, sanitizeCandidateForm, type CandidateFormConfig } from "../shared/candidateForm.js";
 import {
-  gradeOf, missingFor, outcomeOf, sanitizeAnswers, sanitizeTemplate,
+  answerText, gradeOf, missingFor, outcomeOf, sanitizeAnswers, sanitizeTemplate,
   type QAnswers, type QBind, type QTemplate,
 } from "../shared/questionnaires.js";
+import { applicantAudit, diffRows, STUDENT, SYSTEM, type AuditChange, type AuditWho } from "../server/applicantAudit.js";
 import {
   admittedByStages, candidateOf, examForApplicant, sanitizeCandidate, stageOf, subjectLevel,
   type Applicant, type ApplicantForm, type CandidateInfo, type LinkPurpose, type StageSummary,
@@ -124,7 +125,9 @@ export async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEven
 /** Шаг теста поступающего (начал, закончил часть) — уведомление администрации. */
 export async function notifyApplicantStep(t: string, applicantId: string, ev: "test_start" | "section", summary: string) {
   const a = await loadApplicant(t, applicantId).catch(() => null);
-  if (a) await notifyAdmission(t, a, ev, { uid: "", name: "" }, { summary });
+  if (!a) return;
+  await audit(t, a.id, STUDENT(a.child.name), ev === "test_start" ? "test_started" : "test_section", summary);
+  await notifyAdmission(t, a, ev, { uid: "", name: "" }, { summary });
 }
 
 /** Адрес ребёнка у администрации — на странице экзамена его класса (иначе — «Поступающие»). */
@@ -149,6 +152,7 @@ type TestedAttempt = { id?: string; applicantId?: string; result?: ExamResult | 
 /** Ученик сдал тест — сообщить администрации (по направлению) и письмо по шаблону экзамена. */
 export async function notifyTested(t: string, x: TestedAttempt, exam: Exam) {
   const a = x.applicantId ? await loadApplicant(t, x.applicantId).catch(() => null) : null;
+  if (a) await audit(t, a.id, STUDENT(a.child.name), "tested", [exam.title, resultSummary(exam, x.result)].filter(Boolean).join(" · "));
   await emailTested(t, x, exam, a);
   if (a) await notifyAdmission(t, a, "tested", { uid: "", name: "" }, { summary: resultSummary(exam, x.result) });
 }
@@ -178,13 +182,21 @@ async function emailTested(t: string, x: TestedAttempt, exam: Exam, a: Applicant
     if (open && x.result) Object.assign(vars, { балл: `${x.result.earned} из ${x.result.max}`, процент: `${x.result.percent}%` });
   }
   const who = a ? `${a.child.name}, ${a.child.grade} класс` : String(x.student?.name || "");
-  return sendTemplated({
+  const r = await sendTemplated({
     tenantId: t, templateId, to, vars, event: "tested", refId: `${t}_${x.id}`, force: o.force, by: o.by,
     ctx: { attemptId: x.id, examId: exam.id, ...(a ? { applicantId: a.id } : {}), label: `${who} · ${exam.title || ""}` },
     actionUrl: a ? await adminCardUrl(t, a, "profile") : `/workspace/${t}/exams/${exam.id}`,
     noRecipient: a ? "Нет почты родителя" : "Нет почты ученика",
     mirror: { ref: col(t, "exam_attempts").doc(x.id), field: "resultEmail" },
   });
+  if (a) await auditEmail(t, a.id, "Письмо после теста", r);
+  return r;
+}
+
+/** Письмо — в историю: ушло (кому) или не ушло (почему). Повтор того же события не пишем. */
+async function auditEmail(t: string, applicantId: string, what: string, r: SendResult) {
+  if (r.skipped) return;
+  await audit(t, applicantId, SYSTEM, r.sent ? "email_sent" : "email_failed", r.sent ? `${what} · ${r.to || ""}` : `${what} · ${r.reason || ""}`);
 }
 registerResender("tested", async (t, ctx, by) => {
   if (!ctx.attemptId) return { sent: false, reason: "Нет работы" };
@@ -222,8 +234,15 @@ async function loadApplicant(t: string, id: string): Promise<Applicant | null> {
   return s.exists ? ({ ...(s.data() as any), id: s.id }) : null;
 }
 
-async function audit(t: string, applicantId: string, c: StaffCaller | null, action: string, detail = "") {
-  await col(t, "applicant_audit").add({ applicantId, action, detail: str(detail, 300), by: c?.uid || "parent", byName: c?.name || "Родитель", at: Date.now() }).catch(() => {});
+/** Событие в историю поступающего (кто: сотрудник; null — родитель; SYSTEM — система). */
+async function audit(t: string, applicantId: string, c: AuditWho, action: string, detail = "", changes: AuditChange[] = []) {
+  await applicantAudit(t, applicantId, c ? { uid: c.uid, name: c.name } : null, action, detail, changes);
+}
+
+/** Какие ответы анкеты поменялись: вопрос — было — стало. */
+function answerChanges(tpl: QTemplate, before: QAnswers | undefined, after: QAnswers): AuditChange[] {
+  const items = tpl.sections.flatMap(x => x.items);
+  return diffRows(items.map(i => [i.label || i.id, answerText(i, before?.[i.id]), answerText(i, after[i.id])] as [string, unknown, unknown]));
 }
 
 /** Сквозной номер поступающего — счётчик в транзакции, без дублей. */
@@ -283,7 +302,10 @@ export async function syncReferral(t: string, a: Applicant, templates?: QTemplat
   // равно выдано, тест подставится, когда его откроют для этого класса.
   const override = !!a.referral?.manual;
   if (!override && !admittedByStages(a)) {
-    if (a.referral) await col(t, "applicants").doc(a.id).update({ referral: null, updatedAt: Date.now() });
+    if (a.referral) {
+      await col(t, "applicants").doc(a.id).update({ referral: null, updatedAt: Date.now() });
+      await audit(t, a.id, SYSTEM, "referral_revoked", "итог сессии не пускает к тесту");
+    }
     return null;
   }
   const exam = examForApplicant(exams || await tenantExams(t), a, byId(templates || await loadTemplates(t)), override);
@@ -295,6 +317,7 @@ export async function syncReferral(t: string, a: Applicant, templates?: QTemplat
     by: a.referral?.by || "auto", byName: a.referral?.byName || "По заключению", manual: override, reason: a.referral?.reason || "",
   };
   await col(t, "applicants").doc(a.id).update({ referral, updatedAt: Date.now() });
+  await audit(t, a.id, SYSTEM, a.referral?.examId ? "referral_changed" : "referral_issued", want.examTitle || "экзамен для класса ещё не открыт");
   return referral;
 }
 
@@ -311,7 +334,7 @@ export async function emailReferral(t: string, applicantId: string, o: { force?:
     const templateId = sanitizeSettings(es.data()?.settings).admission?.referralEmail || "";
     if (!templateId) return { sent: false, reason: "В настройках экзамена не выбран шаблон письма" };
     const token = await referralTokenFor(t, a);
-    return await sendTemplated({
+    const r = await sendTemplated({
       tenantId: t, templateId, to: a.parent.email || "", event: "referral", refId: `${t}_${a.id}_${a.referral.examId}`, force: o.force, by: o.by,
       ctx: { applicantId: a.id, examId: a.referral.examId, label: `${a.child.name}, ${a.child.grade} класс` },
       actionUrl: await adminCardUrl(t, a, "profile"), noRecipient: "Нет почты родителя",
@@ -321,6 +344,8 @@ export async function emailReferral(t: string, applicantId: string, o: { force?:
         код: a.referral.examCode || "", ссылка: `${await appUrl()}/a/${token}`,
       },
     });
+    await auditEmail(t, a.id, "Направление", r);
+    return r;
   } catch (e) { console.error("[admissions] referral email", e); return { sent: false, reason: "Не удалось отправить" }; }
 }
 registerResender("referral", (t, ctx, by) => (ctx.applicantId ? emailReferral(t, ctx.applicantId, { force: true, by }) : Promise.resolve({ sent: false, reason: "Нет карточки" })));
@@ -513,7 +538,7 @@ router.get("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
     });
     if (sensitive) await audit(t, a.id, c, "viewed", "открыл анкеты с данными о здоровье и развитии");
     const auditLog = hasPerm(c, "admission:manage")
-      ? (await col(t, "applicant_audit").where("applicantId", "==", a.id).get()).docs.map(d => d.data()).sort((x: any, y: any) => y.at - x.at).slice(0, 100)
+      ? (await col(t, "applicant_audit").where("applicantId", "==", a.id).get()).docs.map(d => d.data()).sort((x: any, y: any) => y.at - x.at).slice(0, 300)
       : [];
     const canFillMap = Object.fromEntries(templates.map(x => [x.id, canFill(c, x)]));
     const canSeeMap = Object.fromEntries(templates.map(x => [x.id, canSee(c, x)]));
@@ -548,7 +573,13 @@ router.put("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
     if (req.body?.parent) patch.parent = sanitizeParent({ ...a.parent, ...req.body.parent });
     if (req.body?.note !== undefined) patch.note = str(req.body.note, 1000);
     await col(t, "applicants").doc(a.id).update(patch);
-    await audit(t, a.id, c, "edited", "профиль");
+    const ch = patch.child || a.child; const pa = patch.parent || a.parent;
+    const changes = diffRows([
+      ["ФИО ученика", a.child.name, ch.name], ["Дата рождения", a.child.birthDate, ch.birthDate], ["Класс", a.child.grade, ch.grade], ["Школа", a.child.school, ch.school],
+      ["ФИО родителя", a.parent.name, pa.name], ["Телефон родителя", a.parent.phone, pa.phone], ["Почта родителя", a.parent.email, pa.email],
+      ["Заметка", a.note, patch.note ?? a.note],
+    ]);
+    if (changes.length) await audit(t, a.id, c, "edited", "профиль", changes);
     // Сменился класс — может смениться и экзамен.
     if (patch.child && patch.child.grade !== a.child.grade) await syncReferral(t, { ...a, ...patch } as any, await loadTemplates(t));
     return res.json({ success: true });
@@ -621,7 +652,16 @@ router.put("/:tenantId/applicants/:id/forms/:tid", ...staff, async (req: any, re
       patch[`stages.${tid}`] = summary;
     }
     await col(t, "applicants").doc(a.id).update(patch);
-    if (done || reopen) await audit(t, a.id, c, done ? "form_done" : "form_reopened", tpl.title);
+    const oLabel = outcomeOf(tpl, outcome)?.label;
+    if (done) await audit(t, a.id, c, "form_done", [tpl.title, oLabel].filter(Boolean).join(" · "), prev?.status === "done" ? answerChanges(tpl, prev.answers, answers) : []);
+    else if (reopen) await audit(t, a.id, c, "form_reopened", tpl.title);
+    else if (!prev) await audit(t, a.id, c, tpl.audience === "parent" ? "parent_form_started" : "form_started", tpl.title);
+    else if (prev.status === "done") {
+      // Сданную анкету поправили — что именно.
+      const changes = answerChanges(tpl, prev.answers, answers);
+      if ((prev.outcome || null) !== (outcome || null)) changes.unshift({ label: "Итог", from: outcomeOf(tpl, prev.outcome)?.label || "", to: oLabel || "" });
+      if (changes.length) await audit(t, a.id, c, "form_edited", tpl.title, changes);
+    }
     let referral = a.referral;
     if (tpl.audience === "staff" && (done || reopen)) {
       const fresh = await loadApplicant(t, a.id);
@@ -745,13 +785,65 @@ router.put("/:tenantId/applicants/:id/candidate", ...staff, async (req: any, res
     if (!a) return fail(res, 404, "Поступающий не найден");
     const prev = candidateOf(a);
     const form = await loadCandidateForm(t);
-    const candidate: CandidateInfo = { ...sanitizeCandidate(req.body, form.decisions), by: c.name, at: Date.now() };
-    await col(t, "applicants").doc(a.id).update({ candidate, decision: null, updatedAt: Date.now() });
+    const base = sanitizeCandidate(req.body, form.decisions);
+
+    // «Сведения об ученике»: поля карточки — прямо в карточку, остальное — правкой поверх анкеты.
+    const overrides: Record<string, string | string[]> = { ...(prev?.overrides || {}) };
+    const child = { ...a.child }; const parent = { ...a.parent };
+    const fieldChanges: AuditChange[] = [];
+    const raw = req.body?.fields && typeof req.body.fields === "object" ? req.body.fields as Record<string, unknown> : {};
+    const parentTpl = Object.keys(raw).some(k => form.fields.find(f => f.id === k)?.source.startsWith("answer:"))
+      ? (await loadTemplates(t)).find(x => x.audience === "parent") : undefined;
+    for (const [fid, v] of Object.entries(raw).slice(0, 40)) {
+      const f = form.fields.find(x => x.id === fid);
+      if (!f) continue;
+      const card: Record<string, [typeof child | typeof parent, string]> = {
+        "child.name": [child, "name"], "child.birthDate": [child, "birthDate"], "child.grade": [child, "grade"], "child.school": [child, "school"],
+        "parent.name": [parent, "name"], "parent.phone": [parent, "phone"],
+      };
+      if (card[f.source]) { const [obj, key] = card[f.source]; (obj as any)[key] = str(v, 200); continue; }
+      const before = overrides[fid];
+      if (v === null) delete overrides[fid];
+      else if (Array.isArray(v)) {
+        const item = f.source.startsWith("answer:") ? parentTpl?.sections.flatMap(x => x.items).find(i => i.id === f.source.slice(7)) : undefined;
+        const ok = new Set((item?.options || []).map(o => o.id));
+        overrides[fid] = [...new Set(v.map(String).filter(x => ok.has(x)))].slice(0, 20);
+      } else overrides[fid] = str(v, 300);
+      const show = (x: unknown) => Array.isArray(x)
+        ? x.map(id => parentTpl?.sections.flatMap(s2 => s2.items).flatMap(i => i.options || []).find(o => o.id === id)?.label || id).join(", ")
+        : String(x ?? "");
+      if (show(before) !== show(overrides[fid])) fieldChanges.push({ label: f.label, from: before === undefined ? "из анкеты" : show(before), to: overrides[fid] === undefined ? "из анкеты" : show(overrides[fid]) });
+    }
+    const patch: Record<string, unknown> = {};
+    const profileChanges = diffRows([
+      ["ФИО ученика", a.child.name, child.name], ["Дата рождения", a.child.birthDate, child.birthDate], ["Класс", a.child.grade, child.grade], ["Школа", a.child.school, child.school],
+      ["ФИО родителя", a.parent.name, parent.name], ["Телефон родителя", a.parent.phone, parent.phone],
+    ]);
+    if (profileChanges.length) {
+      const ch = sanitizeChild(child);
+      if (ch.name.split(/\s+/).filter(Boolean).length < 2) return fail(res, 400, "Укажите фамилию и имя ребёнка");
+      if (gradeOf(ch.grade) === null) return fail(res, 400, "Укажите класс");
+      patch.child = ch; patch.parent = sanitizeParent(parent);
+    }
+
+    const candidate: CandidateInfo = { ...base, ...(Object.keys(overrides).length ? { overrides } : {}), by: c.name, at: Date.now() };
+    await col(t, "applicants").doc(a.id).update({ ...patch, candidate, decision: null, updatedAt: Date.now() });
+    const label = (d: string | null | undefined) => form.decisions.find(x => x.id === d)?.label || "";
+    const changes = [...profileChanges, ...fieldChanges, ...diffRows([
+      ["Ответственный", prev?.responsible, candidate.responsible], ["Заключение", prev?.conclusion, candidate.conclusion],
+      ["Обратная связь", prev?.feedback, candidate.feedback], ["Обратная связь дана", !!prev?.feedbackGiven, candidate.feedbackGiven],
+      ["Решение", label(prev?.decision) || prev?.decisionLabel, candidate.decisionLabel],
+      ["Пробный период с", prev?.trialFrom, candidate.trialFrom], ["Пробный период по", prev?.trialTo, candidate.trialTo],
+      ["Класс (решение)", prev?.klass, candidate.klass], ["Повторное рассмотрение", prev?.reviewDate, candidate.reviewDate],
+      ["Родитель уведомлён", prev?.parentNotified ?? "", candidate.parentNotified ?? ""], ["Следующий контакт", prev?.nextContact, candidate.nextContact],
+    ])];
+    if (changes.length) await audit(t, a.id, c, "candidate", "анкета кандидата", changes);
     if ((prev?.decision || null) !== candidate.decision) {
       await audit(t, a.id, c, "decision", candidate.decision ? candidate.decisionLabel : "снято");
       if (candidate.decision) await notifyAdmission(t, a, "decision", c, { summary: candidate.decisionLabel });
     }
     if (!!prev?.feedbackGiven !== candidate.feedbackGiven) await audit(t, a.id, c, "feedback", candidate.feedbackGiven ? "дана — ученик видит результаты по QR" : "снята");
+    if (patch.child && (patch.child as any).grade !== a.child.grade) await syncReferral(t, { ...a, ...patch } as any, await loadTemplates(t));
     return res.json({ success: true, candidate });
   } catch (e: any) { return oops(res, e); }
 });

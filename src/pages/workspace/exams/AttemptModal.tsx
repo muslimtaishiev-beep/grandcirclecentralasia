@@ -10,6 +10,7 @@ import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui"
 import type { Api } from "./examApi";
 import { useAdmissionApi } from "../admissions/admissionApi";
 import { candidateDoc, latestTest, saveCandidate, testOfAttempt } from "../admissions/candidateForm";
+import CandidateSheetModal from "../admissions/CandidateSheetModal";
 import EmailResend from "../../../components/workspace/EmailResend";
 import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
 
@@ -33,6 +34,18 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
   const admApi = useAdmissionApi(exam.tenantId);
   /** Вступительный тест: вместо сертификата и отчёта по темам — анкета кандидата. */
   const admission = !!exam.settings.admission?.candidateForm;
+  /** Есть карточка поступающего и права на неё — окно анкеты (просмотр, правка, история); иначе — PDF из данных работы. */
+  const [sheetId, setSheetId] = useState<string | null>(null);
+  const openCandidate = async () => {
+    if (!a) return;
+    if (a.applicantId) {
+      setBusy("candidate");
+      const ok = await admApi(`/applicants/${a.applicantId}`).then(() => true).catch(() => false);
+      setBusy(null);
+      if (ok) { setSheetId(a.applicantId); return; }
+    }
+    await downloadCandidate();
+  };
   const downloadCandidate = async () => {
     if (!a) return;
     setBusy("candidate"); setError(null);
@@ -154,7 +167,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
             {a.status === "finished" && (a.published
               ? <button className={btn} disabled={!!busy} onClick={() => act("unpublish")}><EyeOff className="w-4 h-4" /> Снять публикацию</button>
               : <button className={btnPrimary} disabled={!!busy} onClick={() => act("publish")}><Eye className="w-4 h-4" /> Опубликовать</button>)}
-            {r && admission && <button className={btn} disabled={!!busy} onClick={downloadCandidate}>{busy === "candidate" ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />} Анкета кандидата</button>}
+            {r && admission && <button className={btn} disabled={!!busy} onClick={openCandidate}>{busy === "candidate" ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />} Анкета кандидата</button>}
             {r && !admission && s.results.certificate && printData && <button className={btn} onClick={() => openPrint(certificateHTML(printData)) || alert("Разрешите всплывающие окна")}><Award className="w-4 h-4" /> Сертификат</button>}
             {r && !admission && printData && <button className={btn} onClick={() => openPrint(reportHTML(printData)) || alert("Разрешите всплывающие окна")}><FileText className="w-4 h-4" /> Отчёт по темам</button>}
             {pr.enabled && <button className={btn} onClick={() => setDossier(true)}><ShieldAlert className="w-4 h-4" /> Досье прокторинга</button>}
@@ -252,6 +265,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
           loadSnapshots={async () => (await api(`/attempts/${attemptId}/evidence`)).snapshots}
           onClose={() => setDossier(false)} />
       )}
+      {sheetId && <CandidateSheetModal applicantId={sheetId} api={admApi} tenant={tenant} onClose={() => setSheetId(null)} onChanged={onChanged} />}
     </Modal>
   );
 }

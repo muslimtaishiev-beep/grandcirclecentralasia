@@ -44,6 +44,12 @@ export interface CandidateInfo {
   reviewDate: string;
   parentNotified: boolean | null;
   nextContact: string;
+  /**
+   * Правки администрации в «Сведениях об ученике» для полей не из карточки
+   * (ответы анкеты родителя, дата обращения, ответственный, телефон ученика):
+   * id поля анкеты → текст или выбранные варианты. Ответы родителя не меняются.
+   */
+  overrides?: Record<string, string | string[]>;
   by: string; at: number;
 }
 const LEGACY_DECISION: Record<Decision, { label: string; final: boolean }> = {

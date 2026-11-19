@@ -50,6 +50,47 @@ export function topicFeedback(topics: TestSummary["topics"], th: CandidateFormCo
 }
 
 type ParentForm = { template: QTemplate; answers?: QAnswers } | null | undefined;
+
+/** Поля «Сведений об ученике», которые показываются этому ребёнку (по классу и анкете родителя). */
+function visibleFields(cfg: CandidateFormConfig, g: number | null, items: QTemplate["sections"][number]["items"]) {
+  return cfg.fields
+    .filter(x => !x.grades?.length || (g !== null && x.grades.includes(g)))
+    .filter(x => !x.source.startsWith("answer:") || items.some(i => i.id === x.source.slice(7) && itemVisible(i, g)) || !items.length);
+}
+
+/** Поле анкеты для правки: откуда, что сейчас стоит, какие варианты. */
+export interface SheetField {
+  id: string; label: string; source: string; half?: boolean;
+  /** card — значение живёт в карточке (правка меняет карточку); иначе — правка поверх анкеты. */
+  card: boolean;
+  kind: "text" | "date" | "choice" | "multi";
+  overridden: boolean;
+  value: string;
+  options: { id: string; label: string; on: boolean }[];
+}
+const CARD_FIELDS = new Set(["child.name", "child.birthDate", "child.grade", "child.school", "parent.name", "parent.phone"]);
+
+/** Все заполняемые поля «Сведений об ученике» — из настроек анкеты организации, для любых будущих полей. */
+export function sheetFields(o: { form: CandidateFormConfig; applicant: Applicant; parentForm?: ParentForm; test: TestSummary | null }): SheetField[] {
+  const a = o.applicant;
+  const items = o.parentForm?.template.sections.flatMap(s => s.items) || [];
+  const doc = candidateDoc({ form: o.form, orgName: "", applicant: a, parentForm: o.parentForm, test: o.test });
+  const over = candidateOf(a)?.overrides || {};
+  return visibleFields(o.form, gradeOf(a.child.grade), items).map((f, i) => {
+    const shown = doc.fields[i];
+    const card = CARD_FIELDS.has(f.source);
+    const item = f.source.startsWith("answer:") ? items.find(x => x.id === f.source.slice(7)) : undefined;
+    const choice = item && (item.kind === "choice" || item.kind === "multi");
+    const raw = card ? String(f.source.startsWith("child.") ? (a.child as any)[f.source.slice(6)] ?? "" : (a.parent as any)[f.source.slice(7)] ?? "") : shown?.value || "";
+    return {
+      id: f.id, label: f.label, source: f.source, half: f.half, card,
+      kind: f.source === "child.birthDate" ? "date" : choice ? (item!.kind as "choice" | "multi") : "text",
+      overridden: over[f.id] !== undefined,
+      value: raw,
+      options: choice ? (item!.options || []).map((x, k) => ({ id: x.id, label: x.label, on: !!shown?.options?.[k]?.on })) : [],
+    };
+  });
+}
 const ru = (v: string) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(v).toLocaleDateString("ru-RU") : v);
 
 export function candidateDoc(o: {
@@ -92,6 +133,16 @@ export function candidateDoc(o: {
       default: return { value: "" };
     }
   };
+  // Правка администрации поверх анкеты родителя и других источников.
+  const withOverride = (fid: string, src: string): Pick<CandidateDoc["fields"][number], "value" | "options"> => {
+    const o = c?.overrides?.[fid];
+    if (o === undefined) return value(src);
+    if (Array.isArray(o)) {
+      const item = src.startsWith("answer:") ? items.find(i => i.id === src.slice(7)) : undefined;
+      return { value: "", options: (item?.options || []).map(x => ({ label: x.label, on: o.includes(x.id) })) };
+    }
+    return { value: ru(o) };
+  };
   const chosen = cfg.decisions.find(d => d.id === c?.decision);
   return {
     orgLine: cfg.orgLine || o.orgName,
@@ -99,10 +150,7 @@ export function candidateDoc(o: {
     refNo: a?.refNo ?? null,
     qrUrl: a?.tokens.referral ? linkUrl(a.tokens.referral) : null,
     photo: cfg.showPhoto !== false ? o.photo || null : null,
-    fields: cfg.fields
-      .filter(x => !x.grades?.length || (g !== null && x.grades.includes(g)))
-      .filter(x => !x.source.startsWith("answer:") || items.some(i => i.id === x.source.slice(7) && itemVisible(i, g)) || !items.length)
-      .map(x => ({ label: x.label, half: x.half, ...value(x.source) })),
+    fields: visibleFields(cfg, g, items).map(x => ({ label: x.label, half: x.half, ...withOverride(x.id, x.source) })),
     stages: cfg.showStages ? { consult: !!a && Object.values(a.stages).some(s => s.status === "done"), tested: !!t, feedback: !!c?.feedbackGiven } : null,
     levels: cfg.levels,
     subjects: (t?.sections || []).map(s => { const lv = subjectLevel(s, t!.parts, t!.levels); return { title: s.title, percent: s.percent, band: lv.band, own: lv.own }; }),

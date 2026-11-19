@@ -1,3 +1,4 @@
+import { applicantAudit } from "../server/applicantAudit.js";
 import { liveOnWrite } from "../server/live.js";
 import { notifyTested, syncAllReferrals } from "./admissionRoutes.js";
 import { Router } from "express";
@@ -23,6 +24,27 @@ const router = Router();
 // Изменения экзаменов и работ — открытые экраны (работы, поступающие) обновляются сами.
 router.use("/:tenantId/exams", liveOnWrite(["exams", "admissions"]));
 router.use("/:tenantId/attempts", liveOnWrite(["exams", "admissions"], /^\/([^/]+)/));
+// Действия с работой поступающего — в его историю.
+const ATTEMPT_ACTION: Record<string, string> = {
+  publish: "Результаты опубликованы", unpublish: "Публикация снята", annul: "Работа аннулирована", restore: "Работа восстановлена",
+  allow_retake: "Разрешена пересдача", finish: "Работа досдана менеджером", delete: "Работа удалена", decision: "Решение по работе", group: "Группа",
+};
+router.use("/:tenantId/attempts/:aid", async (req: any, res: any, next: any) => {
+  if (req.method !== "POST" || !/^[A-Za-z0-9_-]{2,80}$/.test(req.params.tenantId) || !/^[A-Za-z0-9_-]{4,64}$/.test(req.params.aid)) return next();
+  const t = req.params.tenantId;
+  const a = (await col(t, "exam_attempts").doc(req.params.aid).get().catch(() => null))?.data();
+  if (!a?.applicantId) return next();
+  const send = res.json.bind(res);
+  res.json = (body: any) => {
+    if (res.statusCode >= 400 || body?.success === false) return send(body);
+    const sub = String(req.path || "").split("/").pop();
+    const act = sub === "review" ? (req.body?.complete ? "Работа проверена" : "Проверка: изменены баллы") : ATTEMPT_ACTION[String(req.body?.action || "")] || String(req.body?.action || "Изменение работы");
+    const by = { uid: String(req.user?.uid || ""), name: String(req.user?.name || req.user?.email || "Сотрудник").slice(0, 120) };
+    void applicantAudit(t, String(a.applicantId), by, "attempt", [act, String(a.examTitle || "")].filter(Boolean).join(" · ")).finally(() => send(body));
+    return res;
+  };
+  next();
+});
 const db = () => admin.firestore();
 const col = (t: string, name: string) => db().collection("tenants").doc(t).collection(name);
 const str = (v: unknown, max = 200) => String(v ?? "").trim().slice(0, max);

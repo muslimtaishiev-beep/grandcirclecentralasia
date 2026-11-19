@@ -251,6 +251,17 @@ const scopeCss = (css: string, root: string) => css.replace(/@page\{[^}]*\}/, ""
 const scopedCss = (root: string) => CSS.replace(/@page\{[^}]*\}/, "").replace(/(^|\})\s*([^{}]+)\{/g, (_m, close: string, sel: string) =>
   `${close}${sel.split(",").map(x => x.trim()).map(x => (x === "body" ? root : `${root} ${x}`)).join(",")}{`);
 
+/**
+ * Лист для просмотра в окне: отдельный документ для <iframe srcdoc> (без
+ * скриптов) со своими стилями печати — выглядит как PDF. Данные экранируются
+ * при сборке; DOMPurify — второй рубеж.
+ */
+export function sheetDocument(sheets: string): string {
+  const body = DOMPurify.sanitize(sheets, { FORCE_BODY: true, ADD_TAGS: ["style"] });
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>${CSS.replace(/@page\{[^}]*\}/, "")}
+html,body{margin:0;background:#fff}body{width:186mm;padding:12mm;color:#111;line-height:1.35}td,th{line-height:1.3;padding:4px 6px 8px}p{margin:4px 0}</style></head><body>${body}</body></html>`;
+}
+
 /** Скачать листы файлом PDF (A4), без окна печати. */
 export async function downloadPdf(sheets: string, filename: string) {
   const html2pdf = (await import("html2pdf.js")).default as any;

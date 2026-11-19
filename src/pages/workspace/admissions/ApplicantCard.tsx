@@ -1,7 +1,7 @@
 import EmailResend from "../../../components/workspace/EmailResend";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLive } from "../../../lib/useLive";
-import { Camera, CheckCircle2, ClipboardList, Copy, Download, ExternalLink, Loader2, Lock, Pencil, Printer, QrCode, RefreshCw, Trash2 } from "lucide-react";
+import { Camera, CheckCircle2, ClipboardList, Copy, Download, ExternalLink, History, Loader2, Lock, Pencil, Printer, QrCode, RefreshCw, Trash2 } from "lucide-react";
 import FormFiller from "../../../components/admissions/FormFiller";
 import { STAGE_LABEL, stageOf, type Applicant, type CandidateInfo, type PaperResult } from "../../../shared/admissions";
 import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
@@ -13,7 +13,9 @@ import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui"
 import { TONE, type Api, type Me } from "./admissionApi";
 import { saveSessions, sessionsOf } from "./sessionPdf";
 import AttemptViewer from "../exams/AttemptViewer";
-import { candidateDoc, latestTest, saveCandidate, topicFeedback, type TestSummary } from "./candidateForm";
+import { latestTest, type TestSummary } from "./candidateForm";
+import CandidateSheetModal from "./CandidateSheetModal";
+import HistoryModal from "./HistoryModal";
 
 /**
  * Карточка поступающего. Вкладки — по правам: психолог открывает свою
@@ -29,11 +31,6 @@ interface Data {
   candidateForm: CandidateFormConfig | null;
 }
 const no = (n: number) => `№ ${String(n).padStart(4, "0")}`;
-const AUDIT: Record<string, string> = {
-  created: "Карточка создана", edited: "Изменена карточка", viewed: "Открыл анкеты с данными о здоровье", form_done: "Анкета завершена", form_reopened: "Анкета открыта для правки",
-  parent_form: "Родитель заполнил анкету", referral_manual: "Направление выдано вручную", referral_revoked: "Направление снято", paper_results: "Внесены результаты на бумаге", paper_deleted: "Удалены результаты на бумаге",
-  decision: "Решение", feedback: "Обратная связь", relink: "Перевыпущен QR", deleted: "Карточка удалена",
-};
 
 export default function ApplicantCard({ id, api, tenant, initialTab, section, autoQr, psychMode, onClose, onChanged }: {
   id: string; api: Api; tenant: any; initialTab?: string; section?: string;
@@ -44,6 +41,8 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
   onClose: () => void; onChanged: () => void;
 }) {
   const [qr, setQr] = useState<null | "referral" | "parent">(null);
+  const [sheet, setSheet] = useState<null | { edit?: boolean }>(null);
+  const [history, setHistory] = useState(false);
   const autoShown = useRef(false);
   const [d, setD] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -99,21 +98,11 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
     ...(parentTpl && d.me.admission ? [["parent", "Анкета родителя"] as [string, string]] : []),
     ...staffTemplates.map(t => [t.id, t.title] as [string, string]),
     ...(d.me.academic ? [["test", "Тест и решение"] as [string, string]] : []),
-    ...(d.me.admission ? [["history", "История"] as [string, string]] : []),
   ];
   const mark = tenantLogos(tenant).markUrl;
   const printParent = () => print(() => parentHTML(org, child, { parentToken: a.tokens.parent, cardToken: a.tokens.card, template: parentForm?.template || parentTpl! }));
   const changed = async () => { await load(); onChanged(); };
   const sessions = sessionsOf(d.forms);
-  const downloadCandidate = async () => {
-    setSaving(true);
-    try {
-      const form = d.candidateForm || NEUTRAL_CANDIDATE_FORM;
-      const photo = form.showPhoto !== false ? await api(`/applicants/${a.id}/photo`).then(j => j.photo as string | null).catch(() => null) : null;
-      await saveCandidate(org, candidateDoc({ form, orgName: org.name, applicant: a, parentForm: parentForm?.full ? parentForm : null, test: latestTest(d.attempts), photo }), a.child.name);
-    }
-    catch (e: any) { alert(e.message); } finally { setSaving(false); }
-  };
   const downloadSession = async () => {
     setSaving(true);
     try { await saveSessions(org, a, sessions); } catch (e: any) { alert(e.message); } finally { setSaving(false); }
@@ -127,7 +116,8 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
           <span className="text-[var(--text-muted)]">{STAGE_LABEL[stageOf(a, d.attempts[0] || null)]}</span>
           {mainStage && <span className={`px-2 py-0.5 rounded text-xs font-medium ${mainStage.tone ? TONE[mainStage.tone] : ""}`}>{mainStage.outcomeLabel}</span>}
           <div className="ml-auto flex flex-wrap gap-1.5">
-            {d.me.academic && <button className={btn} disabled={saving} onClick={downloadCandidate}><ClipboardList className="w-4 h-4" /> Анкета кандидата</button>}
+            {d.me.academic && <button className={btn} onClick={() => setSheet({})}><ClipboardList className="w-4 h-4" /> Анкета кандидата</button>}
+            {d.me.admission && <button className={btn} onClick={() => setHistory(true)}><History className="w-4 h-4" /> История</button>}
             {sessions.length > 0 && <button className={btn} disabled={saving} onClick={downloadSession}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Бланк сессии</button>}
             {d.me.admission && printReferral && <button className={btnPrimary} onClick={() => setQr("referral")}><QrCode className="w-4 h-4" /> Направление</button>}
             {d.me.admission && parentTpl && a.tokens.parent && <button className={btn} onClick={() => setQr("parent")}><QrCode className="w-4 h-4" /> Анкета родителю</button>}
@@ -162,14 +152,10 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
             onPrintBlank={() => print(() => staffBlankHTML(org, child, { cardToken: a.tokens.card, template: t, grade }))}
             onPrintSheets={() => attachmentsFor(t, grade).filter(m => m.kind === "sheet").forEach(m => void print(() => sheetHTML(org, child, { cardToken: a.tokens.card, attachment: m, templateId: t.id })))} />
         ))}
-        {tab === "test" && d.me.academic && <TestTab a={a} d={d} api={api} tenant={tenant} onSaved={changed} onDownload={downloadCandidate} />}
-        {tab === "history" && (
-          <ul className="text-sm divide-y divide-[var(--border-color)]">
-            {d.audit.map((x: any, k: number) => <li key={k} className="py-2 flex gap-3"><span className="text-[var(--text-muted)] tabular-nums whitespace-nowrap">{new Date(x.at).toLocaleString("ru-RU")}</span><span className="flex-1"><b className="font-medium">{x.byName}</b> — {AUDIT[x.action] || x.action}{x.detail ? `: ${x.detail}` : ""}</span></li>)}
-            {!d.audit.length && <li className="py-4 text-[var(--text-muted)]">Пока пусто</li>}
-          </ul>
-        )}
+        {tab === "test" && d.me.academic && <TestTab a={a} d={d} api={api} tenant={tenant} onSaved={changed} onOpenSheet={() => setSheet({ edit: d.me.admission })} />}
       </div>
+      {sheet && <CandidateSheetModal applicantId={a.id} api={api} tenant={tenant} startEditing={sheet.edit} onClose={() => setSheet(null)} onChanged={changed} />}
+      {history && <HistoryModal entries={d.audit} onClose={() => setHistory(false)} />}
     </Modal>
   );
 }
@@ -330,7 +316,7 @@ function FormTab({ api, a, tpl, form, canFill, canSee, grade, onSaved, onMateria
   );
 }
 
-function TestTab({ a, d, api, tenant, onSaved, onDownload }: { a: Applicant; d: Data; api: Api; tenant: any; onSaved: () => void; onDownload: () => void }) {
+function TestTab({ a, d, api, tenant, onSaved, onOpenSheet }: { a: Applicant; d: Data; api: Api; tenant: any; onSaved: () => void; onOpenSheet: () => void }) {
   const [reason, setReason] = useState("");
   const [result, setResult] = useState<{ id: string; examId: string } | null>(null);
   const [paper, setPaper] = useState<PaperResult | null>(null);
@@ -383,8 +369,7 @@ function TestTab({ a, d, api, tenant, onSaved, onDownload }: { a: Applicant; d: 
         {canManage && !d.testExam && <button className={btn} onClick={() => setPaper({ id: "", title: "Тест на бумаге", rows: [{ subject: "", score: null, max: null }], comment: "", at: 0, byName: "" })}>Внести результаты на бумаге</button>}
       </section>
 
-      <CandidateEditor a={a} me={d.me} test={test} cfg={d.candidateForm || NEUTRAL_CANDIDATE_FORM} canManage={canManage} onDownload={onDownload}
-        onSave={c => act(() => api(`/applicants/${a.id}/candidate`, { method: "PUT", body: JSON.stringify(c) }))} />
+      <CandidateSummary a={a} cfg={d.candidateForm || NEUTRAL_CANDIDATE_FORM} canManage={canManage} onOpen={onOpenSheet} />
 
       {result && <AttemptViewer tenant={tenant} attemptId={result.id} examId={result.examId} onClose={() => setResult(null)} onChanged={onSaved} />}
       {paper && <PaperModal p={paper} onClose={() => setPaper(null)} onSave={async x => { await api(`/applicants/${a.id}/paper`, { method: "POST", body: JSON.stringify(x) }); setPaper(null); onSaved(); }} />}
@@ -445,64 +430,22 @@ function PaperTestForm({ exam, prev, onSave }: { exam: TestExam; prev: TestSumma
   );
 }
 
-type CandidateDraft = Omit<CandidateInfo, "by" | "at" | "decisionLabel" | "decisionFinal">;
-/** Заключение, обратная связь, решение и условия — поля и варианты из анкеты кандидата организации. */
-function CandidateEditor({ a, me, test, cfg, canManage, onSave, onDownload }: {
-  a: Applicant; me: Me; test: TestSummary | null; cfg: CandidateFormConfig; canManage: boolean;
-  onSave: (c: CandidateDraft) => Promise<void>; onDownload: () => void;
-}) {
+/** Анкета кандидата — коротко: решение, заключение, обратная связь. Правка — в окне листа. */
+function CandidateSummary({ a, cfg, canManage, onOpen }: { a: Applicant; cfg: CandidateFormConfig; canManage: boolean; onOpen: () => void }) {
   const c = a.candidate;
-  const [f, setF] = useState<CandidateDraft>(() => ({
-    responsible: c?.responsible || me.name || "", conclusion: c?.conclusion || "", feedback: c?.feedback || "", feedbackGiven: !!c?.feedbackGiven,
-    decision: c?.decision || null, trialFrom: c?.trialFrom || "", trialTo: c?.trialTo || "", klass: c?.klass || a.child.grade || "",
-    reviewDate: c?.reviewDate || "", parentNotified: c?.parentNotified ?? null, nextContact: c?.nextContact || "",
-  }));
-  const [busy, setBusy] = useState(false);
-  const set = (p: Partial<typeof f>) => setF(x => ({ ...x, ...p }));
-  const auto = test ? topicFeedback(test.topics, cfg.topics) : "";
-  const trial = !!cfg.decisions.find(x => x.id === f.decision)?.trial;
-  const chip = (on: boolean) => `px-3 py-1.5 rounded-full text-sm font-medium border ${on ? "bg-[var(--accent)] border-[var(--accent)] text-white" : "border-[var(--border-color)] text-[var(--text-main)]"}`;
+  const decision = cfg.decisions.find(x => x.id === c?.decision)?.label || c?.decisionLabel || "";
   return (
-    <section className="space-y-3">
+    <section className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="font-bold text-[var(--text-main)]">Анкета кандидата</h3>
-        <button className={`${btn} ml-auto`} onClick={onDownload}><Download className="w-4 h-4" /> PDF</button>
+        <button className={`${canManage ? btnPrimary : btn} ml-auto`} onClick={onOpen}><ClipboardList className="w-4 h-4" /> {canManage ? "Открыть и редактировать" : "Открыть"}</button>
       </div>
-      <fieldset disabled={!canManage} className="space-y-3">
-        <div className="grid sm:grid-cols-2 gap-3">
-          <div><span className={label}>Ответственный</span><input className={input} value={f.responsible} onChange={e => set({ responsible: e.target.value })} /></div>
-          <div><span className={label}>Общий результат / заключение</span><input className={input} value={f.conclusion} onChange={e => set({ conclusion: e.target.value })} placeholder={test ? test.parts.map(p => `${p.title}: ${p.value}`).join(", ") || `${test.percent ?? ""}%` : ""} /></div>
-        </div>
-        <div>
-          <div className="flex items-end justify-between gap-2">
-            <span className={label}>Обратная связь родителю / подробное примечание</span>
-            {auto && <button type="button" className="text-xs text-[var(--accent)] hover:underline mb-1" onClick={() => set({ feedback: f.feedback ? `${f.feedback}\n${auto}` : auto })}>Из разбора по темам</button>}
-          </div>
-          <textarea rows={4} className={input} value={f.feedback} onChange={e => set({ feedback: e.target.value })} placeholder={auto || cfg.feedbackHint} />
-        </div>
-        <label className="flex items-center gap-2 text-sm text-[var(--text-main)]"><input type="checkbox" checked={f.feedbackGiven} onChange={e => set({ feedbackGiven: e.target.checked })} /> Обратная связь дана — ученик видит результаты по QR</label>
-        <div>
-          <span className={label}>Решение по кандидату</span>
-          <div className="flex flex-wrap gap-1.5">{cfg.decisions.map(v => <button key={v.id} type="button" className={chip(f.decision === v.id)} onClick={() => set({ decision: f.decision === v.id ? null : v.id })}>{v.label}</button>)}</div>
-        </div>
-        <div className="grid sm:grid-cols-4 gap-3">
-          {trial && <>
-            <div><span className={label}>Пробный период с</span><input type="date" className={input} value={f.trialFrom} onChange={e => set({ trialFrom: e.target.value })} /></div>
-            <div><span className={label}>по</span><input type="date" className={input} value={f.trialTo} onChange={e => set({ trialTo: e.target.value })} /></div>
-          </>}
-          {cfg.extras.klass && <div><span className={label}>Класс</span><input className={input} value={f.klass} onChange={e => set({ klass: e.target.value })} /></div>}
-          {cfg.extras.reviewDate && <div><span className={label}>Повторное рассмотрение</span><input type="date" className={input} value={f.reviewDate} onChange={e => set({ reviewDate: e.target.value })} /></div>}
-        </div>
-        <div className="grid sm:grid-cols-2 gap-3">
-          {cfg.extras.parentNotified && <div>
-            <span className={label}>Родитель уведомлён об условиях</span>
-            <div className="flex gap-1.5">{([[true, "Да"], [false, "Нет"]] as const).map(([v, l]) => <button key={l} type="button" className={chip(f.parentNotified === v)} onClick={() => set({ parentNotified: f.parentNotified === v ? null : v })}>{l}</button>)}</div>
-          </div>}
-          {cfg.extras.nextContact && <div><span className={label}>Следующий контакт</span><input className={input} value={f.nextContact} onChange={e => set({ nextContact: e.target.value })} /></div>}
-        </div>
-        {canManage && <button className={btnPrimary} disabled={busy} onClick={async () => { setBusy(true); try { await onSave(f); } finally { setBusy(false); } }}>{busy && <Loader2 className="w-4 h-4 animate-spin" />} Сохранить анкету</button>}
-        {c?.at ? <span className="ml-3 text-xs text-[var(--text-muted)]">{c.by} · {new Date(c.at).toLocaleString("ru-RU")}</span> : null}
-      </fieldset>
+      <dl className="grid sm:grid-cols-3 gap-2 text-sm">
+        <div className="rounded-xl border border-[var(--border-color)] p-2.5"><dt className="text-[11px] text-[var(--text-muted)]">Решение</dt><dd className="font-semibold text-[var(--text-main)]">{decision || "—"}</dd></div>
+        <div className="rounded-xl border border-[var(--border-color)] p-2.5"><dt className="text-[11px] text-[var(--text-muted)]">Заключение</dt><dd className="text-[var(--text-main)] truncate">{c?.conclusion || "—"}</dd></div>
+        <div className="rounded-xl border border-[var(--border-color)] p-2.5"><dt className="text-[11px] text-[var(--text-muted)]">Обратная связь</dt><dd className="text-[var(--text-main)]">{c?.feedbackGiven ? "дана" : "не дана"}</dd></div>
+      </dl>
+      {c?.at ? <div className="text-xs text-[var(--text-muted)]">{c.by} · {new Date(c.at).toLocaleString("ru-RU")}</div> : null}
     </section>
   );
 }
