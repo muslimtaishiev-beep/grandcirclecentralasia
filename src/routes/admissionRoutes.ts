@@ -1483,15 +1483,15 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
     const prev = fsnap.docs.map(d => d.data() as ApplicantForm).find(f => f.template.audience === "parent");
     const tpl = prev?.template || templates.find(x => x.audience === "parent" && !x.archived);
     if (!tpl) return fail(res, 404, "Анкета для родителей не настроена");
-    const locked = Object.values(a.stages).some(s => s.status === "done");
+    // Закрыта только отправленная анкета: до отправки родитель доделывает её в любое время — и после встречи, и после теста.
+    const locked = prev?.status === "done";
     const prefill: QAnswers = {};
     for (const i of tpl.sections.flatMap(s => s.items)) {
       if (!i.bind) continue;
       const [k, f] = i.bind.split(".") as ["child" | "parent", string];
       const v = (a as any)[k]?.[f]; if (v) prefill[i.id] = { value: String(v) };
     }
-    // После встречи со специалистом ответы зафиксированы — по ссылке (её могли
-    // переслать или сфотографировать) их больше не показываем, только статус.
+    // Отправленные ответы по ссылке (её могли переслать или сфотографировать) не показываем — только статус.
     return res.json({
       success: true, mode: "parent", org, signedIn, locked, template: locked ? { ...tpl, sections: [] } : tpl,
       answers: locked ? {} : { ...prefill, ...(prev?.answers || {}) }, done: prev?.status === "done", grade: a.child.grade,
@@ -1499,23 +1499,49 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
   } catch (e: any) { return oops(res, e); }
 });
 
-/** Родитель заполнил анкету по своей ссылке. Править можно, пока специалист не завершил диагностику. */
+/** Анкета родителя по ссылке: найти её запись и шаблон; отправленная — закрыта. */
+async function parentFormFor(token: string, res: any) {
+  const l = await resolveLink(token);
+  if (!l || l.purpose !== "parent") { fail(res, 404, "Ссылка не найдена или уже заменена новой"); return null; }
+  const gate = await checkTenantOpen(l.tenantId, "admissions");
+  if (!gate.ok) { fail(res, gate.status || 403, gate.error || "Недоступно"); return null; }
+  const a = l.applicant; const t = l.tenantId;
+  if (a.archived) { fail(res, 404, "Ссылка не найдена или уже заменена новой"); return null; }
+  const templates = await loadTemplates(t);
+  const existing = (await col(t, "applicant_forms").where("applicantId", "==", a.id).get()).docs
+    .map(d => ({ ref: d.ref, data: d.data() as ApplicantForm })).find(f => f.data.template?.audience === "parent");
+  const fref = existing?.ref || col(t, "applicant_forms").doc(`${a.id}_${(templates.find(x => x.audience === "parent" && !x.archived) || { id: "" }).id}`);
+  const prev = existing?.data || null;
+  const tpl = prev?.template || templates.find(x => x.audience === "parent" && !x.archived);
+  if (!tpl) { fail(res, 404, "Анкета для родителей не настроена"); return null; }
+  if (prev?.status === "done") { fail(res, 409, "Анкета уже отправлена — изменить ответы можно через приёмную"); return null; }
+  return { a, t, fref, prev, tpl };
+}
+
+/** Черновик анкеты родителя: сохраняется по ходу заполнения (после согласия), без проверки обязательных полей. */
+router.post("/link/:token/parent/draft", async (req: any, res: any) => {
+  try {
+    if (req.body?.consent !== true) return fail(res, 400, "Нужно согласие на обработку данных");
+    const p = await parentFormFor(String(req.params.token), res);
+    if (!p) return;
+    const { a, fref, prev, tpl } = p;
+    const now = Date.now();
+    const answers = sanitizeAnswers(tpl, req.body?.answers);
+    await fref.set(deep({
+      id: fref.id, applicantId: a.id, templateId: tpl.id, template: tpl, grade: gradeOf(a.child.grade), answers, outcome: null, status: "draft",
+      filledBy: { kind: "parent", name: "Родитель" }, createdAt: prev?.createdAt || now, updatedAt: now,
+    }), { merge: true });
+    return res.json({ success: true, savedAt: now });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** Родитель отправил анкету по своей ссылке. Отправить можно, пока анкета не отправлена — и после встречи, и после теста. */
 router.post("/link/:token/parent", async (req: any, res: any) => {
   try {
-    const l = await resolveLink(String(req.params.token));
-    if (!l || l.purpose !== "parent") return fail(res, 404, "Ссылка не найдена или уже заменена новой");
-    const gate = await checkTenantOpen(l.tenantId, "admissions");
-    if (!gate.ok) return fail(res, gate.status || 403, gate.error || "Недоступно");
-    const a = l.applicant; const t = l.tenantId;
-    if (a.archived) return fail(res, 404, "Ссылка не найдена или уже заменена новой");
-    if (Object.values(a.stages).some(s => s.status === "done")) return fail(res, 409, "Встреча со специалистом уже прошла — изменить ответы можно через приёмную");
     if (req.body?.consent !== true) return fail(res, 400, "Нужно согласие на обработку данных");
-    const templates = await loadTemplates(t);
-    const fref = col(t, "applicant_forms").doc(`${a.id}_${(templates.find(x => x.audience === "parent" && !x.archived) || { id: "" }).id}`);
-    const fsnap = await fref.get();
-    const prev = fsnap.exists ? (fsnap.data() as ApplicantForm) : null;
-    const tpl = prev?.template || templates.find(x => x.audience === "parent" && !x.archived);
-    if (!tpl) return fail(res, 404, "Анкета для родителей не настроена");
+    const p = await parentFormFor(String(req.params.token), res);
+    if (!p) return;
+    const { a, t, fref, prev, tpl } = p;
     // Ответы скрытых условием пунктов не хранятся и не попадают в карточку.
     const answers = dropHidden(tpl, sanitizeAnswers(tpl, req.body?.answers), gradeOf(a.child.grade));
     const miss = missingFor(tpl, answers, gradeOf(a.child.grade), null);

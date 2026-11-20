@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../../lib/firebase";
@@ -112,12 +112,30 @@ export default function AdmissionLink() {
 }
 
 function ParentForm({ info, token, staffBar }: { info: Extract<Info, { mode: "parent" }>; token: string; staffBar: React.ReactNode }) {
-  const [answers, setAnswers] = useState<QAnswers>(info.answers);
+  // Черновик: сразу в браузере, после согласия — и на сервере (доделать можно с другого устройства).
+  const key = `sf_parent_draft_${token}`;
+  const [answers, setAnswers] = useState<QAnswers>(() => {
+    try { const v = localStorage.getItem(key); if (v) return { ...info.answers, ...JSON.parse(v) }; } catch { /* нет хранилища */ }
+    return info.answers;
+  });
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [saved, setSaved] = useState<number | null>(null);
   const g = gradeOf(info.grade);
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    if (info.locked || done) return;
+    try { localStorage.setItem(key, JSON.stringify(answers)); } catch { /* нет хранилища */ }
+    if (!consent) return;
+    const t = setTimeout(() => {
+      fetch(`/api/admissions/link/${encodeURIComponent(token)}/parent/draft`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers, consent }) })
+        .then(r => r.json()).then(j => { if (j?.success) setSaved(j.savedAt); }).catch(() => { /* сохранится при следующей правке */ });
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [answers, consent]); // eslint-disable-line react-hooks/exhaustive-deps
   const submit = async () => {
     const miss = missingFor(info.template, answers, g, null);
     if (miss.length) { setError(`Заполните: ${miss.slice(0, 4).join(", ")}`); return; }
@@ -126,11 +144,12 @@ function ParentForm({ info, token, staffBar }: { info: Extract<Info, { mode: "pa
       const r = await fetch(`/api/admissions/link/${encodeURIComponent(token)}/parent`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers, consent }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.success) { setError(j.error || "Не получилось отправить"); return; }
+      try { localStorage.removeItem(key); } catch { /* нет хранилища */ }
       setDone(true); window.scrollTo({ top: 0 });
     } catch { setError("Нет связи — попробуйте ещё раз"); } finally { setBusy(false); }
   };
   if (done) return (
-    <Shell org={info.org}><div className="bg-white rounded-2xl border border-slate-200 p-8 text-center space-y-2"><div className="text-5xl">✅</div><h1 className="text-xl font-bold">Спасибо! Анкета отправлена</h1><p className="text-sm text-slate-500">Специалист увидит ваши ответы перед встречей. До встречи ответы можно поправить по этой же ссылке.</p></div></Shell>
+    <Shell org={info.org}><div className="bg-white rounded-2xl border border-slate-200 p-8 text-center space-y-2"><div className="text-5xl">✅</div><h1 className="text-xl font-bold">Спасибо! Анкета отправлена</h1><p className="text-sm text-slate-500">Изменить ответы можно через приёмную.</p></div></Shell>
   );
   return (
     <Shell org={info.org} wide>
@@ -138,8 +157,7 @@ function ParentForm({ info, token, staffBar }: { info: Extract<Info, { mode: "pa
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{info.template.title}</h1>
           {info.template.description && <p className="text-sm text-slate-600 mt-1">{info.template.description}</p>}
-          {info.done && !info.locked && <p className="text-sm text-emerald-700 mt-2">Анкета уже отправлена — можно поправить ответы и отправить снова.</p>}
-          {info.locked && <p className="text-sm text-amber-700 mt-2">Встреча со специалистом уже прошла — ответы зафиксированы. Изменить их можно через приёмную.</p>}
+          {info.locked && <p className="text-sm text-emerald-700 mt-2">Анкета отправлена. Изменить ответы можно через приёмную.</p>}
         </div>
         {!info.locked && <FormFiller template={info.template} grade={g} answers={answers} onChange={setAnswers} />}
         {!info.locked && (
@@ -150,6 +168,7 @@ function ParentForm({ info, token, staffBar }: { info: Extract<Info, { mode: "pa
             </label>
             {error && <div className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{error}</div>}
             <button className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-40" disabled={busy || !consent} onClick={submit}>{busy ? "Отправляем…" : "Отправить анкету"}</button>
+            {saved && <p className="text-xs text-slate-400 text-center">Черновик сохранён {new Date(saved).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</p>}
           </>
         )}
       </div>
