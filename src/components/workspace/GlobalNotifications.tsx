@@ -34,10 +34,12 @@ export default function GlobalNotifications({ tenant }: { tenant?: { id: string 
   const unreadCount = notifications.filter(n => !n.read).length;
 
   // Непрочитанные — числом во вкладке браузера: видно, даже когда открыта другая вкладка.
+  // Во вкладке — название организации, а не заголовок публичного сайта.
+  const orgTitle = String((activeTenant as any)?.name || '');
   useEffect(() => {
-    const strip = (t: string) => t.replace(/^\(\d+\) /, '');
-    document.title = unreadCount ? `(${unreadCount}) ${strip(document.title)}` : strip(document.title);
-  }, [unreadCount]);
+    const base = orgTitle && orgTitle !== activeTenant?.id ? orgTitle : 'Кабинет';
+    document.title = unreadCount ? `(${unreadCount}) ${base}` : base;
+  }, [unreadCount, orgTitle, activeTenant?.id]);
   
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
