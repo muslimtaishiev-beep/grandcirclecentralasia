@@ -12,6 +12,10 @@ import { db } from '../../../../lib/firebase';
 import { cleanDocHtml } from '../../../../lib/docHtml';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { DocBlock, DocAccessLevel, UserDocRole, WorkspaceDocument } from '../../../../types/collab';
+import type { DocumentTemplate } from '../../../../types/engine';
+import { DocumentTemplateService } from '../../../../services/tenant/DocumentTemplateService';
+import { fillTemplateVars, templateHtmlToBlocks } from '../../../../services/collab/templateBlocks';
+import { confirmDialog, toast } from '../../../../components/ui';
 
 interface Props {
   /** Реквизиты организации: шаблоны, печать, логотип. */
@@ -24,6 +28,10 @@ interface Props {
   onExport: (format?: 'pdf' | 'markdown') => void;
   onDeleteDoc: () => void;
   saving: boolean;
+  /** Последняя запись не удалась — текст остаётся на экране и уйдёт повторно. */
+  saveError?: string | null;
+  canEdit: boolean;
+  canDelete: boolean;
   selectedFont: string;
   setSelectedFont: (font: string) => void;
   fontSize: number;
@@ -53,6 +61,9 @@ export default function DocEditorToolbar({
   onExport, 
   onDeleteDoc,
   saving,
+  saveError,
+  canEdit,
+  canDelete,
   selectedFont,
   setSelectedFont,
   fontSize,
@@ -114,47 +125,25 @@ export default function DocEditorToolbar({
   useEffect(() => {
     if (!showShareModal || !currentDoc.tenantId) return;
 
+    // Только сотрудники организации с действующим доступом: ни клиентов CRM, ни выдуманных людей.
     const qMembers = query(collection(db, 'memberships'), where('tenantId', '==', currentDoc.tenantId));
-    const qContacts = query(collection(db, 'crm_contacts'), where('tenantId', '==', currentDoc.tenantId));
-
     const unsubMembers = onSnapshot(qMembers, (snap1) => {
       const list: Array<{ id: string; name: string; email: string }> = [];
-      
       snap1.forEach(d => {
         const data = d.data();
-        const uid = data.userId || data.uid || d.id;
-        list.push({ 
-          id: uid, 
-          name: data.fullName || data.name || data.email?.split('@')[0] || 'Сотрудник ' + uid.substring(0, 4), 
-          email: data.email || (data.role ? `Роль: ${data.role}` : '') 
+        if (data.status && data.status !== 'active') return;
+        const uid = data.userId;
+        if (!uid || list.some(x => x.id === uid)) return;
+        const email = data.userEmail || data.email || '';
+        list.push({
+          id: uid,
+          name: data.displayName || data.userName || data.fullName || data.name || (email ? email.split('@')[0] : 'Сотрудник'),
+          email
         });
       });
-
-      onSnapshot(qContacts, (snap2) => {
-        snap2.forEach(d => {
-          const data = d.data();
-          if (!list.some(item => item.id === d.id)) {
-            list.push({ 
-              id: d.id, 
-              name: data.fullName || data.name || 'Контакты CRM', 
-              email: data.email || data.phone || '' 
-            });
-          }
-        });
-
-        // Fallback list if DB is currently empty for demo/testing
-        if (list.length === 0) {
-          list.push(
-            { id: 'staff_mgr_1', name: 'Мария Ковалева (Менеджер)', email: 'manager@academy.edu' },
-            { id: 'staff_teacher_2', name: 'Иван Сергеев (Преподаватель)', email: 'teacher@academy.edu' },
-            { id: 'staff_curator_3', name: 'Елена Соколова (Куратор)', email: 'curator@academy.edu' }
-          );
-        }
-
-        setStaffList(list);
-        if (list.length > 0 && !selectedStaffId) setSelectedStaffId(list[0].id);
-      });
-    });
+      setStaffList(list);
+      setSelectedStaffId(prev => prev || list[0]?.id || '');
+    }, () => setStaffList([]));
 
     return () => unsubMembers();
   }, [showShareModal, currentDoc.tenantId]);
@@ -211,25 +200,40 @@ export default function DocEditorToolbar({
       : stampType === 'signature' ? legal?.signatureUrl
       : legal?.cornerStampUrl;
     if (!url) {
-      alert('Этот файл ещё не загружен. Добавьте его в «Настройка воркспейса → Реквизиты».');
+      toast.error('Файл не загружен. Добавьте его в «Настройка воркспейса → Реквизиты»');
       return;
     }
     execFormat('insertImage', url);
   };
 
+  // Фото с телефона — это мегабайты; документ в базе ограничен 1 МБ, поэтому
+  // картинку уменьшаем и пережимаем, а слишком большую не вставляем.
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      if (dataUrl) {
-        execFormat('insertImage', dataUrl);
-      }
+    reader.onerror = () => toast.error('Не удалось прочитать файл');
+    reader.onload = () => {
+      const img = new window.Image();
+      img.onerror = () => toast.error('Это не изображение');
+      img.onload = () => {
+        const k = Math.min(1, 1000 / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * k));
+        c.height = Math.max(1, Math.round(img.height * k));
+        const ctx = c.getContext('2d');
+        if (!ctx) return;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        const url = c.toDataURL('image/jpeg', 0.7);
+        if (url.length > 400_000) { toast.error('Изображение слишком большое'); return; }
+        execFormat('insertImage', url);
+      };
+      img.src = String(reader.result);
     };
     reader.readAsDataURL(file);
-    e.target.value = '';
   };
 
   const handleInsertLink = () => {
@@ -238,62 +242,86 @@ export default function DocEditorToolbar({
     execFormat('createLink', url);
   };
 
-  const handleInsertImagePrompt = () => {
-    const choice = window.confirm("Нажмите ОК чтобы выбрать фото с компьютера, или Отмена чтобы ввести URL интернет-картинки.");
-    if (choice) {
-      fileInputRef.current?.click();
-    } else {
-      const url = window.prompt("Введите URL изображения:", "https://images.unsplash.com/photo-1542435503-956c469947f6?w=800");
-      if (url) execFormat('insertImage', url);
-    }
+  const handleInsertImagePrompt = () => fileInputRef.current?.click();
+
+  // Шаблоны организации (Настройки → Шаблоны документов)
+  const [orgTemplates, setOrgTemplates] = useState<DocumentTemplate[]>([]);
+  const [tplLoading, setTplLoading] = useState(false);
+  const [pickedTpl, setPickedTpl] = useState<DocumentTemplate | null>(null);
+  const [tplValues, setTplValues] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!showTemplatesModal || !currentDoc.tenantId) return;
+    let alive = true;
+    setTplLoading(true);
+    DocumentTemplateService.getTemplates(currentDoc.tenantId)
+      .then(list => { if (alive) setOrgTemplates(list); })
+      .finally(() => { if (alive) setTplLoading(false); });
+    return () => { alive = false; };
+  }, [showTemplatesModal, currentDoc.tenantId]);
+
+  const hasContent = () => (docBlocks || []).some(b => b.type === 'image' || b.type === 'divider' || (b.content || '').replace(/<[^>]*>/g, '').trim());
+  const confirmReplace = async () => !hasContent() || confirmDialog({ title: 'Шаблон заменит текст документа', message: 'Отменить можно через «Отменить».', confirmLabel: 'Заменить', danger: true });
+
+  const applyOrgTemplate = async (t: DocumentTemplate, values: Record<string, string>) => {
+    if (!(await confirmReplace())) return;
+    setShowTemplatesModal(false);
+    setPickedTpl(null);
+    onUpdateTitle(t.name);
+    onLoadTemplate(templateHtmlToBlocks(fillTemplateVars(t.htmlContent, values)));
   };
 
-  // Corporate Document Templates Generator
-  const applyTemplate = (type: 'order' | 'certificate' | 'contract' | 'protocol') => {
-    const hasContent = (docBlocks || []).some(b => b.type === 'image' || b.type === 'divider' || (b.content || '').replace(/<[^>]*>/g, '').trim());
-    if (hasContent && !window.confirm('Шаблон заменит весь текст документа. Продолжить?')) return;
+  const pickTemplate = (t: DocumentTemplate) => {
+    if (t.variables?.length) { setTplValues({}); setPickedTpl(t); } else void applyOrgTemplate(t, {});
+  };
+
+  // Встроенные шаблоны: реквизиты — из настроек организации, остальное — пустые поля.
+  const applyTemplate = async (type: 'order' | 'certificate' | 'contract') => {
+    if (!(await confirmReplace())) return;
     const nowStr = new Date().toLocaleDateString('ru-RU');
+    const orgTitle = (legal?.legalName || orgName).toUpperCase();
+    const city = legal?.city ? `г. ${legal.city}` : '';
+    const blank = '__________';
+    const stamp = legal?.stampUrl ? [{ id: 'st', type: 'image' as const, imageUrl: legal.stampUrl, content: legal.stampUrl }] : [];
     setShowTemplatesModal(false);
 
     if (type === 'order') {
-      onUpdateTitle("Официальный Приказ организации № " + Math.floor(100 + Math.random() * 900));
+      onUpdateTitle('Приказ № ' + blank);
       onLoadTemplate([
-        { id: '1', type: 'heading_1', content: 'ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ', align: 'center', isBold: true },
-        { id: '2', type: 'heading_2', content: 'ПРИКАЗ № ' + Math.floor(100 + Math.random() * 900), align: 'center', isBold: true },
-        { id: '3', type: 'paragraph', content: `<b>г. Бишкек</b> <span style="float:right;"><b>Дата: ${nowStr} г.</b></span>` },
+        { id: '1', type: 'heading_1', content: orgTitle, align: 'center', isBold: true },
+        { id: '2', type: 'heading_2', content: 'ПРИКАЗ № ' + blank, align: 'center', isBold: true },
+        { id: '3', type: 'paragraph', content: `<b>${city}</b> <span style="float:right;"><b>Дата: ${nowStr} г.</b></span>` },
         { id: '4', type: 'divider', content: '' },
-        { id: '5', type: 'heading_3', content: 'Об утверждении регламента работы образовательного департамента' },
-        { id: '6', type: 'paragraph', content: 'В целях оптимизации рабочих процессов и улучшения качества образовательного процесса ПРИКАЗЫВАЮ:' },
-        { id: '7', type: 'numbered_list', content: 'Утвердить обновленный регламент ведения учебных журналов и проведения диагностики.' },
-        { id: '8', type: 'numbered_list', content: 'Назначить ответственных сотрудников за мониторинг посещаемости учеников.' },
-        { id: '9', type: 'numbered_list', content: 'Контроль за исполнением настоящего приказа оставляю за собой.' },
-        { id: '10', type: 'paragraph', content: '<br><b>Генеральный Директор:</b> ___________________ / Подпись /' },
-        ...(legal?.stampUrl ? [{ id: '11', type: 'image' as const, imageUrl: legal.stampUrl, content: legal.stampUrl }] : [])
+        { id: '5', type: 'heading_3', content: 'Об утверждении ' + blank },
+        { id: '6', type: 'paragraph', content: 'ПРИКАЗЫВАЮ:' },
+        { id: '7', type: 'numbered_list', content: blank },
+        { id: '8', type: 'numbered_list', content: 'Контроль за исполнением настоящего приказа оставляю за собой.' },
+        { id: '9', type: 'paragraph', content: '<br><b>Руководитель:</b> ___________________ / Подпись /' },
+        ...stamp
       ]);
     } else if (type === 'certificate') {
-      onUpdateTitle("Справка с места учебы № " + Math.floor(10 + Math.random() * 90));
+      onUpdateTitle('Справка № ' + blank);
       onLoadTemplate([
-        { id: '1', type: 'heading_1', content: (legal?.legalName || orgName).toUpperCase(), align: 'center', isBold: true },
+        { id: '1', type: 'heading_1', content: orgTitle, align: 'center', isBold: true },
         { id: '2', type: 'paragraph', content: [legal?.address, legal?.phone ? `Тел.: ${legal.phone}` : ''].filter(Boolean).join(' • '), align: 'center' },
         { id: '3', type: 'divider', content: '' },
-        { id: '4', type: 'heading_2', content: 'СПРАВКА № ' + Math.floor(10 + Math.random() * 90), align: 'center', isBold: true },
-        { id: '5', type: 'paragraph', content: `Выдана <b>Иванову Александру Сергеевичу</b> в том, что он(а) действительно является учеником(цей) <b>7 класса</b> «${orgName}».` },
+        { id: '4', type: 'heading_2', content: 'СПРАВКА № ' + blank, align: 'center', isBold: true },
+        { id: '5', type: 'paragraph', content: `Выдана <b>${blank}</b> в том, что он(а) действительно является учеником(цей) <b>${blank}</b> «${orgName}».` },
         { id: '6', type: 'paragraph', content: 'Справка выдана для предъявления по месту требования.' },
         { id: '7', type: 'paragraph', content: `<br><b>Дата выдачи:</b> ${nowStr} г.` },
-        { id: '8', type: 'paragraph', content: '<b>Директор:</b> ___________________' },
-        ...(legal?.stampUrl ? [{ id: '9', type: 'image' as const, imageUrl: legal.stampUrl, content: legal.stampUrl }] : [])
+        { id: '8', type: 'paragraph', content: '<b>Руководитель:</b> ___________________' },
+        ...stamp
       ]);
-    } else if (type === 'contract') {
-      onUpdateTitle("Договор оказания услуг № " + Math.floor(1000 + Math.random() * 9000));
+    } else {
+      onUpdateTitle('Договор № ' + blank);
       onLoadTemplate([
         { id: '1', type: 'heading_1', content: 'ДОГОВОР ОКАЗАНИЯ ОБРАЗОВАТЕЛЬНЫХ УСЛУГ', align: 'center', isBold: true },
-        { id: '2', type: 'paragraph', content: `<b>${legal?.city ? `г. ${legal.city}` : ''}</b> <span style="float:right;"><b>«${nowStr}» г.</b></span>` },
-        { id: '3', type: 'paragraph', content: `Организация «${orgName}», именуемая в дальнейшем «Исполнитель», с одной стороны, и Заказчик с другой стороны, заключили настоящий Договор:` },
+        { id: '2', type: 'paragraph', content: `<b>${city}</b> <span style="float:right;"><b>«${nowStr}» г.</b></span>` },
+        { id: '3', type: 'paragraph', content: `Организация «${orgName}», именуемая в дальнейшем «Исполнитель», с одной стороны, и ${blank}, именуемый в дальнейшем «Заказчик», с другой стороны, заключили настоящий Договор:` },
         { id: '4', type: 'heading_3', content: '1. ПРЕДМЕТ ДОГОВОРА' },
-        { id: '5', type: 'paragraph', content: '1.1. Исполнитель обязуется предоставить образовательные услуги по обучению, а Заказчик обязуется оплатить оказанные услуги.' },
+        { id: '5', type: 'paragraph', content: '1.1. Исполнитель обязуется предоставить образовательные услуги, а Заказчик обязуется оплатить оказанные услуги.' },
         { id: '6', type: 'heading_3', content: '2. РЕКВИЗИТЫ И ПОДПИСИ СТОРОН' },
-        { id: '7', type: 'paragraph', content: `<b>Исполнитель:</b> ${[legal?.inn ? `ИНН ${legal.inn}` : '', legal?.city ? `г. ${legal.city}` : '', legal?.address].filter(Boolean).join(', ')}.` },
-        ...(legal?.stampUrl ? [{ id: '8', type: 'image' as const, imageUrl: legal.stampUrl, content: legal.stampUrl }] : [])
+        { id: '7', type: 'paragraph', content: `<b>Исполнитель:</b> ${[legal?.inn ? `ИНН ${legal.inn}` : '', city, legal?.address].filter(Boolean).join(', ')}.` },
+        ...stamp
       ]);
     }
   };
@@ -370,18 +398,21 @@ export default function DocEditorToolbar({
               </button>
 
               <div 
-                data-tooltip="Документ автоматически сохранен в облаке" 
-                data-tooltip-pos="bottom"
+                                data-tooltip-pos="bottom"
                 className="flex items-center gap-1 text-xs text-slate-500 ml-1 font-medium"
               >
-                {saving ? (
+                {saveError ? (
+                  <span className="flex items-center gap-1.5 text-red-600 font-bold" title={saveError}>
+                    <span className="w-2 h-2 rounded-full bg-red-500"></span> {saveError}
+                  </span>
+                ) : saving ? (
                   <span className="flex items-center gap-1.5 text-amber-600 font-bold">
                     <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span> Сохранение...
                   </span>
                 ) : (
                   <span className="flex items-center gap-1 text-emerald-600 font-medium">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                    <span>Сохранено на Диске</span>
+                    <span>Сохранено</span>
                   </span>
                 )}
               </div>
@@ -401,7 +432,7 @@ export default function DocEditorToolbar({
                     <button onClick={() => { setActiveMenu(null); onExport('markdown'); }} className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center justify-between font-medium"><span>📝 Скачать как Markdown (.md)</span></button>
                     {canManageAccess && <>
                       <hr className="my-1 border-slate-100" />
-                      <button onClick={() => { setActiveMenu(null); onDeleteDoc(); }} className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600 flex items-center gap-2 font-medium"><Trash2 className="w-4 h-4" /> Удалить документ</button>
+                      {canDelete && <button onClick={() => { setActiveMenu(null); onDeleteDoc(); }} className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600 flex items-center gap-2 font-medium"><Trash2 className="w-4 h-4" /> Удалить документ</button>}
                     </>}
                   </div>
                 )}
@@ -468,15 +499,15 @@ export default function DocEditorToolbar({
 
         {/* Right Header Buttons */}
         <div className="flex items-center gap-2">
-          <button 
+          {canEdit && <button 
             onClick={() => setShowTemplatesModal(true)}
-            data-tooltip="Выбрать шаблон документа (Приказ, Справка, Договор)"
+            data-tooltip="Шаблоны документов"
             data-tooltip-pos="bottom"
             className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold rounded-full text-xs transition flex items-center gap-1.5 cursor-pointer"
           >
             <FileCheck className="w-4 h-4 text-indigo-600" />
             <span>Шаблоны</span>
-          </button>
+          </button>}
 
           <button 
             onClick={() => setShowShareModal(true)}
@@ -495,7 +526,7 @@ export default function DocEditorToolbar({
       </div>
 
       {/* Formatting Ribbon */}
-      <div className="px-3 py-1.5 flex items-center gap-1 overflow-x-auto text-slate-700 text-xs bg-[#edf2fa] border-t border-slate-200 relative">
+      <div className={`px-3 py-1.5 flex items-center gap-1 overflow-x-auto text-slate-700 text-xs bg-[#edf2fa] border-t border-slate-200 relative ${canEdit ? '' : 'pointer-events-none opacity-50'}`}>
         <button onMouseDown={e => e.preventDefault()} onClick={onUndo} data-tooltip="Отменить (Cmd+Z)" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Undo2 className="w-4 h-4" /></button>
         <button onMouseDown={e => e.preventDefault()} onClick={onRedo} data-tooltip="Повторить (Cmd+Y)" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Redo2 className="w-4 h-4" /></button>
         <button onMouseDown={e => e.preventDefault()} onClick={() => onExport('pdf')} data-tooltip="Печать (Cmd+P)" data-tooltip-pos="bottom" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 cursor-pointer"><Printer className="w-4 h-4" /></button>
@@ -660,52 +691,50 @@ export default function DocEditorToolbar({
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
                 <FileCheck className="w-5 h-5 text-indigo-600" />
-                <span>Корпоративные шаблоны документов</span>
+                <span>Шаблоны</span>
               </h3>
               <button onClick={() => setShowTemplatesModal(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
             </div>
             
-            <p className="text-slate-600 text-xs">
-              Выберите готовый шаблон для моментальной генерации документа с официальной шапкой, структурой, реквизитами и блоками подписи:
-            </p>
-
-            <div className="grid grid-cols-1 gap-3 pt-1">
-              <div 
-                onClick={() => applyTemplate('order')} 
-                className="p-4 border border-slate-200 hover:border-blue-500 rounded-xl hover:bg-blue-50/50 cursor-pointer transition flex items-center justify-between group"
-              >
-                <div>
-                  <h4 className="font-bold text-slate-900 text-sm group-hover:text-blue-600">📜 Официальный Приказ организации</h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5">С номерами, подписью генерального директора и синей печатью.</p>
+            {pickedTpl ? (
+              <div className="space-y-3">
+                <div className="font-bold text-slate-900 text-sm">{pickedTpl.name}</div>
+                {pickedTpl.variables.map(v => (
+                  <label key={v.key} className="block">
+                    <span className="block text-[11px] font-semibold text-slate-600 mb-1">{v.label || v.key}</span>
+                    <input
+                      type={v.type === 'date' ? 'date' : v.type === 'number' ? 'number' : 'text'}
+                      value={tplValues[v.key] || ''}
+                      onChange={e => setTplValues(prev => ({ ...prev, [v.key]: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs"
+                    />
+                  </label>
+                ))}
+                <div className="flex justify-end gap-2 pt-1">
+                  <button onClick={() => setPickedTpl(null)} className="px-4 py-2 border rounded-xl font-bold text-slate-600 hover:bg-slate-50">Назад</button>
+                  <button onClick={() => void applyOrgTemplate(pickedTpl, tplValues)} className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700">Применить</button>
                 </div>
-                <span className="px-3 py-1 bg-blue-600 text-white font-bold rounded-lg text-[11px]">Выбрать</span>
               </div>
-
-              <div 
-                onClick={() => applyTemplate('certificate')} 
-                className="p-4 border border-slate-200 hover:border-blue-500 rounded-xl hover:bg-blue-50/50 cursor-pointer transition flex items-center justify-between group"
-              >
-                <div>
-                  <h4 className="font-bold text-slate-900 text-sm group-hover:text-blue-600">🏫 Справка с места учебы / работы</h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5">Официальный бланковый документ для предъявления по месту требования.</p>
-                </div>
-                <span className="px-3 py-1 bg-blue-600 text-white font-bold rounded-lg text-[11px]">Выбрать</span>
-              </div>
-
-              <div 
-                onClick={() => applyTemplate('contract')} 
-                className="p-4 border border-slate-200 hover:border-blue-500 rounded-xl hover:bg-blue-50/50 cursor-pointer transition flex items-center justify-between group"
-              >
-                <div>
-                  <h4 className="font-bold text-slate-900 text-sm group-hover:text-blue-600">💼 Договор оказания услуг</h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5">Типовой договор с разделом предметов, условий и реквизитами сторон.</p>
-                </div>
-                <span className="px-3 py-1 bg-blue-600 text-white font-bold rounded-lg text-[11px]">Выбрать</span>
-              </div>
+            ) : (
+            <div className="grid grid-cols-1 gap-2 pt-1 max-h-[60vh] overflow-y-auto">
+              {tplLoading && <div className="text-slate-400 py-2">Загрузка…</div>}
+              {orgTemplates.map(t => (
+                <button key={t.id} onClick={() => pickTemplate(t)} className="text-left p-3 border border-slate-200 hover:border-blue-500 rounded-xl hover:bg-blue-50/50 cursor-pointer transition flex items-center justify-between">
+                  <span className="font-bold text-slate-900 text-sm">{t.name}</span>
+                  <span className="px-3 py-1 bg-blue-600 text-white font-bold rounded-lg text-[11px]">Выбрать</span>
+                </button>
+              ))}
+              {([['order', 'Приказ'], ['certificate', 'Справка'], ['contract', 'Договор оказания услуг']] as const).map(([k, label]) => (
+                <button key={k} onClick={() => void applyTemplate(k)} className="text-left p-3 border border-slate-200 hover:border-blue-500 rounded-xl hover:bg-blue-50/50 cursor-pointer transition flex items-center justify-between">
+                  <span className="font-bold text-slate-900 text-sm">{label}</span>
+                  <span className="px-3 py-1 bg-slate-100 text-slate-700 font-bold rounded-lg text-[11px]">Выбрать</span>
+                </button>
+              ))}
             </div>
+            )}
 
             <div className="flex justify-end pt-2">
-              <button onClick={() => setShowTemplatesModal(false)} className="px-4 py-2 border rounded-xl font-bold text-slate-600 hover:bg-slate-50">Закрыть</button>
+              <button onClick={() => { setShowTemplatesModal(false); setPickedTpl(null); }} className="px-4 py-2 border rounded-xl font-bold text-slate-600 hover:bg-slate-50">Закрыть</button>
             </div>
           </div>
         </div>

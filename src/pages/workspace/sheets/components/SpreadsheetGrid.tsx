@@ -1,9 +1,13 @@
 import React, { useEffect } from 'react';
 import SheetCell from './SheetCell';
-import { WorkspaceSpreadsheet } from '../../../../types/collab';
+import { WorkspaceSpreadsheet, SheetCellData } from '../../../../types/collab';
+import { indexToCol, colToIndex, parseCell } from '../../../../services/collab/sheetCore';
 
 interface Props {
   sheet: WorkspaceSpreadsheet;
+  /** Ячейки с учётом своих несохранённых правок и пересчитанными формулами. */
+  cells: Record<string, SheetCellData>;
+  readOnly?: boolean;
   activeCell: string | null;
   isEditing: boolean;
   onCellClick: (id: string) => void;
@@ -12,11 +16,11 @@ interface Props {
   onCellKeyDown: (id: string, e: React.KeyboardEvent) => void;
   onInsertRow?: (at: number) => void;
   onDeleteRow?: (at: number) => void;
-  onInsertColumn?: (at: string) => void;
-  onDeleteColumn?: (at: string) => void;
+  onInsertColumn?: (at: number) => void;
+  onDeleteColumn?: (at: number) => void;
 }
 
-export default function SpreadsheetGrid({ sheet, activeCell, isEditing, onCellClick, onCellDoubleClick, onCellChange, onCellKeyDown, onInsertRow, onDeleteRow, onInsertColumn, onDeleteColumn }: Props) {
+export default function SpreadsheetGrid({ sheet, cells: cellMap, readOnly, activeCell, isEditing, onCellClick, onCellDoubleClick, onCellChange, onCellKeyDown, onInsertRow, onDeleteRow, onInsertColumn, onDeleteColumn }: Props) {
   /**
    * Выделение строки или колонки целиком и меню вставки — как в привычных
    * таблицах: раньше по номеру строки нельзя было ни кликнуть, ни добавить
@@ -33,18 +37,18 @@ export default function SpreadsheetGrid({ sheet, activeCell, isEditing, onCellCl
     window.addEventListener('scroll', close, true);
     return () => { window.removeEventListener('click', close); window.removeEventListener('scroll', close, true); };
   }, [menu]);
-  const cols = Array.from({ length: sheet.columnsCount }, (_, i) => String.fromCharCode(65 + i));
+  const cols = React.useMemo(() => Array.from({ length: sheet.columnsCount }, (_, i) => indexToCol(i)), [sheet.columnsCount]);
   // Показываем заполненное плюс небольшой запас, а не все 100 строк:
   // лист из двух строк ответов и девяноста восьми пустых выглядит
   // заброшенным, и найти в нём данные труднее, чем в списке заявок.
   const lastFilledRow = React.useMemo(() => {
     let last = 0;
-    for (const key of Object.keys(sheet.cells || {})) {
+    for (const key of Object.keys(cellMap)) {
       const n = Number((key.match(/\d+$/) || [])[0]);
       if (Number.isFinite(n) && n > last) last = n;
     }
     return last;
-  }, [sheet.cells]);
+  }, [cellMap]);
   const visibleRowCount = Math.min(sheet.rowsCount, Math.max(lastFilledRow + 12, 24));
   const rows = Array.from({ length: visibleRowCount }, (_, i) => i + 1);
 
@@ -70,7 +74,7 @@ export default function SpreadsheetGrid({ sheet, activeCell, isEditing, onCellCl
   const widthOf = (col: string): number => {
     let longest = 0;
     for (let r = 1; r <= Math.min(rows.length, 60); r++) {
-      const raw = String(sheet.cells?.[`${col}${r}`]?.computedValue ?? sheet.cells?.[`${col}${r}`]?.rawValue ?? '');
+      const raw = String(cellMap[`${col}${r}`]?.computedValue ?? cellMap[`${col}${r}`]?.rawValue ?? '');
       if (raw.length > longest) longest = raw.length;
     }
     if (!longest) return 100;
@@ -78,11 +82,12 @@ export default function SpreadsheetGrid({ sheet, activeCell, isEditing, onCellCl
   };
   const colWidths = React.useMemo(
     () => Object.fromEntries(cols.map(c => [c, widthOf(c)])),
-    [cols, sheet.cells, rows.length],
+    [cols, cellMap, rows.length],
   );
 
-  const activeCol = activeCell ? (activeCell.match(/^[A-Z]+/) || [''])[0] : '';
-  const activeRow = activeCell ? Number((activeCell.match(/\d+$/) || [0])[0]) : 0;
+  const activeAddr = activeCell ? parseCell(activeCell) : null;
+  const activeCol = activeAddr ? indexToCol(activeAddr.col) : '';
+  const activeRow = activeAddr ? activeAddr.row : 0;
 
   return (
     <div className="flex-1 overflow-auto bg-[var(--bg-surface)] relative">
@@ -94,8 +99,7 @@ export default function SpreadsheetGrid({ sheet, activeCell, isEditing, onCellCl
             <div key={c}
               style={{ width: colWidths[c] }}
               onClick={() => { setSelectedCol(c); setSelectedRow(null); }}
-              onContextMenu={(e) => { e.preventDefault(); setSelectedCol(c); setSelectedRow(null); setMenu({ x: e.clientX, y: e.clientY, col: c }); }}
-              title="Нажмите, чтобы выделить колонку. Правая кнопка — вставить или удалить."
+              onContextMenu={(e) => { if (readOnly) return; e.preventDefault(); setSelectedCol(c); setSelectedRow(null); setMenu({ x: e.clientX, y: e.clientY, col: c }); }}
               className={`h-8 border-r border-b border-[var(--border-color)] flex items-center justify-center font-bold text-[11px] shrink-0 select-none transition-colors cursor-pointer ${
                 c === selectedCol
                   ? 'bg-emerald-500 text-white'
@@ -113,8 +117,7 @@ export default function SpreadsheetGrid({ sheet, activeCell, isEditing, onCellCl
           <div key={r} className="flex flex-nowrap h-7">
             <div
               onClick={() => { setSelectedRow(r); setSelectedCol(null); }}
-              onContextMenu={(e) => { e.preventDefault(); setSelectedRow(r); setSelectedCol(null); setMenu({ x: e.clientX, y: e.clientY, row: r }); }}
-              title="Нажмите, чтобы выделить строку. Правая кнопка — вставить или удалить."
+              onContextMenu={(e) => { if (readOnly) return; e.preventDefault(); setSelectedRow(r); setSelectedCol(null); setMenu({ x: e.clientX, y: e.clientY, row: r }); }}
               className={`w-12 h-full border-r border-b border-[var(--border-color)] flex items-center justify-center font-bold text-[11px] shrink-0 sticky left-0 z-20 select-none transition-colors cursor-pointer ${
               r === selectedRow
                 ? 'bg-emerald-500 text-white'
@@ -135,7 +138,8 @@ export default function SpreadsheetGrid({ sheet, activeCell, isEditing, onCellCl
                   }`}>
                   <SheetCell 
                     id={cellId}
-                    data={sheet.cells?.[cellId]}
+                    data={cellMap[cellId]}
+                    readOnly={readOnly}
                     isActive={activeCell === cellId}
                     isEditing={isEditing}
                     onClick={() => onCellClick(cellId)}
@@ -174,16 +178,16 @@ export default function SpreadsheetGrid({ sheet, activeCell, isEditing, onCellCl
             </>
           ) : (
             <>
-              <button onClick={() => { onInsertColumn?.(menu.col!); setMenu(null); }}
+              <button onClick={() => { onInsertColumn?.(colToIndex(menu.col!)); setMenu(null); }}
                 className="w-full text-left px-3 py-2 hover:bg-emerald-500/10">
                 Вставить колонку слева
               </button>
-              <button onClick={() => { onInsertColumn?.(String.fromCharCode(menu.col!.charCodeAt(0) + 1)); setMenu(null); }}
+              <button onClick={() => { onInsertColumn?.(colToIndex(menu.col!) + 1); setMenu(null); }}
                 className="w-full text-left px-3 py-2 hover:bg-emerald-500/10">
                 Вставить колонку справа
               </button>
               <div className="my-1 border-t border-[var(--border-color)]" />
-              <button onClick={() => { onDeleteColumn?.(menu.col!); setMenu(null); }}
+              <button onClick={() => { onDeleteColumn?.(colToIndex(menu.col!)); setMenu(null); }}
                 className="w-full text-left px-3 py-2 text-red-500 hover:bg-red-500/10">
                 Удалить колонку {menu.col}
               </button>

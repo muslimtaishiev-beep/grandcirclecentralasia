@@ -92,6 +92,8 @@ export interface WorkspaceSpreadsheet {
   columnsCount: number; // по умолчанию 26 (A-Z)
   rowsCount: number;    // по умолчанию 100
   columnsConfig?: Record<string, SheetColumnConfig>;
+  /** В архиве с этого момента (мс). */
+  archivedAt?: number | null;
   cells: Record<string, SheetCellData>; // Ключ в формате "A1", "C12"
   createdAt: number;
   updatedAt: number;

@@ -5,7 +5,7 @@
 export interface DirItem { id: string; name: string }
 export type PlanType = "lessons_pack" | "time_period";
 export interface SubPlan { id: string; name: string; type: PlanType; lessons: number; days: number; price: number }
-export interface EduDirectory { rooms: DirItem[]; groups: DirItem[]; plans: SubPlan[] }
+export interface EduDirectory { rooms: DirItem[]; groups: DirItem[]; plans: SubPlan[]; timezone: string }
 export type SubStatus = "active" | "frozen" | "depleted" | "expired" | "canceled";
 export type SubAction = "deduct" | "return" | "freeze" | "unfreeze" | "extend" | "cancel";
 
@@ -70,8 +70,19 @@ const items = (v: any, max: number): DirItem[] => {
   }
   return out;
 };
+/** Часовой пояс организации (IANA); неизвестный заменяется на UTC. */
+export function validTimezone(v: unknown): string {
+  const z = clip(v, 64);
+  if (!z) return "UTC";
+  try { new Intl.DateTimeFormat("en-CA", { timeZone: z }); return z; } catch { return "UTC"; }
+}
+/** Сегодняшняя дата «ГГГГ-ММ-ДД» в часовом поясе организации. */
+export function todayIn(tz: string, now: number = Date.now()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: validTimezone(tz), year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(now));
+}
 export function sanitizeDirectory(raw: any): EduDirectory {
   return {
+    timezone: validTimezone(raw?.timezone),
     rooms: items(raw?.rooms, 200),
     groups: items(raw?.groups, 500),
     plans: (Array.isArray(raw?.plans) ? raw.plans : []).map(sanitizePlan).filter(Boolean).slice(0, 50) as SubPlan[],

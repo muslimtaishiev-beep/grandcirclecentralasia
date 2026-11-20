@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { sanitizeLegal, type LegalProfile } from "../../../shared/legal";
 import { useOutletContext } from "react-router-dom";
-import { Sparkles, Check, Loader2, RotateCcw } from "lucide-react";
+import { Sparkles, RotateCcw } from "lucide-react";
+import { Button, PageHeader, Tabs, useUrlTab, toast, confirmDialog, Spinner } from "../../../components/ui";
 import { auth } from "../../../lib/firebase";
 import {
   ACTIVITY_PRESETS, DEFAULT_WORKSPACE_CONFIG, resolveWorkspaceConfig,
@@ -28,10 +29,8 @@ export default function WorkspaceSetupPage() {
   // Реквизиты для справок, сертификатов и шаблонов документов.
   const [legal, setLegal] = useState<LegalProfile>({ legalName: "" });
   const [legalSaving, setLegalSaving] = useState(false);
-  const [legalNotice, setLegalNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useUrlTab("tab", ["profile", "legal", "terms", "sections"] as const, "profile");
 
   useEffect(() => {
     if (!tenant) return;
@@ -54,7 +53,7 @@ export default function WorkspaceSetupPage() {
   }, [tenant?.id, tenant?.legal]);
 
   const saveLegal = async () => {
-    setLegalSaving(true); setError(null); setLegalNotice(null);
+    setLegalSaving(true);
     try {
       const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
       const res = await fetch(`/api/tenants/${tenant.id}/legal`, {
@@ -63,11 +62,10 @@ export default function WorkspaceSetupPage() {
         body: JSON.stringify({ legal }),
       });
       const j = await res.json();
-      if (!j.success) { setError(j.error || "Не удалось сохранить реквизиты."); return; }
-      setLegalNotice("Реквизиты сохранены — справки и сертификаты будут печататься с ними.");
-      setTimeout(() => setLegalNotice(null), 6000);
+      if (!j.success) { toast.error(j.error || "Не удалось сохранить реквизиты"); return; }
+      toast.success("Реквизиты сохранены");
       ctx?.refreshTenants?.();
-    } catch { setError("Нет связи с сервером"); }
+    } catch { toast.error("Нет связи с сервером"); }
     finally { setLegalSaving(false); }
   };
   const setL = (k: keyof LegalProfile, v: string) => setLegal(p => ({ ...p, [k]: v }));
@@ -83,7 +81,7 @@ export default function WorkspaceSetupPage() {
           rolePermissions: tenant?.customRole?.permissions,
           disabledModules: tenant?.disabledModules,
         });
-    return granted.has("settings:manage" as any) || granted.has("team:manage" as any);
+    return granted.has("settings:manage" as any);
   })();
   const resolved = resolveWorkspaceConfig(tenant?.workspaceConfig);
 
@@ -91,7 +89,7 @@ export default function WorkspaceSetupPage() {
   const setTerm = (k: string, v: string) => setCfg(p => ({ ...p, terms: { ...(p.terms || {}), [k]: v } }));
 
   const save = async () => {
-    setSaving(true); setError(null); setNotice(null);
+    setSaving(true);
     try {
       const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
       const res = await fetch(`/api/tenants/${tenant.id}/workspace-config`, {
@@ -100,17 +98,16 @@ export default function WorkspaceSetupPage() {
         body: JSON.stringify({ config: cfg }),
       });
       const j = await res.json();
-      if (!j.success) { setError(j.error || "Не удалось сохранить."); return; }
-      setNotice("Настройки сохранены. Экраны обновятся после перезагрузки страницы.");
-      setTimeout(() => setNotice(null), 6000);
+      if (!j.success) { toast.error(j.error || "Не удалось сохранить"); return; }
+      toast.success("Настройки сохранены");
       ctx?.refreshTenants?.();
     } catch {
-      setError("Нет связи с сервером.");
+      toast.error("Нет связи с сервером");
     } finally { setSaving(false); }
   };
 
-  const resetToDefaults = () => {
-    if (!confirm("Вернуть стандартные формулировки образовательной организации?")) return;
+  const resetToDefaults = async () => {
+    if (!(await confirmDialog({ title: "Вернуть стандартные формулировки?", confirmLabel: "Вернуть" }))) return;
     setCfg({
       activityType: DEFAULT_WORKSPACE_CONFIG.activityType,
       dashboardTitle: DEFAULT_WORKSPACE_CONFIG.dashboardTitle,
@@ -147,33 +144,29 @@ export default function WorkspaceSetupPage() {
   ];
 
   if (!tenant) {
-    return <div className="py-16 text-center text-[var(--text-muted)] text-sm">Загрузка организации…</div>;
+    return <div className="py-16 flex justify-center"><Spinner /></div>;
   }
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 text-[var(--text-main)]">
-      <div className="border-b border-[var(--border-color)] pb-4">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Sparkles className="w-6 h-6 text-emerald-500" />
-          Настройка воркспейса
-        </h1>
-        <p className="text-xs text-[var(--text-muted)] mt-1">
-          {tenant.name} · как называются вещи на экранах и какие поля обязательны
-        </p>
-      </div>
+      <PageHeader
+        title={<span className="inline-flex items-center gap-2"><Sparkles className="w-6 h-6 text-emerald-500" />Организация</span>}
+        tabs={<Tabs value={tab} onChange={t => setTab(t as typeof tab)} tabs={[
+          { id: "profile", label: "Профиль" }, { id: "legal", label: "Реквизиты" },
+          { id: "terms", label: "Термины" }, { id: "sections", label: "Разделы" },
+        ]} />}
+      />
 
       {!canEdit && (
         <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-sm text-amber-600">
-          Менять настройки может владелец или администратор организации. Ниже — текущие значения.
+          Только просмотр: нужно право «Настройки организации».
         </div>
       )}
 
-      {/* Вид деятельности */}
+      {tab === "profile" && (<>
+{/* Вид деятельности */}
       <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-5 space-y-3">
         <h2 className="font-bold text-sm">Вид деятельности</h2>
-        <p className="text-xs text-[var(--text-muted)]">
-          Пресет заполняет всё остальное разом — потом можно поправить любое поле.
-        </p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {ACTIVITY_PRESETS.map(p => (
             <button key={p.key} disabled={!canEdit}
@@ -191,28 +184,7 @@ export default function WorkspaceSetupPage() {
           placeholder={resolved.activityType} className={input} />
       </section>
 
-      {/* Терминология */}
-      <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-5 space-y-3">
-        <h2 className="font-bold text-sm">Терминология</h2>
-        <p className="text-xs text-[var(--text-muted)]">
-          Эти слова подставляются в подписи полей и заголовки. Пустое поле — значит используется значение по умолчанию.
-        </p>
-        <div className="grid sm:grid-cols-2 gap-3">
-          {termFields.map(f => (
-            <div key={f.key}>
-              <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">
-                {f.label}
-                <span className="font-normal opacity-70"> · {f.where}</span>
-              </label>
-              <input value={(cfg.terms as any)?.[f.key] || ""} disabled={!canEdit}
-                onChange={e => setTerm(f.key, e.target.value)}
-                placeholder={(resolved.terms as any)[f.key]} className={input} />
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Дашборд */}
+{/* Дашборд */}
       <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-5 space-y-3">
         <h2 className="font-bold text-sm">Главный экран</h2>
         <div>
@@ -229,13 +201,62 @@ export default function WorkspaceSetupPage() {
         </div>
       </section>
 
-      {/* Анкета регистрации на экзамен */}
+{/* Письма */}
+      <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-5 space-y-3" data-testid="email-section">
+        <h2 className="font-bold text-sm">Письма от имени организации</h2>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <input value={cfg.email?.fromName || ""} disabled={!canEdit} onChange={e => setEm({ fromName: e.target.value })}
+            placeholder={`Имя отправителя (по умолчанию — ${tenant?.name || "название организации"})`} className={input} data-testid="em-fromName" />
+          <input value={cfg.email?.replyTo || ""} disabled={!canEdit} onChange={e => setEm({ replyTo: e.target.value })}
+            placeholder="Адрес для ответов: info@example.com" className={input} data-testid="em-replyTo" />
+          <textarea value={cfg.email?.signature || ""} disabled={!canEdit} rows={2} onChange={e => setEm({ signature: e.target.value })}
+            placeholder="Подпись внизу письма: контакты, часы работы" className={`${input} sm:col-span-2`} />
+        </div>
+      </section>
+
+      </>)}
+
+      {tab === "terms" && (<>
+{/* Терминология */}
+      <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-5 space-y-3">
+        <h2 className="font-bold text-sm">Терминология</h2>
+        <div className="grid sm:grid-cols-2 gap-3">
+          {termFields.map(f => (
+            <div key={f.key}>
+              <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">
+                {f.label}
+                <span className="font-normal opacity-70"> · {f.where}</span>
+              </label>
+              <input value={(cfg.terms as any)?.[f.key] || ""} disabled={!canEdit}
+                onChange={e => setTerm(f.key, e.target.value)}
+                placeholder={(resolved.terms as any)[f.key]} className={input} />
+            </div>
+          ))}
+        </div>
+      </section>
+
+{/* Расписание */}
+      <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-5 space-y-3">
+        <h2 className="font-bold text-sm">Расписание</h2>
+        {([
+          ["requireTeacher", `Обязательно указывать: ${cfg.terms?.teacher || resolved.terms.teacher}`],
+          ["requireRoom", `Обязательно указывать: ${cfg.terms?.room || resolved.terms.room}`],
+        ] as const).map(([key, label]) => (
+          <label key={key} className="flex items-center gap-2.5 text-sm cursor-pointer">
+            <input type="checkbox" disabled={!canEdit}
+              checked={(cfg.schedule as any)?.[key] !== false}
+              onChange={e => set({ schedule: { ...(cfg.schedule || {}), [key]: e.target.checked } })} />
+            {label}
+          </label>
+        ))}
+      </section>
+
+      </>)}
+
+      {tab === "sections" && (<>
+{/* Анкета регистрации на экзамен */}
       <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-5 space-y-3" data-testid="registration-section">
         <h2 className="font-bold text-sm">Анкета регистрации на экзамен</h2>
-        <p className="text-xs text-[var(--text-muted)]">
-          Что спрашивать у участника перед стартом, как подписать поля и какие варианты класса или уровня
-          предлагать. Пустое поле — значение по умолчанию.
-        </p>
         <div className="grid sm:grid-cols-2 gap-3">
           <input value={cfg.registration?.title || ""} disabled={!canEdit} onChange={e => setReg({ title: e.target.value })}
             placeholder={`Заголовок: ${resolved.registration.title}`} className={input} data-testid="reg-title" />
@@ -297,12 +318,9 @@ export default function WorkspaceSetupPage() {
           placeholder="Текст согласия на обработку данных (пусто — стандартный)" className={input} />
       </section>
 
-      {/* Заявки и билеты */}
+{/* Заявки и билеты */}
       <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-5 space-y-3" data-testid="tickets-section">
         <h2 className="font-bold text-sm">Заявки и билеты</h2>
-        <p className="text-xs text-[var(--text-muted)]">
-          Тексты публичных страниц: форма заявки, страница билета у гостя, экран проверки на входе.
-        </p>
         <div className="grid sm:grid-cols-2 gap-3">
           {([
             ["publicTitle", "Заголовок публичных страниц (по умолчанию — название организации)"],
@@ -325,29 +343,9 @@ export default function WorkspaceSetupPage() {
         </div>
       </section>
 
-      {/* Письма */}
-      <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-5 space-y-3" data-testid="email-section">
-        <h2 className="font-bold text-sm">Письма от имени организации</h2>
-        <p className="text-xs text-[var(--text-muted)]">
-          Результаты тестов и приглашения сотрудникам уходят с этим именем отправителя. Ответы участников
-          придут на указанный адрес.
-        </p>
-        <div className="grid sm:grid-cols-2 gap-3">
-          <input value={cfg.email?.fromName || ""} disabled={!canEdit} onChange={e => setEm({ fromName: e.target.value })}
-            placeholder={`Имя отправителя (по умолчанию — ${tenant?.name || "название организации"})`} className={input} data-testid="em-fromName" />
-          <input value={cfg.email?.replyTo || ""} disabled={!canEdit} onChange={e => setEm({ replyTo: e.target.value })}
-            placeholder="Адрес для ответов: info@example.com" className={input} data-testid="em-replyTo" />
-          <textarea value={cfg.email?.signature || ""} disabled={!canEdit} rows={2} onChange={e => setEm({ signature: e.target.value })}
-            placeholder="Подпись внизу письма: контакты, часы работы" className={`${input} sm:col-span-2`} />
-        </div>
-      </section>
-
-      {/* Лендинг */}
+{/* Лендинг */}
       <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-5 space-y-3" data-testid="landing-section">
         <h2 className="font-bold text-sm">Публичная страница приёма</h2>
-        <p className="text-xs text-[var(--text-muted)]">
-          Страница /{tenant?.id}/admission: бейдж, подзаголовок под названием организации и подписи кнопок.
-        </p>
         <div className="grid sm:grid-cols-2 gap-3">
           <input value={cfg.landing?.badge || ""} disabled={!canEdit} onChange={e => setLd({ badge: e.target.value })}
             placeholder={`Бейдж: ${resolved.landing.badge}`} className={input} data-testid="ld-badge" />
@@ -360,33 +358,12 @@ export default function WorkspaceSetupPage() {
         </div>
       </section>
 
-      {/* Расписание */}
-      <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-5 space-y-3">
-        <h2 className="font-bold text-sm">Расписание</h2>
-        <p className="text-xs text-[var(--text-muted)]">
-          Какие поля обязательны при создании занятия. У кого нет кабинетов или
-          постоянных ведущих — снимите галочку, иначе занятие не сохранить.
-        </p>
-        {([
-          ["requireTeacher", `Обязательно указывать: ${cfg.terms?.teacher || resolved.terms.teacher}`],
-          ["requireRoom", `Обязательно указывать: ${cfg.terms?.room || resolved.terms.room}`],
-        ] as const).map(([key, label]) => (
-          <label key={key} className="flex items-center gap-2.5 text-sm cursor-pointer">
-            <input type="checkbox" disabled={!canEdit}
-              checked={(cfg.schedule as any)?.[key] !== false}
-              onChange={e => set({ schedule: { ...(cfg.schedule || {}), [key]: e.target.checked } })} />
-            {label}
-          </label>
-        ))}
-      </section>
+      </>)}
 
-      {/* Реквизиты */}
+      {tab === "legal" && (<>
+{/* Реквизиты */}
       <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-5 space-y-3" data-testid="legal-section">
         <h2 className="font-bold text-sm">Реквизиты для справок и сертификатов</h2>
-        <p className="text-xs text-[var(--text-muted)]">
-          Печатаются на справках, сертификатах среза и в шаблонах документов. Пока их нет,
-          документы выходят только с названием организации — без печати и адреса.
-        </p>
         <div className="grid sm:grid-cols-2 gap-3">
           {([
             ["legalName", "Официальное название", "ОсОО «Название»"],
@@ -413,29 +390,22 @@ export default function WorkspaceSetupPage() {
             </label>
           ))}
         </div>
-        {legalNotice && <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-3 text-sm text-emerald-600">{legalNotice}</div>}
         {canEdit && (
-          <button onClick={() => void saveLegal()} disabled={legalSaving || !legal.legalName.trim()} data-testid="legal-save"
-            className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center gap-2 disabled:opacity-50">
-            {legalSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Сохранить реквизиты
-          </button>
+          <Button onClick={() => void saveLegal()} loading={legalSaving} disabled={!legal.legalName.trim()} data-testid="legal-save">
+            Сохранить реквизиты
+          </Button>
         )}
       </section>
 
-      {error && <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-3 text-sm text-red-500">{error}</div>}
-      {notice && <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-3 text-sm text-emerald-600">{notice}</div>}
+      </>)}
 
-      {canEdit && (
+      {canEdit && tab !== "legal" && (
         <div className="flex items-center justify-between gap-3 pb-8">
-          <button onClick={resetToDefaults}
+          <button onClick={() => void resetToDefaults()}
             className="text-xs text-[var(--text-muted)] hover:text-[var(--text-main)] flex items-center gap-1.5">
             <RotateCcw className="w-3.5 h-3.5" /> Вернуть стандартные
           </button>
-          <button onClick={() => void save()} disabled={saving}
-            className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center gap-2 disabled:opacity-50">
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            Сохранить
-          </button>
+          <Button onClick={() => void save()} loading={saving}>Сохранить</Button>
         </div>
       )}
     </div>

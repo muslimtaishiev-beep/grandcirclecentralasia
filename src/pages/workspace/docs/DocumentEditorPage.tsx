@@ -7,7 +7,9 @@ import DocExportModal from './components/DocExportModal';
 import { DocBlockType, DocBlock, DocAccessLevel, UserDocRole } from '../../../types/collab';
 import { useAuth } from '../../../contexts/AuthContext';
 import { documentService } from '../../../services/collab/documentService';
-import { Lock, ShieldAlert } from 'lucide-react';
+import { Lock } from 'lucide-react';
+import { confirmDialog, toast } from '../../../components/ui';
+import { useWorkspaceAccess } from '../../../hooks/collab/useWorkspaceAccess';
 import { cleanDocHtml } from '../../../lib/docHtml';
 
 export default function DocumentEditorPage() {
@@ -18,6 +20,7 @@ export default function DocumentEditorPage() {
     doc, 
     loading, 
     saving, 
+    saveError,
     activeBlockId, 
     setActiveBlockId, 
     updateTitle, 
@@ -30,8 +33,10 @@ export default function DocumentEditorPage() {
     changeBlockType,
     undo,
     redo,
+    replaceBlocks,
     deleteDoc 
-  } = useDocumentEditor(activeTenant?.id, docId);
+  } = useDocumentEditor(activeTenant?.id, docId === 'new' ? undefined : docId);
+  const access = useWorkspaceAccess(activeTenant?.id);
 
   const [exportOpen, setExportOpen] = useState(false);
   const [selectedFont, setSelectedFont] = useState('Verdana');
@@ -41,12 +46,22 @@ export default function DocumentEditorPage() {
   const navigate = useNavigate();
   const editorRef = useRef<HTMLDivElement>(null);
 
-  if (loading) {
+  // /docs/new — создать документ и открыть его.
+  React.useEffect(() => {
+    if (docId !== 'new' || !activeTenant?.id || !user) return;
+    let alive = true;
+    documentService.createDocument(activeTenant.id, user.uid, user.displayName || user.email?.split('@')[0] || 'Сотрудник')
+      .then(id => { if (alive) navigate(`/workspace/${activeTenant.id}/docs/${id}`, { replace: true }); })
+      .catch(() => { toast.error('Не удалось создать документ'); if (alive) navigate(`/workspace/${activeTenant.id}/docs`, { replace: true }); });
+    return () => { alive = false; };
+  }, [docId, activeTenant?.id, user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (loading || docId === 'new') {
     return (
       <div className="h-screen flex items-center justify-center bg-[#f8f9fa]">
         <div className="flex items-center gap-3 text-slate-500 font-medium">
           <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <span>Загрузка документа Google Docs...</span>
+          <span>Загрузка…</span>
         </div>
       </div>
     );
@@ -70,13 +85,14 @@ export default function DocumentEditorPage() {
   }
 
   const isAuthor = Boolean(user && doc.authorStaffId === user.uid);
-  const isFullAdmin = activeTenant?.role === 'owner' || activeTenant?.role === 'org:owner' || activeTenant?.role === 'superadmin' || activeTenant?.role === 'admin';
+  // Как в правилах базы: видит и правит всё тот, у кого «Управление сотрудниками».
+  const isFullAdmin = access.can('team:manage');
   
   let userRole: 'editor' | 'viewer' | 'none' = 'none';
   if (isAuthor || isFullAdmin) {
     userRole = 'editor';
   } else {
-    const level = doc.accessLevel || 'company_edit';
+    const level = doc.accessLevel;
     if (level === 'company_edit') userRole = 'editor';
     else if (level === 'company_view') userRole = 'viewer';
     else if (level === 'specific_users' && user?.uid && doc.permissionsMap?.[user.uid]) {
@@ -112,15 +128,23 @@ export default function DocumentEditorPage() {
   const activeBlock = doc.blocks.find(b => b.id === activeBlockId) || (doc.blocks.length > 0 ? doc.blocks[0] : null);
 
   const handleDeleteDoc = async () => {
-    if (window.confirm(`Вы уверены, что хотите удалить документ "${doc.title}"?`)) {
+    if (!(await confirmDialog({ title: `Удалить документ «${doc.title}»?`, confirmLabel: 'Удалить', danger: true }))) return;
+    try {
       await deleteDoc();
       navigate(`/workspace/${activeTenant?.id}/docs`);
+    } catch (e: any) {
+      toast.error(e?.code === 'permission-denied' ? 'Удалить может автор или администратор' : 'Не удалось удалить');
     }
   };
 
   const handleUpdateAccess = async (newLevel: DocAccessLevel, newMap: Record<string, UserDocRole>) => {
     if (!activeTenant?.id || !user?.uid) return;
-    await documentService.updateAccessControl(activeTenant.id, doc.id, newLevel, newMap, user.uid);
+    try {
+      await documentService.updateAccessControl(activeTenant.id, doc.id, newLevel, newMap, user.uid);
+      toast.success('Доступ сохранён');
+    } catch (e: any) {
+      toast.error(e?.code === 'permission-denied' ? 'Менять доступ может автор или администратор' : 'Доступ не сохранён');
+    }
   };
 
   const handleExport = (format: 'pdf' | 'markdown' = 'pdf') => {
@@ -148,6 +172,7 @@ export default function DocumentEditorPage() {
       a.href = URL.createObjectURL(blob);
       a.download = `${doc.title}.md`;
       a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     }
   };
 
@@ -227,9 +252,10 @@ export default function DocumentEditorPage() {
     );
   };
 
+  // Через общий поток правок: слияние с коллегами, подтверждение записи, отмена шаблона по Cmd+Z.
   const handleLoadTemplate = (templateBlocks: DocBlock[]) => {
-    if (!doc || !user || !activeTenant?.id || userRole !== 'editor') return;
-    documentService.updateBlocks(activeTenant.id, doc.id, templateBlocks, user.uid);
+    if (userRole !== 'editor') return;
+    replaceBlocks(templateBlocks);
   };
 
   return (
@@ -248,6 +274,9 @@ export default function DocumentEditorPage() {
         onExport={handleExport}
         onDeleteDoc={handleDeleteDoc}
         saving={saving}
+        saveError={saveError}
+        canEdit={userRole === 'editor'}
+        canDelete={isAuthor || isFullAdmin}
         selectedFont={selectedFont}
         setSelectedFont={setSelectedFont}
         fontSize={fontSize}

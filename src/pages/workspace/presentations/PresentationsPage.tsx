@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Copy, Download, ExternalLink, Globe, Loader2, Lock, MonitorPlay, Search, Trash2, Upload, Users, UserCheck } from "lucide-react";
+import { Archive, Copy, Download, ExternalLink, Globe, Loader2, Lock, MonitorPlay, RotateCcw, Search, Trash2, Upload, Users, UserCheck } from "lucide-react";
 import { auth } from "../../../lib/firebase";
 import FancyQr, { QR_THEMES, downloadQr } from "../../../components/forms/FancyQr";
 import { Thumb } from "../../../components/presentations/SlidePlayer";
 import { SLIDE_CSS, prepareSlide } from "../../../components/presentations/slideHtml";
 import { tenantLogos } from "../../../shared/legal";
-import { ACCESS_HINT, ACCESS_LABEL, showLink, type PresentationAccess, type PresentationAccessMode, type PresentationSlide } from "../../../shared/presentations";
+import { ACCESS_LABEL, showLink, type PresentationAccess, type PresentationAccessMode, type PresentationSlide } from "../../../shared/presentations";
 import { Modal, btn, btnPrimary, card, input, label } from "../journals/components/ui";
+import { Button, EmptyState, InfoHint, PageHeader, Spinner, Tabs, confirmDialog, toast, useUrlTab } from "../../../components/ui";
 import { parseDeckFile, putFile, type ParsedDeck } from "./deckZip";
 
 /**
@@ -17,7 +18,7 @@ import { parseDeckFile, putFile, type ParsedDeck } from "./deckZip";
 interface Item {
   id: string; title: string; description: string; kind: "slides" | "html"; code: string; status: "uploading" | "ready";
   access: PresentationAccess; slideCount: number; cover: PresentationSlide | null;
-  createdByName: string; createdAt: number; updatedAt: number; size: number; canManage: boolean;
+  createdByName: string; createdAt: number; updatedAt: number; size: number; canManage: boolean; archivedAt: number | null;
 }
 type Employee = { uid: string; name: string; email: string };
 
@@ -42,34 +43,41 @@ export default function PresentationsPage() {
   const [canCreate, setCanCreate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useUrlTab("tab", ["active", "archive"] as const, "active");
   const [q, setQ] = useState("");
   const [uploading, setUploading] = useState(false);
   const [sharing, setSharing] = useState<Item | null>(null);
 
   const load = useCallback(async () => {
     if (!tenantId) return;
-    try { const j = await api(""); setItems(j.presentations); setCanCreate(!!j.canCreate); setError(null); }
+    setLoading(true);
+    try { const j = await api(tab === "archive" ? "?archived=1" : ""); setItems(j.presentations); setCanCreate(!!j.canCreate); setError(null); }
     catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
-  }, [api, tenantId]);
+  }, [api, tenantId, tab]);
   useEffect(() => { void load(); }, [load]);
 
   const visible = items.filter(p => !q.trim() || p.title.toLowerCase().includes(q.trim().toLowerCase()));
   const remove = async (p: Item) => {
-    if (!confirm(`Удалить «${p.title}»? Ссылка перестанет открываться, видео и картинки удалятся.`)) return;
-    try { await api(`/${p.id}`, { method: "DELETE" }); await load(); } catch (e: any) { alert(e.message); }
+    if (!(await confirmDialog({ title: `Переместить «${p.title}» в архив?`, confirmLabel: "В архив", danger: true }))) return;
+    try { await api(`/${p.id}`, { method: "DELETE" }); toast.success("Перемещено в архив"); await load(); } catch (e: any) { toast.error(e.message); }
+  };
+  const restore = async (p: Item) => {
+    try { await api(`/${p.id}/restore`, { method: "POST" }); toast.success("Восстановлено"); await load(); } catch (e: any) { toast.error(e.message); }
+  };
+  const purge = async (p: Item) => {
+    if (!(await confirmDialog({ title: `Удалить «${p.title}» навсегда?`, message: "Ссылка перестанет открываться, видео и картинки удалятся.", confirmLabel: "Удалить", danger: true }))) return;
+    try { await api(`/${p.id}?permanent=1`, { method: "DELETE" }); toast.success("Удалено"); await load(); } catch (e: any) { toast.error(e.message); }
   };
 
   return (
     <div className="max-w-6xl mx-auto space-y-4">
       <style>{SLIDE_CSS}</style>
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex-1 min-w-[220px]">
-          <h1 className="text-xl md:text-2xl font-bold text-[var(--text-main)]">Презентации</h1>
-          <p className="text-sm text-[var(--text-muted)]">Показ со звуком и анимациями по ссылке. Кому открыть — решаете для каждой презентации.</p>
-        </div>
-        {canCreate && <button className={`${btnPrimary} w-full sm:w-auto justify-center`} onClick={() => setUploading(true)}><Upload className="w-4 h-4" /> Загрузить презентацию</button>}
-      </div>
+      <PageHeader
+        title="Презентации"
+        actions={canCreate && <Button icon={<Upload className="w-4 h-4" />} onClick={() => setUploading(true)}>Загрузить презентацию</Button>}
+        tabs={<Tabs value={tab} onChange={t => setTab(t as typeof tab)} tabs={[{ id: "active", label: "Презентации" }, { id: "archive", label: "Архив", icon: <Archive className="w-3.5 h-3.5" /> }]} />}
+      />
 
       {items.length > 6 && (
         <div className="relative max-w-sm">
@@ -77,18 +85,12 @@ export default function PresentationsPage() {
           <input className={`${input} pl-9`} placeholder="Поиск по названию" value={q} onChange={e => setQ(e.target.value)} />
         </div>
       )}
-      {loading && <div className="py-10 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--text-muted)]" /></div>}
+      {loading && <div className="py-10 flex justify-center"><Spinner /></div>}
       {error && <div className="text-sm text-rose-600">{error}</div>}
-      {!loading && !items.length && (
-        <div className={`${card} p-10 text-center space-y-2`}>
-          <MonitorPlay className="w-10 h-10 mx-auto text-[var(--text-muted)]" />
-          <div className="font-semibold text-[var(--text-main)]">Презентаций пока нет</div>
-          <p className="text-sm text-[var(--text-muted)]">{canCreate ? "Загрузите колоду Claude Slides (.zip) или HTML-страницу." : "Когда вам откроют презентацию, она появится здесь."}</p>
-        </div>
-      )}
+      {!loading && !error && !items.length && <EmptyState icon={<MonitorPlay className="w-10 h-10" />} title={tab === "archive" ? "Архив пуст" : "Презентаций пока нет"} />}
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {visible.map(p => <Card key={p.id} p={p} onShare={() => setSharing(p)} onDelete={() => remove(p)} />)}
+        {visible.map(p => <Card key={p.id} p={p} onShare={() => setSharing(p)} onDelete={() => remove(p)} onRestore={() => restore(p)} onPurge={() => purge(p)} />)}
       </div>
 
       {uploading && <UploadModal api={api} onClose={() => setUploading(false)} onDone={async () => { setUploading(false); await load(); }} />}
@@ -97,7 +99,7 @@ export default function PresentationsPage() {
   );
 }
 
-function Card({ p, onShare, onDelete }: { p: Item; onShare: () => void; onDelete: () => void }) {
+function Card({ p, onShare, onDelete, onRestore, onPurge }: { p: Item; onShare: () => void; onDelete: () => void; onRestore: () => void; onPurge: () => void }) {
   const cover = useMemo(() => (p.cover ? prepareSlide(p.cover.id, p.cover.html, {}) : null), [p.cover]);
   const Icon = ACCESS_ICON[p.access.mode];
   const link = showLink(window.location.origin, p.code);
@@ -116,9 +118,18 @@ function Card({ p, onShare, onDelete }: { p: Item; onShare: () => void; onDelete
           <span>{p.createdByName}</span>
         </div>
         <div className="mt-auto flex flex-wrap gap-1.5 pt-1">
-          <a className={`${btnPrimary} ${p.status !== "ready" ? "pointer-events-none opacity-40" : ""}`} href={link} target="_blank" rel="noreferrer"><ExternalLink className="w-4 h-4" /> Открыть</a>
-          {p.canManage && <button className={btn} onClick={onShare}><Users className="w-4 h-4" /> Доступ</button>}
-          {p.canManage && <button className={`${btn} text-rose-600 ml-auto`} onClick={onDelete} title="Удалить"><Trash2 className="w-4 h-4" /></button>}
+          {p.archivedAt ? (
+            <>
+              <Button variant="secondary" size="sm" icon={<RotateCcw className="w-4 h-4" />} onClick={onRestore}>Восстановить</Button>
+              <Button variant="danger" size="sm" className="ml-auto" icon={<Trash2 className="w-4 h-4" />} onClick={onPurge}>Удалить</Button>
+            </>
+          ) : (
+            <>
+              <a className={`${btnPrimary} ${p.status !== "ready" ? "pointer-events-none opacity-40" : ""}`} href={link} target="_blank" rel="noreferrer"><ExternalLink className="w-4 h-4" /> Открыть</a>
+              {p.canManage && <button className={btn} onClick={onShare}><Users className="w-4 h-4" /> Доступ</button>}
+              {p.canManage && <button className={`${btn} text-rose-600 ml-auto`} onClick={onDelete} title="В архив"><Archive className="w-4 h-4" /></button>}
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -136,8 +147,7 @@ function AccessPicker({ value, onChange, employees }: { value: PresentationAcces
           return (
             <label key={m} className={`flex items-start gap-2.5 rounded-xl border p-3 cursor-pointer ${value.mode === m ? "border-[var(--accent)] bg-[var(--accent)]/5" : "border-[var(--border-color)]"}`}>
               <input type="radio" className="mt-1" checked={value.mode === m} onChange={() => onChange({ ...value, mode: m })} />
-              <span><span className="flex items-center gap-1.5 text-sm font-semibold text-[var(--text-main)]"><Icon className="w-4 h-4" /> {ACCESS_LABEL[m]}</span>
-                <span className="block text-[11px] text-[var(--text-muted)] mt-0.5">{ACCESS_HINT[m]}</span></span>
+              <span><span className="flex items-center gap-1.5 text-sm font-semibold text-[var(--text-main)]"><Icon className="w-4 h-4" /> {ACCESS_LABEL[m]}</span></span>
             </label>
           );
         })}
@@ -153,7 +163,7 @@ function AccessPicker({ value, onChange, employees }: { value: PresentationAcces
             {list.map(e => (
               <label key={e.uid} className="flex items-center gap-2.5 px-3 py-2 border-t border-[var(--border-color)] first:border-0 cursor-pointer hover:bg-[var(--bg-surface-hover)]">
                 <input type="checkbox" checked={value.people.includes(e.uid)} onChange={ev => onChange({ ...value, people: ev.target.checked ? [...value.people, e.uid] : value.people.filter(x => x !== e.uid) })} />
-                <span className="min-w-0"><span className="block text-sm text-[var(--text-main)] truncate">{e.name}</span><span className="block text-[11px] text-[var(--text-muted)] truncate">{e.email}</span></span>
+                <span className="min-w-0"><span className="block text-sm text-[var(--text-main)] truncate">{e.name}</span>{e.email && <span className="block text-[11px] text-[var(--text-muted)] truncate">{e.email}</span>}</span>
               </label>
             ))}
             {employees && !list.length && <div className="p-4 text-center text-sm text-[var(--text-muted)]">Никого не нашли</div>}
@@ -174,17 +184,15 @@ function ShareModal({ p, api, tenant, onClose, onSaved }: { p: Item; api: Return
   const [access, setAccess] = useState<PresentationAccess>(p.access);
   const [title, setTitle] = useState(p.title);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const employees = useEmployees(api, access.mode === "people");
   const link = showLink(window.location.origin, p.code);
   const mark = tenantLogos(tenant).markUrl;
   const dirty = JSON.stringify(access) !== JSON.stringify(p.access) || title.trim() !== p.title;
   const save = async () => {
-    setBusy(true); setError(null);
-    try { await api(`/${p.id}`, { method: "PUT", body: JSON.stringify({ access, title }) }); await onSaved(); setSaved(true); setTimeout(() => setSaved(false), 2000); }
-    catch (e: any) { setError(e.message); }
+    setBusy(true);
+    try { await api(`/${p.id}`, { method: "PUT", body: JSON.stringify({ access, title }) }); await onSaved(); toast.success("Сохранено"); onClose(); }
+    catch (e: any) { toast.error(e.message); }
     finally { setBusy(false); }
   };
   return (
@@ -197,23 +205,22 @@ function ShareModal({ p, api, tenant, onClose, onSaved }: { p: Item; api: Return
         </div>
         <div className="grid sm:grid-cols-[1fr_auto] gap-4 items-start">
           <div className="space-y-2">
-            <span className={label}>Ссылка</span>
+            <span className={label}>Ссылка <InfoHint>Ссылка не меняется при смене доступа. Номер слайда можно добавить в конец: #slide-5.</InfoHint></span>
             <div className="flex gap-2">
               <input className={`${input} font-mono text-xs`} readOnly value={link} onFocus={e => e.target.select()} />
               <button className={btn} onClick={() => { void navigator.clipboard?.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1500); }}><Copy className="w-4 h-4" /> {copied ? "Скопировано" : "Копировать"}</button>
             </div>
-            <p className="text-[11px] text-[var(--text-muted)]">Ссылка не меняется при смене доступа: закрыли — у тех, кому доступ больше не положен, она перестаёт открываться. Номер слайда можно добавить в конец: <span className="font-mono">#slide-5</span>.</p>
+
           </div>
           <div className="flex flex-col items-center gap-2">
             <div className="bg-white rounded-xl p-2"><FancyQr value={link} size={132} logo={mark} /></div>
             <button className="text-xs text-[var(--accent)] hover:underline inline-flex items-center gap-1" onClick={() => downloadQr(link, QR_THEMES[0], `QR — ${p.title}.png`, 1024, mark)}><Download className="w-3 h-3" /> QR для печати</button>
           </div>
         </div>
-        {error && <div className="text-sm text-rose-600">{error}</div>}
         <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border-color)]">
           <button className={btn} onClick={onClose}>Закрыть</button>
           <button className={btnPrimary} disabled={busy || !dirty || !title.trim() || (access.mode === "people" && !access.people.length)} onClick={save}>
-            {busy && <Loader2 className="w-4 h-4 animate-spin" />} {saved ? "Сохранено" : "Сохранить"}
+            {busy && <Loader2 className="w-4 h-4 animate-spin" />} Сохранить
           </button>
         </div>
       </div>
@@ -265,20 +272,11 @@ function UploadModal({ api, onClose, onDone }: { api: ReturnType<typeof usePresA
       <div className="space-y-4">
         <label className={`flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-6 text-center cursor-pointer ${deck ? "border-emerald-500/50 bg-emerald-500/5" : "border-[var(--border-color)] hover:border-[var(--accent)]"}`}>
           <Upload className="w-7 h-7 text-[var(--text-muted)]" />
-          <span className="text-sm font-semibold text-[var(--text-main)]">{fileName || "Выберите .zip колоды или .html-файл"}</span>
+          <span className="text-sm font-semibold text-[var(--text-main)]">{fileName || "Выберите .zip колоды или .html-файл"} <InfoHint>В чате Claude, где сделана презентация, попросите собрать zip: project/deck.json, папку project/slides и все файлы _blob. Подойдёт и страница, сохранённая одним .html.</InfoHint></span>
           {deck && <span className="text-xs text-emerald-700">{deck.kind === "slides" ? `${deck.slides.length} слайдов · ${Object.keys(deck.files).length} файлов · ${mb(total)} МБ` : "HTML-страница"}</span>}
           <input type="file" accept=".zip,.html,.htm" className="hidden" disabled={busy} onChange={e => { void pick(e.target.files?.[0]); e.target.value = ""; }} />
         </label>
         {deck?.missing.length ? <div className="text-sm text-rose-600">В архиве нет {deck.missing.length} файлов, на которые ссылаются слайды (видео или картинки). Соберите архив заново со всеми файлами из _blob.</div> : null}
-
-        <details className="rounded-xl border border-[var(--border-color)] p-3 text-sm">
-          <summary className="cursor-pointer font-semibold text-[var(--text-main)]">Как получить .zip из Claude</summary>
-          <div className="mt-2 space-y-1.5 text-[13px] text-[var(--text-muted)]">
-            <p>В чате Claude, где сделана презентация, напишите:</p>
-            <p className="font-mono text-[12px] bg-[var(--bg-surface-hover)] rounded-lg p-2 text-[var(--text-main)]">Собери все файлы этой презентации в один zip: project/deck.json, папку project/slides и все загруженные файлы (_blob) — картинки и видео — с их id в имени.</p>
-            <p>Скачайте архив и выберите его здесь. Подойдёт и любая страница, сохранённая одним .html-файлом.</p>
-          </div>
-        </details>
 
         {deck && (
           <>

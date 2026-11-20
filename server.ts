@@ -9,6 +9,7 @@ import rateLimit from "express-rate-limit";
 import compression from "compression";
 import { publicTenantView } from "./src/server/tenantView.js";
 import { hasAnyPermission } from "./src/server/access.js";
+import { cashSummary } from "./src/server/cash.js";
 import { loadTenant, TenantError } from "./src/server/tenantAccess.js";
 import { requireFirebaseAuth } from "./src/routes/authRoutes.js";
 
@@ -257,12 +258,14 @@ import authRoutes from "./src/routes/authRoutes.js";
 import tenantRoutes from "./src/routes/tenantRoutes.js";
 import superAdminRoutes from "./src/routes/superAdminRoutes.js";
 import superTenantRoutes from "./src/routes/superTenantRoutes.js";
+import { readMaintenance } from "./src/routes/superAdminRoutes.js";
 import adminRoutes from "./src/routes/adminRoutes.js";
 import placementRoutes from "./src/routes/placementRoutes.js";
 import formRoutes from "./src/routes/formRoutes.js";
 import intakeRoutes from "./src/routes/intakeRoutes.js";
 import payrollRoutes from "./src/routes/payrollRoutes.js";
 import journalRoutes from "./src/routes/journalRoutes.js";
+import eduRoutes from "./src/routes/eduRoutes.js";
 import examRoutes from "./src/routes/examRoutes.js";
 import presentationRoutes from "./src/routes/presentationRoutes.js";
 import { notifyEvent } from "./src/server/notify.js";
@@ -275,9 +278,11 @@ import notifyRoutes from "./src/routes/notifyRoutes.js";
 import { verifySession } from "./src/server/session.js";
 import examAdminRoutes from "./src/routes/examAdminRoutes.js";
 import examPublicRoutes from "./src/routes/examPublicRoutes.js";
+import dashboardRoutes from "./src/routes/dashboardRoutes.js";
 import { sendTestResultEmail } from "./emailService.js";
 
 app.use("/api/auth", authRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/tenants", tenantRoutes);
 app.use("/api/tenants", adminRoutes);
 app.use("/api/superadmin", superAdminRoutes);
@@ -287,6 +292,7 @@ app.use("/api/forms", formRoutes);
 app.use("/api/intake", intakeRoutes);
 app.use("/api/payroll", payrollRoutes);
 app.use("/api/journals", journalRoutes);
+app.use("/api/edu", eduRoutes);
 app.use("/api/exam-builder", examRoutes);
 app.use("/api/presentations", presentationRoutes);
 app.use("/api/admissions", admissionRoutes);
@@ -608,53 +614,6 @@ app.post("/api/proctoring/upload-evidence", authLimiter, requireFirebaseAuth, as
 // implementation (with proper tenant-admin authorization and the branded Resend
 // email) lives there; do not redefine this route in server.ts.
 
-// Database Optimization & Data Migration Endpoint
-app.post("/api/admin/db/optimize", requireSuperadmin, async (req: express.Request, res: express.Response) => {
-  try {
-    const defaultTenantId = String(req.body?.tenantId || "").trim();
-    if (!defaultTenantId) return res.status(400).json({ success: false, error: "Не указана организация" });
-    const db = admin.firestore();
-    const results = { updatedSubmissions: 0, updatedDeals: 0, seededDepts: 0 };
-
-    // 1. Optimize Submissions (backfill tenantId & indexing fields)
-    const subSnap = await db.collection("submissions").get();
-    const batch1 = db.batch();
-    subSnap.docs.forEach(d => {
-      const data = d.data();
-      if (!data.tenantId) {
-        batch1.update(d.ref, { tenantId: defaultTenantId });
-        results.updatedSubmissions++;
-      }
-    });
-    if (results.updatedSubmissions > 0) await batch1.commit();
-
-    // 2. Optimize CRM Deals (backfill default departmentId)
-    const dealSnap = await db.collection("crm_deals").get();
-    const batch2 = db.batch();
-    dealSnap.docs.forEach(d => {
-      const data = d.data();
-      if (!data.departmentId) {
-        batch2.update(d.ref, { departmentId: 'dept_3', tenantId: data.tenantId || defaultTenantId });
-        results.updatedDeals++;
-      }
-    });
-    if (results.updatedDeals > 0) await batch2.commit();
-
-    console.log(`[DB OPTIMIZE] Optimized Firestore database for tenant ${defaultTenantId}:`, results);
-
-    return res.json({
-      success: true,
-      message: "База данных Firestore успешно оптимизирована",
-      results
-    });
-  } catch (err: any) {
-    console.error("[DB OPTIMIZE ERROR]", err);
-    return res.status(500).json({ error: err.message || "DB optimization failed" });
-  }
-});
-
-
-
 app.get("/api/tenant/config", async (req, res) => {
   try {
     const subdomain = req.query.subdomain as string;
@@ -789,22 +748,22 @@ app.get("/api/tenant/finance-summary", requireFirebaseAuth, async (req: any, res
       });
     });
 
-    // 2. Расчет зарплат и ФОТ по организации
-    let totalPayroll = 0;
+    // 2. Касса: ручные поступления и расходы, оплаты абонементов и выплаченные
+    // зарплаты (на руки + налоги и взносы). Черновики и утверждённые, но не
+    // выплаченные ведомости в баланс не входят.
+    let totalPayroll = 0, payrollTaxes = 0, cashIncome = 0, cashExpense = 0, cashBalance = 0, currency = "KGS";
     try {
-      const payrollSnap = await db.collection("tenants").doc(tenantId).collection("payroll_records").get();
-      payrollSnap.forEach(d => {
-        const p = d.data();
-        const toPay = parseFloat(String(p.calc?.toPay || p.toPay || 0)) || 0;
-        totalPayroll += toPay;
-      });
+      const sum = await cashSummary(db, tenantId, "0000-01-01", "9999-12-31");
+      totalPayroll = sum.payrollPaid; payrollTaxes = sum.payrollTaxes;
+      cashIncome = sum.income; cashExpense = sum.expense; cashBalance = sum.closing; currency = sum.currency;
     } catch (e: any) {
-      console.warn("[finance-summary] Payroll query notice:", e.message);
+      console.warn("[finance-summary] Cash query notice:", e.message);
     }
 
-    const totalCashCollected = totalInitialFees + totalMonthlyPaid;
-    const netBalance = totalCashCollected - totalPayroll;
-    const projectedBalance = (totalInitialFees + totalContractValue) - totalPayroll;
+    // Анкеты приёма уже входят в кассу как «только чтение» — отдельно их не вычитаем.
+    const totalCashCollected = cashIncome;
+    const netBalance = cashBalance;
+    const projectedBalance = netBalance + Math.max(0, totalContractValue - totalInitialFees - totalMonthlyPaid);
 
     return res.json({
       success: true,
@@ -815,6 +774,9 @@ app.get("/api/tenant/finance-summary", requireFirebaseAuth, async (req: any, res
       totalMonthlyPaid,
       totalCashCollected,
       totalPayroll,
+      payrollTaxes,
+      cashExpense,
+      currency,
       netBalance,
       projectedBalance,
       studentTransactions
@@ -873,45 +835,11 @@ app.get("/api/public/data", async (req, res) => {
   }
 });
 
-// Maintenance Mode Endpoints (Dynamic Control via SuperAdmin Panel)
-app.get("/api/public/maintenance", async (req, res) => {
-  try {
-    const db = await readDb();
-    const maintenance = db?.settings?.maintenance || {
-      enabled: false,
-      message: "Идут плановые технические работы на серверах прокторинга. Доступ будет восстановлен в ближайшее время.",
-      estimatedTime: "30 минут",
-      updatedAt: new Date().toISOString()
-    };
-    return res.json(maintenance);
-  } catch (e) {
-    return res.json({
-      enabled: false,
-      message: "Идут плановые технические работы на серверах прокторинга. Доступ будет восстановлен в ближайшее время.",
-      estimatedTime: "30 минут",
-      updatedAt: new Date().toISOString()
-    });
-  }
+// Режим техработ — в Firestore (system/maintenance), общий для всех экземпляров.
+app.get("/api/public/maintenance", async (_req, res) => {
+  try { return res.json(await readMaintenance()); }
+  catch { return res.json({ enabled: false }); }
 });
-
-app.post("/api/admin/maintenance", requireSuperadmin, async (req, res) => {
-  const { enabled, message, estimatedTime } = req.body;
-  const db = await readDb();
-  if (!db.settings) db.settings = {};
-  
-  db.settings.maintenance = {
-    enabled: Boolean(enabled),
-    message: message || "Идут плановые технические работы.",
-    estimatedTime: estimatedTime || "30 минут",
-    updatedAt: new Date().toISOString()
-  };
-
-  await writeDb(db);
-  console.log(`[MAINTENANCE] Mode updated to: ${enabled ? 'ENABLED' : 'DISABLED'}`);
-  res.json({ success: true, maintenance: db.settings.maintenance });
-});
-
-
 
 // 2. Subscribe to newsletter
 app.post("/api/public/subscribe", async (req, res) => {

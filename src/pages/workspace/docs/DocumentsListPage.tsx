@@ -4,6 +4,8 @@ import { FileText, Plus, Search, Folder, MoreVertical, Lock, Eye, Edit3, ShieldA
 import { documentService } from '../../../services/collab/documentService';
 import { WorkspaceDocument } from '../../../types/collab';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useWorkspaceAccess } from '../../../hooks/collab/useWorkspaceAccess';
+import { toast } from '../../../components/ui';
 
 export default function DocumentsListPage() {
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
@@ -12,11 +14,9 @@ export default function DocumentsListPage() {
   const [docs, setDocs] = useState<WorkspaceDocument[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Доступ ко всем документам — по праву «Управление сотрудниками»
-  // (кто ведёт команду, тот видит её бумаги), а не по названию роли.
-  const isFullAdmin = Array.isArray(activeTenant?.effectivePermissions)
-    ? activeTenant.effectivePermissions.includes('team:manage')
-    : ['owner', 'org:owner', 'superadmin', 'admin', 'org:admin'].includes(String(activeTenant?.role));
+  // Как в правилах базы: все документы видит тот, у кого «Управление сотрудниками».
+  const access = useWorkspaceAccess(activeTenant?.id);
+  const isFullAdmin = access.can('team:manage');
 
   useEffect(() => {
     if (!activeTenant?.id || !user?.uid) return;
@@ -27,8 +27,10 @@ export default function DocumentsListPage() {
   const handleCreate = async () => {
     if (!activeTenant?.id || !user) return;
     const authorName = user.displayName || user.email?.split('@')[0] || 'Сотрудник';
-    const newId = await documentService.createDocument(activeTenant.id, user.uid, authorName);
-    navigate(`/workspace/${activeTenant.id}/docs/${newId}`);
+    try {
+      const newId = await documentService.createDocument(activeTenant.id, user.uid, authorName);
+      navigate(`/workspace/${activeTenant.id}/docs/${newId}`);
+    } catch { toast.error('Не удалось создать документ'); }
   };
 
   const filteredDocs = docs.filter(d => (d.title || '').toLowerCase().includes(searchTerm.toLowerCase()));
@@ -41,7 +43,7 @@ export default function DocumentsListPage() {
             <FileText className="w-6 h-6 text-indigo-500" />
             Документы & Регламенты
           </h1>
-          <p className="text-[var(--text-muted)] mt-1 font-medium text-sm">База знаний команды с разграничением прав доступа ({docs.length})</p>
+          <p className="text-[var(--text-muted)] mt-1 font-medium text-sm">{docs.length}</p>
         </div>
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <div className="relative flex-1 sm:w-64">
@@ -69,7 +71,7 @@ export default function DocumentsListPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {filteredDocs.map(doc => {
             const isAuthor = doc.authorStaffId === user?.uid;
-            const level = doc.accessLevel || 'company_edit';
+            const level = doc.accessLevel || 'private';
 
             return (
               <div 
@@ -98,7 +100,7 @@ export default function DocumentsListPage() {
                 
                 <div className="mt-auto pt-4 border-t border-[var(--border-color)] flex items-center justify-between text-xs font-medium text-[var(--text-muted)]">
                   <span>{isAuthor ? 'Автор: Вы' : doc.authorName || 'Автор: Сотрудник'}</span>
-                  <span>{new Date(doc.updatedAt).toLocaleDateString()}</span>
+                  <span>{new Date(doc.updatedAt).toLocaleDateString('ru-RU')}</span>
                 </div>
               </div>
             );
@@ -107,8 +109,7 @@ export default function DocumentsListPage() {
           {filteredDocs.length === 0 && (
             <div className="col-span-full py-20 text-center flex flex-col items-center justify-center border-2 border-dashed border-[var(--border-color)] rounded-2xl">
               <FileText className="w-12 h-12 text-[var(--text-muted)] opacity-30 mb-4" />
-              <h3 className="text-lg font-bold text-[var(--text-main)] mb-1">Документов не найдено</h3>
-              <p className="text-[var(--text-muted)] font-medium max-w-sm mb-6">Документы приватны или не расшарены с вами авторами.</p>
+              <h3 className="text-lg font-bold text-[var(--text-main)] mb-6">Документов нет</h3>
               <button 
                 onClick={handleCreate}
                 className="px-6 py-2.5 bg-blue-600 text-white font-bold rounded-xl shadow-md hover:bg-blue-700 transition text-sm cursor-pointer"

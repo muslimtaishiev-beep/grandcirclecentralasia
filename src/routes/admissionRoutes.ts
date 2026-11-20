@@ -72,20 +72,29 @@ const auth = optionalAuth(t => verifySession(t));
 
 // ── Права на анкеты ─────────────────────────────────────────────────────
 
-/** Заполнять: анкету родителя за него — приёмная и психолог; анкету сотрудника — по праву шаблона. */
+/** Заполнять: анкету родителя за него — приёмная; анкету сотрудника — по праву шаблона. */
 const canFill = (c: StaffCaller, t: QTemplate) =>
   t.audience === "parent" ? hasPerm(c, "admission:manage") : t.fillPermission ? hasPerm(c, t.fillPermission) : hasPerm(c, "admission:manage");
 /** Видеть содержимое целиком. */
 const canSee = (c: StaffCaller, t: QTemplate) => !t.sensitive || canFill(c, t) || (!!t.viewPermission && hasPerm(c, t.viewPermission));
-/** Править шаблон: владелец, настройки, приёмная — или тот, кто по нему работает (психолог правит нормы). */
+/** Править шаблон: владелец, настройки, приёмная — или тот, кто по нему работает (специалист правит нормы). */
 const canEditTemplate = (c: StaffCaller, t?: QTemplate) =>
   hasPerm(c, "settings:manage", "admission:manage") || (!!t?.fillPermission && hasPerm(c, t.fillPermission));
-/** Тест, бумажные результаты и решение — академическая часть: психологу их не отдаём. */
+/** Тест, бумажные результаты и решение — академическая часть: специалистам по анкетам их не отдаём. */
 const seesAcademic = (c: StaffCaller) => hasPerm(c, "admission:manage", "tests:manage", "placement:manage", "tests:review");
-const meOf = (c: StaffCaller) => ({
-  admission: hasPerm(c, "admission:manage"), psych: hasPerm(c, "psych:conduct"), psychView: hasPerm(c, "psych:view"), academic: seesAcademic(c), name: c.name,
-  owner: c.full,
-});
+/**
+ * Что можно этому сотруднику: администрация приёма; «проводит анкеты» — по праву
+ * «вести сессии» или по праву хотя бы одной анкеты организации; «видит анкеты» — аналогично.
+ */
+const meOf = (c: StaffCaller, ts: QTemplate[] = []) => {
+  const staffTpls = ts.filter(x => !x.archived && x.audience === "staff");
+  return {
+    admission: hasPerm(c, "admission:manage"),
+    conduct: hasPerm(c, "psych:conduct") || staffTpls.some(x => canFill(c, x)),
+    viewAll: hasPerm(c, "psych:view") || staffTpls.some(x => canSee(c, x)),
+    academic: seesAcademic(c), name: c.name, owner: c.full,
+  };
+};
 /** Доступ к анкете — всегда по действующему шаблону: снимок хранит только вопросы и нормы. */
 const withAccess = (snap: QTemplate, cur?: QTemplate): QTemplate => (cur ? { ...snap, fillPermission: cur.fillPermission, viewPermission: cur.viewPermission, sensitive: cur.sensitive } : snap);
 const LEVEL_WORD = ["Низкий", "Средний", "Отличный"] as const;
@@ -93,16 +102,16 @@ const LEVEL_WORD = ["Низкий", "Средний", "Отличный"] as con
 // ── Уведомления администрации ───────────────────────────────────────────
 
 type AdmissionEvent = "new" | "parent" | "session" | "done" | "test_start" | "section" | "tested" | "results" | "decision";
-type Audience = "admin" | "psych";
+type Audience = "admin" | "staff";
 /**
  * Кому и с каким заголовком. Администрация (право приёма) — обо всём ходе
- * приёма; психологи (проводят диагностику) — о новом ученике и о готовой
+ * приёма; специалисты (проводят анкеты) — о новом ученике и о готовой
  * анкете родителя: это их работа на сессию. Что кому приходит на самом
  * деле — по личным настройкам (профиль → «Уведомления»).
  */
 const EVENT_PLAN: Record<AdmissionEvent, Partial<Record<Audience, string>>> = {
-  new: { admin: "Новый поступающий", psych: "К вам новый ученик" },
-  parent: { admin: "Анкета родителя заполнена", psych: "Анкета родителя заполнена" },
+  new: { admin: "Новый поступающий", staff: "К вам новый ученик" },
+  parent: { admin: "Анкета родителя заполнена", staff: "Анкета родителя заполнена" },
   session: { admin: "Начата анкета специалиста" },
   done: { admin: "Сессия завершена — выдайте направление" },
   test_start: { admin: "Начал тест" },
@@ -111,7 +120,7 @@ const EVENT_PLAN: Record<AdmissionEvent, Partial<Record<Audience, string>>> = {
   results: { admin: "Результаты теста внесены" },
   decision: { admin: "Решение по кандидату" },
 };
-const AUDIENCE_PERMS: Record<Audience, PermissionKey[]> = { admin: ["admission:manage"], psych: ["psych:conduct"] };
+const AUDIENCE_PERMS: Record<Audience, PermissionKey[]> = { admin: ["admission:manage"], staff: ["psych:conduct"] };
 /**
  * Ход приёма — в колокольчик и Telegram (кроме автора). Одна запись на
  * ребёнка и адресата: показывает последний шаг, а не копит десяток строк
@@ -127,14 +136,14 @@ export async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEven
     const body = ev === "done" ? [who, o.outcome, o.referral ? "направление готово" : ""].filter(Boolean).join(" · ")
       : ev === "tested" || ev === "results" || ev === "section" || ev === "decision" ? [who, o.summary, ev === "results" || ev === "decision" ? c.name : ""].filter(Boolean).join(" · ")
       : [who, c.name].filter(Boolean).join(" · ");
-    const adminTab = ev === "new" ? "profile" : ev === "parent" ? "parent" : ["test_start", "section", "tested", "results", "decision"].includes(ev) ? "test" : o.tid || "psych";
+    const adminTab = ev === "new" ? "profile" : ev === "parent" ? "parent" : ["test_start", "section", "tested", "results", "decision"].includes(ev) ? "test" : o.tid || "own";
     const sent = new Set<string>([c.uid]);
     const adminUrl = plan.admin ? await adminCardUrl(t, a, adminTab) : "";
-    for (const aud of ["admin", "psych"] as Audience[]) {
+    for (const aud of ["admin", "staff"] as Audience[]) {
       const title = plan[aud];
       if (!title) continue;
-      const url = aud === "admin" ? adminUrl : applicantPath(t, a.id, o.tid || "psych", "psych");
-      const perms = aud === "psych" ? [...AUDIENCE_PERMS.psych, ...(await loadTemplates(t)).filter(x => x.audience === "staff" && !x.archived && x.fillPermission && isPermissionKey(x.fillPermission)).map(x => x.fillPermission as PermissionKey)] : AUDIENCE_PERMS[aud];
+      const url = aud === "admin" ? adminUrl : applicantPath(t, a.id, o.tid || "own", "staff");
+      const perms = aud === "staff" ? [...AUDIENCE_PERMS.staff, ...(await loadTemplates(t)).filter(x => x.audience === "staff" && !x.archived && x.fillPermission && isPermissionKey(x.fillPermission)).map(x => x.fillPermission as PermissionKey)] : AUDIENCE_PERMS[aud];
       const uids = (await membersWith(db(), t, [...new Set(perms)])).map(r => r.uid).filter(u => !sent.has(u));
       uids.forEach(u => sent.add(u));
       await deliver({ tenantId: t, event: `adm.${ev}`, uids, title, body, url, type: "admission", docId: u => `adm_${a.id}_${u}`, extra: { applicantId: a.id } });
@@ -282,7 +291,8 @@ async function historyPage(t: string, applicantId: string, c: StaffCaller, templ
   let q: FirebaseFirestore.Query = col(t, "applicant_audit").where("applicantId", "==", applicantId);
   const all = (await q.get()).docs.map(d => d.data() as any).sort((x, y) => y.at - x.at);
   const KINDS: Record<string, (a: string) => boolean> = {
-    forms: a => a.startsWith("form_") || a.startsWith("parent_form") || a === "viewed",
+    forms: a => a.startsWith("form_") || a.startsWith("parent_form"),
+    views: a => a === "viewed",
     referral: a => a.startsWith("referral"),
     test: a => a.startsWith("test") || a === "tested" || a.startsWith("paper") || a === "attempt",
     decision: a => a === "candidate" || a === "decision" || a === "feedback",
@@ -420,7 +430,7 @@ async function admissionSettings(t: string): Promise<{ parentFormEmail?: string;
 export async function emailParentForm(t: string, a: Applicant, o: { force?: boolean; by?: string } = {}): Promise<SendResult> {
   try {
     const templateId = (await admissionSettings(t)).parentFormEmail || "";
-    if (!templateId) return { sent: false, reason: "В настройках анкет не выбрано письмо «Анкета родителю»" };
+    if (!templateId) return { sent: false, skipped: !o.force, reason: "В настройках анкет не выбрано письмо «Анкета родителю»" };
     if (!a.tokens?.parent) return { sent: false, reason: "Нет ссылки на анкету" };
     const r = await sendTemplated({
       tenantId: t, templateId, to: a.parent.email || "", event: "parent_form", refId: `${t}_${a.id}`, force: o.force, by: o.by,
@@ -577,7 +587,7 @@ router.put("/:tenantId/templates/:tid", ...staff, async (req: any, res: any) => 
     if (!canEditTemplate(req.caller, prev)) return fail(res, 403, "Нет прав менять эту анкету");
     const c: StaffCaller = req.caller;
     // «Кто заполняет / кто видит» — только настройки организации: иначе приёмная
-    // могла бы выдать себе просмотр психологии, а психолог — открыть анкету всем.
+    // могла бы выдать себе просмотр закрытых анкет, а тот, кто по ним работает, — открыть их всем.
     let body = hasPerm(c, "settings:manage") ? req.body : { ...req.body, fillPermission: prev.fillPermission, viewPermission: prev.viewPermission, sensitive: prev.sensitive };
     // Какие итоги пускают к тесту — решает администрация, не тот, кто заполняет анкету.
     if (!hasPerm(c, "settings:manage", "admission:manage")) body = { ...body, outcome: prev.outcome };
@@ -663,12 +673,12 @@ router.get("/:tenantId/applicants", ...staff, async (req: any, res: any) => {
     const t = req.params.tenantId;
     const c: StaffCaller = req.caller; const academic = seesAcademic(c);
     const archived = req.query.archived === "1" && hasPerm(c, "admission:manage");
-    const [snap, attempts] = await Promise.all([col(t, "applicants").orderBy("createdAt", "desc").limit(3000).get(), academic ? attemptsOf(t) : []]);
+    const [snap, attempts, tpls] = await Promise.all([col(t, "applicants").orderBy("createdAt", "desc").limit(3000).get(), academic ? attemptsOf(t) : [], loadTemplates(t)]);
     const list = snap.docs.map(d => ({ ...(d.data() as Applicant), id: d.id })).filter(a => !!a.archived === archived);
     return res.json({
       success: true,
       applicants: list.map(a => ({ ...row(a, attempts, academic), ...(a.archived ? { archived: a.archived } : {}), referralBlocked: !!a.referralBlocked })),
-      me: meOf(c),
+      me: meOf(c, tpls),
     });
   } catch (e: any) { return oops(res, e); }
 });
@@ -713,6 +723,8 @@ router.post("/:tenantId/applicants", ...staff, async (req: any, res: any) => {
     await audit(t, ref.id, c, "created");
     await syncReferral(t, a).catch(e => console.warn("[admissions] sync", e?.message));
     await notifyAdmission(t, a, "new", c);
+    // Есть почта родителя и выбрано письмо — ссылка на анкету уходит сразу (одно письмо на карточку).
+    if (a.parent.email) await emailParentForm(t, a, { by: c.uid });
     return res.json({ success: true, id: ref.id, refNo });
   } catch (e: any) { return oops(res, e); }
 });
@@ -721,8 +733,8 @@ router.get("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
   try {
     const t = req.params.tenantId; const c: StaffCaller = req.caller;
     const a = await loadApplicant(t, String(req.params.id));
-    if (!a) return fail(res, 404, "Поступающий не найден");
-    a.referral = await syncReferral(t, a).catch(() => a.referral);
+    if (!a || (a.archived && !hasPerm(c, "admission:manage"))) return fail(res, 404, "Поступающий не найден");
+    if (!a.archived) a.referral = await syncReferral(t, a).catch(() => a.referral);
     const academic = seesAcademic(c);
     const [templates, formsSnap, attempts] = await Promise.all([
       loadTemplates(t), col(t, "applicant_forms").where("applicantId", "==", a.id).get(), academic ? attemptsOf(t, [a.id]) : [],
@@ -740,7 +752,6 @@ router.get("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
     // Просмотр — одна запись в час на сотрудника, а не на каждое автообновление.
     if (sensitive) await applicantAudit(t, a.id, c, "viewed", "открыл анкеты с данными о здоровье и развитии", [], { key: `view_${a.id}_${c.uid}_${Math.floor(Date.now() / 3_600_000)}` });
     const auditLog = hasPerm(c, "admission:manage") ? (await historyPage(t, a.id, c, templates, {})).items : [];
-    if (a.archived && !hasPerm(c, "admission:manage")) return fail(res, 404, "Поступающий не найден");
     const canFillMap = Object.fromEntries(templates.map(x => [x.id, canFill(c, x)]));
     const canSeeMap = Object.fromEntries(templates.map(x => [x.id, canSee(c, x)]));
     return res.json({
@@ -753,7 +764,7 @@ router.get("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
         return e ? { id: e.id, title: e.title, paper: !!e.settings.paper, sections: e.sections.map(x => ({ id: x.id, title: x.title, tasks: x.tasks || 0 })) } : null;
       })() : null,
       templates: templates.filter(x => !x.archived), canFill: canFillMap, canSee: canSeeMap,
-      me: meOf(c),
+      me: meOf(c, templates),
     });
   } catch (e: any) { return oops(res, e); }
 });
@@ -996,7 +1007,7 @@ router.put("/:tenantId/applicants/:id/forms/:tid", ...staff, async (req: any, re
 router.post("/:tenantId/applicants/:id/referral", ...staff, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const c: StaffCaller = req.caller;
-    // Разделение обязанностей: психолог ставит итог, тест по классу выбирает система;
+    // Разделение обязанностей: специалист ставит итог, тест по классу выбирает система;
     // выдать направление вопреки итогу или на другой экзамен — только администрация.
     if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Направление вручную выдаёт администратор");
     const a = await loadApplicant(t, String(req.params.id));
@@ -1308,7 +1319,7 @@ async function resolveLink(token: string) {
 
 /**
  * Скан QR. Сотрудник этой организации с правами поступающих — в карточку на
- * свою вкладку (психолог — диагностика, приёмная/администрация — академическая
+ * свою вкладку (специалист — своя анкета, приёмная/администрация — академическая
  * часть). Все остальные — то, что положено цели ссылки.
  */
 router.get("/link/:token", auth, async (req: any, res: any) => {
@@ -1320,12 +1331,16 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
     const org = { id: l.tenantId, name: str(gate.tenant?.name, 120), ...tenantLogos(gate.tenant) };
     const a = l.applicant;
     const c = await staffCaller(db(), l.tenantId, req.user);
-    if (c?.member && hasPerm(c, ...ANY)) {
-      const tab = hasPerm(c, "admission:manage") ? (l.purpose === "parent" ? "parent" : "test") : hasPerm(c, "psych:conduct") ? "psych" : "profile";
+    if (c?.member && hasPerm(c, ...(await admissionPerms(l.tenantId)))) {
+      // Всегда в раздел «Приём»: туда пускает право приёма или право из анкеты, а не права на экзамены.
+      const reception = hasPerm(c, "admission:manage");
+      const tab = reception ? (l.purpose === "parent" ? "parent" : "test") : "own";
       const sec = req.query.s ? `&s=${encodeURIComponent(String(req.query.s).slice(0, 40))}` : "";
-      const url = hasPerm(c, "admission:manage") ? await adminCardUrl(l.tenantId, a, tab) : `/workspace/${l.tenantId}/exams?side=psych&open=${a.id}&ctab=${tab}`;
+      const url = applicantPath(l.tenantId, a.id, tab, reception ? undefined : "staff");
       return res.json({ success: true, mode: "staff", org, who: c.name, url: `${url}${sec}`, child: a.child.name, refNo: a.refNo });
     }
+    // Карточка в архиве — ссылки родителя и ученика не работают, пока её не вернут.
+    if (a.archived) return fail(res, 404, "Ссылка не найдена или уже заменена новой");
     const signedIn = !!c;
     if (l.purpose === "card") return res.json({ success: true, mode: "staff_only", org, signedIn });
     if (l.purpose === "referral") {
@@ -1367,7 +1382,7 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
       const [k, f] = i.bind.split(".") as ["child" | "parent", string];
       const v = (a as any)[k]?.[f]; if (v) prefill[i.id] = { value: String(v) };
     }
-    // После встречи с психологом ответы зафиксированы — по ссылке (её могли
+    // После встречи со специалистом ответы зафиксированы — по ссылке (её могли
     // переслать или сфотографировать) их больше не показываем, только статус.
     return res.json({
       success: true, mode: "parent", org, signedIn, locked, template: locked ? { ...tpl, sections: [] } : tpl,
@@ -1376,7 +1391,7 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
   } catch (e: any) { return oops(res, e); }
 });
 
-/** Родитель заполнил анкету по своей ссылке. Править можно, пока психолог не завершил диагностику. */
+/** Родитель заполнил анкету по своей ссылке. Править можно, пока специалист не завершил диагностику. */
 router.post("/link/:token/parent", async (req: any, res: any) => {
   try {
     const l = await resolveLink(String(req.params.token));
@@ -1384,6 +1399,7 @@ router.post("/link/:token/parent", async (req: any, res: any) => {
     const gate = await checkTenantOpen(l.tenantId, "admissions");
     if (!gate.ok) return fail(res, gate.status || 403, gate.error || "Недоступно");
     const a = l.applicant; const t = l.tenantId;
+    if (a.archived) return fail(res, 404, "Ссылка не найдена или уже заменена новой");
     if (Object.values(a.stages).some(s => s.status === "done")) return fail(res, 409, "Встреча со специалистом уже прошла — изменить ответы можно через приёмную");
     if (req.body?.consent !== true) return fail(res, 400, "Нужно согласие на обработку данных");
     const templates = await loadTemplates(t);

@@ -6,11 +6,13 @@ import { User, DollarSign, Calendar } from 'lucide-react';
 interface Props {
   deal: CrmDeal;
   onClick: (deal: CrmDeal) => void;
+  draggable?: boolean;
 }
 
-export default function DealCard({ deal, onClick }: Props) {
+export default function DealCard({ deal, onClick, draggable = true }: Props) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: deal.id,
+    disabled: !draggable,
     data: {
       type: 'Deal',
       deal,
@@ -25,7 +27,7 @@ export default function DealCard({ deal, onClick }: Props) {
     <div
       ref={setNodeRef}
       style={style}
-      className={`bg-[var(--bg-panel)] p-4 rounded-xl border border-[var(--border-color)] shadow-sm cursor-grab active:cursor-grabbing hover:border-[var(--accent)] transition-colors group ${isDragging ? 'opacity-50 z-50 ring-2 ring-[var(--accent)]' : ''}`}
+      className={`bg-[var(--bg-panel)] p-4 rounded-xl border border-[var(--border-color)] shadow-sm ${draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} hover:border-[var(--accent)] transition-colors group ${isDragging ? 'opacity-50 z-50 ring-2 ring-[var(--accent)]' : ''}`}
       onClick={(e) => {
         // Prevent click if we were dragging
         if (!isDragging) {
@@ -55,7 +57,7 @@ export default function DealCard({ deal, onClick }: Props) {
       <div className="flex items-center justify-between text-xs text-[var(--text-muted)] pt-3 border-t border-[var(--border-color)]">
         <div className="flex items-center gap-1">
           <User className="w-3.5 h-3.5" />
-          <span className="truncate max-w-[100px]">Client {deal.contactId.substring(0, 4)}</span>
+          <span className="truncate max-w-[100px]">{deal.contactName || 'Без контакта'}</span>
         </div>
         {deal.expectedCloseDate && (
           <div className="flex items-center gap-1">

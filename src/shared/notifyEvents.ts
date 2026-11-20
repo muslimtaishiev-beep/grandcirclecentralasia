@@ -24,6 +24,8 @@ export interface NotifyEventDef {
   label: string;
   for: PermissionKey[];
   on: boolean;
+  /** false — событие пока никто не создаёт: в настройках не показываем, чтобы переключатель не обманывал. */
+  live?: boolean;
 }
 
 const ADM: PermissionKey[] = ["admission:manage"];
@@ -50,10 +52,10 @@ export const NOTIFY_EVENTS: NotifyEventDef[] = [
 
   { key: "email.failed", section: "email", label: "Письмо не ушло", for: ["admission:manage", "tests:manage", "team:manage", "certificates:issue", "crm:manage"], on: true },
 
-  { key: "task", section: "work", label: "Задачи", for: [], on: true },
-  { key: "mention", section: "work", label: "Упоминания", for: [], on: true },
-  { key: "chat", section: "work", label: "Чат", for: [], on: true },
-  { key: "crm", section: "work", label: "CRM", for: [], on: true },
+  { key: "task", live: false, section: "work", label: "Задачи", for: [], on: true },
+  { key: "mention", live: false, section: "work", label: "Упоминания", for: [], on: true },
+  { key: "chat", live: false, section: "work", label: "Чат", for: [], on: true },
+  { key: "crm", live: false, section: "work", label: "CRM", for: [], on: true },
 ];
 
 const BY_KEY = new Map(NOTIFY_EVENTS.map(e => [e.key, e]));

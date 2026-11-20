@@ -1,57 +1,83 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLive } from "../../../lib/useLive";
 import { useOutletContext, useSearchParams } from "react-router-dom";
-import { Download, FileDown, Loader2, Plus, QrCode, Search, UserPlus } from "lucide-react";
+import { ArchiveRestore, ArrowDown, ArrowUp, Archive, Download, FileDown, History, Loader2, Mail, QrCode, Search, Trash2, UserPlus, Users } from "lucide-react";
 import { STAGE_LABEL, type Stage } from "../../../shared/admissions";
 import { gradeOf } from "../../../shared/questionnaires";
-import { Modal, btn, btnPrimary, card, input, label } from "../journals/components/ui";
+import { Button, EmptyState, Spinner, Table, Tabs, confirmDialog, toast, useUrlTab } from "../../../components/ui";
+import { card, input } from "../journals/components/ui";
 import { TONE, useAdmissionApi, type Me, type Row } from "./admissionApi";
 import ApplicantCard from "./ApplicantCard";
 import NewApplicantModal from "./NewApplicantModal";
 import AttemptViewer from "../exams/AttemptViewer";
 import QrScanModal from "./QrScanModal";
 import TemplatesTab from "./TemplatesTab";
+import HistoryModal from "./HistoryModal";
 import { downloadSessionById } from "./sessionPdf";
 
 /**
  * «Поступающие»: список с поиском по ФИО и №, фильтры по классу и этапу,
- * новая карточка, сканер QR. Карточка открывается поверх (?open=<id>&tab=),
- * так на неё ведут QR и ссылки из экзаменов.
+ * сортировка, массовые действия, архив, новая карточка, сканер QR. Всё, что
+ * выбрано (поиск, фильтры, сортировка, вкладка, открытая карточка), хранится в
+ * адресе — ссылкой можно поделиться, перезагрузка ничего не сбрасывает.
  */
 const no = (n: number) => String(n).padStart(4, "0");
+const PAGE = 50;
+type SortKey = "created" | "no" | "name" | "grade" | "stage";
+const SORTS: SortKey[] = ["created", "no", "name", "grade", "stage"];
+const STAGE_ORDER = Object.keys(STAGE_LABEL) as Stage[];
 
 /**
- * mode: «admin» — приём (завести, QR, направление, тест, решение); «psych» — только сессии.
- * classGrades — страница класса (вступительный тест): только его поступающие, без вкладки «Анкеты».
+ * mode: «admin» — приём (завести, QR, направление, тест, решение); «staff» — только свои анкеты.
+ * classGrades — страница класса (вступительный тест): только его поступающие, без вкладок.
  */
-export default function AdmissionsPage({ embedded, mode = "admin", classGrades }: { embedded?: boolean; mode?: "admin" | "psych"; classGrades?: number[] } = {}) {
+export default function AdmissionsPage({ embedded, mode = "admin", classGrades }: { embedded?: boolean; mode?: "admin" | "staff"; classGrades?: number[] } = {}) {
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
   const tenantId: string = activeTenant?.id || "";
   const api = useAdmissionApi(tenantId);
   const [params, setParams] = useSearchParams();
   const [rows, setRows] = useState<Row[]>([]);
-  const [me, setMe] = useState<Me>({ admission: false, psych: false, psychView: false, academic: false });
+  const [archive, setArchive] = useState<Row[]>([]);
+  const [me, setMe] = useState<Me>({ admission: false, conduct: false, viewAll: false, academic: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [q, setQ] = useState("");
-  const [grade, setGrade] = useState("");
-  const [stage, setStage] = useState<"" | Stage>("");
   const [creating, setCreating] = useState(false);
   const [scan, setScan] = useState(false);
+  const [sectionHistory, setSectionHistory] = useState(false);
   const [result, setResult] = useState<{ id: string; examId: string } | null>(null);
-  const tab = !classGrades && params.get("view") === "templates" ? "templates" : "list";
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [shown, setShown] = useState(PAGE);
+  const [busy, setBusy] = useState(false);
+  const reception = me.admission && mode === "admin";
+  const viewTabs = ["list", "archive", "templates"] as const;
+  const [rawView, setView] = useUrlTab("view", viewTabs, "list");
+  const view = classGrades ? "list" : rawView === "archive" && !reception ? "list" : rawView;
   const open = params.get("open");
+
+  const q = params.get("q") || "";
+  const grade = params.get("grade") || "";
+  const stage = (params.get("stage") || "") as "" | Stage;
+  const sort: SortKey = SORTS.includes(params.get("sort") as SortKey) ? (params.get("sort") as SortKey) : "created";
+  const dir = params.get("dir") === "asc" ? "asc" : params.get("dir") === "desc" ? "desc" : sort === "created" ? "desc" : "asc";
+  const setP = (patch: Record<string, string>) => {
+    const p = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(patch)) { if (v) p.set(k, v); else p.delete(k); }
+    setParams(p, { replace: true }); setShown(PAGE);
+  };
 
   const load = useCallback(async () => {
     if (!tenantId) return;
-    try { const j = await api("/applicants"); setRows(j.applicants); setMe(j.me); setError(null); }
-    catch (e: any) { setError(e.message); }
+    try {
+      const j = await api("/applicants"); setRows(j.applicants); setMe(j.me);
+      if (j.me.admission) { const a = await api("/applicants?archived=1"); setArchive(a.applicants); }
+      setError(null);
+    } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
   }, [api, tenantId]);
   useEffect(() => { void load(); }, [load]);
   // Кто угодно изменил поступающего или ученик прошёл тест — список обновляется сам.
   useLive(tenantId, ["admissions", "exams"], () => { void load(); });
-  // Психолог завёл ученика или завершил сессию — список обновляется без перезагрузки.
+  // Специалист завёл ученика или завершил анкету — список обновляется без перезагрузки.
   useEffect(() => {
     const on = (e: Event) => { if ((e as CustomEvent).detail?.type === "admission") void load(); };
     window.addEventListener("sf:notification", on);
@@ -60,18 +86,26 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
   const [saving, setSaving] = useState<string | null>(null);
   const downloadSession = async (id: string) => {
     setSaving(id);
-    try { await downloadSessionById(api, activeTenant, id); } catch (e: any) { alert(e.message); } finally { setSaving(null); }
+    try { await downloadSessionById(api, activeTenant, id); } catch (e: any) { toast.error(e.message); } finally { setSaving(null); }
   };
 
-  const grades = useMemo(() => [...new Set(rows.map(r => gradeOf(r.child.grade)).filter((g): g is number => g !== null))].sort((a, b) => a - b), [rows]);
-  const visible = rows.filter(r => {
-    if (classGrades) { const g = gradeOf(r.child.grade); if (g === null || !classGrades.includes(g)) return false; }
+  const source = view === "archive" ? archive : rows;
+  const grades = useMemo(() => [...new Set(source.map(r => gradeOf(r.child.grade)).filter((g): g is number => g !== null))].sort((a, b) => a - b), [source]);
+  const visible = useMemo(() => {
     const t = q.trim().toLowerCase();
-    if (t && !(`${r.child.name} ${r.parent.name} ${r.parent.phone}`.toLowerCase().includes(t) || no(r.refNo).includes(t.replace(/\D/g, "") || "—"))) return false;
-    if (grade && String(gradeOf(r.child.grade)) !== grade) return false;
-    if (stage && r.stage !== stage) return false;
-    return true;
-  });
+    const list = source.filter(r => {
+      if (classGrades) { const g = gradeOf(r.child.grade); if (g === null || !classGrades.includes(g)) return false; }
+      if (t && !(`${r.child.name} ${r.parent.name} ${r.parent.phone}`.toLowerCase().includes(t) || no(r.refNo).includes(t.replace(/\D/g, "") || "—"))) return false;
+      if (grade && String(gradeOf(r.child.grade)) !== grade) return false;
+      if (stage && r.stage !== stage) return false;
+      return true;
+    });
+    const key = (r: Row): number | string => sort === "no" ? r.refNo : sort === "name" ? r.child.name.toLowerCase() : sort === "grade" ? gradeOf(r.child.grade) ?? 99 : sort === "stage" ? STAGE_ORDER.indexOf(r.stage) : r.createdAt;
+    const k = dir === "asc" ? 1 : -1;
+    return [...list].sort((x, y) => (key(x) > key(y) ? k : key(x) < key(y) ? -k : 0));
+  }, [source, q, grade, stage, sort, dir, classGrades]);
+  const page = visible.slice(0, shown);
+
   const openCard = (id: string | null, tabKey?: string) => {
     const p = new URLSearchParams(params);
     if (id) { p.set("open", id); if (tabKey) p.set("ctab", tabKey); else p.delete("ctab"); } else { p.delete("open"); p.delete("ctab"); p.delete("s"); p.delete("qr"); }
@@ -83,20 +117,57 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
     if (!n) return;
     const hit = rows.find(r => r.refNo === Number(n));
     if (hit) return openCard(hit.id);
-    try { const j = await api(`/by-no/${n}`); openCard(j.id); } catch (e: any) { alert(e.message); }
+    try { const j = await api(`/by-no/${n}`); openCard(j.id); } catch (e: any) { toast.error(e.message); }
   };
   const excel = async () => {
     const { default: ExcelJS } = await import("exceljs");
     const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet("Поступающие");
-    ws.addRow(["№", "ФИО ребёнка", "Класс", "Дата рождения", "Родитель", "Телефон", "Анкета родителя", "Этапы", ...((me.academic && mode === "admin") ? ["Тест", "Результат", "Решение"] : []), "Этап"]);
+    const acad = me.academic && mode === "admin";
+    ws.addRow(["№", "ФИО ребёнка", "Класс", "Дата рождения", "Родитель", "Телефон", "Анкета родителя", "Этапы", ...(acad ? ["Тест", "Результат", "Решение"] : []), "Этап"]);
     for (const r of visible) ws.addRow([no(r.refNo), r.child.name, r.child.grade, r.child.birthDate, r.parent.name, r.parent.phone, r.parentForm.status === "done" ? "да" : "",
       Object.values(r.stages).map(s => `${s.title}: ${s.status === "done" ? s.outcomeLabel : "идёт"}`).join("; "),
-      ...((me.academic && mode === "admin") ? [r.attempt?.examTitle || r.referral?.examTitle || (r.paperResults ? "на бумаге" : ""), r.attempt?.parts.map(p => `${p.title}: ${p.value}`).join("; ") || (r.attempt?.percent != null ? `${r.attempt.percent}%` : ""),
+      ...(acad ? [r.attempt?.examTitle || r.referral?.examTitle || (r.paperResults ? "на бумаге" : ""), r.attempt?.parts.map(p => `${p.title}: ${p.value}`).join("; ") || (r.attempt?.percent != null ? `${r.attempt.percent}%` : ""),
         r.decision || attemptDecision(r)] : []), STAGE_LABEL[r.stage]]);
     ws.getRow(1).font = { bold: true }; ws.columns.forEach(c => { c.width = 18; });
     const buf = await wb.xlsx.writeBuffer();
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([buf])); a.download = `Поступающие ${new Date().toLocaleDateString("ru-RU")}.xlsx`; a.click();
   };
+
+  const allOnPage = page.length > 0 && page.every(r => picked.has(r.id));
+  const togglePick = (id: string) => setPicked(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const togglePage = () => setPicked(s => { const n = new Set(s); page.forEach(r => (allOnPage ? n.delete(r.id) : n.add(r.id))); return n; });
+  const bulk = async (action: "archive" | "restore" | "parent_email") => {
+    const ids = [...picked];
+    if (!ids.length) return;
+    if (action === "archive" && !(await confirmDialog({ title: `Убрать в архив: ${ids.length}`, confirmLabel: "В архив" }))) return;
+    if (action === "parent_email" && !(await confirmDialog({ title: `Отправить анкету родителям: ${ids.length}`, confirmLabel: "Отправить" }))) return;
+    setBusy(true);
+    try {
+      const j = await api("/applicants-bulk", { method: "POST", body: JSON.stringify({ ids, action }) });
+      toast.success(`Готово: ${j.ok}`);
+      if (j.failed?.length) toast.error(`Не получилось (${j.failed.length}): ${j.failed.slice(0, 3).join("; ")}`);
+      setPicked(new Set()); await load();
+    } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
+  };
+  const purge = async (r: Row) => {
+    if (!(await confirmDialog({ title: `Удалить навсегда: ${r.child.name}`, message: "Анкеты, ссылки, работы и история будут стёрты.", confirmLabel: "Удалить навсегда", danger: true }))) return;
+    try { await api(`/applicants/${r.id}?purge=1`, { method: "DELETE" }); toast.success("Удалено"); await load(); } catch (e: any) { toast.error(e.message); }
+  };
+  const restore = async (r: Row) => {
+    try { await api(`/applicants/${r.id}/restore`, { method: "POST" }); toast.success("Возвращено"); await load(); } catch (e: any) { toast.error(e.message); }
+  };
+
+  const acad = me.academic && mode === "admin";
+  const heads: { label: string; sort?: SortKey }[] = [
+    { label: "№", sort: "no" }, { label: "Ребёнок", sort: "name" }, { label: "Класс", sort: "grade" }, { label: "Анкета род." }, { label: "Этапы" },
+    ...(acad ? [{ label: "Тест" }, { label: "Решение" }] : []), { label: "Этап", sort: "stage" },
+  ];
+  const sortBy = (k: SortKey) => setP(sort === k ? { dir: dir === "asc" ? "desc" : "asc", sort: k } : { sort: k, dir: "" });
+  const tabItems = [
+    { id: "list", label: "Поступающие", count: classGrades ? undefined : rows.length },
+    { id: "archive", label: "Архив", count: archive.length, hidden: !reception },
+    { id: "templates", label: "Анкеты" },
+  ];
 
   return (
     <div className="max-w-6xl mx-auto space-y-4">
@@ -105,71 +176,113 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
           {!embedded && <h1 className="text-xl md:text-2xl font-bold text-[var(--text-main)]">Поступающие</h1>}
         </div>
         <form className="flex" onSubmit={e => { e.preventDefault(); const n = (e.currentTarget.elements.namedItem("no") as HTMLInputElement).value; if (n.trim()) void findNo(n); }}>
-          <input name="no" inputMode="numeric" className={`${input} !w-28 rounded-r-none`} placeholder="№ 0001" />
-          <button className={`${btn} rounded-l-none border-l-0`} type="submit"><Search className="w-4 h-4" /> Найти</button>
+          <input name="no" inputMode="numeric" className={`${input} !w-28 rounded-r-none`} placeholder="№ 0001" aria-label="Номер поступающего" />
+          <Button type="submit" className="rounded-l-none border-l-0" icon={<Search className="w-4 h-4" />}>Найти</Button>
         </form>
-        <button className={btn} onClick={() => setScan(true)}><QrCode className="w-4 h-4" /> Сканер</button>
-        {me.admission && mode === "admin" && !classGrades && <button className={btnPrimary} onClick={() => setCreating(true)}><UserPlus className="w-4 h-4" /> Поступающий</button>}
+        <Button onClick={() => setScan(true)} icon={<QrCode className="w-4 h-4" />}>Сканер</Button>
+        {view === "templates" && me.admission && <Button onClick={() => setSectionHistory(true)} icon={<History className="w-4 h-4" />}>История</Button>}
+        {reception && !classGrades && <Button variant="primary" onClick={() => setCreating(true)} icon={<UserPlus className="w-4 h-4" />}>Поступающий</Button>}
       </div>
 
-      {!classGrades && <div className="flex gap-1 border-b border-[var(--border-color)]">
-        {([["list", "Поступающие"], ["templates", "Анкеты"]] as const).map(([k, l]) => (
-          <button key={k} onClick={() => { const p = new URLSearchParams(params); if (k === "templates") p.set("view", k); else p.delete("view"); setParams(p, { replace: true }); }}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${tab === k ? "border-[var(--accent)] text-[var(--accent)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-main)]"}`}>{l}</button>
-        ))}
-      </div>}
+      {!classGrades && <Tabs tabs={tabItems} value={view} onChange={id => { setView(id as typeof view); setPicked(new Set()); setShown(PAGE); }} />}
 
-      {tab === "templates" ? <TemplatesTab api={api} /> : (
+      {view === "templates" ? <TemplatesTab api={api} tenantId={tenantId} /> : (
         <>
           <div className={`${card} p-3 flex flex-wrap gap-2 items-center`}>
             <div className="relative flex-1 min-w-[220px]">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-              <input className={`${input} pl-9`} placeholder="ФИО, телефон или № поступающего" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && /^\D*\d+\D*$/.test(q)) void findNo(); }} />
+              <input className={`${input} pl-9`} placeholder="ФИО, телефон или № поступающего" aria-label="Поиск" value={q} onChange={e => setP({ q: e.target.value })} onKeyDown={e => { if (e.key === "Enter" && /^\D*\d+\D*$/.test(q)) void findNo(); }} />
             </div>
             {grades.length > 0 && !classGrades && (
-              <select className={`${input} !w-auto`} value={grade} onChange={e => setGrade(e.target.value)}>
+              <select className={`${input} !w-auto`} value={grade} aria-label="Класс" onChange={e => setP({ grade: e.target.value })}>
                 <option value="">Все классы</option>{grades.map(g => <option key={g} value={g}>{g} класс</option>)}
               </select>
             )}
-            <select className={`${input} !w-auto`} value={stage} onChange={e => setStage(e.target.value as any)}>
-              <option value="">Все этапы</option>{(Object.keys(STAGE_LABEL) as Stage[]).filter(s => (me.academic && mode === "admin") || !ACADEMIC_STAGES.has(s)).map(s => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}
+            <select className={`${input} !w-auto`} value={stage} aria-label="Этап" onChange={e => setP({ stage: e.target.value })}>
+              <option value="">Все этапы</option>{STAGE_ORDER.filter(s => acad || !ACADEMIC_STAGES.has(s)).map(s => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}
             </select>
-            <button className={btn} onClick={excel} disabled={!visible.length}><Download className="w-4 h-4" /> Excel</button>
+            <select className={`${input} !w-auto md:hidden`} value={`${sort}:${dir}`} aria-label="Сортировка" onChange={e => { const [s, d] = e.target.value.split(":"); setP({ sort: s === "created" ? "" : s, dir: d }); }}>
+              <option value="created:desc">Сначала новые</option><option value="created:asc">Сначала старые</option><option value="name:asc">По имени</option><option value="grade:asc">По классу</option><option value="no:asc">По номеру</option>
+            </select>
+            <Button onClick={excel} disabled={!visible.length} icon={<Download className="w-4 h-4" />}>Excel</Button>
           </div>
+
+          {reception && picked.size > 0 && (
+            <div className={`${card} p-2.5 flex flex-wrap items-center gap-2 sticky top-2 z-10`}>
+              <span className="text-sm font-medium text-[var(--text-main)] px-1">Выбрано: {picked.size}</span>
+              {view === "archive"
+                ? <Button loading={busy} onClick={() => bulk("restore")} icon={<ArchiveRestore className="w-4 h-4" />}>Вернуть</Button>
+                : <>
+                    <Button loading={busy} onClick={() => bulk("parent_email")} icon={<Mail className="w-4 h-4" />}>Анкета родителям на почту</Button>
+                    <Button loading={busy} onClick={() => bulk("archive")} icon={<Archive className="w-4 h-4" />}>В архив</Button>
+                  </>}
+              <Button variant="ghost" className="ml-auto" onClick={() => setPicked(new Set())}>Снять выбор</Button>
+            </div>
+          )}
+
           {error && <div className="text-sm text-rose-600">{error}</div>}
-          {loading ? <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--text-muted)]" /></div> : !rows.length ? (
-            <div className={`${card} p-10 text-center text-sm text-[var(--text-muted)]`}>Пока никого. {me.admission && mode === "admin" && <button className="text-[var(--accent)] hover:underline" onClick={() => setCreating(true)}>Завести первого поступающего</button>}</div>
-          ) : (
-            <div className={`${card} overflow-x-auto`}>
-              <table className="w-full text-sm min-w-[860px]">
-                <thead className="text-[11px] uppercase font-mono text-[var(--text-muted)] bg-[var(--bg-panel)]">
-                  <tr>{["№", "Ребёнок", "Класс", "Анкета род.", "Этапы", ...((me.academic && mode === "admin") ? ["Тест", "Решение"] : []), "Этап"].map(h => <th key={h} className="px-3 py-2.5 text-left whitespace-nowrap">{h}</th>)}</tr>
+          {loading ? <Spinner /> : !source.length ? (
+            <EmptyState icon={<Users />} title={view === "archive" ? "Архив пуст" : "Пока никого"}
+              action={reception && view === "list" ? <Button variant="primary" onClick={() => setCreating(true)} icon={<UserPlus className="w-4 h-4" />}>Завести первого поступающего</Button> : undefined} />
+          ) : !visible.length ? <EmptyState title="Ничего не найдено" action={<Button onClick={() => setP({ q: "", grade: "", stage: "" })}>Сбросить фильтры</Button>} /> : (
+            <>
+              <Table className="hidden md:block" minWidth={860}>
+                <thead>
+                  <tr>
+                    {reception && <th className="w-8"><input type="checkbox" aria-label="Выбрать все на странице" checked={allOnPage} onChange={togglePage} /></th>}
+                    {heads.map(h => (
+                      <th key={h.label} className="whitespace-nowrap" aria-sort={h.sort && sort === h.sort ? (dir === "asc" ? "ascending" : "descending") : undefined}>
+                        {h.sort ? <button type="button" className="inline-flex items-center gap-1 hover:text-[var(--text-main)]" onClick={() => sortBy(h.sort!)}>{h.label}{sort === h.sort && (dir === "asc" ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}</button> : h.label}
+                      </th>
+                    ))}
+                    {view === "archive" && <th />}
+                  </tr>
                 </thead>
                 <tbody>
-                  {visible.map(r => (
-                    <tr key={r.id} className="border-t border-[var(--border-color)] hover:bg-[var(--bg-surface-hover)] cursor-pointer" onClick={() => openCard(r.id)}>
-                      <td className="px-3 py-2 font-mono text-[var(--text-muted)]">{no(r.refNo)}</td>
-                      <td className="px-3 py-2"><div className="font-medium text-[var(--text-main)]">{r.child.name}</div><div className="text-[11px] text-[var(--text-muted)]">{r.parent.name}{r.parent.phone ? ` · ${r.parent.phone}` : ""}</div></td>
-                      <td className="px-3 py-2">{r.child.grade}</td>
-                      <td className="px-3 py-2">{r.parentForm.status === "done" ? <span className="text-emerald-700">✓</span> : <span className="text-[var(--text-muted)]">—</span>}</td>
-                      <td className="px-3 py-2">{Object.values(r.stages).map(s => <span key={s.templateId} className={`inline-block mr-1 mb-0.5 px-2 py-0.5 rounded text-[11px] font-medium ${s.status === "done" && s.tone ? TONE[s.tone] : s.status === "draft" ? "text-emerald-700 bg-emerald-500/10" : "text-[var(--text-muted)] bg-[var(--bg-surface-hover)]"}`}>{s.status === "done" ? s.outcomeLabel : "● идёт"}</span>)}{!Object.keys(r.stages).length && <span className="text-[var(--text-muted)]">—</span>}
-                        {(me.psych || me.psychView) && Object.values(r.stages).some(s => s.status === "done") && (
+                  {page.map(r => (
+                    <tr key={r.id} className="cursor-pointer" onClick={() => openCard(r.id)}>
+                      {reception && <td onClick={e => e.stopPropagation()}><input type="checkbox" aria-label={`Выбрать ${r.child.name}`} checked={picked.has(r.id)} onChange={() => togglePick(r.id)} /></td>}
+                      <td className="font-mono text-[var(--text-muted)]">{no(r.refNo)}</td>
+                      <td><div className="font-medium text-[var(--text-main)]">{r.child.name}</div><div className="text-[11px] text-[var(--text-muted)]">{r.parent.name}{r.parent.phone ? ` · ${r.parent.phone}` : ""}</div></td>
+                      <td>{r.child.grade}</td>
+                      <td>{r.parentForm.status === "done" ? <span className="text-emerald-700 dark:text-emerald-400">✓</span> : <span className="text-[var(--text-muted)]">—</span>}</td>
+                      <td>{Object.values(r.stages).map(s => <span key={s.templateId} className={`inline-block mr-1 mb-0.5 px-2 py-0.5 rounded text-[11px] font-medium ${s.status === "done" && s.tone ? TONE[s.tone] : s.status === "draft" ? "text-emerald-700 dark:text-emerald-400 bg-emerald-500/10" : "text-[var(--text-muted)] bg-[var(--bg-surface-hover)]"}`}>{s.status === "done" ? s.outcomeLabel : "● идёт"}</span>)}{!Object.keys(r.stages).length && <span className="text-[var(--text-muted)]">—</span>}
+                        {(me.conduct || me.viewAll) && Object.values(r.stages).some(s => s.status === "done") && (
                           <button className="ml-1 align-middle p-1 rounded-md text-[var(--accent)] hover:bg-[var(--accent)]/10 disabled:opacity-50" title="Скачать бланк сессии" aria-label="Скачать бланк сессии" disabled={saving === r.id}
                             onClick={e => { e.stopPropagation(); void downloadSession(r.id); }}>{saving === r.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}</button>
                         )}</td>
-                      {(me.academic && mode === "admin") && <td className="px-3 py-2 text-xs">
-                        {r.attempt ? <><div className="text-[var(--text-main)]">{r.attempt.examTitle}</div><div className="text-[var(--text-muted)]">{r.attempt.status === "in_progress" ? <span className="text-emerald-700 font-medium">● пишет сейчас</span> : r.attempt.parts.map(p => `${p.title}: ${p.value}`).join(" · ") || (r.attempt.percent != null ? `${r.attempt.percent}%` : "сдан")}</div>
+                      {acad && <td className="text-xs">
+                        {r.attempt ? <><div className="text-[var(--text-main)]">{r.attempt.examTitle}</div><div className="text-[var(--text-muted)]">{r.attempt.status === "in_progress" ? <span className="text-emerald-700 dark:text-emerald-400 font-medium">● пишет сейчас</span> : r.attempt.parts.map(p => `${p.title}: ${p.value}`).join(" · ") || (r.attempt.percent != null ? `${r.attempt.percent}%` : "сдан")}</div>
                           <button className="mt-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20" onClick={e => { e.stopPropagation(); setResult({ id: r.attempt!.id, examId: r.attempt!.examId }); }}>Результаты</button></>
-                          : r.referral ? <span className="text-sky-700">направлен{r.referral.manual ? " (вручную)" : ""}</span> : r.paperResults ? "на бумаге" : <span className="text-[var(--text-muted)]">—</span>}
+                          : r.referral ? <span className="text-sky-700 dark:text-sky-400">направлен{r.referral.manual ? " (вручную)" : ""}</span> : r.referralBlocked ? <span className="text-amber-700 dark:text-amber-400">снято</span> : r.paperResults ? "на бумаге" : <span className="text-[var(--text-muted)]">—</span>}
                       </td>}
-                      {(me.academic && mode === "admin") && <td className="px-3 py-2 text-xs">{r.decision || attemptDecision(r) || "—"}</td>}
-                      <td className="px-3 py-2 text-xs whitespace-nowrap text-[var(--text-muted)]">{STAGE_LABEL[mode === "psych" && ACADEMIC_STAGES.has(r.stage) ? "referred" : r.stage]}</td>
+                      {acad && <td className="text-xs">{r.decision || attemptDecision(r) || "—"}</td>}
+                      <td className="text-xs whitespace-nowrap text-[var(--text-muted)]">{STAGE_LABEL[mode === "staff" && ACADEMIC_STAGES.has(r.stage) ? "referred" : r.stage]}</td>
+                      {view === "archive" && <td className="text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                        <Button size="sm" onClick={() => restore(r)} icon={<ArchiveRestore className="w-3.5 h-3.5" />}>Вернуть</Button>
+                        {me.owner && <Button size="sm" variant="ghost" className="ml-1 text-rose-600" aria-label="Удалить навсегда" onClick={() => purge(r)} icon={<Trash2 className="w-3.5 h-3.5" />} />}
+                      </td>}
                     </tr>
                   ))}
-                  {!visible.length && <tr><td colSpan={(me.academic && mode === "admin") ? 8 : 6} className="py-8 text-center text-[var(--text-muted)]">Ничего не найдено</td></tr>}
                 </tbody>
-              </table>
-            </div>
+              </Table>
+              <ul className="md:hidden space-y-2">
+                {page.map(r => (
+                  <li key={r.id} className={`${card} p-3 flex items-start gap-2`} onClick={() => openCard(r.id)}>
+                    {reception && <input type="checkbox" className="mt-1" aria-label={`Выбрать ${r.child.name}`} checked={picked.has(r.id)} onClick={e => e.stopPropagation()} onChange={() => togglePick(r.id)} />}
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-[var(--text-main)] truncate">{r.child.name}</div>
+                      <div className="text-xs text-[var(--text-muted)]">{no(r.refNo)} · {r.child.grade} класс · {STAGE_LABEL[mode === "staff" && ACADEMIC_STAGES.has(r.stage) ? "referred" : r.stage]}</div>
+                      {view === "archive" && <div className="pt-1.5 flex gap-1.5" onClick={e => e.stopPropagation()}>
+                        <Button size="sm" onClick={() => restore(r)} icon={<ArchiveRestore className="w-3.5 h-3.5" />}>Вернуть</Button>
+                        {me.owner && <Button size="sm" variant="ghost" className="text-rose-600" onClick={() => purge(r)} icon={<Trash2 className="w-3.5 h-3.5" />}>Удалить</Button>}
+                      </div>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {visible.length > shown && <div className="flex justify-center"><Button onClick={() => setShown(n => n + PAGE)}>Показать ещё · {visible.length - shown}</Button></div>}
+            </>
           )}
         </>
       )}
@@ -180,13 +293,14 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
         const p = new URLSearchParams(params); p.set("open", id); p.set("ctab", "profile"); p.set("qr", "parent"); setParams(p, { replace: true });
       }} />}
       {scan && <QrScanModal onClose={() => setScan(false)} />}
+      {sectionHistory && <HistoryModal api={api} scope="section" onClose={() => setSectionHistory(false)} />}
       {result && <AttemptViewer tenant={activeTenant} attemptId={result.id} examId={result.examId} onClose={() => setResult(null)} onChanged={load} />}
-      {open && <ApplicantCard key={open} id={open} api={api} tenant={activeTenant} psychMode={mode === "psych"} initialTab={params.get("ctab") || undefined} section={params.get("s") || undefined} autoQr={params.get("qr") === "parent" ? "parent" : undefined} onClose={() => openCard(null)} onChanged={load} />}
+      {open && <ApplicantCard key={open} id={open} api={api} tenant={activeTenant} staffMode={mode === "staff"} initialTab={params.get("ctab") || undefined} section={params.get("s") || undefined} autoQr={params.get("qr") === "parent" ? "parent" : undefined} onClose={() => openCard(null)} onChanged={load} />}
     </div>
   );
 }
 
 const attemptDecision = (r: Row) => r.attempt?.decision || "";
-/** Этапы после направления — академическая часть, психологу не показываются. */
+/** Этапы после направления — академическая часть, исполнителям анкет не показываются. */
 const ACADEMIC_STAGES = new Set<Stage>(["testing", "tested", "decided"]);
 

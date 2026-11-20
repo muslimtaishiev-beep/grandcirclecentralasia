@@ -1,120 +1,84 @@
 import React, { useState } from 'react';
-import { X, DollarSign, Tag } from 'lucide-react';
+import { Archive, ArchiveRestore } from 'lucide-react';
+import { Modal, btn, btnPrimary, input, label, toast, confirmDialog } from '../../../../components/ui';
 import { crmService } from '../../../../services/crmService';
-import { CrmPipeline } from '../../../../types/crm';
+import { CrmContact, CrmDeal, CrmPipeline } from '../../../../types/crm';
 
 interface Props {
-  isOpen: boolean;
-  onClose: () => void;
   tenantId: string;
   pipeline: CrmPipeline;
+  /** Есть — правка, нет — создание. */
+  deal?: CrmDeal;
+  contacts: CrmContact[];
+  author: { id: string; name: string };
+  canManage: boolean;
+  onClose: () => void;
 }
 
-export default function DealCreateEditModal({ isOpen, onClose, tenantId, pipeline }: Props) {
-  const [title, setTitle] = useState('');
-  const [amount, setAmount] = useState('');
-  const [contactId, setContactId] = useState('');
-  const [loading, setLoading] = useState(false);
+export default function DealCreateEditModal({ tenantId, pipeline, deal, contacts, author, canManage, onClose }: Props) {
+  const [title, setTitle] = useState(deal?.title || '');
+  const [amount, setAmount] = useState(deal ? String(deal.amount || '') : '');
+  const [contactId, setContactId] = useState(deal?.contactId || '');
+  const [closeDate, setCloseDate] = useState(deal?.expectedCloseDate || '');
+  const [busy, setBusy] = useState(false);
+  const currency = deal?.currency || pipeline.currency || '';
+  const active = contacts.filter(c => c.status !== 'archived' || c.id === contactId);
 
-  if (!isOpen) return null;
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !amount || !contactId) return;
-
+    if (!title.trim() || !canManage) return;
+    setBusy(true);
     try {
-      setLoading(true);
-      await crmService.createDeal(tenantId, {
-        tenantId,
-        pipelineId: pipeline.id,
-        stageId: pipeline.stages[0].id,
-        title,
-        amount: parseFloat(amount),
-        currency: 'KGS',
-        contactId,
-        source: 'manual',
-        status: 'open',
-        tags: []
-      });
+      const amt = Math.max(0, Number(amount) || 0);
+      const c = contacts.find(x => x.id === contactId);
+      if (deal) {
+        await crmService.updateDeal(tenantId, deal.id, {
+          title: title.trim(), amount: amt, contactId, expectedCloseDate: closeDate || undefined,
+          ...(c ? { contactName: c.fullName, contactPhone: c.phone, contactEmail: c.email } : {}),
+        }, author);
+      } else {
+        await crmService.createDeal(tenantId, {
+          tenantId, pipelineId: pipeline.id, stageId: pipeline.stages[0]?.id || '', title: title.trim(), amount: amt, currency,
+          contactId, ...(c ? { contactName: c.fullName, contactPhone: c.phone, contactEmail: c.email } : {}),
+          ...(closeDate ? { expectedCloseDate: closeDate } : {}), source: 'manual', status: 'open', tags: [],
+        }, author);
+      }
       onClose();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err: any) {
+      toast.error(err?.message || 'Не удалось сохранить сделку');
+    } finally { setBusy(false); }
+  };
+
+  const toggleArchive = async () => {
+    if (!deal) return;
+    if (!deal.archived && !(await confirmDialog({ title: 'Убрать сделку в архив?', confirmLabel: 'В архив' }))) return;
+    try { await crmService.archiveDeal(tenantId, deal.id, !deal.archived, author); onClose(); }
+    catch (err: any) { toast.error(err?.message || 'Не удалось выполнить'); }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-[var(--bg-panel)] rounded-2xl max-w-md w-full shadow-2xl border border-[var(--border-color)]">
-        <div className="flex justify-between items-center p-6 border-b border-[var(--border-color)]">
-          <h2 className="text-xl font-bold">Новая сделка</h2>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition">
-            <X className="w-5 h-5" />
-          </button>
+    <Modal title={deal ? 'Сделка' : 'Новая сделка'} onClose={onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        <div><label className={label}>Название</label><input className={input} required value={title} onChange={e => setTitle(e.target.value)} disabled={!canManage} /></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className={label}>Сумма{currency ? `, ${currency}` : ''}</label><input className={input} type="number" min={0} value={amount} onChange={e => setAmount(e.target.value)} disabled={!canManage} /></div>
+          <div><label className={label}>Закрытие</label><input className={input} type="date" value={closeDate} onChange={e => setCloseDate(e.target.value)} disabled={!canManage} /></div>
         </div>
-        
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-bold text-[var(--text-muted)] mb-1">Название сделки</label>
-            <input 
-              type="text" 
-              required
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl px-4 py-3 text-[var(--text-main)] focus:outline-none focus:border-[var(--accent)]"
-              placeholder="Например: Покупка курса Python"
-            />
+        <div>
+          <label className={label}>Контакт</label>
+          <select className={input} value={contactId} onChange={e => setContactId(e.target.value)} disabled={!canManage}>
+            <option value="">Без контакта</option>
+            {active.map(c => <option key={c.id} value={c.id}>{c.fullName}{c.phone ? ` · ${c.phone}` : ''}</option>)}
+          </select>
+        </div>
+        {canManage && (
+          <div className="flex flex-wrap gap-2 justify-end">
+            {deal && <button type="button" className={`${btn} mr-auto`} onClick={toggleArchive}>{deal.archived ? <><ArchiveRestore className="w-4 h-4" /> Восстановить</> : <><Archive className="w-4 h-4" /> В архив</>}</button>}
+            <button type="button" className={btn} onClick={onClose}>Отмена</button>
+            <button type="submit" className={btnPrimary} disabled={busy}>Сохранить</button>
           </div>
-
-          <div>
-            <label className="block text-sm font-bold text-[var(--text-muted)] mb-1">Сумма (KGS)</label>
-            <div className="relative">
-              <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
-              <input 
-                type="number" 
-                required
-                value={amount}
-                onChange={e => setAmount(e.target.value)}
-                className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl pl-12 pr-4 py-3 text-[var(--text-main)] focus:outline-none focus:border-[var(--accent)]"
-                placeholder="0.00"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-bold text-[var(--text-muted)] mb-1">ID Контакта (Клиент)</label>
-            <div className="relative">
-              <Tag className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
-              <input 
-                type="text" 
-                required
-                value={contactId}
-                onChange={e => setContactId(e.target.value)}
-                className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl pl-12 pr-4 py-3 text-[var(--text-main)] focus:outline-none focus:border-[var(--accent)]"
-                placeholder="ID клиента в системе"
-              />
-            </div>
-          </div>
-
-          <div className="pt-4 flex gap-3">
-            <button 
-              type="button" 
-              onClick={onClose}
-              className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-[var(--text-main)] font-bold rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition"
-            >
-              Отмена
-            </button>
-            <button 
-              type="submit" 
-              disabled={loading}
-              className="flex-1 py-3 bg-[var(--accent)] text-white font-bold rounded-xl shadow-lg hover:brightness-110 transition disabled:opacity-50"
-            >
-              {loading ? 'Создание...' : 'Создать'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        )}
+      </form>
+    </Modal>
   );
 }

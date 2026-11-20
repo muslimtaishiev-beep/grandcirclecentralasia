@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useParams } from "react-router-dom";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { db } from "../../../lib/firebase";
 import { resolveWorkspaceConfig } from "../../../shared/workspaceConfig";
 
 import jsQR from "jsqr";
 import { performCheckin } from "../../../lib/checkinClient";
 import { QrCode, Camera, CameraOff, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { auth } from "../../../lib/firebase";
+import { Spinner } from "../../../components/ui";
 
 /**
  * Проверка билетов на входе.
@@ -21,7 +24,7 @@ import { auth } from "../../../lib/firebase";
  */
 
 type ScanOutcome = {
-  result: "ok" | "already" | "inactive" | "notticket" | "error";
+  result: "ok" | "already" | "inactive" | "notticket" | "wrongevent" | "error";
   guest?: { name: string; status?: string; statusLabel?: string; checkedInAt?: any };
   formTitle?: string;
   error?: string;
@@ -46,6 +49,16 @@ export default function TicketScanner() {
   // Текст успешной проверки — из настроек организации («Проходит», «Добро пожаловать»…).
   const outlet = useOutletContext<{ activeTenant?: any } | null>();
   const okText = resolveWorkspaceConfig(outlet?.activeTenant?.workspaceConfig).tickets.checkinOkText || "Проходит";
+  const { orgId } = useParams();
+  const tenantId = outlet?.activeTenant?.id || orgId || "";
+  const storeKey = `scanner:events:${tenantId}`;
+  const [events, setEvents] = useState<{ id: string; title: string }[] | null>(null);
+  const [chosen, setChosen] = useState<string[]>(() => {
+    try { const v = JSON.parse(localStorage.getItem(storeKey) || "[]"); return Array.isArray(v) ? v.map(String) : []; } catch { return []; }
+  });
+  const chosenRef = useRef<string[]>(chosen);
+  const [manual, setManual] = useState("");
+  const [checking, setChecking] = useState("");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -62,6 +75,24 @@ export default function TicketScanner() {
   // Идентификаторы попыток, оставшихся без ответа: код → { идентификатор, когда начали }.
   const pendingRef = useRef<Map<string, { id: string; at: number }>>(new Map());
 
+  useEffect(() => {
+    if (!tenantId) return;
+    const q = query(collection(db, "custom_forms"), where("tenantId", "==", tenantId));
+    return onSnapshot(q, snap => {
+      const list: { id: string; title: string }[] = [];
+      snap.forEach(d => {
+        const f: any = d.data();
+        if (f.mode === "ticket" && !f.archived) list.push({ id: d.id, title: String(f.title || "Без названия") });
+      });
+      setEvents(list);
+      setChosen(c => c.filter(id => list.some(e => e.id === id)));
+    }, () => setEvents([]));
+  }, [tenantId]);
+  useEffect(() => {
+    chosenRef.current = chosen;
+    try { localStorage.setItem(storeKey, JSON.stringify(chosen)); } catch { /* без памяти браузера тоже работает */ }
+  }, [chosen, storeKey]);
+
   const showOutcome = (o: ScanOutcome) => {
     setOutcome(o);
     if (outcomeTimer.current) clearTimeout(outcomeTimer.current);
@@ -77,9 +108,10 @@ export default function TicketScanner() {
     if (now - last < 6000 || busyRef.current) return;
     recentRef.current.set(token, now);
     busyRef.current = true;
+    setChecking(token);
     try {
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-      const outcome = await performCheckin({ token, idToken, pending: pendingRef.current });
+      const outcome = await performCheckin({ token, idToken, pending: pendingRef.current, formIds: chosenRef.current });
       if (outcome.kind === "offline") {
         // Связи нет: этот же билет можно отсканировать сразу, а не через
         // шесть секунд защиты от дребезга.
@@ -89,7 +121,7 @@ export default function TicketScanner() {
       }
       const j = outcome.body;
       if (!j.success) {
-        showOutcome({ result: "error", error: j.error || "Билет не найден" });
+        showOutcome({ result: j.result === "wrongevent" ? "wrongevent" : "error", error: j.error || "Билет не найден", formTitle: j.formTitle, guest: j.guest });
         return;
       }
       showOutcome(j);
@@ -100,7 +132,7 @@ export default function TicketScanner() {
       // связи нет.
       recentRef.current.delete(token);
       showOutcome({ result: "error", error: "Нет связи — наведите на код ещё раз" });
-    } finally { busyRef.current = false; }
+    } finally { busyRef.current = false; setChecking(""); }
   }, []);
 
   const scanLoop = useCallback(() => {
@@ -170,9 +202,6 @@ export default function TicketScanner() {
             <QrCode className="w-6 h-6 text-emerald-500" />
             Проверка билетов
           </h1>
-          <p className="text-xs text-[var(--text-muted)] mt-1">
-            Наведите камеру на QR-код гостя — вход отметится автоматически
-          </p>
         </div>
         {checkedCount > 0 && (
           <div className="text-right">
@@ -184,12 +213,30 @@ export default function TicketScanner() {
 
       {/* Организация сканеру не нужна: сервер определяет её по самому билету
           и сверяет с членством сканирующего. Страница работает сразу. */}
+      {events && events.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => setChosen([])}
+            className={`px-3 py-1.5 rounded-full text-xs font-bold border cursor-pointer ${chosen.length === 0 ? "bg-emerald-600 text-white border-emerald-600" : "border-[var(--border-color)] text-[var(--text-muted)]"}`}>
+            Все
+          </button>
+          {events.map(ev => {
+            const on = chosen.includes(ev.id);
+            return (
+              <button key={ev.id} onClick={() => setChosen(c => on ? c.filter(x => x !== ev.id) : [...c, ev.id])}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold border cursor-pointer max-w-full truncate ${on ? "bg-emerald-600 text-white border-emerald-600" : "border-[var(--border-color)] text-[var(--text-muted)]"}`}>
+                {ev.title}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {events === null && <div className="flex justify-center"><Spinner /></div>}
+
       {cameraState === "idle" ? (
         <button onClick={() => void startCamera()}
           className="w-full py-16 rounded-2xl border-2 border-dashed border-[var(--border-color)] hover:border-emerald-500/50 transition flex flex-col items-center gap-3 cursor-pointer">
           <Camera className="w-12 h-12 text-emerald-500" />
           <span className="font-bold">Включить камеру</span>
-          <span className="text-xs text-[var(--text-muted)]">Браузер спросит разрешение</span>
         </button>
       ) : cameraState === "denied" ? (
         <div className="py-16 rounded-2xl border border-red-500/30 bg-red-500/5 flex flex-col items-center gap-3 text-center px-6">
@@ -212,6 +259,13 @@ export default function TicketScanner() {
           )}
 
           {/* Исход — поверх видео, крупно; сканирование не останавливается. */}
+          {checking && !outcome && (
+            <div className="absolute inset-x-0 bottom-0 p-4">
+              <div className="bg-slate-700 text-white rounded-2xl p-4 flex items-center justify-center gap-3 font-bold shadow-2xl">
+                <Loader2 className="w-5 h-5 animate-spin" /> Проверяем {checking}
+              </div>
+            </div>
+          )}
           {outcome && (
             <div className="absolute inset-x-0 bottom-0 p-4">
               {outcome.result === "ok" && (
@@ -219,7 +273,7 @@ export default function TicketScanner() {
                   <CheckCircle2 className="w-10 h-10 shrink-0" />
                   <div className="min-w-0">
                     <div className="font-extrabold text-lg truncate">{outcome.guest?.name}</div>
-                    <div className="text-sm opacity-90">{okText} ✓</div>
+                    <div className="text-sm opacity-90">{okText} ✓{outcome.formTitle ? ` · ${outcome.formTitle}` : ""}</div>
                   </div>
                 </div>
               )}
@@ -245,6 +299,15 @@ export default function TicketScanner() {
                   </div>
                 </div>
               )}
+              {outcome.result === "wrongevent" && (
+                <div className="bg-amber-500 text-black rounded-2xl p-4 flex items-center gap-3 shadow-2xl">
+                  <XCircle className="w-10 h-10 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="font-extrabold text-lg truncate">{outcome.guest?.name}</div>
+                    <div className="text-sm font-bold">{outcome.error}</div>
+                  </div>
+                </div>
+              )}
               {outcome.result === "notticket" && (
                 <div className="bg-slate-700 text-white rounded-2xl p-4 text-center font-bold shadow-2xl">
                   Это не билет — QR от другой заявки
@@ -260,10 +323,14 @@ export default function TicketScanner() {
         </div>
       )}
 
-      <p className="text-[11px] text-[var(--text-muted)] text-center">
-        Повторный скан того же билета показывает «уже входил» — гостя с чужим
-        скриншотом система не пропустит.
-      </p>
+      {cameraState !== "idle" && (
+        <form className="flex gap-2" onSubmit={e => { e.preventDefault(); const t = extractToken(manual); if (t) { void handleToken(t); setManual(""); } }}>
+          <input value={manual} onChange={e => setManual(e.target.value)} placeholder="Код билета"
+            className="flex-1 min-w-0 px-3 py-2.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl text-sm font-mono uppercase" />
+          <button type="submit" disabled={!extractToken(manual) || !!checking}
+            className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold disabled:opacity-50 cursor-pointer">Отметить</button>
+        </form>
+      )}
     </div>
   );
 }

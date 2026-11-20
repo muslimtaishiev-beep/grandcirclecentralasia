@@ -14,7 +14,7 @@ import type { PermissionKey } from "./permissions.js";
 export type NavIcon =
   | "home" | "admissions" | "exams" | "schedule" | "journals" | "subscriptions" | "presentations"
   | "crm" | "forms" | "tickets" | "intake" | "chat" | "tasks" | "docs" | "sheets" | "payroll"
-  | "team" | "departments" | "workspace" | "emails" | "automations" | "sites" | "functions" | "billing" | "builder";
+  | "team" | "audit" | "integrations" | "departments" | "workspace" | "emails" | "automations" | "sites" | "functions" | "billing" | "builder";
 
 export interface NavSub { label: string; path: string; keywords?: string }
 
@@ -100,6 +100,10 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     id: "admin", label: "Администрирование", items: [
       { screen: "permissions", label: "Сотрудники и доступ", path: "/settings/roles", icon: "team", match: ["/settings/permissions", "/settings/permission-matrix"], sub: [{ label: "Роли и доступы", path: "/settings/roles", keywords: "сотрудники должности права приглашение" }] },
+      { screen: "adminOverview", label: "Обзор администрирования", path: "/admin", icon: "workspace", sub: [{ label: "Обзор: что не настроено", path: "/admin", keywords: "настройка проверка" }] },
+      { screen: "staff", label: "Сотрудники", path: "/admin/staff", icon: "team", sub: [{ label: "Сотрудники: список и карточки", path: "/admin/staff", keywords: "отключить входы" }, { label: "Кто может…", path: "/admin/staff?tab=who", keywords: "право доступ отчёт" }, { label: "Передача владения", path: "/admin/staff?tab=owner", keywords: "владелец" }] },
+      { screen: "audit", label: "Журнал действий", path: "/admin/audit", icon: "audit", sub: [{ label: "Журнал действий", path: "/admin/audit", keywords: "аудит история" }] },
+      { screen: "integrations", label: "Интеграции", path: "/admin/integrations", icon: "integrations", sub: [{ label: "Ключ API", path: "/admin/integrations", keywords: "api ключ сайты" }] },
       { screen: "departments", label: "Отделы", path: "/settings/departments", icon: "departments", sub: [{ label: "Оргструктура и отделы", path: "/settings/departments" }] },
       { screen: "workspaceSetup", label: "Разделы и организация", path: "/settings/workspace", icon: "workspace", match: ["/settings/templates"], sub: [{ label: "Настройка организации", path: "/settings/workspace", keywords: "разделы названия реквизиты" }] },
       { screen: "emailTemplates", label: "Письма", path: "/settings/emails", icon: "emails", sub: [{ label: "Письма: шаблоны и журнал", path: "/settings/emails", keywords: "почта отправитель" }] },
@@ -120,7 +124,7 @@ export const NAV_GROUPS: NavGroup[] = [
  * Разделы «Администрирования», для которых ещё нет страницы. В меню не
  * выводятся, пока страница не готова.
  */
-export const NAV_PLANNED = ["Организация", "Уведомления и Telegram", "Интеграции", "Журнал действий"] as const;
+export const NAV_PLANNED = ["Организация", "Уведомления и Telegram"] as const;
 
 export const NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap(g => g.items);
 

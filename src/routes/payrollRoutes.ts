@@ -3,7 +3,7 @@ import admin from "firebase-admin";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { requirePerm, type StaffCaller } from "../server/access.js";
 import { writeAudit, actorOf } from "../server/audit.js";
-import { cashCol, cashEntryDoc, cashSummary, isDay } from "../server/cash.js";
+import { cashCol, cashEntryDoc, cashSummary, isDay, tenantToday } from "../server/cash.js";
 import { requireScreen } from "../server/tenantAccess.js";
 import {
   calculatePayroll, resolvePayrollSettings, DEFAULT_PAYROLL_SETTINGS,
@@ -295,7 +295,7 @@ router.post("/:tenantId/records/:id/status", ...guard, async (req: any, res: any
     const history: any[] = Array.isArray(prev.history) ? prev.history : [];
     const approvedBy = [...history].reverse().find(h => h.status === "approved")?.byUid;
     if (status === "paid" && !c.full && approvedBy && approvedBy === c.uid) return res.status(403).json({ success: false, error: "Выплату отмечает не тот, кто утвердил" });
-    const paidDate = isDay(req.body?.paidDate) ? req.body.paidDate : new Date().toISOString().slice(0, 10);
+    const paidDate = isDay(req.body?.paidDate) ? req.body.paidDate : await tenantToday(db(), t);
     const paidAccount = req.body?.paidAccount === "cash" ? "cash" : "bank";
     const entry = { status, at: Date.now(), by: req.user.email || req.user.uid, byUid: c.uid, ...(reason ? { reason } : {}), ...(status === "paid" ? { paidDate, paidAccount } : {}) };
     const del = admin.firestore.FieldValue.delete();

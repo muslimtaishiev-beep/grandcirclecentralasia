@@ -6,6 +6,7 @@ import {
   DIFFICULTY_LABEL, QUESTION_TYPES, TYPE_LABEL, normalizeLevels, validateQuestion,
   type BankQuestion, type Difficulty, type DropdownItem, type QuestionType,
 } from "../../../shared/exams";
+import { InfoHint } from "../../../components/ui";
 import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui";
 import type { SetRow } from "./examApi";
 import { clickableToMarkup, inlineToMarkup, markupToClickable, markupToInline, shuffled } from "./markup";
@@ -112,7 +113,7 @@ export default function QuestionEditor({ initial, disciplineId, defaultLevels, d
               <select className={input} value={d.type} onChange={e => changeType(e.target.value as QuestionType)}>
                 {QUESTION_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
               </select>
-              <p className="text-[11px] text-[var(--text-muted)] mt-1">{QUESTION_TYPES.find(t => t.key === d.type)?.hint}</p>
+              <InfoHint>{QUESTION_TYPES.find(t => t.key === d.type)?.hint}</InfoHint>
             </div>
             <div>
               <span className={label}>Классы / уровни</span>
@@ -144,7 +145,6 @@ export default function QuestionEditor({ initial, disciplineId, defaultLevels, d
                   );
                 })}
               </div>
-              <p className="text-[11px] text-[var(--text-muted)] mt-1">Экзамен, подключённый к набору, берёт только вопросы этого набора. Без набора вопрос попадёт лишь в экзамены, которые берут всю дисциплину.</p>
             </div>
           )}
 
@@ -153,7 +153,7 @@ export default function QuestionEditor({ initial, disciplineId, defaultLevels, d
               <span className={label}>Текст с пропусками</span>
               <textarea rows={5} className={`${input} font-mono`} value={inlineMarkup} onChange={e => setInlineMarkup(e.target.value)}
                 placeholder={"Неслыха[[нн]]ая дерзость.\nЗадача реше[[н]]а."} />
-              <p className="text-[11px] text-[var(--text-muted)] mt-1">Правильный ответ пишется в двойных квадратных скобках прямо в тексте: <code>реше[[н]]а</code>. Задание (например «Вставьте пропущенные буквы») — в поле ниже.</p>
+              <InfoHint>Правильный ответ пишется в двойных квадратных скобках прямо в тексте: <code>реше[[н]]а</code>. Задание (например «Вставьте пропущенные буквы») — в поле ниже.</InfoHint>
             </div>
           ) : null}
 
@@ -179,7 +179,7 @@ export default function QuestionEditor({ initial, disciplineId, defaultLevels, d
             <div>
               <span className={label}>Правильный ответ</span>
               <input className={input} value={d.answer || ""} onChange={e => set({ answer: e.target.value })} placeholder={d.type === "number_input" ? "60" : "ответ"} />
-              <p className="text-[11px] text-[var(--text-muted)] mt-1">Несколько допустимых ответов — через <code>||</code>. Регистр, пробелы и ё/е не важны{d.type === "number_input" ? "; «60 мин» засчитается для ключа «60»" : ""}.</p>
+              <InfoHint>Несколько допустимых ответов — через <code>||</code>. Регистр, пробелы и ё/е не важны{d.type === "number_input" ? "; «60 мин» засчитается для ключа «60»" : ""}.</InfoHint>
             </div>
           )}
 
@@ -327,7 +327,6 @@ function TypeFields({ d, set, order, setOrder, clickMarkup, setClickMarkup }: {
         <div>
           <span className={label}>Элементы в правильном порядке</span>
           <ListEditor items={order} onChange={setOrder} placeholder="Элемент" />
-          <p className="text-[11px] text-[var(--text-muted)] mt-1 flex items-center gap-1"><Shuffle className="w-3 h-3" /> Ученику они покажутся перемешанными.</p>
         </div>
       );
     case "clickable_text":
@@ -335,7 +334,7 @@ function TypeFields({ d, set, order, setOrder, clickMarkup, setClickMarkup }: {
         <div>
           <span className={label}>Текст с местами для знаков</span>
           <textarea rows={3} className={`${input} font-mono`} value={clickMarkup} onChange={e => setClickMarkup(e.target.value)} placeholder="Ветер [*] дующий [ ] с моря [*] принёс прохладу." />
-          <p className="text-[11px] text-[var(--text-muted)] mt-1"><code>[*]</code> — здесь нужна запятая, <code>[ ]</code> — место, где её ставить не надо (ловушка).</p>
+          <InfoHint><code>[*]</code> — здесь нужна запятая, <code>[ ]</code> — место, где её ставить не надо (ловушка).</InfoHint>
         </div>
       );
     default:

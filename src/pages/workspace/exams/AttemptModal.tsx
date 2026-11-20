@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Award, Ban, CheckCircle2, ClipboardList, RefreshCw, Eye, EyeOff, FileText, Loader2, RotateCcw, ShieldAlert, Square, Trash2, Undo2 } from "lucide-react";
+import { Award, Ban, CheckCircle2, ClipboardList, Clock, RefreshCw, Eye, EyeOff, FileText, Loader2, RotateCcw, ShieldAlert, Square, Trash2, Undo2 } from "lucide-react";
+import { Button, confirmDialog, toast, type ConfirmOptions } from "../../../components/ui";
 import DOMPurify from "dompurify";
 import ProctoringDossier from "../../../components/ProctoringDossier";
 import { TYPE_LABEL, plainText } from "../../../shared/exams";
@@ -31,6 +32,10 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
   const [dossier, setDossier] = useState(false);
   const [onlyWrong, setOnlyWrong] = useState(false);
   const [comment, setComment] = useState("");
+  /** Проверяющий (tests:review) проверяет, публикует и досдаёт; остальное — только управляющий. */
+  const [canReview, setCanReview] = useState(false);
+  const [annulling, setAnnulling] = useState<string | null>(null);
+  const rev = canEdit || canReview;
   const admApi = useAdmissionApi(exam.tenantId);
   /** Вступительный тест: вместо сертификата и отчёта по темам — анкета кандидата. */
   const admission = !!exam.settings.admission?.candidateForm;
@@ -71,20 +76,20 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
   };
 
   const load = useCallback(async () => {
-    try { const j = await api(`/attempts/${attemptId}`); setA(j.attempt); setComment(j.attempt.decision?.comment || ""); }
+    try { const j = await api(`/attempts/${attemptId}`); setA(j.attempt); setCanReview(!!j.canReview); setComment(j.attempt.decision?.comment || ""); }
     catch (e: any) { setError(e.message); }
   }, [api, attemptId]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (a?.hasPhoto) api(`/attempts/${attemptId}/photo`).then(j => setPhoto(j.photo)).catch(() => {}); }, [a?.hasPhoto, api, attemptId]);
 
-  const act = async (action: string, extra: Record<string, unknown> = {}, confirmText?: string) => {
-    if (confirmText && !confirm(confirmText)) return;
+  const act = async (action: string, extra: Record<string, unknown> = {}, ask?: ConfirmOptions) => {
+    if (ask && !(await confirmDialog(ask))) return;
     setBusy(action); setError(null);
     try {
       const j = await api(`/attempts/${attemptId}/action`, { method: "POST", body: JSON.stringify({ action, ...extra }) });
       onChanged();
-      if (j.deleted) { onClose(); return; }
-      if (j.recheck) alert(j.recheck.keys ? `Перепроверено по новым ключам: изменились ${j.recheck.keys} вопр. Было ${j.recheck.before}%, стало ${j.recheck.after}%.` : `Ключи не менялись — результат прежний: ${j.recheck.after}%.`);
+      if (j.deleted) { toast.success("Работа в корзине"); onClose(); return; }
+      if (j.recheck) toast.success(j.recheck.keys ? `Изменились ключи: ${j.recheck.keys} вопр. Было ${j.recheck.before}%, стало ${j.recheck.after}%` : `Ключи не менялись — результат прежний: ${j.recheck.after}%`);
       await load();
     } catch (e: any) { setError(e.message); }
     finally { setBusy(null); }
@@ -162,23 +167,24 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
         )}
 
         {/* Действия */}
-        {canEdit && (
+        {rev && (
           <div className="flex flex-wrap gap-2 p-3 rounded-xl bg-[var(--bg-app)] border border-[var(--border-color)]">
             {a.status === "finished" && (a.published
               ? <button className={btn} disabled={!!busy} onClick={() => act("unpublish")}><EyeOff className="w-4 h-4" /> Снять публикацию</button>
               : <button className={btnPrimary} disabled={!!busy} onClick={() => act("publish")}><Eye className="w-4 h-4" /> Опубликовать</button>)}
             {r && admission && <button className={btn} disabled={!!busy} onClick={openCandidate}>{busy === "candidate" ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />} Анкета кандидата</button>}
-            {r && !admission && s.results.certificate && printData && <button className={btn} onClick={() => openPrint(certificateHTML(printData)) || alert("Разрешите всплывающие окна")}><Award className="w-4 h-4" /> Сертификат</button>}
-            {r && !admission && printData && <button className={btn} onClick={() => openPrint(reportHTML(printData)) || alert("Разрешите всплывающие окна")}><FileText className="w-4 h-4" /> Отчёт по темам</button>}
+            {r && !admission && s.results.certificate && printData && <button className={btn} onClick={() => openPrint(certificateHTML(printData)) || toast.error("Разрешите всплывающие окна")}><Award className="w-4 h-4" /> Сертификат</button>}
+            {r && !admission && printData && <button className={btn} onClick={() => openPrint(reportHTML(printData)) || toast.error("Разрешите всплывающие окна")}><FileText className="w-4 h-4" /> Отчёт по темам</button>}
             {pr.enabled && <button className={btn} onClick={() => setDossier(true)}><ShieldAlert className="w-4 h-4" /> Досье прокторинга</button>}
             {a.status === "finished" && s.results.emailTemplate && <EmailResend tenantId={exam.tenantId} event="tested" ctx={{ attemptId: a.id }} state={(a as any).resultEmail} />}
-            {a.status === "in_progress" && <button className={btn} disabled={!!busy} onClick={() => act("finish", {}, "Завершить работу сейчас и посчитать результат?")}><Square className="w-4 h-4" /> Завершить сейчас</button>}
+            {a.status === "in_progress" && <button className={btn} disabled={!!busy} onClick={() => act("finish", {}, { title: "Завершить работу сейчас?", message: "Результат посчитается по текущим ответам", confirmLabel: "Завершить" })}><Square className="w-4 h-4" /> Завершить сейчас</button>}
+            {a.status === "in_progress" && !!a.sections[a.current]?.deadline && [5, 10].map(m => <button key={m} className={btn} disabled={!!busy} onClick={() => act("extend", { minutes: m })}><Clock className="w-4 h-4" /> +{m} мин</button>)}
             {a.status === "finished" && !(a as any).paper && <button className={btn} disabled={!!busy} onClick={() => act("recheck")}>{busy === "recheck" ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Перепроверить</button>}
-            {!a.retakeAllowed && a.status === "finished" && !a.superseded && <button className={btn} disabled={!!busy} onClick={() => act("allow_retake", {}, "Разрешить ещё одну попытку? Новая сданная работа заменит эту.")}><RotateCcw className="w-4 h-4" /> Разрешить пересдачу</button>}
-            {a.status !== "annulled"
-              ? <button className={`${btn} text-rose-600`} disabled={!!busy} onClick={() => { const reason = prompt("Причина аннулирования (увидят менеджеры):"); if (reason !== null) void act("annul", { reason }); }}><Ban className="w-4 h-4" /> Аннулировать</button>
-              : <button className={btn} disabled={!!busy} onClick={() => act("restore")}><Undo2 className="w-4 h-4" /> Восстановить</button>}
-            <button className={`${btn} text-rose-600 ml-auto`} disabled={!!busy} onClick={() => act("delete", {}, "Удалить работу насовсем вместе с фото и снимками?")}><Trash2 className="w-4 h-4" /></button>
+            {canEdit && !a.retakeAllowed && a.status === "finished" && !a.superseded && <button className={btn} disabled={!!busy} onClick={() => act("allow_retake", {}, { title: "Разрешить пересдачу?", message: "Новая сданная работа заменит эту", confirmLabel: "Разрешить" })}><RotateCcw className="w-4 h-4" /> Разрешить пересдачу</button>}
+            {canEdit && (a.status !== "annulled"
+              ? <button className={`${btn} text-rose-600`} disabled={!!busy} onClick={() => setAnnulling("")}><Ban className="w-4 h-4" /> Аннулировать</button>
+              : <button className={btn} disabled={!!busy} onClick={() => act("restore")}><Undo2 className="w-4 h-4" /> Восстановить</button>)}
+            {canEdit && <button className={`${btn} text-rose-600 ml-auto`} title="В корзину" disabled={!!busy} onClick={() => act("delete", {}, { title: "Убрать работу в корзину?", message: "Её можно вернуть из корзины", confirmLabel: "В корзину", danger: true })}><Trash2 className="w-4 h-4" /></button>}
           </div>
         )}
 
@@ -217,7 +223,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
               <h3 className="font-bold text-[var(--text-main)]">Ответы</h3>
               <div className="flex items-center gap-3">
                 <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={onlyWrong} onChange={e => setOnlyWrong(e.target.checked)} /> Только неверные</label>
-                {canEdit && a.review?.status !== "done" && <button className={btnPrimary} disabled={!!busy} onClick={() => review({}, {}, true)}><CheckCircle2 className="w-4 h-4" /> Проверка завершена</button>}
+                {rev && a.review?.status !== "done" && <button className={btnPrimary} disabled={!!busy} onClick={() => review({}, {}, true)}><CheckCircle2 className="w-4 h-4" /> Проверка завершена</button>}
               </div>
             </div>
             {a.sections.flatMap(s => (s.blocks?.length ? s.blocks : [s])).map(sec => (
@@ -243,12 +249,12 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5 mt-2">
                           <span className="text-xs text-[var(--text-muted)]">Баллы: <b className="text-[var(--text-main)]">{it.earned}</b> из {it.points}</span>
-                          {canEdit && [0, q.points / 2, q.points].map(v => (
+                          {rev && [0, q.points / 2, q.points].map(v => (
                             <button key={v} disabled={!!busy} onClick={() => review({ [qid]: v })}
                               className={`px-2 py-0.5 rounded border text-xs ${it.overridden && it.earned === v ? "bg-[var(--accent)] text-white border-[var(--accent)]" : "border-[var(--border-color)]"}`}>{v === 0 ? "0" : v === q.points ? "полный" : "½"}</button>
                           ))}
-                          {canEdit && it.overridden && <button className="text-xs text-[var(--accent)] hover:underline" onClick={() => review({ [qid]: null })}>как в автопроверке ({it.auto})</button>}
-                          {canEdit && <NoteInput value={a.review?.notes?.[qid] || ""} onSave={v => review({}, { [qid]: v })} />}
+                          {rev && it.overridden && <button className="text-xs text-[var(--accent)] hover:underline" onClick={() => review({ [qid]: null })}>как в автопроверке ({it.auto})</button>}
+                          {rev && <NoteInput value={a.review?.notes?.[qid] || ""} onSave={v => review({}, { [qid]: v })} />}
                         </div>
                       </li>
                     );
@@ -259,6 +265,17 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
           </div>
         )}
       </div>
+      {annulling !== null && (
+        <Modal title="Аннулировать работу" onClose={() => setAnnulling(null)}>
+          <div className="space-y-3">
+            <input className={input} autoFocus value={annulling} onChange={e => setAnnulling(e.target.value)} placeholder="Причина (увидят менеджеры)" />
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setAnnulling(null)}>Отмена</Button>
+              <Button variant="danger" onClick={() => { const reason = annulling; setAnnulling(null); void act("annul", { reason }); }}>Аннулировать</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
       {dossier && (
         <ProctoringDossier shortId={a.shortId} studentName={a.student.name} grade={a.student.level}
           report={{ ...pr, violations: pr.violations || [] } as any}

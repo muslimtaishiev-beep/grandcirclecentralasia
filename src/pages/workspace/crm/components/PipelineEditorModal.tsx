@@ -78,7 +78,7 @@ export default function PipelineEditorModal({ pipeline, dealsByStage, canDelete,
         </div>
         {err && <div className="text-sm text-rose-600">{err}</div>}
         <div className="flex flex-wrap gap-2 justify-end">
-          {pipeline && onDelete && canDelete && <button type="button" className={`${btn} mr-auto text-rose-600`} onClick={() => onDelete().then(onClose).catch(e => setErr(e?.message || 'Не удалось удалить'))}><Trash2 className="w-4 h-4" /> Удалить воронку</button>}
+          {pipeline && onDelete && canDelete && <button type="button" className={`${btn} mr-auto text-rose-600`} onClick={() => onDelete().then(onClose).catch(e => { if (e?.message !== 'Отменено') setErr(e?.message || 'Не удалось удалить'); })}><Trash2 className="w-4 h-4" /> Удалить воронку</button>}
           <button type="button" className={btn} onClick={onClose}>Отмена</button>
           <button type="button" className={btnPrimary} disabled={busy} onClick={save}>Сохранить</button>
         </div>

@@ -125,7 +125,6 @@ export default function QuestionPicker({ bankApi, disciplineId, title, sets, ini
                 onClick={() => setPicked(p => [...p].sort((a, b) => (byId.get(a)?.number ?? 1e9) - (byId.get(b)?.number ?? 1e9)))}>По номерам</button>
             )}
           </div>
-          <p className="text-[11px] text-[var(--text-muted)]">Ученик проходит их в этом порядке (если в разделе не включено «Перемешать»).</p>
           <ol className="rounded-xl border border-[var(--border-color)] max-h-[55vh] overflow-y-auto">
             {!picked.length && <li className="px-3 py-6 text-center text-xs text-[var(--text-muted)]">Отметьте вопросы слева</li>}
             {picked.map((id, i) => {

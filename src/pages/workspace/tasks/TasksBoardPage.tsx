@@ -3,6 +3,9 @@ import { useOutletContext, Link } from 'react-router-dom';
 import { DndContext, DragOverlay, closestCorners, DragStartEvent, DragEndEvent } from '@dnd-kit/core';
 import { useDroppable } from '@dnd-kit/core';
 import { useTaskManager } from '../../../hooks/useTaskManager';
+import { useTenantAccess } from '../../../hooks/useCrmPerms';
+import { Spinner } from '../../../components/ui';
+import { STATUSES } from './components/taskLabels';
 import { WorkspaceTask, TaskStatus } from '../../../types/tasks';
 import TaskCard from './components/TaskCard';
 import TaskModal from './components/TaskModal';
@@ -10,15 +13,7 @@ import CreateTaskModal from './components/CreateTaskModal';
 import TaskFiltersToolbar from './components/TaskFiltersToolbar';
 import { Plus, List, LayoutGrid } from 'lucide-react';
 
-const STATUSES: { id: TaskStatus; title: string }[] = [
-  { id: 'backlog', title: 'Бэклог' },
-  { id: 'todo', title: 'К выполнению' },
-  { id: 'in_progress', title: 'В работе' },
-  { id: 'review', title: 'Проверка' },
-  { id: 'done', title: 'Готово' }
-];
-
-function KanbanColumn({ status, tasks, onTaskClick }: { status: {id: TaskStatus, title: string}, tasks: WorkspaceTask[], onTaskClick: (t: WorkspaceTask) => void }) {
+function KanbanColumn({ status, tasks, onTaskClick, nameOf }: { status: {id: TaskStatus, title: string}, tasks: WorkspaceTask[], onTaskClick: (t: WorkspaceTask) => void, nameOf: (id: string) => string }) {
   const { setNodeRef, isOver } = useDroppable({ id: status.id, data: { type: 'Column' } });
   
   return (
@@ -35,7 +30,7 @@ function KanbanColumn({ status, tasks, onTaskClick }: { status: {id: TaskStatus,
           isOver ? 'bg-[var(--accent)]/5 border-2 border-dashed border-[var(--accent)] rounded-xl m-1' : ''
         }`}
       >
-        {tasks.map(t => <TaskCard key={t.id} task={t} onClick={onTaskClick} />)}
+        {tasks.map(t => <TaskCard key={t.id} task={t} onClick={onTaskClick} nameOf={nameOf} />)}
       </div>
     </div>
   );
@@ -44,9 +39,11 @@ function KanbanColumn({ status, tasks, onTaskClick }: { status: {id: TaskStatus,
 
 export default function TasksBoardPage() {
   const { activeTenant } = useOutletContext<any>();
-  const { tasks, filters, setFilters, moveTask } = useTaskManager(activeTenant?.id);
+  const { tasks, allTasks, loaded, members, nameOf, filters, setFilters, moveTask } = useTaskManager(activeTenant?.id);
+  const { isAdmin, uid } = useTenantAccess();
   const [activeDragTask, setActiveDragTask] = useState<WorkspaceTask | null>(null);
-  const [selectedTask, setSelectedTask] = useState<WorkspaceTask | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedTask = allTasks.find(t => t.id === selectedId) || null;
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -77,7 +74,7 @@ export default function TasksBoardPage() {
             </Link>
           </div>
           <div className="h-6 w-px bg-[var(--border-color)] hidden md:block"></div>
-          <TaskFiltersToolbar filters={filters} onFilterChange={setFilters} />
+          <TaskFiltersToolbar filters={filters} onFilterChange={setFilters} members={members} />
         </div>
         
         <button 
@@ -89,6 +86,7 @@ export default function TasksBoardPage() {
       </div>
 
       <div className="flex-1 overflow-x-auto p-6 bg-[var(--bg-app)]">
+        {!loaded && <Spinner />}
         <DndContext collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="flex gap-6 h-full min-w-max pb-4 items-start">
             {STATUSES.map(status => (
@@ -96,22 +94,22 @@ export default function TasksBoardPage() {
                 key={status.id} 
                 status={status} 
                 tasks={tasks.filter(t => t.status === status.id)} 
-                onTaskClick={t => setSelectedTask(t)} 
+                onTaskClick={t => setSelectedId(t.id)} nameOf={nameOf} 
               />
             ))}
           </div>
           <DragOverlay>
             {activeDragTask ? (
               <div className="w-80 shadow-2xl scale-105 rotate-2 opacity-90 cursor-grabbing">
-                <TaskCard task={activeDragTask} onClick={() => {}} />
+                <TaskCard task={activeDragTask} onClick={() => {}} nameOf={nameOf} />
               </div>
             ) : null}
           </DragOverlay>
         </DndContext>
       </div>
 
-      <TaskModal isOpen={!!selectedTask} onClose={() => setSelectedTask(null)} task={selectedTask || undefined} />
-      <CreateTaskModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} tenantId={activeTenant?.id} />
+      {selectedTask && <TaskModal task={selectedTask} members={members} nameOf={nameOf} isAdmin={isAdmin} onClose={() => setSelectedId(null)} />}
+      {isCreateOpen && <CreateTaskModal onClose={() => setIsCreateOpen(false)} tenantId={activeTenant?.id} members={members} defaultAssigneeId={uid} />}
     </div>
   );
 }

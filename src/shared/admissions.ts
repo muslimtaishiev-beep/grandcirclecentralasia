@@ -188,7 +188,7 @@ export function admitted(a: Pick<Applicant, "stages" | "referralBlocked">, examW
 }
 
 /** Адрес карточки поступающего в кабинете — раздел «Приём», не зависит от экзамена. */
-export const applicantPath = (t: string, id: string, ctab = "profile", side?: "psych") =>
+export const applicantPath = (t: string, id: string, ctab = "profile", side?: "staff") =>
   `/workspace/${t}/admissions?open=${encodeURIComponent(id)}&ctab=${encodeURIComponent(ctab)}${side ? `&side=${side}` : ""}`;
 
 /**

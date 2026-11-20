@@ -155,3 +155,24 @@ export function exportStatsXlsx(j: Journal, entries: JournalEntry[], period: { f
 
   return download(sheets, `${j.title} — статистика ${periodText} — ${new Date().toLocaleDateString("ru-RU")}`);
 }
+
+/** Первый лист .xlsx как таблица строк: даты — «ГГГГ-ММ-ДД», остальное — текст или число. */
+export async function readFirstSheet(file: File): Promise<string[][]> {
+  const { default: ExcelJS } = await import("exceljs");
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(await file.arrayBuffer());
+  const ws = wb.worksheets[0];
+  if (!ws) return [];
+  const rows: string[][] = [];
+  ws.eachRow({ includeEmpty: false }, (row) => {
+    const out: string[] = [];
+    for (let i = 1; i <= row.cellCount; i++) {
+      const v: any = row.getCell(i).value;
+      if (v instanceof Date) out.push(v.toISOString().slice(0, 10));
+      else if (v && typeof v === "object") out.push(String(v.text ?? v.result ?? (Array.isArray(v.richText) ? v.richText.map((r: any) => r.text).join("") : "")));
+      else out.push(v === null || v === undefined ? "" : String(v));
+    }
+    rows.push(out);
+  });
+  return rows;
+}

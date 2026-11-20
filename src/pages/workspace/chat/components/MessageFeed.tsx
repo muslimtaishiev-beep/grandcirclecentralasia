@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { ChatMessage } from '../../../../types/chat';
 import { FileIcon, PhoneCall, Sparkles, Reply, Trash2 } from 'lucide-react';
+import { confirmDialog } from '../../../../components/ui';
 import InChatCallBanner from './InChatCallBanner';
 
 interface Props {
@@ -176,10 +177,8 @@ export default function MessageFeed({
 
                   {onDeleteMessage && (canDelete ? canDelete(msg) : isMe) && (
                     <button 
-                      onClick={() => {
-                        if (window.confirm("Удалить это сообщение?")) {
-                          onDeleteMessage(msg.id);
-                        }
+                      onClick={async () => {
+                        if (await confirmDialog({ title: 'Удалить сообщение?', confirmLabel: 'Удалить', danger: true })) onDeleteMessage(msg.id);
                       }}
                       className="text-xs font-bold text-red-400 hover:text-red-600 flex items-center gap-1 cursor-pointer ml-1"
                       title="Удалить сообщение"

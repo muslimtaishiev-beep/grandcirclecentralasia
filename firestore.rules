@@ -109,9 +109,9 @@ service cloud.firestore {
       match /edu_payroll/{d}       { allow read, write: if hasPerm(tenantId, 'ep'); }
       match /edu_payroll_rates/{d} { allow read, write: if hasPerm(tenantId, 'ep'); }
       match /billing/{d}           { allow read: if isTenantAdmin(tenantId); allow write: if isSuperadmin(); }
-      match /edu_schedule/{d}      { allow read: if member(); allow write: if hasPerm(tenantId, 'es'); }
+      match /edu_schedule/{d}      { allow read: if member(); allow write: if false; }  // пишет сервер (/api/edu)
       match /edu_attendance/{d}    { allow read: if member(); allow write: if hasPerm(tenantId, 'es'); }
-      match /edu_subscriptions/{d} { allow read, write: if hasPerm(tenantId, 'es'); }
+      match /edu_subscriptions/{d} { allow read: if hasPerm(tenantId, 'es'); allow write: if false; }
       match /students/{d}          { allow read: if hasPerm(tenantId, 'es') || isTenantAdmin(tenantId); allow write: if hasPerm(tenantId, 'es'); }
       // CRM: смотреть — «CRM: просмотр» или «управление», менять — «управление».
       match /crm_contacts/{d}      { allow read: if hasAnyPerm(tenantId, CRM_VIEW()); allow write: if hasPerm(tenantId, 'cm'); }
@@ -247,7 +247,7 @@ service cloud.firestore {
           && request.resource.data.get('authorStaffId', '') == resource.data.get('authorStaffId', '');
         allow delete: if hasPerm(tenantId, 'sh') && (docAuthor(resource.data) || isTenantAdmin(tenantId));
       }
-      match /rooms/{d=**}              { allow read, write: if member(); }
+      match /rooms/{d=**}              { allow read, write: if false; }  // старый P2P-звонок, не используется
     }
 
     // -------------------------------------------------------------
@@ -310,7 +310,7 @@ service cloud.firestore {
     match /schedule_events/{docId}   { allow read, delete: if permRead(['es']); allow create: if permCreate(['es']); allow update: if permUpdate(['es']); }
     match /attendance_logs/{docId}   { allow read, delete: if permRead(['es']); allow create: if permCreate(['es']); allow update: if permUpdate(['es']); }
     match /subscriptions/{docId}     { allow read, delete: if permRead(['es']); allow create: if permCreate(['es']); allow update: if permUpdate(['es']); }
-    match /edu_subscriptions/{docId} { allow read, delete: if permRead(['es']); allow create: if permCreate(['es']); allow update: if permUpdate(['es']); }
+    match /edu_subscriptions/{docId} { allow read: if permRead(['es']); allow write: if false; }
     // Старые общие копии чатов интерфейс не использует. Открытые всем, они
     // отдавали чужие личные переписки — закрыты.
     match /chat_channels/{docId} { allow read, write: if false; }
@@ -401,8 +401,10 @@ service cloud.firestore {
     match /custom_forms/{docId} {
       allow read: if permRead(FORMS_VIEW());
       allow create: if permCreate(FORMS_EDIT());
-      allow update: if permUpdate(FORMS_EDIT());
-      allow delete: if permRead(FORMS_EDIT());
+      // Закрытие, архив и удаление — только через сервер (/api/forms/form-state, журнал).
+      allow update: if permUpdate(FORMS_EDIT())
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['active', 'archived', 'archivedAt', 'archivedBy']);
+      allow delete: if false;
     }
     // Заявки читает кабинет (onSnapshot), но пишет ТОЛЬКО сервер: смена
     // статуса идёт через /api/forms/status (там история и проверка прав),

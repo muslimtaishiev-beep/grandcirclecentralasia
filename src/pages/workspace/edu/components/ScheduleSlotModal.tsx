@@ -1,201 +1,117 @@
-import React, { useState } from 'react';
-import { X, Calendar, Clock, MapPin, Users, User } from 'lucide-react';
-import { ScheduleLessonSlot } from '../../../../types/edu';
-import { scheduleService } from '../../../../services/edu/scheduleService';
+import { useEffect, useState } from 'react';
+import { Button, Modal, toast, confirmDialog, input, label } from '../../../../components/ui';
+import { post, put, del } from '../../../../lib/eduApi';
 import { useWorkspaceConfig } from '../../../../lib/useWorkspaceConfig';
+import type { EduDirectory } from '../../../../shared/edu';
+import type { ScheduleLessonSlot, LessonStatus } from '../../../../types/edu';
 
+export interface StaffItem { id: string; name: string }
 interface Props {
-  isOpen: boolean;
-  onClose: () => void;
   tenantId: string;
-  selectedDate?: Date; // To pre-fill date
-  slotToEdit?: ScheduleLessonSlot;
+  dir: EduDirectory;
+  teachers: StaffItem[];
+  /** Занятие для правки; null — новое. */
+  slot: ScheduleLessonSlot | null;
+  /** Подставляемые при создании день и час. */
+  defaults?: { date: string; start?: string; roomId?: string };
+  onClose: () => void;
+  onSaved: () => void;
 }
 
-export default function ScheduleSlotModal({ isOpen, onClose, tenantId, selectedDate, slotToEdit }: Props) {
-  // Терминология и обязательность полей — из настроек организации: у школы
-  // урок без кабинета не бывает, у ивент-агентства «площадка» опциональна.
+const STATUS_LABEL: Record<string, string> = { scheduled: 'Запланировано', completed: 'Проведено', canceled: 'Отменено' };
+const hhmm = (t: string) => t.slice(11, 16);
+const plusHour = (s: string) => { const [h, m] = s.split(':').map(Number); return `${String(Math.min(23, h + 1)).padStart(2, '0')}:${String(m).padStart(2, '0')}`; };
+
+/** Окно занятия: поля заполняются из занятия, значения — только из справочников организации. */
+export default function ScheduleSlotModal({ tenantId, dir, teachers, slot, defaults, onClose, onSaved }: Props) {
   const wsConfig = useWorkspaceConfig();
   const terms = wsConfig.terms;
   const needTeacher = wsConfig.schedule.requireTeacher;
   const needRoom = wsConfig.schedule.requireRoom;
-  const [groupId, setGroupId] = useState(slotToEdit?.groupId || '');
-  const [teacherStaffId, setTeacherStaffId] = useState(slotToEdit?.teacherStaffId || '');
-  const [roomId, setRoomId] = useState(slotToEdit?.roomId || '');
-  const [date, setDate] = useState(selectedDate ? selectedDate.toISOString().split('T')[0] : '');
-  const [startTime, setStartTime] = useState(slotToEdit ? slotToEdit.startTime.split('T')[1].substring(0,5) : '10:00');
-  const [endTime, setEndTime] = useState(slotToEdit ? slotToEdit.endTime.split('T')[1].substring(0,5) : '11:30');
+  const start0 = defaults?.start || '10:00';
+
+  const [groupId, setGroupId] = useState(slot?.groupId || '');
+  const [teacherStaffId, setTeacherStaffId] = useState(slot?.teacherStaffId || '');
+  const [roomId, setRoomId] = useState(slot?.roomId || defaults?.roomId || '');
+  const [date, setDate] = useState(slot ? slot.startTime.slice(0, 10) : (defaults?.date || ''));
+  const [startTime, setStartTime] = useState(slot ? hhmm(slot.startTime) : start0);
+  const [endTime, setEndTime] = useState(slot ? hhmm(slot.endTime) : plusHour(start0));
+  const [topic, setTopic] = useState(slot?.topic || '');
+  const [status, setStatus] = useState<LessonStatus>((slot?.status as LessonStatus) || 'scheduled');
+  const [repeat, setRepeat] = useState(1);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  if (!isOpen) return null;
+  // Окно держит поля своей записи: при смене занятия подставляем заново.
+  useEffect(() => {
+    setGroupId(slot?.groupId || ''); setTeacherStaffId(slot?.teacherStaffId || ''); setRoomId(slot?.roomId || defaults?.roomId || '');
+    setDate(slot ? slot.startTime.slice(0, 10) : (defaults?.date || '')); setStartTime(slot ? hhmm(slot.startTime) : start0);
+    setEndTime(slot ? hhmm(slot.endTime) : plusHour(start0)); setTopic(slot?.topic || ''); setStatus((slot?.status as LessonStatus) || 'scheduled'); setRepeat(1); setError('');
+  }, [slot?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
-    // Обязательность преподавателя и кабинета настраивается организацией.
-    if (!groupId || !date || !startTime || !endTime
-        || (needTeacher && !teacherStaffId) || (needRoom && !roomId)) {
-      setError('Заполните все обязательные поля');
-      return;
-    }
-
-    const startIso = `${date}T${startTime}:00.000Z`; // Mocking UTC format for simplicity
-    const endIso = `${date}T${endTime}:00.000Z`;
-
+    if (!groupId || !date || !startTime || !endTime || (needTeacher && !teacherStaffId) || (needRoom && !roomId)) { setError('Заполните обязательные поля'); return; }
+    const body = { groupId, teacherStaffId, roomId, startTime: `${date}T${startTime}`, endTime: `${date}T${endTime}`, topic, status };
+    setBusy(true);
     try {
-      setLoading(true);
-      const data = {
-        groupId,
-        // Раньше здесь сохранялись 'Mock Group'/'Mock Teacher'/'Mock Room' —
-        // мусорные подписи навсегда оставались в каждом созданном занятии.
-        groupName: groupId,
-        teacherStaffId,
-        teacherName: teacherStaffId,
-        roomId,
-        roomName: roomId,
-        startTime: startIso,
-        endTime: endIso,
-        status: 'scheduled' as const,
-        tenantId,
-      };
-
-      if (slotToEdit) {
-        // Here we'd also validate conflict, but passing ignoreLessonId
-        await scheduleService.validateScheduleConflict(tenantId, roomId, teacherStaffId, startIso, endIso, slotToEdit.id);
-        await scheduleService.updateLesson(tenantId, slotToEdit.id, data);
-      } else {
-        await scheduleService.createLesson(tenantId, data);
+      if (slot) await put(`/api/edu/${tenantId}/lessons/${slot.id}`, body);
+      else {
+        const r = await post<{ created: string[]; skipped: string[] }>(`/api/edu/${tenantId}/lessons`, { ...body, repeatWeeks: repeat });
+        if (r.skipped.length) toast.error(`Пропущено из-за пересечений: ${r.skipped.length}`);
       }
-      onClose();
-    } catch (err: any) {
-      setError(err.message || 'Ошибка сохранения');
-    } finally {
-      setLoading(false);
-    }
+      onSaved(); onClose();
+    } catch (err: any) { setError(err.message || 'Ошибка сохранения'); } finally { setBusy(false); }
   };
 
+  const remove = async () => {
+    if (!slot || !(await confirmDialog({ title: `Удалить: ${terms.lesson.toLowerCase()}?`, confirmLabel: 'Удалить', danger: true }))) return;
+    setBusy(true);
+    try { await del(`/api/edu/${tenantId}/lessons/${slot.id}`); onSaved(); onClose(); }
+    catch (err: any) { setError(err.message); } finally { setBusy(false); }
+  };
+
+  const req = <span className="text-red-500">*</span>;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-[var(--bg-panel)] rounded-2xl max-w-md w-full shadow-2xl border border-[var(--border-color)]">
-        <div className="flex justify-between items-center p-6 border-b border-[var(--border-color)]">
-          <h2 className="text-xl font-bold">{slotToEdit ? `Редактировать: ${terms.lesson.toLowerCase()}` : `Новое занятие: ${terms.lesson.toLowerCase()}`}</h2>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition">
-            <X className="w-5 h-5" />
-          </button>
+    <Modal title={slot ? `Правка: ${terms.lesson.toLowerCase()}` : `Новое: ${terms.lesson.toLowerCase()}`} onClose={onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        {error && <div role="alert" className="p-3 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="col-span-3 sm:col-span-1"><span className={label}>Дата</span><input type="date" className={input} value={date} onChange={e => setDate(e.target.value)} /></div>
+          <div><span className={label}>Начало</span><input type="time" className={input} value={startTime} onChange={e => setStartTime(e.target.value)} /></div>
+          <div><span className={label}>Конец</span><input type="time" className={input} value={endTime} onChange={e => setEndTime(e.target.value)} /></div>
         </div>
-        
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {error && (
-            <div className="p-3 bg-red-100 text-red-600 rounded-lg text-sm font-medium">
-              {error}
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-bold text-[var(--text-muted)] mb-1">Дата</label>
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-                <input 
-                  type="date" 
-                  value={date}
-                  onChange={e => setDate(e.target.value)}
-                  className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl pl-10 pr-4 py-2 focus:outline-none focus:border-[var(--accent)]"
-                />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <label className="block text-sm font-bold text-[var(--text-muted)] mb-1">Начало</label>
-                <input 
-                  type="time" 
-                  value={startTime}
-                  onChange={e => setStartTime(e.target.value)}
-                  className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl px-3 py-2 focus:outline-none focus:border-[var(--accent)]"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="block text-sm font-bold text-[var(--text-muted)] mb-1">Конец</label>
-                <input 
-                  type="time" 
-                  value={endTime}
-                  onChange={e => setEndTime(e.target.value)}
-                  className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl px-3 py-2 focus:outline-none focus:border-[var(--accent)]"
-                />
-              </div>
-            </div>
+        <div><span className={label}>{terms.group} {req}</span>
+          <select className={input} value={groupId} onChange={e => setGroupId(e.target.value)}>
+            <option value="">—</option>{dir.groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select></div>
+        <div><span className={label}>{terms.teacher} {needTeacher && req}</span>
+          <select className={input} value={teacherStaffId} onChange={e => setTeacherStaffId(e.target.value)}>
+            <option value="">—</option>{teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select></div>
+        <div><span className={label}>{terms.room} {needRoom && req}</span>
+          <select className={input} value={roomId} onChange={e => setRoomId(e.target.value)}>
+            <option value="">—</option>{dir.rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select></div>
+        <div><span className={label}>Тема</span><input className={input} value={topic} maxLength={200} onChange={e => setTopic(e.target.value)} /></div>
+        {slot ? (
+          <div><span className={label}>Статус</span>
+            <select className={input} value={status} onChange={e => setStatus(e.target.value as LessonStatus)}>
+              {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select></div>
+        ) : (
+          <div><span className={label}>Повторять еженедельно, раз</span>
+            <input type="number" min={1} max={52} className={input} value={repeat} onChange={e => setRepeat(Math.max(1, Math.min(52, Number(e.target.value) || 1)))} /></div>
+        )}
+        <div className="flex flex-wrap gap-2 justify-between pt-2">
+          {slot ? <Button variant="danger" onClick={remove} disabled={busy}>Удалить</Button> : <span />}
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={onClose}>Отмена</Button>
+            <Button type="submit" variant="primary" loading={busy}>Сохранить</Button>
           </div>
-
-          <div>
-            <label className="block text-sm font-bold text-[var(--text-muted)] mb-1">{terms.group} <span className="text-red-500">*</span></label>
-            <div className="relative">
-              <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-              <input 
-                type="text" 
-                placeholder={terms.group}
-                value={groupId}
-                onChange={e => setGroupId(e.target.value)}
-                className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl pl-10 pr-4 py-2 focus:outline-none focus:border-[var(--accent)]"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-bold text-[var(--text-muted)] mb-1">
-              {terms.teacher} {needTeacher
-                ? <span className="text-red-500">*</span>
-                : <span className="font-normal text-[var(--text-muted)]">— необязательно</span>}
-            </label>
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-              <input 
-                type="text" 
-                placeholder={terms.teacher}
-                value={teacherStaffId}
-                onChange={e => setTeacherStaffId(e.target.value)}
-                className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl pl-10 pr-4 py-2 focus:outline-none focus:border-[var(--accent)]"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-bold text-[var(--text-muted)] mb-1">
-              {terms.room} {needRoom
-                ? <span className="text-red-500">*</span>
-                : <span className="font-normal text-[var(--text-muted)]">— необязательно</span>}
-            </label>
-            <div className="relative">
-              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-              <input 
-                type="text" 
-                placeholder={terms.room}
-                value={roomId}
-                onChange={e => setRoomId(e.target.value)}
-                className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl pl-10 pr-4 py-2 focus:outline-none focus:border-[var(--accent)]"
-              />
-            </div>
-          </div>
-
-          <div className="pt-4 flex gap-3">
-            <button 
-              type="button" 
-              onClick={onClose}
-              className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 font-bold rounded-xl hover:bg-slate-200 transition"
-            >
-              Отмена
-            </button>
-            <button 
-              type="submit" 
-              disabled={loading}
-              className="flex-1 py-3 bg-[var(--accent)] text-white font-bold rounded-xl shadow-lg hover:brightness-110 transition disabled:opacity-50"
-            >
-              {loading ? 'Сохранение...' : 'Сохранить'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        </div>
+      </form>
+    </Modal>
   );
 }

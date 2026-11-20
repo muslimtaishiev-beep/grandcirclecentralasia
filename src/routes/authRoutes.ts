@@ -322,6 +322,7 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
       // «вас добавили» со ссылкой на вход.
       resetLink = createdNow ? await admin.auth().generatePasswordResetLink(email) : `${await appUrl()}/login`;
       emailResult = await sendStaffInviteEmail({
+        tenantId,
         email: resolveWorkspaceConfig(targetTenantDoc.data()?.workspaceConfig).email,
         to: email,
         fullName: fullName || email.split("@")[0],

@@ -1,200 +1,65 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Button, Modal, OptionPicker, toast, input, label } from '../../../../components/ui';
+import { apiCall, post } from '../../../../lib/eduApi';
 import { useWorkspaceTerms } from '../../../../lib/useWorkspaceConfig';
-import { X, DollarSign, BookOpen, User, Check, Loader2 } from 'lucide-react';
-import { db } from '../../../../lib/firebase';
-import { collection, doc, setDoc, query, where, getDocs, onSnapshot } from 'firebase/firestore';
-import { SubscriptionType } from '../../../../types/edu';
+import type { DirItem, SubPlan } from '../../../../shared/edu';
 
-interface Props {
-  isOpen: boolean;
-  onClose: () => void;
-  tenantId: string;
-}
+interface Props { tenantId: string; plans: SubPlan[]; groups: DirItem[]; currency: string; today: string; onClose: () => void; onSaved: () => void }
 
-export default function SubscriptionIssueModal({ isOpen, onClose, tenantId }: Props) {
+/** Выдача абонемента: ученик из базы, вид — из справочника. Оплата попадает в кассу вместе с выдачей. */
+export default function SubscriptionIssueModal({ tenantId, plans, groups, currency, today, onClose, onSaved }: Props) {
   const terms = useWorkspaceTerms();
-  const [students, setStudents] = useState<any[]>([]);
-  const [selectedStudentId, setSelectedStudentId] = useState('');
-  const [customStudentName, setCustomStudentName] = useState('');
-  const [type, setType] = useState<SubscriptionType>('lessons_pack');
-  const [totalLessons, setTotalLessons] = useState('12');
-  const [price, setPrice] = useState('5000');
-  const [loadingStudents, setLoadingStudents] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [students, setStudents] = useState<{ id: string; name: string }[]>([]);
+  const [studentName, setStudentName] = useState<string | null>(null);
+  const [planId, setPlanId] = useState(plans[0]?.id || '');
+  const [groupId, setGroupId] = useState('');
+  const [startDate, setStartDate] = useState(today);
+  const [price, setPrice] = useState<number>(plans[0]?.price || 0);
+  const [paid, setPaid] = useState(true);
+  const [account, setAccount] = useState<'bank' | 'cash'>('bank');
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!isOpen || !tenantId) return;
+    apiCall<{ students: { id: string; name: string }[] }>(`/api/edu/${tenantId}/students`).then(j => setStudents(j.students)).catch(e => toast.error(e.message));
+  }, [tenantId]);
 
-    setLoadingStudents(true);
-    const q = query(collection(db, 'crm_contacts'), where('tenantId', '==', tenantId));
-    const unsub = onSnapshot(q, (snap) => {
-      const list: any[] = [];
-      snap.forEach(d => {
-        const data = d.data();
-        list.push({ id: d.id, name: data.fullName || data.name || 'Студент', phone: data.phone || '' });
-      });
-      setStudents(list);
-      if (list.length > 0 && !selectedStudentId) {
-        setSelectedStudentId(list[0].id);
-      }
-      setLoadingStudents(false);
-    }, (err) => {
-      console.warn("Students fetch notice:", err);
-      setLoadingStudents(false);
-    });
+  const plan = plans.find(p => p.id === planId);
+  const student = students.find(s => s.name === studentName);
 
-    return () => unsub();
-  }, [isOpen, tenantId]);
-
-  if (!isOpen) return null;
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!totalLessons || !price) return;
-
+    if (!student || !plan) { toast.error(`Выберите ${terms.student.toLowerCase()} и вид`); return; }
+    setBusy(true);
     try {
-      setLoading(true);
-      const studentObj = students.find(s => s.id === selectedStudentId);
-      const studentName = studentObj ? studentObj.name : (customStudentName.trim() || 'Студент');
-      const studentContactId = selectedStudentId || `student_${Date.now()}`;
-
-      const now = new Date();
-      const expiry = new Date();
-      expiry.setMonth(expiry.getMonth() + 1); // 1 month default validity
-
-      const subData = {
-        tenantId,
-        studentContactId,
-        studentName,
-        type,
-        totalLessons: parseInt(totalLessons, 10),
-        remainingLessons: parseInt(totalLessons, 10),
-        pricePaid: parseFloat(price),
-        currency: 'KGS',
-        startDate: now.toISOString(),
-        expiryDate: expiry.toISOString(),
-        isFrozen: false,
-        status: 'active',
-        createdAt: Date.now()
-      };
-
-      const ref1 = doc(collection(db, 'tenants', tenantId, 'edu_subscriptions'));
-      await setDoc(ref1, subData);
-
-      const ref2 = doc(collection(db, 'edu_subscriptions'));
-      await setDoc(ref2, subData);
-
-      onClose();
-    } catch (err: any) {
-      alert(`Ошибка выдачи абонемента: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
+      await post(`/api/edu/${tenantId}/subscriptions`, { studentContactId: student.id, studentName: student.name, planId: plan.id, price, groupId, startDate, paid, account });
+      toast.success('Выдано'); onSaved(); onClose();
+    } catch (err: any) { toast.error(err.message); } finally { setBusy(false); }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-[var(--bg-panel)] rounded-2xl max-w-md w-full shadow-2xl border border-[var(--border-color)]">
-        <div className="flex justify-between items-center p-5 border-b border-[var(--border-color)]">
-          <h2 className="text-lg font-bold text-[var(--text-main)]">{`Выдать ${terms.subscription.toLowerCase()}: ${terms.student.toLowerCase()}`}</h2>
-          <button onClick={onClose} className="p-1.5 hover:bg-black/10 rounded-xl transition text-slate-400">
-            <X className="w-5 h-5" />
-          </button>
+    <Modal title={`Выдать: ${terms.subscription.toLowerCase()}`} onClose={onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        <div><span className={label}>{terms.student}</span>
+          <OptionPicker options={students.map(s => ({ label: s.name }))} value={studentName} onChange={setStudentName} placeholder={terms.student} /></div>
+        <div><span className={label}>Вид</span>
+          <select className={input} value={planId} onChange={e => { setPlanId(e.target.value); setPrice(plans.find(p => p.id === e.target.value)?.price || 0); }}>
+            {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select></div>
+        <div><span className={label}>{terms.group}</span>
+          <select className={input} value={groupId} onChange={e => setGroupId(e.target.value)}><option value="">—</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><span className={label}>С даты</span><input type="date" className={input} value={startDate} onChange={e => setStartDate(e.target.value)} /></div>
+          <div><span className={label}>Цена, {currency}</span><input type="number" min={0} className={input} value={price} onChange={e => setPrice(Number(e.target.value))} /></div>
         </div>
-        
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs">
-          <div>
-            <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">{`Выбрать из CRM: ${terms.student.toLowerCase()} *`}</label>
-            {loadingStudents ? (
-              <div className="flex items-center gap-2 py-2 text-xs text-[var(--text-muted)]">
-                <Loader2 className="w-4 h-4 animate-spin text-emerald-500" /> {`Загрузка: ${terms.student.toLowerCase()}…`}
-              </div>
-            ) : students.length > 0 ? (
-              <select 
-                value={selectedStudentId}
-                onChange={e => setSelectedStudentId(e.target.value)}
-                className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-main)] focus:outline-none focus:border-emerald-500 font-mono"
-              >
-                {students.map(s => (
-                  <option key={s.id} value={s.id}>
-                    👤 {s.name} {s.phone ? `(${s.phone})` : ''}
-                  </option>
-                ))}
-                <option value="">-- Ввести имя вручную --</option>
-              </select>
-            ) : (
-              <input 
-                type="text"
-                required
-                placeholder={`ФИО: ${terms.student.toLowerCase()}`}
-                value={customStudentName}
-                onChange={e => setCustomStudentName(e.target.value)}
-                className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-main)] focus:outline-none focus:border-emerald-500"
-              />
-            )}
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">{`Тип: ${terms.subscription.toLowerCase()}`}</label>
-            <select 
-              value={type}
-              onChange={e => setType(e.target.value as SubscriptionType)}
-              className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-main)] focus:outline-none focus:border-emerald-500"
-            >
-              <option value="lessons_pack">Пакет занятий (8, 12 или 24 урока)</option>
-              <option value="time_period">Безлимит на 1 месяц</option>
-              <option value="deposit_balance">Депозит / Баланс</option>
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Кол-во занятий</label>
-              <div className="relative">
-                <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-                <input 
-                  type="number" 
-                  required
-                  value={totalLessons}
-                  onChange={e => setTotalLessons(e.target.value)}
-                  className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl pl-9 pr-3 py-2 text-xs text-[var(--text-main)] focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Стоимость (KGS)</label>
-              <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-                <input 
-                  type="number" 
-                  required
-                  value={price}
-                  onChange={e => setPrice(e.target.value)}
-                  className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl pl-9 pr-3 py-2 text-xs text-[var(--text-main)] focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-3 flex gap-2 justify-end border-t border-[var(--border-color)]">
-            <button 
-              type="button" 
-              onClick={onClose}
-              className="px-4 py-2 bg-[var(--bg-surface)] border text-[var(--text-main)] font-bold rounded-xl text-xs"
-            >
-              Отмена
-            </button>
-            <button 
-              type="submit" 
-              disabled={loading}
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-md transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              <span>{`Выдать ${terms.subscription.toLowerCase()}`}</span>
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div className="flex flex-wrap items-center gap-3 text-sm text-[var(--text-main)]">
+          <label className="inline-flex items-center gap-2"><input type="checkbox" checked={paid} onChange={e => setPaid(e.target.checked)} /> Оплачено</label>
+          {paid && <select className={`${input} !w-auto`} value={account} onChange={e => setAccount(e.target.value as 'bank' | 'cash')}><option value="bank">Безналичные</option><option value="cash">Наличные</option></select>}
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>Отмена</Button>
+          <Button type="submit" variant="primary" loading={busy} disabled={!plan}>Выдать</Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

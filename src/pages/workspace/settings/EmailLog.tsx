@@ -5,16 +5,16 @@ import { emailApi } from "../../../lib/emailTemplatesApi";
 import { btn, card } from "../journals/components/ui";
 
 /** Журнал отправленных писем: что, кому, ушло ли; переотправка по одному и пачкой. */
-interface Row { id: string; event: "referral" | "tested" | "form"; to: string; status: "sent" | "failed" | "pending"; reason: string; at: number; tries: number; subject: string; label: string; canResend: boolean; actionUrl: string }
+interface Row { id: string; event: string; to: string; status: "sent" | "failed" | "pending"; reason: string; at: number; tries: number; subject: string; label: string; canResend: boolean; actionUrl: string }
 
-const EVENT_LABEL: Record<Row["event"], string> = { referral: "Направление", tested: "После теста", form: "Заявка" };
+const EVENT_LABEL: Record<string, string> = { referral: "Направление", tested: "После теста", form: "Заявка", parent_form: "Анкета родителю", decision: "Решение", invite: "Приглашение", ticket: "Билет", result: "Результаты", service: "Служебное" };
 const when = (ms: number) => new Date(ms).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export default function EmailLog({ tenantId }: { tenantId: string }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<"all" | "failed">("all");
-  const [event, setEvent] = useState<"all" | Row["event"]>("all");
+  const [event, setEvent] = useState<string>("all");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -25,6 +25,7 @@ export default function EmailLog({ tenantId }: { tenantId: string }) {
   useEffect(() => { void load(); }, [load]);
 
   const shown = useMemo(() => (rows || []).filter(r => (status === "all" || r.status === "failed") && (event === "all" || r.event === event)), [rows, status, event]);
+  const presentEvents = useMemo(() => Object.keys(EVENT_LABEL).filter(k => (rows || []).some(r => r.event === k)), [rows]);
   const failedCount = (rows || []).filter(r => r.status === "failed").length;
 
   const resend = async (ids: string[]) => {
@@ -51,7 +52,7 @@ export default function EmailLog({ tenantId }: { tenantId: string }) {
         </div>
         <div className="flex rounded-lg border border-[var(--border-color)] overflow-hidden text-sm overflow-x-auto max-w-full">
           <button className={`${seg(event === "all")} whitespace-nowrap`} onClick={() => setEvent("all")}>Все письма</button>
-          {(Object.keys(EVENT_LABEL) as Row["event"][]).map(k => <button key={k} className={`${seg(event === k)} whitespace-nowrap`} onClick={() => setEvent(k)}>{EVENT_LABEL[k]}</button>)}
+          {presentEvents.map(k => <button key={k} className={`${seg(event === k)} whitespace-nowrap`} onClick={() => setEvent(k)}>{EVENT_LABEL[k]}</button>)}
         </div>
         <button className={`${btn} ml-auto`} onClick={() => void load()} aria-label="Обновить"><RefreshCw className="w-4 h-4" /></button>
       </div>

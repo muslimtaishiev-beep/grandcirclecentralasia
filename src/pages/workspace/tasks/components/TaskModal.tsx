@@ -1,159 +1,132 @@
-import React, { useState } from 'react';
-import { X, Send, CheckSquare, AlignLeft, Calendar } from 'lucide-react';
-import { WorkspaceTask, TaskSubItem } from '../../../../types/tasks';
-import { taskService } from '../../../../services/taskService';
+import React, { useEffect, useState } from 'react';
+import { Archive, ArchiveRestore, Plus, Send, Trash2, X } from 'lucide-react';
+import { Modal, btn, btnPrimary, input, label, toast, confirmDialog } from '../../../../components/ui';
+import { WorkspaceTask, TaskComment, TaskPriority, TaskStatus } from '../../../../types/tasks';
+import { taskService, TaskMember } from '../../../../services/taskService';
 import { useAuth } from '../../../../contexts/AuthContext';
+import { PRIORITIES, STATUSES, initials } from './taskLabels';
 
 interface Props {
-  isOpen: boolean;
+  /** Живая задача из подписки — окно обновляется вместе с ней. */
+  task: WorkspaceTask;
+  members: TaskMember[];
+  nameOf: (id: string) => string;
+  isAdmin: boolean;
   onClose: () => void;
-  task?: WorkspaceTask;
 }
 
-export default function TaskModal({ isOpen, onClose, task }: Props) {
+const run = async (fn: () => Promise<unknown>, fail: string) => { try { await fn(); } catch (e: any) { toast.error(e?.message || fail); } };
+
+export default function TaskModal({ task, members, nameOf, isAdmin, onClose }: Props) {
   const { user } = useAuth();
+  const tid = task.tenantId;
+  const canDelete = !!user && (task.creatorStaffId === user.uid || isAdmin);
+  const [title, setTitle] = useState(task.title);
+  const [description, setDescription] = useState(task.description || '');
+  const [comments, setComments] = useState<TaskComment[]>([]);
   const [commentText, setCommentText] = useState('');
+  const [newItem, setNewItem] = useState('');
 
-  if (!isOpen || !task) return null;
+  // Чужая правка приходит вживую; не затираем то, что человек сейчас печатает.
+  useEffect(() => { if (document.activeElement?.id !== 'task-title') setTitle(task.title); }, [task.title]);
+  useEffect(() => { if (document.activeElement?.id !== 'task-desc') setDescription(task.description || ''); }, [task.description]);
+  useEffect(() => taskService.subscribeToComments(tid, task.id, setComments), [tid, task.id]);
 
-  const handleToggleSubtask = async (subtaskId: string) => {
-    const newSubtasks = task.subtasks.map(s => s.id === subtaskId ? { ...s, isCompleted: !s.isCompleted } : s);
-    await taskService.toggleSubtask(task.tenantId, task.id, newSubtasks);
-  };
+  const patch = (p: Parameters<typeof taskService.updateTask>[2]) => run(() => taskService.updateTask(tid, task.id, p), 'Не удалось сохранить');
+  const subs = task.subtasks || [];
+  const assignees = task.assigneeStaffIds || [];
+  const toggleAssignee = (id: string) => patch({ assigneeStaffIds: assignees.includes(id) ? assignees.filter(x => x !== id) : [...assignees, id] });
 
-  const handleAddComment = async (e: React.FormEvent) => {
+  const addComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!commentText.trim() || !user) return;
-
-    await taskService.addTaskComment(task.tenantId, task.id, {
-      authorStaffId: user.uid,
-      authorName: user.displayName || user.email || 'System',
-      text: commentText.trim(),
-    });
+    const text = commentText.trim();
     setCommentText('');
+    await run(() => taskService.addTaskComment(tid, task.id, { authorStaffId: user.uid, authorName: user.displayName || user.email || 'Сотрудник', text }), 'Не удалось отправить комментарий');
   };
 
+  const remove = async () => {
+    if (!(await confirmDialog({ title: 'Удалить задачу?', message: 'Вместе с комментариями. Восстановить будет нельзя.', confirmLabel: 'Удалить', danger: true }))) return;
+    try { await taskService.deleteTask(tid, task.id); onClose(); } catch (e: any) { toast.error(e?.message || 'Не удалось удалить'); }
+  };
+  const archive = () => run(async () => { await taskService.archiveTask(tid, task.id, !task.archived); if (!task.archived) onClose(); }, 'Не удалось выполнить');
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-[var(--bg-panel)] rounded-2xl w-full max-w-3xl max-h-[90vh] shadow-2xl border border-[var(--border-color)] flex flex-col">
-        <div className="flex justify-between items-start p-6 border-b border-[var(--border-color)] bg-[var(--bg-app)] rounded-t-2xl">
-          <div className="pr-4">
-            <div className="flex items-center gap-3 mb-2">
-              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-200 dark:bg-slate-700 text-[var(--text-muted)]">
-                {task.status}
-              </span>
-              <span className="text-xs text-[var(--text-muted)] font-medium font-mono">{task.id.split('-')[0]}</span>
-            </div>
-            <h2 className="text-2xl font-bold text-[var(--text-main)] leading-tight">{task.title}</h2>
+    <Modal title="Задача" onClose={onClose} wide>
+      <div className="flex flex-col md:flex-row gap-6">
+        <div className="flex-1 min-w-0 space-y-5">
+          <input id="task-title" className={`${input} text-lg font-bold`} value={title} onChange={e => setTitle(e.target.value)}
+            onBlur={() => { if (title.trim() && title.trim() !== task.title) patch({ title: title.trim() }); else setTitle(task.title); }} />
+          <div>
+            <label className={label}>Описание</label>
+            <textarea id="task-desc" className={`${input} resize-none`} rows={4} value={description} onChange={e => setDescription(e.target.value)}
+              onBlur={() => { if (description !== (task.description || '')) patch({ description }); }} />
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition shrink-0">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        
-        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
-          {/* Main Content Area */}
-          <div className="flex-1 overflow-y-auto p-6 border-r border-[var(--border-color)] space-y-8">
-            {/* Description */}
-            <section>
-              <h4 className="flex items-center gap-2 font-bold mb-3 text-[var(--text-main)]">
-                <AlignLeft className="w-5 h-5 text-[var(--text-muted)]" /> Описание
-              </h4>
-              <div className="text-sm text-[var(--text-muted)] leading-relaxed bg-[var(--bg-surface)] p-4 rounded-xl border border-[var(--border-color)]">
-                {task.description || 'Описание отсутствует.'}
-              </div>
-            </section>
 
-            {/* Subtasks */}
-            {task.subtasks && task.subtasks.length > 0 && (
-              <section>
-                <h4 className="flex items-center gap-2 font-bold mb-3 text-[var(--text-main)]">
-                  <CheckSquare className="w-5 h-5 text-[var(--text-muted)]" /> Чеклист
-                </h4>
-                <div className="space-y-2">
-                  {task.subtasks.map(sub => (
-                    <label key={sub.id} className="flex items-start gap-3 p-3 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl cursor-pointer hover:border-[var(--accent)] transition group">
-                      <input 
-                        type="checkbox" 
-                        checked={sub.isCompleted} 
-                        onChange={() => handleToggleSubtask(sub.id)}
-                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-[var(--accent)] focus:ring-[var(--accent)] cursor-pointer"
-                      />
-                      <span className={`text-sm font-medium transition ${sub.isCompleted ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-main)] group-hover:text-[var(--accent)]'}`}>
-                        {sub.title}
-                      </span>
-                    </label>
-                  ))}
+          <div>
+            <label className={label}>Чеклист{subs.length ? ` · ${subs.filter(s => s.isCompleted).length}/${subs.length}` : ''}</label>
+            <div className="space-y-1.5">
+              {subs.map(s => (
+                <div key={s.id} className="flex items-center gap-2 p-2 border border-[var(--border-color)] rounded-lg">
+                  <input type="checkbox" checked={s.isCompleted} className="w-4 h-4 cursor-pointer" onChange={() => run(() => taskService.toggleSubtask(tid, task.id, s.id), 'Не удалось отметить')} />
+                  <span className={`flex-1 text-sm ${s.isCompleted ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text-main)]'}`}>{s.title}</span>
+                  <button type="button" className="p-1 text-[var(--text-muted)] hover:text-rose-600 cursor-pointer" title="Убрать" onClick={() => run(() => taskService.removeSubtask(tid, task.id, s.id), 'Не удалось убрать')}><X className="w-4 h-4" /></button>
                 </div>
-              </section>
-            )}
-
-            {/* Comments */}
-            <section>
-              <h4 className="font-bold mb-4 text-[var(--text-main)]">Комментарии ({task.commentsCount || 0})</h4>
-              {/* Mocking comments display since we didn't subscribe to the subcollection in useTaskManager for simplicity in this example */}
-              <div className="text-sm text-[var(--text-muted)] italic mb-6">
-                Комментарии загружаются... (В полной реализации здесь подписка на подколлекцию comments)
-              </div>
-            </section>
+              ))}
+              <form className="flex gap-2" onSubmit={e => { e.preventDefault(); if (!newItem.trim()) return; const t = newItem; setNewItem(''); run(() => taskService.addSubtask(tid, task.id, t), 'Не удалось добавить'); }}>
+                <input className={input} placeholder="Пункт" value={newItem} onChange={e => setNewItem(e.target.value)} />
+                <button type="submit" className={btn} disabled={!newItem.trim()} title="Добавить"><Plus className="w-4 h-4" /></button>
+              </form>
+            </div>
           </div>
 
-          {/* Sidebar Area */}
-          <div className="w-full md:w-64 bg-[var(--bg-surface)] p-6 overflow-y-auto flex flex-col gap-6">
-            <div>
-              <div className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider mb-2">Статус</div>
-              <div className="font-medium text-sm px-3 py-2 bg-[var(--bg-panel)] rounded-lg border border-[var(--border-color)]">{task.status}</div>
-            </div>
-            
-            <div>
-              <div className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider mb-2">Дедлайн</div>
-              <div className="flex items-center gap-2 font-medium text-sm px-3 py-2 bg-[var(--bg-panel)] rounded-lg border border-[var(--border-color)]">
-                <Calendar className="w-4 h-4 text-[var(--text-muted)]" />
-                {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'Не указан'}
-              </div>
-            </div>
-
-            <div>
-              <div className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider mb-2">Приоритет</div>
-              <div className="font-medium text-sm px-3 py-2 bg-[var(--bg-panel)] rounded-lg border border-[var(--border-color)]">{task.priority}</div>
-            </div>
-
-            <div>
-              <div className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider mb-2">Исполнители</div>
-              <div className="flex flex-col gap-2">
-                {task.assigneeStaffIds && task.assigneeStaffIds.map(id => (
-                  <div key={id} className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-[var(--accent)] text-white flex items-center justify-center text-[10px] font-bold">
-                      {id.substring(0,2).toUpperCase()}
-                    </div>
-                    <span className="text-sm font-medium">{id}</span>
+          <div>
+            <label className={label}>Комментарии ({comments.length})</label>
+            <div className="space-y-2 mb-3">
+              {comments.map(c => (
+                <div key={c.id} className="p-3 bg-[var(--bg-app)] border border-[var(--border-color)] rounded-xl">
+                  <div className="flex items-center justify-between text-xs text-[var(--text-muted)] mb-1">
+                    <span className="font-bold text-[var(--text-main)]">{c.authorName}</span>
+                    <span className="flex items-center gap-2">
+                      {new Date(c.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      {(c.authorStaffId === user?.uid || isAdmin) && (
+                        <button type="button" className="hover:text-rose-600 cursor-pointer" title="Удалить" onClick={() => run(() => taskService.deleteTaskComment(tid, task.id, c.id), 'Не удалось удалить')}><Trash2 className="w-3.5 h-3.5" /></button>
+                      )}
+                    </span>
                   </div>
-                ))}
-              </div>
+                  <div className="text-sm text-[var(--text-main)] whitespace-pre-wrap">{c.text}</div>
+                </div>
+              ))}
             </div>
+            <form onSubmit={addComment} className="flex gap-2">
+              <input className={input} value={commentText} onChange={e => setCommentText(e.target.value)} placeholder="Комментарий" />
+              <button type="submit" className={btnPrimary} disabled={!commentText.trim()} title="Отправить"><Send className="w-4 h-4" /></button>
+            </form>
           </div>
         </div>
 
-        {/* Comment Input Footer */}
-        <div className="p-4 border-t border-[var(--border-color)] bg-[var(--bg-app)] rounded-b-2xl">
-          <form onSubmit={handleAddComment} className="flex items-center gap-3">
-            <input 
-              type="text" 
-              value={commentText}
-              onChange={e => setCommentText(e.target.value)}
-              placeholder="Написать комментарий..."
-              className="flex-1 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--accent)]"
-            />
-            <button 
-              type="submit"
-              disabled={!commentText.trim()}
-              className="p-3 bg-[var(--accent)] text-white rounded-xl shadow-md disabled:opacity-50 hover:brightness-110 transition"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </form>
+        <div className="w-full md:w-60 shrink-0 space-y-4">
+          <div><label className={label}>Статус</label><select className={input} value={task.status} onChange={e => patch({ status: e.target.value as TaskStatus })}>{STATUSES.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></div>
+          <div><label className={label}>Приоритет</label><select className={input} value={task.priority} onChange={e => patch({ priority: e.target.value as TaskPriority })}>{PRIORITIES.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}</select></div>
+          <div><label className={label}>Срок</label><input className={input} type="date" value={task.dueDate || ''} onChange={e => patch({ dueDate: e.target.value })} /></div>
+          <div>
+            <label className={label}>Исполнители</label>
+            <div className="flex flex-wrap gap-1.5">
+              {members.map(m => (
+                <button key={m.id} type="button" onClick={() => toggleAssignee(m.id)} title={m.name}
+                  className={`px-2 py-1 rounded-lg text-xs border cursor-pointer ${assignees.includes(m.id) ? 'bg-[var(--accent)] text-white border-[var(--accent)]' : 'border-[var(--border-color)] text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]'}`}>
+                  {initials(m.name)} {m.name}
+                </button>
+              ))}
+              {assignees.filter(id => !members.some(m => m.id === id)).map(id => <span key={id} className="px-2 py-1 rounded-lg text-xs border border-[var(--border-color)] text-[var(--text-muted)]">{nameOf(id)}</span>)}
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 pt-2">
+            <button type="button" className={btn} onClick={archive}>{task.archived ? <><ArchiveRestore className="w-4 h-4" /> Восстановить</> : <><Archive className="w-4 h-4" /> В архив</>}</button>
+            {canDelete && <button type="button" className={`${btn} text-rose-600`} onClick={remove}><Trash2 className="w-4 h-4" /> Удалить</button>}
+          </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

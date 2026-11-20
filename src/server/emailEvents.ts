@@ -105,7 +105,7 @@ export async function sendTemplated(p: TemplatedSend): Promise<SendResult> {
       else {
         const [m, base] = await Promise.all([orgMail(p.tenantId), appUrl()]);
         const { subject, html } = renderEmail(tpl, p.vars, m.org, base);
-        r = await sendMail({ to, subject, html, fromName: m.fromName, replyTo: m.replyTo });
+        r = await sendMail({ to, subject, html, fromName: m.fromName, replyTo: m.replyTo, tenantId: p.tenantId });
         await ref.set({ subject }, { merge: true });
       }
     }

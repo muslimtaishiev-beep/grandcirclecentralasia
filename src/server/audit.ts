@@ -79,6 +79,11 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   "settings.screens": "Разделы меню",
   "apikey.issue": "Выпущен ключ API",
   "apikey.origins": "Разрешённые сайты",
+  "form.close": "Приём заявок закрыт",
+  "form.open": "Приём заявок открыт",
+  "form.archive": "Форма в архиве",
+  "form.restore": "Форма возвращена из архива",
+  "form.purge": "Форма стёрта",
 };
 
 // ── Платформенный журнал audit_logs (суперадмин) ──

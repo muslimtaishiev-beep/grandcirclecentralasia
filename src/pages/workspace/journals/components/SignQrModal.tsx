@@ -64,7 +64,6 @@ export default function SignQrModal({ journal, entry, column, api, onSigned, onC
         ) : (
           <>
             <div className="bg-white rounded-2xl p-3"><FancyQr value={url} size={260} logo={logo} /></div>
-            <p className="text-sm text-[var(--text-muted)] max-w-xs">Пусть отсканирует камерой телефона и подтвердит. Окно обновится само.</p>
             <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]"><Loader2 className="w-3 h-3 animate-spin" /> Ждём подпись · ссылка действует до {new Date(expiresAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</div>
             <div className="flex gap-2">
               <button className={btn} onClick={() => { navigator.clipboard?.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>

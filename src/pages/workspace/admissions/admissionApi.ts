@@ -30,7 +30,11 @@ export interface Row {
   archived?: { at: number; byName: string } | null;
   referralBlocked?: boolean;
 }
-/** academic — видит тест, бумажные результаты и решение (не психолог). */
-export interface Me { admission: boolean; psych: boolean; psychView: boolean; academic: boolean; name?: string; owner?: boolean }
+/**
+ * admission — администрация приёма; conduct — проводит анкеты (по праву или по праву анкеты);
+ * viewAll — видит закрытые анкеты; academic — видит тест, бумажные результаты и решение;
+ * owner — полный доступ (окончательное удаление).
+ */
+export interface Me { admission: boolean; conduct: boolean; viewAll: boolean; academic: boolean; name?: string; owner?: boolean }
 
 export const TONE: Record<string, string> = { good: "text-emerald-700 bg-emerald-500/10", warn: "text-amber-700 bg-amber-500/10", bad: "text-rose-700 bg-rose-500/10" };

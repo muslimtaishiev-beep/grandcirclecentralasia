@@ -26,6 +26,8 @@ export async function performCheckin(opts: {
   token: string;
   idToken: string;
   pending: PendingMap;
+  /** Мероприятия смены: билет на другое не пропускается. */
+  formIds?: string[];
   url?: string;
   fetchFn?: typeof fetch;
   timeoutMs?: number;
@@ -34,7 +36,7 @@ export async function performCheckin(opts: {
   newId?: () => string;
 }): Promise<CheckinOutcome> {
   const {
-    token, idToken, pending,
+    token, idToken, pending, formIds,
     url = "/api/forms/checkin",
     fetchFn = fetch,
     timeoutMs = ATTEMPT_TIMEOUT_MS,
@@ -69,7 +71,7 @@ export async function performCheckin(opts: {
         method: "POST",
         signal: ctrl.signal,
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ token, requestId }),
+        body: JSON.stringify({ token, requestId, ...(formIds && formIds.length ? { formIds } : {}) }),
       });
       // Не JSON (ответ прокси, страница ошибки) — не «билет не найден», а сбой связи.
       const body = await res.json().catch(() => null);

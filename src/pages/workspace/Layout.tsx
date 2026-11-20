@@ -152,7 +152,7 @@ export default function WorkspaceLayout() {
   const canSee = (navKey: string) => visibleScreens.has(navKey) && !(psychOnly && navKey === "dashboard");
   useEffect(() => {
     if (!psychOnly || !activeTenant) return;
-    if (new RegExp(`^/workspace/${activeTenant.id}(/dashboard)?/?$`).test(location.pathname)) navigate(`/workspace/${activeTenant.id}/admissions?side=psych`, { replace: true });
+    if (new RegExp(`^/workspace/${activeTenant.id}(/dashboard)?/?$`).test(location.pathname)) navigate(`/workspace/${activeTenant.id}/admissions?side=staff`, { replace: true });
   }, [psychOnly, activeTenant, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
   const hasPerm = (perm: string) => granted.has(perm as PermissionKey);
   const isSuperadmin = String(activeTenant?.role || "") === "superadmin";

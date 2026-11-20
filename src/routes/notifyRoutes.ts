@@ -24,7 +24,7 @@ async function me(req: any, res: any): Promise<{ t: string; c: StaffCaller } | n
 }
 
 /** Действия, которые этому сотруднику вообще могут приходить. */
-const available = (c: StaffCaller) => NOTIFY_EVENTS.filter(e => !e.for.length || hasPerm(c, ...e.for));
+const available = (c: StaffCaller) => NOTIFY_EVENTS.filter(e => e.live !== false && (!e.for.length || hasPerm(c, ...e.for)));
 
 router.get("/:t/prefs", requireFirebaseAuth, async (req: any, res: any) => {
   try {

@@ -4,13 +4,14 @@ import { createHash, randomBytes } from "crypto";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { activeMembership, membershipPermissions } from "../server/access.js";
 import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
-import { hasFullAccess } from "../shared/permissions.js";
+import { hasFullAccess, type PermissionKey } from "../shared/permissions.js";
+import { writeAudit, actorOf } from "../server/audit.js";
 import { tenantLogos } from "../shared/legal.js";
 import {
   BLANK_TEMPLATE, JOURNAL_LIMITS, JOURNAL_TEMPLATES,
   displayValue, hashableValues, isPhotoValue, matchName, newId, normalizeValue, roleAtLeast,
   sanitizeAccess, sanitizeColumns, sanitizeSettings,
-  type Journal, type JournalChange, type JournalColumn, type JournalEntry, type JournalRole,
+  type Journal, type JournalHistoryItem, type JournalChange, type JournalColumn, type JournalEntry, type JournalRole,
   type NameSignature, type QrSignature,
 } from "../shared/journals.js";
 
@@ -34,9 +35,19 @@ const TOKENS = "journal_sign_tokens";
 const str = (v: unknown, max = 200) => String(v ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max);
 const fail = (res: any, status: number, error: string) => res.status(status).json({ success: false, error });
 
+/** История настроек журнала (в самом журнале) и общий журнал действий организации. */
+const HISTORY_MAX = 100;
+function historyItem(req: any, action: JournalHistoryItem["action"], changes: JournalHistoryItem["changes"] = []): JournalHistoryItem {
+  return { at: Date.now(), by: req.caller.uid, byName: req.caller.name, action, ...(changes.length ? { changes: changes.slice(0, 30) } : {}) };
+}
+const logJournal = (req: any, j: Pick<Journal, "id" | "title">, code: string, detail: string, changes?: JournalHistoryItem["changes"]) =>
+  writeAudit(db(), req.params.tenantId, { actor: actorOf(req.user), action: code, section: "data", detail: `${j.title}: ${detail}`, target: { kind: "journal", id: j.id, name: j.title }, changes });
+const colLabels = (cols: JournalColumn[]) => cols.map(c => c.label).join(", ");
+const accessText = (a: Journal["access"]) => `все: ${a?.everyone || "none"}; людей: ${Object.keys(a?.members || {}).length}; должностей: ${Object.keys(a?.roles || {}).length}`;
+
 // ── Кто вызывает ────────────────────────────────────────────────────────
 
-interface Caller { uid: string; name: string; full: boolean; canCreate: boolean }
+interface Caller { uid: string; name: string; full: boolean; canCreate: boolean; roleId: string; all: boolean }
 
 /** Только сотрудник организации: активное членство или суперадмин. */
 const requireEmployee = async (req: any, res: any, next: any) => {
@@ -45,29 +56,35 @@ const requireEmployee = async (req: any, res: any, next: any) => {
     const uid = String(req.user?.uid || "");
     const name = str(req.user?.name || req.user?.email || uid, 120);
     if (req.user?.isSuperadmin === true) {
-      req.caller = { uid, name, full: true, canCreate: true } as Caller;
+      req.caller = { uid, name, full: true, canCreate: true, roleId: "", all: true } as Caller;
       return next();
     }
     const m = await activeMembership(db(), uid, t);
     if (!m) return fail(res, 403, "Журналы доступны только сотрудникам организации");
     const perms = await membershipPermissions(db(), m);
     const full = hasFullAccess(m.role);
-    req.caller = { uid, name: str(m.displayName, 120) || name, full, canCreate: full || perms.has("journals:manage") } as Caller;
+    // «Все журналы» — право должности: ответственный за каждый журнал организации.
+    const all = full || perms.has("journals:all" as PermissionKey);
+    req.caller = { uid, name: str(m.displayName, 120) || name, full, canCreate: full || perms.has("journals:manage"), roleId: str((m as any).customRoleId, 128), all } as Caller;
     next();
   } catch (e: any) { return fail(res, 500, e.message); }
 };
 const guard = [requireFirebaseAuth, requireScreen("journals", (req: any) => req.params.tenantId), requireEmployee];
 
 export function journalRole(j: Pick<Journal, "access" | "createdBy">, c: Caller): JournalRole | null {
-  if (c.full || j.createdBy === c.uid) return "manage";
-  const own = j.access?.members?.[c.uid];
-  if (own) return own;
-  return j.access?.everyone && j.access.everyone !== "none" ? j.access.everyone : null;
+  if (c.full || c.all || j.createdBy === c.uid) return "manage";
+  // Лучшая из ролей: поимённая, по должности, общая.
+  const cands = [
+    j.access?.members?.[c.uid],
+    c.roleId ? j.access?.roles?.[c.roleId] : undefined,
+    j.access?.everyone && j.access.everyone !== "none" ? j.access.everyone : undefined,
+  ].filter(Boolean) as JournalRole[];
+  return cands.sort((a, b) => (roleAtLeast(a, b) ? -1 : 1))[0] || null;
 }
 
-async function loadJournal(req: any, res: any, need: JournalRole): Promise<{ j: Journal; role: JournalRole } | null> {
+async function loadJournal(req: any, res: any, need: JournalRole, archived = false): Promise<{ j: Journal; role: JournalRole } | null> {
   const snap = await col(req.params.tenantId, "journals").doc(String(req.params.journalId)).get();
-  if (!snap.exists || snap.data()?.archived) { fail(res, 404, "Журнал не найден"); return null; }
+  if (!snap.exists || !!snap.data()?.archived !== archived) { fail(res, 404, "Журнал не найден"); return null; }
   const j = { ...(snap.data() as Journal), id: snap.id };
   const role = journalRole(j, req.caller);
   if (!roleAtLeast(role, need)) {
@@ -343,16 +360,24 @@ router.get("/:tenantId/employees", ...guard, async (req: any, res: any) => {
   catch (e: any) { return fail(res, 500, e.message); }
 });
 
+router.get("/:tenantId/roles", ...guard, async (req: any, res: any) => {
+  try {
+    const snap = await db().collection("custom_roles").where("tenantId", "==", req.params.tenantId).get();
+    return res.json({ success: true, roles: snap.docs.map(d => ({ id: d.id, name: str(d.data().name, 80) })).filter(r => r.name).sort((a, b) => a.name.localeCompare(b.name, "ru")) });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
 router.get("/:tenantId", ...guard, async (req: any, res: any) => {
   try {
     const snap = await col(req.params.tenantId, "journals").get();
+    const wantArchived = req.query.archived === "1";
     const journals = snap.docs.map(d => ({ ...(d.data() as Journal), id: d.id }))
-      .filter(j => !j.archived)
+      .filter(j => !!j.archived === wantArchived)
       .map(j => ({ j, role: journalRole(j, req.caller) }))
       .filter(x => x.role)
       .map(({ j, role }) => ({
         id: j.id, title: j.title, description: j.description, templateKey: j.templateKey,
-        columnCount: j.columns.length, updatedAt: j.updatedAt, role,
+        columnCount: j.columns.length, updatedAt: j.updatedAt, role, archivedAt: j.archivedAt,
       }))
       .sort((a, b) => b.updatedAt - a.updatedAt);
     return res.json({ success: true, journals, canCreate: req.caller.canCreate });
@@ -374,8 +399,10 @@ router.post("/:tenantId", ...guard, async (req: any, res: any) => {
       access: { everyone: "none", members: {} },
       templateKey: tpl.key,
       createdBy: req.caller.uid, createdByName: req.caller.name, createdAt: now, updatedAt: now,
+      history: [historyItem(req, "create")],
     };
     await col(req.params.tenantId, "journals").doc(id).set(j);
+    await logJournal(req, j, "journal.create", "создан");
     return res.json({ success: true, journal: j });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
@@ -388,7 +415,8 @@ router.get("/:tenantId/:journalId", ...guard, async (req: any, res: any) => {
       .filter(e => !e.deleted)
       .map(e => lighten(got.j, e))
       .sort((a, b) => b.createdAt - a.createdAt);
-    return res.json({ success: true, journal: got.j, role: got.role, entries });
+    const journal = got.role === "manage" ? got.j : { ...got.j, history: undefined };
+    return res.json({ success: true, journal, role: got.role, entries });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
@@ -414,15 +442,41 @@ router.put("/:tenantId/:journalId", ...guard, async (req: any, res: any) => {
     // update, а не set с merge: merge сливает вложенные словари и не удаляет
     // из них ключи — убранный «Срок» или снятый с доступа сотрудник
     // оставались в базе. update заменяет каждое поле верхнего уровня целиком.
-    await col(req.params.tenantId, "journals").doc(got.j.id).update(patch);
-    return res.json({ success: true, journal: { ...got.j, ...patch } });
+    const diff: { label: string; from: string; to: string }[] = [];
+    const chk = (label: string, a: string, b: string) => { if (a !== b) diff.push({ label, from: a, to: b }); };
+    chk("Название", got.j.title, patch.title!); chk("Описание", got.j.description || "", patch.description || "");
+    chk("Колонки", colLabels(got.j.columns), colLabels(columns));
+    chk("Доступ", accessText(got.j.access), accessText(patch.access!));
+    chk("Настройки", JSON.stringify(got.j.settings), JSON.stringify(patch.settings));
+    const accessChanged = diff.some(d => d.label === "Доступ");
+    const history = [...(got.j.history || []), ...(diff.length ? [historyItem(req, accessChanged && diff.length === 1 ? "access" : "update", diff)] : [])].slice(-HISTORY_MAX);
+    await col(req.params.tenantId, "journals").doc(got.j.id).update({ ...patch, history });
+    if (diff.length) await logJournal(req, got.j, accessChanged ? "journal.access" : "journal.update", "настройки изменены", diff);
+    return res.json({ success: true, journal: { ...got.j, ...patch, history } });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
 router.delete("/:tenantId/:journalId", ...guard, async (req: any, res: any) => {
   try {
     const got = await loadJournal(req, res, "manage"); if (!got) return;
-    await col(req.params.tenantId, "journals").doc(got.j.id).update({ archived: true, archivedAt: Date.now(), archivedBy: req.caller.uid });
+    await col(req.params.tenantId, "journals").doc(got.j.id).update({
+      archived: true, archivedAt: Date.now(), archivedBy: req.caller.uid,
+      history: [...(got.j.history || []), historyItem(req, "archive")].slice(-HISTORY_MAX),
+    });
+    await logJournal(req, got.j, "journal.archive", "в архив");
+    return res.json({ success: true });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+/** Вернуть журнал из архива. */
+router.post("/:tenantId/:journalId/restore", ...guard, async (req: any, res: any) => {
+  try {
+    const got = await loadJournal(req, res, "manage", true); if (!got) return;
+    await col(req.params.tenantId, "journals").doc(got.j.id).update({
+      archived: false, archivedAt: admin.firestore.FieldValue.delete(), archivedBy: admin.firestore.FieldValue.delete(), updatedAt: Date.now(),
+      history: [...(got.j.history || []), historyItem(req, "restore")].slice(-HISTORY_MAX),
+    });
+    await logJournal(req, got.j, "journal.restore", "возвращён из архива");
     return res.json({ success: true });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
@@ -443,9 +497,9 @@ router.post("/:tenantId/:journalId/entries", ...guard, async (req: any, res: any
     if (list.length > JOURNAL_LIMITS.maxBulk) return fail(res, 400, `За раз — не больше ${JOURNAL_LIMITS.maxBulk} записей`);
     const now = Date.now();
     const created: JournalEntry[] = [];
-    for (const input of list) {
+    for (const [i, input] of list.entries()) {
       const r = await prepareValues(req.params.tenantId, got.j, got.role, req.caller, input);
-      if ("error" in r) return fail(res, 400, r.error);
+      if ("error" in r) return fail(res, 400, list.length > 1 ? `Строка ${i + 1}: ${r.error}` : r.error);
       if (!sizeOk({ values: r.values })) return fail(res, 400, "Запись слишком большая: уменьшите фото");
       created.push({
         id: newId("e"), journalId: got.j.id, values: r.values,
@@ -500,6 +554,44 @@ router.patch("/:tenantId/:journalId/entries/:entryId", ...guard, async (req: any
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
+/** Удалённые записи журнала — для возврата. */
+router.get("/:tenantId/:journalId/trash", ...guard, async (req: any, res: any) => {
+  try {
+    const got = await loadJournal(req, res, "manage"); if (!got) return;
+    const snap = await col(req.params.tenantId, "journal_entries").where("journalId", "==", got.j.id).get();
+    const entries = snap.docs.map(d => ({ ...(d.data() as JournalEntry), id: d.id })).filter(e => e.deleted)
+      .map(e => ({ ...lighten(got.j, e), deletedAt: (e as any).deletedAt || 0 }))
+      .sort((a, b) => b.deletedAt - a.deletedAt);
+    return res.json({ success: true, entries });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+/** Удалить одну запись (в корзину журнала). */
+router.delete("/:tenantId/:journalId/entries/:entryId", ...guard, async (req: any, res: any) => {
+  try {
+    const got = await loadJournal(req, res, "manage"); if (!got) return;
+    const ref = col(req.params.tenantId, "journal_entries").doc(String(req.params.entryId));
+    const snap = await ref.get(); const e = snap.data() as JournalEntry | undefined;
+    if (!e || e.journalId !== got.j.id || e.deleted) return fail(res, 404, "Запись не найдена");
+    await ref.update({ deleted: true, deletedAt: Date.now(), deletedBy: req.caller.uid });
+    await logJournal(req, got.j, "journal.entry.delete", "запись удалена");
+    return res.json({ success: true });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+router.post("/:tenantId/:journalId/entries/:entryId/restore", ...guard, async (req: any, res: any) => {
+  try {
+    const got = await loadJournal(req, res, "manage"); if (!got) return;
+    const ref = col(req.params.tenantId, "journal_entries").doc(String(req.params.entryId));
+    const snap = await ref.get(); const e = snap.data() as JournalEntry | undefined;
+    if (!e || e.journalId !== got.j.id || !e.deleted) return fail(res, 404, "Запись не найдена в удалённых");
+    const del = admin.firestore.FieldValue.delete();
+    await ref.update({ deleted: del, deletedAt: del, deletedBy: del, updatedAt: Date.now() });
+    await logJournal(req, got.j, "journal.entry.restore", "запись возвращена");
+    return res.json({ success: true });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
 /** Массово: { ids, action: "set", columnId, value } или { ids, action: "delete" }. */
 router.post("/:tenantId/:journalId/entries/bulk", ...guard, async (req: any, res: any) => {
   try {
@@ -544,6 +636,7 @@ router.post("/:tenantId/:journalId/entries/bulk", ...guard, async (req: any, res
       if (++n % 400 === 0) { await batch.commit(); batch = db().batch(); }
     }
     await batch.commit();
+    if (n) await logJournal(req, got.j, "journal.entry.delete", `удалено записей: ${n}`);
     return res.json({ success: true, count: n, entries: [] });
   } catch (e: any) { return fail(res, 500, e.message); }
 });

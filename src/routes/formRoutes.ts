@@ -17,6 +17,7 @@ import { appUrl, registerResender, sendTemplated } from "../server/emailEvents.j
 import { notifyFormWatchers } from "../server/formWatch.js";
 import { sendFormTicketEmail } from "../../emailService.js";
 import { tenantLogos } from "../shared/legal.js";
+import { writeAudit, actorOf } from "../server/audit.js";
 
 /** Что о организации можно показать заявителю: название, брендинг, тексты билетов. */
 function publicOrg(t: any) {
@@ -535,24 +536,21 @@ router.post("/submit", async (req: any, res: any) => {
     }
 
     // Имя, телефон, почта и специфические поля StudyFree (включая прямое соответствие ID)
-    const pick = (re: RegExp, exactId?: string) => {
-      if (exactId && clean[exactId] !== undefined && String(clean[exactId]).trim()) {
-        return str(clean[exactId], 500);
-      }
-      const f = fields.find(x => re.test(String(x.label || "")) || re.test(String(x.id || "")));
-      return f ? str(clean[f.id], 500) : "";
+    const pick = (role: string) => {
+      const id = roleFieldId(form, role);
+      return id ? str(clean[id], 500) : "";
     };
 
-    const applicantName = pick(/фамили|имя|фио|name/i, "field_1790767291933");
-    const applicantPhone = pick(/телефон|phone|моб/i, "field_1790768013294");
+    const applicantName = pick("name");
+    const applicantPhone = pick("phone");
     // Почта — из поля типа «Почта»; у старых форм — по названию поля.
     const emailField = fields.find((x: any) => x.type === "email" && String(clean[x.id] || "").includes("@"));
-    const applicantEmail = emailField ? String(clean[emailField.id]) : pick(/e-?mail|почт/i, "field_1790767998828");
-    const participationFormat = pick(/формат|format/i, "field_1790768170123");
-    const teamName = pick(/название команды|team name/i, "field_1790768063759");
-    const teamCode = pick(/код команды|team code/i, "field_1790768090009");
-    const teamPassword = pick(/пароль команды|team password/i, "field_1790768091708");
-    const presentationUrl = pick(/презентаци|presentation/i, "field_1790940529090");
+    const applicantEmail = emailField ? String(clean[emailField.id]) : pick("email");
+    const participationFormat = pick("format");
+    const teamName = pick("teamName");
+    const teamCode = pick("teamCode");
+    const teamPassword = pick("teamPassword");
+    const presentationUrl = pick("presentationUrl");
 
     // Повторная отправка правит СВОЮ заявку — только по её секрету: ключу
     // правки (editToken, выдаётся при подаче) или коду QR, который знает лишь
@@ -650,6 +648,7 @@ router.post("/submit", async (req: any, res: any) => {
       if (teamName) emailDetails["Команда"] = teamName;
 
       await settle(sendFormTicketEmail({
+        tenantId: form.tenantId,
         to: applicantEmail,
         applicantName: applicantName || "Участник",
         eventTitle: form.title || "Мероприятие",
@@ -741,6 +740,7 @@ router.post("/send-ticket", sendTicketLimiter, async (req: any, res: any) => {
     if (sub.teamName) details["Команда"] = sub.teamName;
 
     const result = await sendFormTicketEmail({
+      tenantId: sub.tenantId,
       to: stored,
       applicantName: sub.applicantName || "Участник",
       eventTitle,
@@ -785,8 +785,24 @@ function extractTenantContext(req: any): { tenantId?: string; apiKey?: string; u
   };
 }
 
+
+/** Роли полей формы, которые сервер понимает сам (имя, телефон, команда…). Если у формы есть `fieldMap`, берём поле оттуда, иначе ищем по названию. */
+const FIELD_ROLES: Record<string, RegExp> = {
+  name: /фамили|имя|фио|name/i, phone: /телефон|phone|моб/i, email: /e-?mail|почт/i,
+  format: /формат|format/i, teamName: /название команды|team name/i, teamCode: /код команды|team code/i,
+  teamPassword: /пароль команды|team password|парол|password/i, presentationUrl: /презентаци|presentation/i,
+};
+function roleFieldId(form: any, role: string): string {
+  const fields: any[] = Array.isArray(form?.fields) ? form.fields : [];
+  const mapped = form?.fieldMap?.[role];
+  if (mapped && fields.some(f => f.id === mapped)) return String(mapped);
+  const re = FIELD_ROLES[role];
+  const f = fields.find(x => x.type !== "section" && (re.test(String(x.label || "")) || re.test(String(x.id || ""))));
+  return f ? String(f.id) : "";
+}
+
 /** Вспомогательная функция маскирования и очистки чувствительных полей (паролей команд) */
-function sanitizeSubmissionFields(sub: any): any {
+function sanitizeSubmissionFields(sub: any, form?: any): any {
   if (!sub || typeof sub !== "object") return sub;
   const cleanSub = { ...sub };
 
@@ -797,7 +813,8 @@ function sanitizeSubmissionFields(sub: any): any {
 
   if (cleanSub.data && typeof cleanSub.data === "object") {
     const cleanData = { ...cleanSub.data };
-    delete cleanData.field_1790768091708;
+    const pwId = roleFieldId(form, "teamPassword");
+    if (pwId) delete cleanData[pwId];
     delete cleanData.teamPassword;
     delete cleanData.team_password;
     delete cleanData.password;
@@ -1047,7 +1064,7 @@ router.post("/submissions/search", formsApiLimiter, authenticateFormApi, async (
         created_at: sub.createdAt || null,
         updated_at: sub.updatedAt || null,
       };
-      return sanitizeSubmissionFields(item);
+      return sanitizeSubmissionFields(item, form);
     });
 
     void logApiAudit(req, "SUBMISSIONS_SEARCH", { formId, total, limit, offset, tenantId: form.tenantId });
@@ -1119,22 +1136,19 @@ router.post("/submissions/upsert", formsApiLimiter, authenticateFormApi, async (
       }
     }
 
-    const pick = (re: RegExp, exactId?: string) => {
-      if (exactId && clean[exactId] !== undefined && String(clean[exactId]).trim()) {
-        return str(clean[exactId], 500);
-      }
-      const f = fields.find(x => re.test(String(x.label || "")) || re.test(String(x.id || "")));
-      return f ? str(clean[f.id], 500) : "";
+    const pick = (role: string) => {
+      const id = roleFieldId(form, role);
+      return id ? str(clean[id], 500) : "";
     };
 
-    const applicantName = pick(/фамили|имя|фио|name/i, "field_1790767291933") || str(req.body.applicantName || req.body.applicant_name, 500);
-    const applicantPhone = pick(/телефон|phone|моб/i, "field_1790768013294") || str(req.body.applicantPhone || req.body.applicant_phone, 500);
-    const applicantEmail = pick(/e-?mail|почт/i, "field_1790767998828") || str(req.body.applicantEmail || req.body.applicant_email, 500);
-    const participationFormat = pick(/формат|format/i, "field_1790768170123") || str(req.body.participationFormat || req.body.participation_format, 500);
-    const teamName = pick(/название команды|team name/i, "field_1790768063759") || str(req.body.teamName || req.body.team_name, 500);
-    const teamCode = pick(/код команды|team code/i, "field_1790768090009") || str(req.body.teamCode || req.body.team_code, 500);
-    const teamPassword = pick(/пароль команды|team password/i, "field_1790768091708") || str(req.body.teamPassword || req.body.team_password, 500);
-    const presentationUrl = pick(/презентаци|presentation/i, "field_1790940529090") || str(req.body.presentationUrl || req.body.presentation_url, 500);
+    const applicantName = pick("name") || str(req.body.applicantName || req.body.applicant_name, 500);
+    const applicantPhone = pick("phone") || str(req.body.applicantPhone || req.body.applicant_phone, 500);
+    const applicantEmail = pick("email") || str(req.body.applicantEmail || req.body.applicant_email, 500);
+    const participationFormat = pick("format") || str(req.body.participationFormat || req.body.participation_format, 500);
+    const teamName = pick("teamName") || str(req.body.teamName || req.body.team_name, 500);
+    const teamCode = pick("teamCode") || str(req.body.teamCode || req.body.team_code, 500);
+    const teamPassword = pick("teamPassword") || str(req.body.teamPassword || req.body.team_password, 500);
+    const presentationUrl = pick("presentationUrl") || str(req.body.presentationUrl || req.body.presentation_url, 500);
 
     let existingDocSnap: any = null;
 
@@ -1233,7 +1247,7 @@ router.post("/submissions/upsert", formsApiLimiter, authenticateFormApi, async (
         submission_id: existingDocSnap.id,
         code: existingData.qrToken || existingDocSnap.id,
         qrToken: existingData.qrToken || existingDocSnap.id,
-        data: sanitizeSubmissionFields({ data: mergedData }).data,
+        data: sanitizeSubmissionFields({ data: mergedData }, form).data,
         message: "Заявка успешно обновлена",
       });
     }
@@ -1269,7 +1283,7 @@ router.post("/submissions/upsert", formsApiLimiter, authenticateFormApi, async (
       submission_id: newRef.id,
       code: qrTokenVal,
       qrToken: qrTokenVal,
-      data: sanitizeSubmissionFields({ data: clean }).data,
+      data: sanitizeSubmissionFields({ data: clean }, form).data,
       message: "Заявка успешно создана",
     });
 
@@ -1293,6 +1307,13 @@ router.post("/team/check", formsApiLimiter, async (req: any, res: any) => {
 
     const cleanCode = code.toLowerCase().replace(/[^a-z0-9а-яё]/gi, "");
 
+    const formSnap = await db().collection(FORMS).doc(formId).get();
+    const form: any = formSnap.exists ? { id: formSnap.id, ...formSnap.data() } : { fields: [] };
+    const codeFieldId = roleFieldId(form, "teamCode");
+    const passFieldId = roleFieldId(form, "teamPassword");
+    const nameFieldId = roleFieldId(form, "teamName");
+    const formatFieldId = roleFieldId(form, "format");
+
     const snap = await db().collection(SUBS)
       .where("formId", "==", formId)
       .limit(500)
@@ -1303,7 +1324,7 @@ router.post("/team/check", formsApiLimiter, async (req: any, res: any) => {
       if (s.deleted) return false;
       const c1 = String(s.teamCode || "").toLowerCase().replace(/[^a-z0-9а-яё]/gi, "");
       const c2 = String(s.qrToken || "").toLowerCase().replace(/[^a-z0-9а-яё]/gi, "");
-      const c3 = String(s.data?.field_1790768090009 || "").toLowerCase().replace(/[^a-z0-9а-яё]/gi, "");
+      const c3 = String((codeFieldId && s.data?.[codeFieldId]) || "").toLowerCase().replace(/[^a-z0-9а-яё]/gi, "");
       return c1 === cleanCode || c2 === cleanCode || c3 === cleanCode;
     });
 
@@ -1316,7 +1337,7 @@ router.post("/team/check", formsApiLimiter, async (req: any, res: any) => {
     }
 
     const sub = matchedDoc.data();
-    const storedPassword = String(sub.teamPassword || sub.data?.field_1790768091708 || "").trim();
+    const storedPassword = String(sub.teamPassword || (passFieldId && sub.data?.[passFieldId]) || "").trim();
 
     let passwordMatches: boolean | undefined = undefined;
     if (password) {
@@ -1337,11 +1358,11 @@ router.post("/team/check", formsApiLimiter, async (req: any, res: any) => {
       found: true,
       submissionId: matchedDoc.id,
       code: sub.qrToken || sub.teamCode || matchedDoc.id,
-      teamName: sub.teamName || sub.data?.field_1790768063759 || "",
-      participationFormat: sub.participationFormat || sub.data?.field_1790768170123 || "",
+      teamName: sub.teamName || (nameFieldId && sub.data?.[nameFieldId]) || "",
+      participationFormat: sub.participationFormat || (formatFieldId && sub.data?.[formatFieldId]) || "",
       status: sub.status || "new",
       passwordMatches,
-      data: sanitizeSubmissionFields({ data: sub.data || {} }).data,
+      data: sanitizeSubmissionFields({ data: sub.data || {} }, form).data,
     });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
@@ -1414,7 +1435,7 @@ const patchSubmissionHandler = async (req: any, res: any) => {
 
     void logApiAudit(req, "SUBMISSIONS_PATCH", { submissionId, formId, tenantId: existingData.tenantId });
 
-    const cleanMerged = sanitizeSubmissionFields({ data: mergedFields }).data;
+    const cleanMerged = sanitizeSubmissionFields({ data: mergedFields }, form).data;
 
     return res.json({
       success: true,
@@ -2251,6 +2272,58 @@ router.post("/delete", requireFirebaseAuth, requireScreen("forms"), async (req: 
     // она в корзине, и в выгрузке ей не место.
     if (form) await settle(clearSheetRow(form, String(sub.qrToken || "")));
     return res.json({ success: true, deleted: true });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * POST /api/forms/form-state — закрыть/открыть приём, в архив, вернуть, стереть форму.
+ * Стереть можно только форму из архива и без заявок; всё пишется в журнал.
+ */
+router.post("/form-state", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
+  try {
+    const { tenantId, formId, action } = req.body || {};
+    if (!tenantId || !formId || !["close", "open", "archive", "restore", "purge"].includes(String(action))) {
+      return res.status(400).json({ success: false, error: "Bad request" });
+    }
+    if (!(await canManageForms(req.user, String(tenantId)))) {
+      return res.status(403).json({ success: false, error: "Нет прав" });
+    }
+    const ref = db().collection(FORMS).doc(String(formId));
+    const snap = await ref.get();
+    if (!snap.exists || snap.data()!.tenantId !== tenantId) {
+      return res.status(404).json({ success: false, error: "Форма не найдена" });
+    }
+    const form = snap.data()!;
+    const now = admin.firestore.Timestamp.now();
+    const by = req.user?.email || req.user?.uid || "";
+    let detail = "";
+    if (action === "close") {
+      await ref.update({ active: false, updatedAt: now });
+      detail = "приём закрыт";
+    } else if (action === "open") {
+      if (form.archived) return res.status(400).json({ success: false, error: "Форма в архиве — сначала верните её" });
+      await ref.update({ active: true, updatedAt: now });
+      detail = "приём открыт";
+    } else if (action === "archive") {
+      await ref.update({ archived: true, archivedAt: now, archivedBy: by, active: false, updatedAt: now });
+      detail = "в архив";
+    } else if (action === "restore") {
+      await ref.update({ archived: admin.firestore.FieldValue.delete(), archivedAt: admin.firestore.FieldValue.delete(), archivedBy: admin.firestore.FieldValue.delete(), updatedAt: now });
+      detail = "возвращена из архива";
+    } else {
+      if (!form.archived) return res.status(400).json({ success: false, error: "Стереть можно только форму из архива" });
+      const any = await db().collection(SUBS).where("formId", "==", String(formId)).limit(1).get();
+      if (!any.empty) return res.status(409).json({ success: false, error: "У формы есть заявки — стереть её нельзя, оставьте в архиве" });
+      await ref.delete();
+      detail = "стёрта насовсем";
+    }
+    await writeAudit(db(), String(tenantId), {
+      actor: actorOf(req.user), action: `form.${action}`, section: "data",
+      target: { kind: "form", id: String(formId), name: String(form.title || "") }, detail,
+    });
+    return res.json({ success: true });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }

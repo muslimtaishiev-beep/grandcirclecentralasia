@@ -4,6 +4,7 @@ import admin from "firebase-admin";
 import { randomBytes } from "crypto";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { hasPerm, optionalAuth as optionalAuthWith, staffCaller } from "../server/access.js";
+import { actorOf, writeAudit } from "../server/audit.js";
 import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
 import { tenantLogos } from "../shared/legal.js";
 import { listEmployees } from "./journalRoutes.js";
@@ -62,8 +63,10 @@ const requireEmployee = async (req: any, res: any, next: any) => {
 };
 const guard = [requireFirebaseAuth, requireScreen("presentations", (req: any) => req.params.tenantId), requireEmployee];
 
-export const canManage = (p: Pick<Presentation, "createdBy">, c: Caller | null) => !!c && (c.manageAll || p.createdBy === c.uid);
-export function canView(p: Pick<Presentation, "access" | "createdBy">, c: Caller | null): boolean {
+// Автор управляет своей презентацией, только пока он сотрудник организации.
+export const canManage = (p: Pick<Presentation, "createdBy">, c: Caller | null) => !!c && c.member && (c.manageAll || p.createdBy === c.uid);
+export function canView(p: Pick<Presentation, "access" | "createdBy"> & { archivedAt?: number }, c: Caller | null): boolean {
+  if (p.archivedAt) return canManage(p, c);
   if (p.access.mode === "public") return true;
   if (!c) return false;
   if (canManage(p, c)) return true;
@@ -76,6 +79,7 @@ const summary = (p: Presentation, c: Caller) => ({
   id: p.id, title: p.title, description: p.description, kind: p.kind, code: p.code, status: p.status,
   access: p.access, slideCount: (p.slides || []).length, cover: p.slides?.[0] || null, faces: p.faces,
   createdByName: p.createdByName, createdAt: p.createdAt, updatedAt: p.updatedAt,
+  archivedAt: p.archivedAt || null,
   size: Object.values(p.assets || {}).reduce((n, a) => n + (a.size || 0), 0),
   canManage: canManage(p, c),
 });
@@ -95,15 +99,20 @@ router.get("/:tenantId", ...guard, async (req: any, res: any) => {
     const c: Caller = req.caller;
     // Обложка для карточки — только первый слайд, а файлы к нему подписываем
     // только когда в нём есть картинки (у большинства обложек их нет).
+    const archived = req.query.archived === "1";
     const items = snap.docs.map(d => ({ ...(d.data() as Presentation), id: d.id }))
-      .filter(p => canView(p, c) && (p.status === "ready" || canManage(p, c)))
+      .filter(p => !!p.archivedAt === archived && canView(p, c) && (p.status === "ready" || canManage(p, c)))
       .map(p => summary(p, c));
-    return res.json({ success: true, presentations: items, canCreate: c.manageAll });
+    return res.json({ success: true, presentations: items, canCreate: c.member, canArchive: c.manageAll });
   } catch (e: any) { return oops(res, e); }
 });
 
 router.get("/:tenantId/employees", ...guard, async (req: any, res: any) => {
-  try { return res.json({ success: true, employees: await listEmployees(req.params.tenantId) }); }
+  try {
+    const list = await listEmployees(req.params.tenantId);
+    // Почты видит только тот, кто управляет презентациями организации.
+    return res.json({ success: true, employees: req.caller.manageAll ? list : list.map(e => ({ ...e, email: "" })) });
+  }
   catch (e: any) { return oops(res, e); }
 });
 
@@ -115,7 +124,7 @@ router.get("/:tenantId/employees", ...guard, async (req: any, res: any) => {
 router.post("/:tenantId", ...guard, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const c: Caller = req.caller;
-    if (!c.manageAll) return fail(res, 403, "Загружать презентации может сотрудник с правом «Управление презентациями»");
+    if (!c.member) return fail(res, 403, "Загружать презентации могут сотрудники организации");
     const b = req.body || {};
     const title = str(b.title, LIMITS.title);
     if (!title) return fail(res, 400, "Укажите название");
@@ -192,6 +201,7 @@ router.post("/:tenantId/:id/finalize", ...guard, async (req: any, res: any) => {
     }));
     if (lost.length) return fail(res, 409, `Не загрузились файлы: ${lost.length}. Попробуйте загрузить ещё раз`, { lost });
     await ref.update({ status: "ready", updatedAt: Date.now() });
+    await writeAudit(db(), t, { actor: actorOf(req.user), action: "presentation.upload", section: "data", target: { kind: "presentation", id: p.id, name: p.title } });
     return res.json({ success: true });
   } catch (e: any) { return oops(res, e); }
 });
@@ -217,10 +227,12 @@ router.put("/:tenantId/:id", ...guard, async (req: any, res: any) => {
       patch.access = access;
     }
     await ref.update(patch);
+    if (patch.access) await writeAudit(db(), req.params.tenantId, { actor: actorOf(req.user), action: "presentation.access", section: "data", target: { kind: "presentation", id: p.id, name: p.title }, detail: patch.access.mode });
     return res.json({ success: true, presentation: summary({ ...p, ...patch } as Presentation, req.caller) });
   } catch (e: any) { return oops(res, e); }
 });
 
+/** Удаление — в архив; навсегда — только из архива (?permanent=1). */
 router.delete("/:tenantId/:id", ...guard, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const ref = col(t).doc(String(req.params.id));
@@ -228,9 +240,31 @@ router.delete("/:tenantId/:id", ...guard, async (req: any, res: any) => {
     if (!snap.exists) return fail(res, 404, "Презентация не найдена");
     const p = { ...(snap.data() as Presentation), id: snap.id };
     if (!canManage(p, req.caller)) return fail(res, 403, "Удалить может тот, кто загрузил презентацию, или управляющий");
+    const target = { kind: "presentation", id: p.id, name: p.title };
+    if (req.query.permanent !== "1") {
+      if (p.archivedAt) return res.json({ success: true });
+      await ref.update({ archivedAt: Date.now(), archivedBy: req.caller.uid, updatedAt: Date.now() });
+      await writeAudit(db(), t, { actor: actorOf(req.user), action: "presentation.archive", section: "data", target });
+      return res.json({ success: true });
+    }
+    if (!p.archivedAt) return fail(res, 409, "Сначала переместите презентацию в архив");
     await bucket().deleteFiles({ prefix: `presentations/${t}/${p.id}/` }).catch((e: any) => console.warn("[presentations] files", e?.message));
     await db().collection(LINKS).doc(p.code).delete();
     await ref.delete();
+    await writeAudit(db(), t, { actor: actorOf(req.user), action: "presentation.delete", section: "data", target });
+    return res.json({ success: true });
+  } catch (e: any) { return oops(res, e); }
+});
+
+router.post("/:tenantId/:id/restore", ...guard, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const ref = col(t).doc(String(req.params.id));
+    const snap = await ref.get();
+    if (!snap.exists) return fail(res, 404, "Презентация не найдена");
+    const p = { ...(snap.data() as Presentation), id: snap.id };
+    if (!canManage(p, req.caller)) return fail(res, 403, "Нет прав на эту презентацию");
+    await ref.update({ archivedAt: admin.firestore.FieldValue.delete(), archivedBy: admin.firestore.FieldValue.delete(), updatedAt: Date.now() });
+    await writeAudit(db(), t, { actor: actorOf(req.user), action: "presentation.restore", section: "data", target: { kind: "presentation", id: p.id, name: p.title } });
     return res.json({ success: true });
   } catch (e: any) { return oops(res, e); }
 });
@@ -251,6 +285,7 @@ router.get("/show/:code", optionalAuth, async (req: any, res: any) => {
     const snap = await col(t).doc(presentationId).get();
     if (!snap.exists) return fail(res, 404, "Презентация не найдена или удалена");
     const p = { ...(snap.data() as Presentation), id: snap.id };
+    if (p.archivedAt) return fail(res, 404, "Презентация не найдена или удалена");
     const c = await callerIn(t, req.user);
     const org = { name: str(gate.tenant?.name, 120), ...tenantLogos(gate.tenant) };
     if (!canView(p, c)) {

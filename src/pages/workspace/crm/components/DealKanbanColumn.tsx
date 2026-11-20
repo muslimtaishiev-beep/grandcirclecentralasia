@@ -7,9 +7,11 @@ interface Props {
   stage: PipelineStage;
   deals: CrmDeal[];
   onDealClick: (deal: CrmDeal) => void;
+  currency?: string;
+  draggable?: boolean;
 }
 
-export default function DealKanbanColumn({ stage, deals, onDealClick }: Props) {
+export default function DealKanbanColumn({ stage, deals, onDealClick, currency, draggable }: Props) {
   const { setNodeRef, isOver } = useDroppable({
     id: stage.id,
     data: {
@@ -35,8 +37,8 @@ export default function DealKanbanColumn({ stage, deals, onDealClick }: Props) {
           </span>
         </div>
         <div className="text-sm font-medium text-[var(--text-muted)] flex items-center justify-between">
-          <span>{totalAmount.toLocaleString()} KGS</span>
-          <span className="text-[10px] uppercase font-bold tracking-wider">{stage.probabilityPercent}% win</span>
+          <span>{totalAmount.toLocaleString()} {currency}</span>
+          <span className="text-[10px] uppercase font-bold tracking-wider">{stage.probabilityPercent}%</span>
         </div>
       </div>
       
@@ -47,7 +49,7 @@ export default function DealKanbanColumn({ stage, deals, onDealClick }: Props) {
         }`}
       >
         {deals.map(deal => (
-          <DealCard key={deal.id} deal={deal} onClick={onDealClick} />
+          <DealCard key={deal.id} deal={deal} onClick={onDealClick} draggable={draggable} />
         ))}
       </div>
     </div>

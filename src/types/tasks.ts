@@ -31,6 +31,8 @@ export interface WorkspaceTask {
   subtasks: TaskSubItem[];
   commentsCount: number;
   dueDate?: string;
+  archived?: boolean;
+  archivedAt?: number;
   tags: string[];
   createdAt: number;
   updatedAt: number;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Mail, Phone, Building, History, CheckSquare, Activity, Trash2 } from 'lucide-react';
+import { X, Mail, Phone, Building, History, CheckSquare, Activity, Trash2, Archive, ArchiveRestore, Pencil } from 'lucide-react';
 import { CrmContact, CrmDeal, CrmActivityLog } from '../../../../types/crm';
 import { WorkspaceTask } from '../../../../types/tasks';
 
@@ -7,13 +7,15 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   onDeleteContact?: (contact: CrmContact) => void;
+  onArchiveContact?: (contact: CrmContact) => void;
+  onEditContact?: (contact: CrmContact) => void;
   contact?: CrmContact;
   deals?: CrmDeal[];
   tasks?: WorkspaceTask[];
   logs?: CrmActivityLog[];
 }
 
-export default function ContactProfileDrawer({ isOpen, onClose, onDeleteContact, contact, deals = [], tasks = [], logs = [] }: Props) {
+export default function ContactProfileDrawer({ isOpen, onClose, onDeleteContact, onArchiveContact, onEditContact, contact, deals = [], tasks = [], logs = [] }: Props) {
   if (!isOpen || !contact) return null;
 
   return (
@@ -21,12 +23,14 @@ export default function ContactProfileDrawer({ isOpen, onClose, onDeleteContact,
       <div className="flex justify-between items-center p-6 border-b border-[var(--border-color)]">
         <h2 className="text-xl font-bold">Профиль 360°</h2>
         <div className="flex items-center gap-2">
+          {onEditContact && <button onClick={() => onEditContact(contact)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition" title="Изменить"><Pencil className="w-5 h-5" /></button>}
+          {onArchiveContact && (
+            <button onClick={() => onArchiveContact(contact)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition" title={contact.status === 'archived' ? 'Восстановить' : 'В архив'}>
+              {contact.status === 'archived' ? <ArchiveRestore className="w-5 h-5" /> : <Archive className="w-5 h-5" />}
+            </button>
+          )}
           {onDeleteContact && (
-            <button 
-              onClick={() => onDeleteContact(contact)} 
-              className="p-2 hover:bg-red-500/10 text-slate-400 hover:text-red-500 rounded-full transition"
-              title="Удалить контакт из БД"
-            >
+            <button onClick={() => onDeleteContact(contact)} className="p-2 hover:bg-red-500/10 text-slate-400 hover:text-red-500 rounded-full transition" title="Удалить">
               <Trash2 className="w-5 h-5" />
             </button>
           )}
@@ -44,7 +48,7 @@ export default function ContactProfileDrawer({ isOpen, onClose, onDeleteContact,
               <img src={contact.avatarUrl} alt={contact.fullName} className="w-16 h-16 rounded-full" />
             ) : (
               <div className="w-16 h-16 rounded-full bg-[var(--accent)] text-white flex items-center justify-center text-2xl font-bold">
-                {contact.fullName.charAt(0)}
+                {(contact.fullName || 'К').charAt(0)}
               </div>
             )}
             <div>

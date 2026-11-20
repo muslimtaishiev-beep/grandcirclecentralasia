@@ -4,6 +4,7 @@ import {
   DIFFICULTY_LABEL, QUESTION_TYPES, TYPE_LABEL, plainText,
   type BankQuestion, type Difficulty, type QuestionType,
 } from "../../../shared/exams";
+import { InfoHint, confirmDialog, toast } from "../../../components/ui";
 import { Modal, btn, btnPrimary, card, input, label } from "../journals/components/ui";
 import type { DisciplineRow, SetRow } from "./examApi";
 import QuestionEditor, { type Draft } from "./QuestionEditor";
@@ -105,11 +106,11 @@ export default function BankTab({ api }: { api: Api }) {
   };
 
   const bulk = async (action: string, extra: Record<string, unknown> = {}) => {
-    if (action === "delete" && !confirm(`Удалить ${selected.size} вопросов насовсем? Вернуть их можно будет только из бэкапа.`)) return;
+    if (action === "delete" && !(await confirmDialog({ title: `Убрать вопросы в корзину: ${selected.size}?`, confirmLabel: "В корзину", danger: true }))) return;
     try {
       await api("/questions/bulk", { method: "POST", body: JSON.stringify({ ids: [...selected], action, ...extra }) });
       setSelected(new Set()); await refreshAll();
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { toast.error(e.message); }
   };
 
   if (loading) return <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--text-muted)]" /></div>;
@@ -171,7 +172,6 @@ export default function BankTab({ api }: { api: Api }) {
               );
             })}
           </div>
-          {!sets.length && <p className="text-[11px] text-[var(--text-muted)] px-2 py-1.5">Набор — отдельный банк: «Вступительный», «Контрольная за четверть». Экзамен берёт вопросы только из своего набора.</p>}
         </div>
       </aside>
 
@@ -337,13 +337,12 @@ function SetModal({ initial, api, onDone, onClose }: {
     } catch (e: any) { setError(e.message); setBusy(false); }
   };
   const remove = async () => {
-    if (!initial || !confirm(`Удалить набор «${initial.name}»? Вопросы останутся в банке, с них только снимется отметка набора.`)) return;
+    if (!initial || !(await confirmDialog({ title: `Удалить набор «${initial.name}»?`, message: "Вопросы останутся в банке", confirmLabel: "Удалить", danger: true }))) return;
     try { await api(`/sets/${initial.id}`, { method: "DELETE" }); onDone(""); } catch (e: any) { setError(e.message); }
   };
   return (
     <Modal title={initial ? `Набор «${initial.name}»` : "Новый набор"} onClose={onClose}>
       <div className="space-y-3">
-        <p className="text-xs text-[var(--text-muted)]">Набор — отдельный банк внутри банка: например «Вступительный 2026» или «Контрольная 1 четверть». Вопросы в нём по-прежнему разложены по дисциплинам, а экзамен подключает дисциплину из нужного набора — и чужие вопросы туда не попадут. Один вопрос может входить в несколько наборов.</p>
         <div><span className={label}>Название</span><input className={input} value={name} onChange={e => setName(e.target.value)} placeholder="Вступительный 2026" autoFocus /></div>
         <div><span className={label}>Описание</span><input className={input} value={description} onChange={e => setDescription(e.target.value)} placeholder="Необязательно" /></div>
         {error && <div className="text-sm text-rose-600">{error}</div>}
@@ -376,7 +375,7 @@ function DisciplineModal({ initial, api, onDone, onClose }: {
     } catch (e: any) { setError(e.message); setBusy(false); }
   };
   const remove = async () => {
-    if (!initial || !confirm(`Удалить дисциплину ${initial.code}?`)) return;
+    if (!initial || !(await confirmDialog({ title: `Удалить дисциплину ${initial.code}?`, confirmLabel: "Удалить", danger: true }))) return;
     try { await api(`/disciplines/${initial.code}`, { method: "DELETE" }); onDone(); } catch (e: any) { setError(e.message); }
   };
   return (
@@ -385,7 +384,7 @@ function DisciplineModal({ initial, api, onDone, onClose }: {
         <div>
           <span className={label}>Код (ID)</span>
           <input className={`${input} font-mono uppercase`} value={code} disabled={!!initial} onChange={e => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="MAT" maxLength={8} />
-          <p className="text-[11px] text-[var(--text-muted)] mt-1">Латиница и цифры, 2–8 знаков. По коду вопросы загружаются в нужную дисциплину и получают номера «{code || "MAT"}-0001». Код потом не меняется.</p>
+          <InfoHint>Латиница и цифры, 2–8 знаков. По коду вопросы загружаются в нужную дисциплину и получают номера «{code || "MAT"}-0001». Код потом не меняется.</InfoHint>
         </div>
         <div><span className={label}>Название</span><input className={input} value={name} onChange={e => setName(e.target.value)} placeholder="Математика" /></div>
         <div><span className={label}>Описание</span><input className={input} value={description} onChange={e => setDescription(e.target.value)} placeholder="Необязательно" /></div>

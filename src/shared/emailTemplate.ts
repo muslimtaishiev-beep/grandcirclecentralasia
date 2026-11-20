@@ -68,7 +68,7 @@ export const EMAIL_VARS: EmailVar[] = [
   { key: "обратная_связь", sample: "Сильные стороны…", from: { decision: "Обратная связь из анкеты кандидата" } },
   { key: "форма", sample: "Регистрация на форум", from: { form: "Название формы" } },
   { key: "ссылка", sample: "https://www.studyfreeforum.com/a/demo", from: { parent_form: "Анкета родителя по ссылке", decision: "Направление с результатами (после обратной связи)", referral: "Направление с QR", tested: "Направление (поступающие) или страница результата", form: "Билет с QR (если включён)" } },
-  { key: "организация", sample: "Академия будущих лидеров", from: { parent_form: "Название организации", decision: "Название организации", referral: "Название организации", tested: "Название организации", form: "Название организации" } },
+  { key: "организация", sample: "Ваша организация", from: { parent_form: "Название организации", decision: "Название организации", referral: "Название организации", tested: "Название организации", form: "Название организации" } },
 ];
 
 /** Название подстановки на кнопке — по смыслу в этом письме. */
@@ -160,7 +160,7 @@ export interface EmailOrg { name: string; logoUrl: string | null; signature?: st
  * — настоящий https-адрес.
  */
 export function renderEmail(tpl: EmailTemplate, vars: Record<string, string>, org: EmailOrg, base: string): { subject: string; html: string } {
-  const v = { организация: org.name, ...vars };
+  const v = { ...vars, ...(org.name ? { организация: org.name } : {}) };
   const logoSrc = tpl.logo === "none" ? "" : tpl.logo === "custom" ? tpl.logoUrl : (org.logoUrl || "");
   const logo = logoSrc ? absolute(logoSrc, base) : "";
   const image = tpl.imageUrl ? absolute(tpl.imageUrl, base) : "";

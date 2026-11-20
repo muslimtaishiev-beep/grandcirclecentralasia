@@ -27,6 +27,7 @@ export type PermissionKey =
   | "chat:use" | "tasks:use" | "docs:use" | "sheets:use" | "tickets:check"
   // Журналы делопроизводства
   | "journals:manage"
+  | "journals:all"
   // Презентации
   | "presentations:manage"
   // Поступающие: приём, психологическая диагностика
@@ -67,6 +68,7 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: "sheets:use", label: "Таблицы", description: "Совместные таблицы", category: "Работа" },
   { key: "tickets:check", label: "Проверка билетов", description: "Сканер QR на входе — отметка гостей", category: "Работа" },
   { key: "journals:manage", label: "Создание журналов", description: "Новые журналы из шаблонов; доступ к каждому журналу настраивается в нём самом", category: "Работа" },
+  { key: "journals:all", label: "Все журналы", description: "Ответственный во всех журналах организации", category: "Работа" },
   { key: "admission:manage", label: "Поступающие: приём", description: "Карточки поступающих, академическая часть, направления на тест, бумажные результаты, решение", category: "Поступающие" },
   { key: "psych:conduct", label: "Психологическая диагностика", description: "Проводить диагностику по анкетам психолога и видеть её результаты", category: "Поступающие" },
   { key: "psych:view", label: "Просмотр психологических заключений", description: "Видеть психологические анкеты целиком (без права заполнять) — директор, завуч", category: "Поступающие" },
@@ -113,7 +115,7 @@ export const PERMISSION_CODES: Record<PermissionKey, string> = {
   "tests:read": "tr", "tests:manage": "tm", "tests:review": "tv", "certificates:issue": "ci", "placement:manage": "pm",
   "edu:schedule": "es", "edu:payroll": "ep",
   "crm:read": "cr", "crm:manage": "cm", "intake:manage": "ik", "forms:notify": "fn",
-  "chat:use": "ch", "tasks:use": "ta", "docs:use": "dc", "sheets:use": "sh", "tickets:check": "tk", "journals:manage": "jm", "presentations:manage": "pr",
+  "chat:use": "ch", "tasks:use": "ta", "docs:use": "dc", "sheets:use": "sh", "tickets:check": "tk", "journals:manage": "jm", "journals:all": "ja", "presentations:manage": "pr",
   "admission:manage": "ad", "psych:conduct": "ps", "psych:view": "pv",
   "team:manage": "tg", "settings:manage": "sg", "team:view": "tw", "audit:view": "au", "finance:view": "fv",
 };
@@ -239,6 +241,10 @@ export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | nu
   functions: ["team:manage", "settings:manage"],
   departments: ["team:manage", "settings:manage"],
   permissions: ["team:manage", "settings:manage"],
+  adminOverview: ["settings:manage", "team:manage", "team:view"],
+  staff: ["team:view", "team:manage"],
+  audit: "audit:view",
+  integrations: "settings:manage",
   workspaceSetup: ["team:manage", "settings:manage"],
   sites: ["team:manage", "settings:manage"],
   automations: ["team:manage", "settings:manage"],

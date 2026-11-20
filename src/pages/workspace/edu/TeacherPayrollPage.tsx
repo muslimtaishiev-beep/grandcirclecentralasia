@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Calendar, Download, Printer, RefreshCw, Loader2, Check, Users, Settings2, FileText, Info, Landmark, ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { Calendar, Download, Printer, RefreshCw, Loader2, Check, Users, Settings2, FileText, Info, Landmark } from "lucide-react";
 import { auth } from "../../../lib/firebase";
+import CashTab from "./components/CashTab";
+import { useUrlTab, toast, confirmDialog, Modal, Button } from "../../../components/ui";
 import { resolveLegalProfile } from "../../../shared/legal";
 import {
   calculatePayroll, resolvePayrollSettings, money,
@@ -25,12 +27,11 @@ export default function TeacherPayrollPage() {
   const tenantId: string = activeTenant?.id || "";
   const legal = resolveLegalProfile(activeTenant);
 
-  const [tab, setTab] = useState<"statement" | "employees" | "cash" | "settings">("statement");
+  const [tab, setTab] = useUrlTab<"statement" | "employees" | "cash" | "settings">("tab", ["statement", "employees", "cash", "settings"], "statement");
   const [month, setMonth] = useState(month0());
   const [records, setRecords] = useState<Rec[]>([]);
   const [employees, setEmployees] = useState<EmployeeTerms[]>([]);
   const [settings, setSettings] = useState<PayrollSettings>(resolvePayrollSettings({}));
-  const [cashSummary, setCashSummary] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,21 +54,10 @@ export default function TeacherPayrollPage() {
     if (!tenantId) return;
     setLoading(true); setError(null);
     try {
-      const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-      const [r, e, s, finRes] = await Promise.all([
-        api(`/records?month=${month}`),
-        api("/employees"),
-        api("/settings"),
-        fetch(`/api/tenant/finance-summary?tenantId=${encodeURIComponent(tenantId)}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }).then(res => res.json()).catch(() => ({}))
-      ]);
+      const [r, e, s] = await Promise.all([api(`/records?month=${month}`), api("/employees"), api("/settings")]);
       setRecords(r.records || []);
       setEmployees(e.employees || []);
       setSettings(resolvePayrollSettings(s.settings));
-      if (finRes && finRes.success) {
-        setCashSummary(finRes);
-      }
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
   }, [api, tenantId, month]);
@@ -82,9 +72,13 @@ export default function TeacherPayrollPage() {
     } catch (err: any) { setError(err.message); }
     finally { setBusy(false); }
   };
-  const setStatus = async (rec: Rec, status: PayrollStatus) => {
+  const [statusAsk, setStatusAsk] = useState<{ rec: Rec; status: PayrollStatus } | null>(null);
+  const [askDate, setAskDate] = useState("");
+  const [askAccount, setAskAccount] = useState<"bank" | "cash">("bank");
+  const [askReason, setAskReason] = useState("");
+  const setStatus = async (rec: Rec, status: PayrollStatus, extra: Record<string, unknown> = {}) => {
     setBusy(true); setError(null);
-    try { await api(`/records/${rec.id}/status`, { method: "POST", body: JSON.stringify({ status }) }); await load(); }
+    try { await api(`/records/${rec.id}/status`, { method: "POST", body: JSON.stringify({ status, ...extra }) }); setStatusAsk(null); await load(); }
     catch (err: any) { setError(err.message); }
     finally { setBusy(false); }
   };
@@ -173,7 +167,6 @@ ${r.inputs.note ? `<p>Примечание: ${esc(r.inputs.note)}</p>` : ""}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 border-b border-[var(--border-color)] pb-4">
         <div>
           <h1 className="text-2xl font-bold">Зарплаты</h1>
-          <p className="text-xs text-[var(--text-muted)] mt-1">Все сотрудники организации · расчёт по правилам Кыргызской Республики · ведомость и расчётные листки</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -236,7 +229,8 @@ ${r.inputs.note ? `<p>Примечание: ${esc(r.inputs.note)}</p>` : ""}
                     <td className="px-3 py-3 text-right whitespace-nowrap space-x-2">
                       {r.status === "draft" && <button onClick={() => setEditing({ ...r, inputs: { ...r.inputs } })} className="text-xs font-bold text-emerald-500">Изменить</button>}
                       {r.status === "draft" && <button onClick={() => void setStatus(r, "approved")} className="text-xs font-bold text-sky-500">Утвердить</button>}
-                      {r.status === "approved" && <button onClick={() => void setStatus(r, "paid")} className="text-xs font-bold text-emerald-500">Выплачено</button>}
+                      {r.status === "approved" && <button onClick={() => { setAskDate(new Date().toLocaleDateString("en-CA")); setAskReason(""); setStatusAsk({ rec: r, status: "paid" }); }} className="text-xs font-bold text-emerald-500">Выплачено</button>}
+                      {r.status === "paid" && <button onClick={() => { setAskReason(""); setStatusAsk({ rec: r, status: "approved" }); }} className="text-xs text-[var(--text-muted)]">Отменить выплату</button>}
                       {r.status === "approved" && <button onClick={() => void setStatus(r, "draft")} className="text-xs text-[var(--text-muted)]">В черновик</button>}
                       <button onClick={() => printSlip(r)} className="text-xs text-[var(--text-muted)] hover:text-[var(--text-main)]">Листок</button>
                     </td>
@@ -277,158 +271,8 @@ ${r.inputs.note ? `<p>Примечание: ${esc(r.inputs.note)}</p>` : ""}
         </div>
       )}
 
-      {/* ── Касса и движения денег ── */}
-      {!loading && tab === "cash" && (
-        <div className="space-y-6">
-          <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-4 text-xs text-emerald-700 flex gap-3 items-start">
-            <Landmark className="w-5 h-5 shrink-0 text-emerald-600 mt-0.5" />
-            <div>
-              <div className="font-bold text-sm text-emerald-900 mb-0.5">Касса организации и учет движения средств</div>
-              Синхронизированный учет кассы: поступления формируются из <b>вступительных взносов</b> и <b>оплат по месяцам</b> принятых учеников, а расходами являются <b>выплаты по зарплатным ведомостям (ФОТ)</b>. Годовая стоимость договоров фиксируется справочно и не завышает баланс кассы.
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-[var(--bg-surface)] border border-emerald-500/30 rounded-2xl p-4 shadow-sm">
-              <div className="text-[11px] uppercase font-bold text-emerald-600 tracking-wider">Касса (Фактически)</div>
-              <div className="text-2xl font-black text-emerald-600 mt-1">
-                {((cashSummary?.totalCashCollected || 0)).toLocaleString("ru-RU")} сом
-              </div>
-              <div className="text-[11px] text-[var(--text-muted)] mt-1">Взносы + оклады по месяцам</div>
-            </div>
-
-            <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-4 shadow-sm">
-              <div className="text-[11px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Договоры за год (со скидкой)</div>
-              <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
-                {((cashSummary?.totalContractValue || 0)).toLocaleString("ru-RU")} сом
-              </div>
-              <div className="text-[11px] text-blue-600 font-medium mt-1">Общий объем ({cashSummary?.acceptedCount || 0} учеников)</div>
-            </div>
-
-            <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-4 shadow-sm">
-              <div className="text-[11px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Расходы на Зарплаты (ФОТ)</div>
-              <div className="text-2xl font-black text-purple-600 mt-1">
-                {((cashSummary?.totalPayroll || totals.totalCost || 0)).toLocaleString("ru-RU")} сом
-              </div>
-              <div className="text-[11px] text-purple-600 font-medium mt-1">Начисления сотрудникам</div>
-            </div>
-
-            <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-4 shadow-sm">
-              <div className="text-[11px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Чистый баланс кассы</div>
-              <div className={`text-2xl font-black mt-1 ${(cashSummary?.netBalance || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                {((cashSummary?.netBalance || 0)).toLocaleString("ru-RU")} сом
-              </div>
-              <div className="text-[11px] text-[var(--text-muted)] mt-1">Касса (факт) − ФОТ</div>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-base flex items-center gap-2">
-                <ArrowDownLeft className="w-5 h-5 text-emerald-500" />
-                Поступления в кассу от учеников
-              </h3>
-              <span className="text-xs text-[var(--text-muted)]">Принято учеников: {cashSummary?.acceptedCount || 0}</span>
-            </div>
-
-            <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl overflow-x-auto shadow-sm">
-              <table className="w-full text-sm min-w-[850px]">
-                <thead className="bg-[var(--bg-panel)] text-[11px] uppercase font-mono text-[var(--text-muted)]">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Ученик</th>
-                    <th className="px-4 py-3 text-left">Класс</th>
-                    <th className="px-4 py-3 text-left">Способ оплаты</th>
-                    <th className="px-4 py-3 text-right">Вступительный взнос</th>
-                    <th className="px-4 py-3 text-right">Оплачено по месяцам</th>
-                    <th className="px-4 py-3 text-right">Итого в кассу</th>
-                    <th className="px-4 py-3 text-right">Договор за год</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(cashSummary?.studentTransactions || []).map((t: any) => (
-                    <tr key={t.id} className="border-t border-[var(--border-color)] hover:bg-[var(--bg-panel)]/50 transition">
-                      <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">{t.studentName}</td>
-                      <td className="px-4 py-3 text-xs text-[var(--text-muted)]">{t.grade ? `${t.grade} класс` : "—"}</td>
-                      <td className="px-4 py-3 text-xs">
-                        <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-700 font-semibold border border-emerald-500/20">
-                          {t.paymentInfo || "MBANK"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-emerald-600 font-medium">
-                        {(t.initialFee || 0).toLocaleString("ru-RU")} сом
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-emerald-600 font-medium">
-                        {(t.monthlyPaidSum || 0).toLocaleString("ru-RU")} сом
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums font-black text-emerald-600">
-                        {(t.totalPaidIntoCash || 0).toLocaleString("ru-RU")} сом
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-[var(--text-muted)] font-mono text-xs">
-                        {(t.totalCost || 0).toLocaleString("ru-RU")} сом
-                      </td>
-                    </tr>
-                  ))}
-                  {(!cashSummary?.studentTransactions || cashSummary.studentTransactions.length === 0) && (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-[var(--text-muted)] text-sm">
-                        Поступлений в кассу пока нет. При принятии учеников внесенные взносы будут отображаться здесь автоматически.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-base flex items-center gap-2">
-                <ArrowUpRight className="w-5 h-5 text-rose-500" />
-                Расходы кассы на выплату зарплат ({monthTitle(month)})
-              </h3>
-              <span className="text-xs text-[var(--text-muted)]">Общие расходы: {fmt(totals.totalCost)} {cur}</span>
-            </div>
-
-            <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl overflow-x-auto shadow-sm">
-              <table className="w-full text-sm min-w-[850px]">
-                <thead className="bg-[var(--bg-panel)] text-[11px] uppercase font-mono text-[var(--text-muted)]">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Сотрудник</th>
-                    <th className="px-4 py-3 text-left">Должность</th>
-                    <th className="px-4 py-3 text-right">Начислено</th>
-                    <th className="px-4 py-3 text-right">Удержания / Налоги</th>
-                    <th className="px-4 py-3 text-right">К выплате из кассы</th>
-                    <th className="px-4 py-3 text-center">Статус</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {records.map((r: any) => (
-                    <tr key={r.id} className="border-t border-[var(--border-color)] hover:bg-[var(--bg-panel)]/50 transition">
-                      <td className="px-4 py-3 font-semibold">{r.fullName}</td>
-                      <td className="px-4 py-3 text-xs text-[var(--text-muted)]">{r.position || "—"}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">{fmt(r.calc.gross)}</td>
-                      <td className="px-4 py-3 text-right tabular-nums text-[var(--text-muted)]">{fmt(r.calc.sfEmployee + r.calc.incomeTax)}</td>
-                      <td className="px-4 py-3 text-right tabular-nums font-black text-rose-600">{fmt(r.calc.toPay)} {cur}</td>
-                      <td className="px-4 py-3 text-center">
-                        <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase ${r.status === "paid" ? "bg-emerald-500/15 text-emerald-600" : r.status === "approved" ? "bg-sky-500/15 text-sky-600" : "bg-slate-500/15 text-slate-500"}`}>
-                          {STATUS_LABEL[r.status as PayrollStatus]}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                  {!records.length && (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-[var(--text-muted)] text-sm">
-                        За {monthTitle(month)} ведомости выплат еще нет.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── Касса ── */}
+      {!loading && tab === "cash" && <CashTab tenantId={tenantId} month={month} />}
 
       {/* ── Ставки и вычеты ── */}
       {!loading && tab === "settings" && (
@@ -514,6 +358,27 @@ ${r.inputs.note ? `<p>Примечание: ${esc(r.inputs.note)}</p>` : ""}
             </div>
           </div>
         </div>
+      )}
+      {statusAsk && (
+        <Modal title={statusAsk.status === "paid" ? `Выплата: ${statusAsk.rec.fullName}` : `Отмена выплаты: ${statusAsk.rec.fullName}`} onClose={() => setStatusAsk(null)}>
+          <div className="space-y-4">
+            {statusAsk.status === "paid" ? (
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-xs">Дата<input type="date" className={input} value={askDate} onChange={e => setAskDate(e.target.value)} /></label>
+                <label className="text-xs">Счёт<select className={input} value={askAccount} onChange={e => setAskAccount(e.target.value as "bank" | "cash")}><option value="bank">Безналичные</option><option value="cash">Наличные</option></select></label>
+              </div>
+            ) : (
+              <label className="text-xs block">Причина<input className={input} value={askReason} onChange={e => setAskReason(e.target.value)} /></label>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setStatusAsk(null)}>Назад</Button>
+              <Button variant="primary" loading={busy} disabled={statusAsk.status === "approved" && !askReason.trim()}
+                onClick={() => void setStatus(statusAsk.rec, statusAsk.status, statusAsk.status === "paid" ? { paidDate: askDate, paidAccount: askAccount } : { reason: askReason })}>
+                {statusAsk.status === "paid" ? "Отметить выплату" : "Отменить выплату"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

@@ -92,6 +92,8 @@ export interface JournalAccess {
   everyone: "none" | JournalRole;
   /** uid сотрудника → роль. */
   members: Record<string, JournalRole>;
+  /** id должности организации → роль: доступ всем, у кого эта должность. */
+  roles?: Record<string, JournalRole>;
 }
 
 export interface JournalSettings {
@@ -119,6 +121,15 @@ export interface Journal {
   createdAt: number;
   updatedAt: number;
   archived?: boolean;
+  archivedAt?: number;
+  /** История настроек: создание, правки, доступ, архив. Последние записи. */
+  history?: JournalHistoryItem[];
+}
+
+export interface JournalHistoryItem {
+  at: number; by: string; byName: string;
+  action: "create" | "update" | "access" | "archive" | "restore";
+  changes?: { label: string; from: string; to: string }[];
 }
 
 /** Метаданные подписи по QR — всё, что сервер знает о моменте подписи. */
@@ -350,7 +361,11 @@ export function sanitizeAccess(raw: any): JournalAccess {
   for (const [uid, r] of Object.entries(raw?.members || {}).slice(0, 500)) {
     if (/^[\w-]{6,128}$/.test(uid) && roles.includes(r as JournalRole)) members[uid] = r as JournalRole;
   }
-  return { everyone, members };
+  const roleMap: Record<string, JournalRole> = {};
+  for (const [id, r] of Object.entries(raw?.roles || {}).slice(0, 100)) {
+    if (/^[\w-]{3,128}$/.test(id) && roles.includes(r as JournalRole)) roleMap[id] = r as JournalRole;
+  }
+  return { everyone, members, ...(Object.keys(roleMap).length ? { roles: roleMap } : {}) };
 }
 
 // ── Значения ────────────────────────────────────────────────────────────

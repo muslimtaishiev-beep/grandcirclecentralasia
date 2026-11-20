@@ -35,6 +35,7 @@ import FormSummary, { WhoModal, type WhoList } from './FormSummary';
 import EmailTemplateSelect from '../../../components/workspace/EmailTemplateSelect';
 import EmailResend from '../../../components/workspace/EmailResend';
 import FormNotifyModal from './FormNotifyModal';
+import { toast, confirmDialog, useUrlTab, Spinner, EmptyState } from '../../../components/ui';
 import { emailApi } from '../../../lib/emailTemplatesApi';
 
 /**
@@ -140,7 +141,10 @@ export default function FormBuilder() {
   const [forms, setForms] = useState<any[]>([]);
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'forms' | 'submissions'>('forms');
+  const [activeTab, setActiveTab] = useUrlTab('tab', ['forms', 'submissions'] as const, 'forms');
+  const [showArchived, setShowArchived] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [formBusy, setFormBusy] = useState<string | null>(null);
 
   // Form Editor Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -232,7 +236,7 @@ export default function FormBuilder() {
       const list: any[] = [];
       snap.forEach(d => list.push({ id: d.id, ...d.data() }));
       setForms(list);
-    });
+    }, () => { setLoadError(true); setLoading(false); });
 
     const unsubSubs = onSnapshot(qSubs, (snap) => {
       const list: any[] = [];
@@ -252,7 +256,7 @@ export default function FormBuilder() {
       });
       setSubmissions(list);
       setLoading(false);
-    });
+    }, () => { setLoadError(true); setLoading(false); });
 
     return () => {
       unsubForms();
@@ -423,7 +427,7 @@ export default function FormBuilder() {
    */
   const togglePublic = async (sub: any) => {
     const next = !sub.publicShown;
-    if (next && !confirm(`Показать эту заявку на сайте организации?\n\nЕё текст увидят все посетители.`)) return;
+    if (next && !(await confirmDialog({ title: `Показать эту заявку на сайте организации?`, message: `Её текст увидят все посетители.` }))) return;
     setBusySub(sub.id);
     try {
       const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
@@ -433,8 +437,8 @@ export default function FormBuilder() {
         body: JSON.stringify({ tenantId: currentOrgId, submissionId: sub.id, shown: next }),
       });
       const data = await res.json();
-      if (!data.success) alert(data.error || 'Не удалось');
-    } catch (e: any) { alert(`Не удалось: ${humanError(e)}`); }
+      if (!data.success) toast.error(data.error || 'Не удалось');
+    } catch (e: any) { toast.error(`Не удалось: ${humanError(e)}`); }
     finally { setBusySub(null); }
   };
 
@@ -454,10 +458,10 @@ export default function FormBuilder() {
       const files: ViewerFile[] = Object.entries(data)
         .filter(([k, v]) => isFileValue(v) && (!onlyKey || k === onlyKey))
         .map(([k, v]) => ({ label: labels[k] || '', value: String(v) }));
-      if (!files.length) { alert('Файл не найден.'); return; }
+      if (!files.length) { toast.error('Файл не найден.'); return; }
       setDocView({ title: sub.applicantName || 'Заявка', files });
     } catch (e: any) {
-      alert(`Не удалось открыть файл: ${humanError(e)}`);
+      toast.error(`Не удалось открыть файл: ${humanError(e)}`);
     } finally {
       setBusySub(null);
     }
@@ -471,7 +475,7 @@ export default function FormBuilder() {
    * не должно.
    */
   const purgeSubmission = async (sub: any) => {
-    if (!confirm(`Стереть заявку «${sub.applicantName || 'без имени'}» насовсем?\n\nВернуть её будет нельзя.`)) return;
+    if (!(await confirmDialog({ title: `Стереть заявку «${sub.applicantName || 'без имени'}» насовсем?`, message: `Вернуть её будет нельзя.`, danger: true, confirmLabel: 'Стереть' }))) return;
     setBusySub(sub.id);
     try {
       const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
@@ -481,14 +485,14 @@ export default function FormBuilder() {
         body: JSON.stringify({ tenantId: currentOrgId, submissionId: sub.id }),
       });
       const data = await res.json();
-      if (!data.success) alert(data.error || 'Не удалось стереть');
-    } catch (e: any) { alert(`Не удалось: ${humanError(e)}`); }
+      if (!data.success) toast.error(data.error || 'Не удалось стереть');
+    } catch (e: any) { toast.error(`Не удалось: ${humanError(e)}`); }
     finally { setBusySub(null); }
   };
 
   const purgeAll = async () => {
     const count = submissions.filter((x: any) => x.deleted).length;
-    if (!confirm(`Очистить корзину — стереть ${count} заявок насовсем?\n\nВернуть их будет нельзя.`)) return;
+    if (!(await confirmDialog({ title: `Очистить корзину — стереть ${count} заявок насовсем?`, message: `Вернуть их будет нельзя.`, danger: true, confirmLabel: 'Стереть' }))) return;
     setBusySub('all');
     try {
       const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
@@ -498,9 +502,9 @@ export default function FormBuilder() {
         body: JSON.stringify({ tenantId: currentOrgId, all: true }),
       });
       const data = await res.json();
-      if (!data.success) alert(data.error || 'Не удалось');
-      else { alert(`Стёрто заявок: ${data.purged}`); setShowDeleted(false); }
-    } catch (e: any) { alert(`Не удалось: ${humanError(e)}`); }
+      if (!data.success) toast.error(data.error || 'Не удалось');
+      else { toast.success(`Стёрто заявок: ${data.purged}`); setShowDeleted(false); }
+    } catch (e: any) { toast.error(`Не удалось: ${humanError(e)}`); }
     finally { setBusySub(null); }
   };
 
@@ -512,7 +516,7 @@ export default function FormBuilder() {
    * глазами сотни строк нельзя — нужна кнопка.
    */
   const resyncSheet = async (formId: string) => {
-    if (!confirm('Переписать таблицу по текущему списку заявок?\n\nКолонки заявок будут собраны заново. Ваши пометки в колонках правее останутся, но могут оказаться не напротив своих строк, если порядок заявок изменился.')) return;
+    if (!(await confirmDialog({ title: 'Переписать таблицу по текущему списку заявок?', message: 'Колонки заявок будут собраны заново. Ваши пометки в колонках правее останутся, но могут оказаться не напротив своих строк, если порядок заявок изменился.' }))) return;
     setBusySub(formId);
     try {
       const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
@@ -522,14 +526,14 @@ export default function FormBuilder() {
         body: JSON.stringify({ tenantId: currentOrgId, formId }),
       });
       const data = await res.json();
-      if (!data.success) { alert(data.error || 'Не удалось'); return; }
-      alert(`Таблица обновлена: ${data.rows} заявок.`);
-    } catch (e: any) { alert(`Не удалось: ${humanError(e)}`); }
+      if (!data.success) { toast.error(data.error || 'Не удалось'); return; }
+      toast.success(`Таблица обновлена: ${data.rows} заявок.`);
+    } catch (e: any) { toast.error(`Не удалось: ${humanError(e)}`); }
     finally { setBusySub(null); }
   };
 
   const removeSubmission = async (sub: any, restore = false) => {
-    if (!restore && !confirm(`Убрать заявку «${sub.applicantName || 'без имени'}» из списка? Её можно будет вернуть.`)) return;
+    if (!restore && !(await confirmDialog({ title: `Убрать заявку «${sub.applicantName || 'без имени'}» из списка? Её можно будет вернуть.` }))) return;
     setBusySub(sub.id);
     try {
       const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
@@ -539,9 +543,9 @@ export default function FormBuilder() {
         body: JSON.stringify({ tenantId: currentOrgId, submissionId: sub.id, restore }),
       });
       const data = await res.json();
-      if (!data.success) alert(data.error || 'Не удалось');
+      if (!data.success) toast.error(data.error || 'Не удалось');
       // onSnapshot сам обновит список.
-    } catch (e: any) { alert(`Не удалось: ${humanError(e)}`); }
+    } catch (e: any) { toast.error(`Не удалось: ${humanError(e)}`); }
     finally { setBusySub(null); }
   };
 
@@ -557,7 +561,7 @@ export default function FormBuilder() {
     // ждёт именно их. Раньше скачивались все заявки формы, и отбор
     // приходилось повторять руками в скачанном файле.
     const rows = visibleSubs.filter((s: any) => s.formId === formId && !s.deleted);
-    if (!rows.length) { alert('Под выбранные условия не подошла ни одна заявка.'); return; }
+    if (!rows.length) { toast.error('Под выбранные условия не подошла ни одна заявка.'); return; }
 
     const fields = (form?.fields || []).filter((f: any) => f.type !== 'file' && f.type !== 'section');
     const head = ['Дата', 'Имя', 'Телефон', 'Почта', 'Статус', 'Код']
@@ -604,7 +608,7 @@ export default function FormBuilder() {
     // Как и выгрузка файлом — по тому, что на экране: две кнопки рядом
     // не должны вести себя по-разному.
     const rows = visibleSubs.filter((s: any) => s.formId === formId && !s.deleted);
-    if (!rows.length) { alert('Под выбранные условия не подошла ни одна заявка.'); return; }
+    if (!rows.length) { toast.error('Под выбранные условия не подошла ни одна заявка.'); return; }
     if (!currentOrgId || !user?.uid) return;
 
     setBusySub(formId);
@@ -679,7 +683,7 @@ export default function FormBuilder() {
       }
 
       if (added === 0 && existing) {
-        alert('В таблице уже есть все заявки по этой форме.');
+        toast.error('В таблице уже есть все заявки по этой форме.');
         navigate(`/workspace/${currentOrgId}/sheets/${sheetId}`);
         return;
       }
@@ -697,7 +701,7 @@ export default function FormBuilder() {
 
       navigate(`/workspace/${currentOrgId}/sheets/${sheetId}`);
     } catch (e: any) {
-      alert(`Не удалось перенести в таблицу: ${humanError(e)}`);
+      toast.error(`Не удалось перенести в таблицу: ${humanError(e)}`);
     } finally {
       setBusySub(null);
     }
@@ -775,6 +779,23 @@ export default function FormBuilder() {
     return dupes;
   };
 
+  const formState = async (form: any, action: 'close' | 'open' | 'archive' | 'restore' | 'purge') => {
+    if (action === 'archive' && !(await confirmDialog({ title: `Убрать форму «${form.title}» в архив?`, message: 'Приём заявок закроется, заявки сохранятся. Форму можно вернуть.', confirmLabel: 'В архив' }))) return;
+    if (action === 'purge' && !(await confirmDialog({ title: `Стереть форму «${form.title}» насовсем?`, message: 'Вернуть её будет нельзя.', danger: true, confirmLabel: 'Стереть' }))) return;
+    setFormBusy(form.id);
+    try {
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+      const r = await fetch('/api/forms/form-state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tenantId: currentOrgId, formId: form.id, action }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!j.success) toast.error(j.error || 'Не удалось');
+    } catch (e: any) { toast.error(`Не удалось: ${humanError(e)}`); }
+    finally { setFormBusy(null); }
+  };
+
   const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formTitle.trim()) return;
@@ -790,7 +811,7 @@ export default function FormBuilder() {
 
     const brokenSelect = cleanFields.find((f: any) => CHOICE.includes(f.type) && f.options.length < 2);
     if (brokenSelect) {
-      alert(`У поля «${brokenSelect.label || 'без названия'}» нужно минимум два варианта ответа.`);
+      toast.error(`У поля «${brokenSelect.label || 'без названия'}» нужно минимум два варианта ответа.`);
       return;
     }
 
@@ -806,14 +827,14 @@ export default function FormBuilder() {
         publicListed,
         emailTemplateId,
         mode: formMode,
-        active: true,
+        ...(!editingFormId && { active: true }),
         updatedAt: serverTimestamp(),
         ...(!editingFormId && { createdAt: serverTimestamp(), createdBy: user?.uid || '' })
       }, { merge: true });
 
       setIsModalOpen(false);
     } catch (err: any) {
-      alert(`Ошибка сохранения формы: ${err.message}`);
+      toast.error(`Ошибка сохранения формы: ${err.message}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -866,7 +887,7 @@ export default function FormBuilder() {
       skipped.slice(0, 8).forEach(x => lines.push(`• ${x.name}: ${x.reason}`));
       if (skipped.length > 8) lines.push(`…и ещё ${skipped.length - 8}`);
     }
-    alert(lines.join('\n'));
+    toast.success(lines.join('\n'));
   };
 
   /** Массовая правка одного поля: { поле, значение } для выделенных заявок одной анкеты. */
@@ -887,11 +908,11 @@ export default function FormBuilder() {
         }),
       });
       const data = await res.json();
-      if (!data.success) { alert(data.error || 'Не удалось изменить'); return; }
+      if (!data.success) { toast.error(data.error || 'Не удалось изменить'); return; }
       setFieldDraft(null);
       setSelected(new Set());
       reportBulk(data);
-    } catch (e: any) { alert(`Не удалось изменить: ${humanError(e)}`); }
+    } catch (e: any) { toast.error(`Не удалось изменить: ${humanError(e)}`); }
     finally { setFieldBusy(false); }
   };
 
@@ -930,9 +951,9 @@ export default function FormBuilder() {
         body: JSON.stringify({ tenantId: currentOrgId, submissionId: sub.id, data: changed }),
       });
       const data = await res.json();
-      if (!data.success) { alert(data.error || 'Не удалось сохранить'); return; }
+      if (!data.success) { toast.error(data.error || 'Не удалось сохранить'); return; }
       setEditDraft(null);
-    } catch (e: any) { alert(`Не удалось сохранить: ${humanError(e)}`); }
+    } catch (e: any) { toast.error(`Не удалось сохранить: ${humanError(e)}`); }
     finally { setEditBusy(false); }
   };
 
@@ -994,12 +1015,12 @@ export default function FormBuilder() {
           : { tenantId: currentOrgId, action: 'status', submissionIds: subs.map((x: any) => x.id), status, note: withNote ? note.trim() : '' }),
       });
       const data = await res.json();
-      if (!data.success) { alert(data.error || 'Не удалось сменить статус'); return; }
+      if (!data.success) { toast.error(data.error || 'Не удалось сменить статус'); return; }
       setStatusDraft(null);
       if (!single) { reportBulk(data); setSelected(new Set()); }
       // onSnapshot сам подтянет обновление — локально ничего не трогаем.
     } catch(e: any) {
-      alert(`Не удалось сменить статус: ${humanError(e)}`);
+      toast.error(`Не удалось сменить статус: ${humanError(e)}`);
     } finally {
       setStatusBusy(false);
     }
@@ -1013,11 +1034,8 @@ export default function FormBuilder() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <FileCheck2 className="w-6 h-6 text-emerald-500" />
-            <span>No-Code Конструктор Заявок & QR-Паспортов</span>
+            <span>Формы и заявки</span>
           </h1>
-          <p className="text-xs text-[var(--text-muted)] mt-1">
-            Создание произвольных веб-форм для клиентов с автоматической выдачей QR-кода отслеживания статуса
-          </p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -1026,7 +1044,7 @@ export default function FormBuilder() {
               onClick={() => setActiveTab('forms')}
               className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${activeTab === 'forms' ? 'bg-[var(--bg-surface)] text-emerald-500 shadow-xs' : 'text-[var(--text-muted)]'}`}
             >
-              Формы ({forms.length})
+              Формы ({forms.filter(f => !f.archived).length})
             </button>
             <button 
               onClick={() => setActiveTab('submissions')}
@@ -1061,31 +1079,38 @@ export default function FormBuilder() {
 
       {/* Main Content */}
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-[var(--text-muted)] text-xs gap-2">
-          <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />
-          <span>Загрузка конструктора...</span>
-        </div>
+        <div className="flex items-center justify-center py-16"><Spinner /></div>
+      ) : loadError ? (
+        <EmptyState title="Не удалось загрузить данные" action={<button onClick={() => window.location.reload()} className="px-4 py-2 rounded-xl border border-[var(--border-color)] text-xs font-bold cursor-pointer">Обновить</button>} />
       ) : activeTab === 'forms' ? (
+        <div className="space-y-3">
+        {forms.some(f => f.archived) && (
+          <div className="flex justify-end">
+            <button onClick={() => setShowArchived(v => !v)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border cursor-pointer ${showArchived ? 'bg-emerald-600 text-white border-emerald-600' : 'border-[var(--border-color)] text-[var(--text-muted)]'}`}>
+              Архив ({forms.filter(f => f.archived).length})
+            </button>
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {forms.length === 0 ? (
-            <div className="col-span-full py-16 text-center bg-[var(--bg-surface)] border border-dashed border-[var(--border-color)] rounded-2xl">
-              <FileCheck2 className="w-10 h-10 text-[var(--text-muted)] mx-auto mb-2 opacity-50" />
-              <h3 className="font-bold text-sm">Нет созданных бланков</h3>
-              <p className="text-xs text-[var(--text-muted)] mt-1 max-w-sm mx-auto">
-                Создайте свою первую форму заявки для абитуриентов или клиентов с автоматическим QR-трекером
-              </p>
+          {forms.filter(f => !!f.archived === showArchived).length === 0 ? (
+            <div className="col-span-full">
+              <EmptyState icon={<FileCheck2 className="w-10 h-10" />} title={showArchived ? 'Архив пуст' : 'Нет форм'} />
             </div>
           ) : (
-            forms.map(form => (
+            forms.filter(f => !!f.archived === showArchived).map(form => (
               <div key={form.id} className="bg-[var(--bg-surface)] border border-[var(--border-color)] p-5 rounded-2xl space-y-4 shadow-xs hover:border-emerald-500/40 transition">
                 <div className="flex items-start justify-between">
                   <div>
                     <h3 className="font-bold text-base text-[var(--text-main)]">{form.title}</h3>
-                    <p className="text-xs text-[var(--text-muted)] mt-0.5">{form.description || 'Произвольная форма приема данных'}</p>
+                    <p className="text-xs text-[var(--text-muted)] mt-0.5">{form.description || ''}</p>
                   </div>
                   <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 text-[10px] font-mono font-bold flex items-center gap-1">
                     <QrCode className="w-3 h-3" /> QR Активен
                   </span>
+                  {form.active === false && !form.archived && (
+                    <span className="ml-2 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[10px] font-bold">Приём закрыт</span>
+                  )}
                 </div>
 
                 <div className="space-y-1 bg-[var(--bg-panel)] p-3 rounded-xl border border-[var(--border-color)] text-xs">
@@ -1145,11 +1170,6 @@ export default function FormBuilder() {
                           </div>
                         </>
                       )}
-                      {st.total === 0 && (
-                        <p className="text-[11px] text-[var(--text-muted)]">
-                          Заявок ещё нет. Поделитесь ссылкой или QR-кодом ниже.
-                        </p>
-                      )}
                     </div>
                   );
                 })()}
@@ -1186,18 +1206,35 @@ export default function FormBuilder() {
                       <QrCode className="w-3.5 h-3.5" /> QR
                     </button>
                   </div>
-                  <button 
-                    onClick={async () => {
-                      if (window.confirm('Удалить форму?')) await deleteDoc(doc(db, 'custom_forms', form.id));
-                    }}
-                    className="text-red-500 hover:text-red-400 p-1 transition cursor-pointer"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    {!form.archived && (
+                      <button disabled={formBusy === form.id}
+                        onClick={() => void formState(form, form.active === false ? 'open' : 'close')}
+                        className="text-[var(--text-muted)] hover:text-amber-500 font-bold transition cursor-pointer disabled:opacity-50">
+                        {form.active === false ? 'Открыть приём' : 'Закрыть приём'}
+                      </button>
+                    )}
+                    {form.archived ? (
+                      <>
+                        <button disabled={formBusy === form.id} onClick={() => void formState(form, 'restore')}
+                          className="text-emerald-500 font-bold cursor-pointer disabled:opacity-50">Вернуть</button>
+                        <button disabled={formBusy === form.id} onClick={() => void formState(form, 'purge')}
+                          className="text-red-500 hover:text-red-400 p-1 transition cursor-pointer" aria-label="Стереть насовсем">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    ) : (
+                      <button disabled={formBusy === form.id} onClick={() => void formState(form, 'archive')}
+                        className="text-[var(--text-muted)] hover:text-red-400 font-bold transition cursor-pointer disabled:opacity-50">
+                        В архив
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))
           )}
+        </div>
         </div>
       ) : (
         /* Submissions List */
@@ -1265,7 +1302,7 @@ export default function FormBuilder() {
               {/* Перенос и скачивание работают по одной форме: в общей куче
                   у заявок разные поля, и колонки не сойдутся. */}
               <button
-                onClick={() => filterFormId ? void toWorkspaceSheet(filterFormId) : alert('Выберите форму — у разных форм разные поля, и в общей таблице колонки не сойдутся.')}
+                onClick={() => filterFormId ? void toWorkspaceSheet(filterFormId) : toast.error('Выберите форму — у разных форм разные поля, и в общей таблице колонки не сойдутся.')}
                 disabled={busySub === filterFormId && !!filterFormId}
                 className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 inline-flex items-center gap-1.5">
                 <Layers className="w-3.5 h-3.5" />
@@ -1273,7 +1310,7 @@ export default function FormBuilder() {
               </button>
 
               <button
-                onClick={() => filterFormId ? exportSubs(filterFormId) : alert('Выберите форму, ответы которой нужно скачать.')}
+                onClick={() => filterFormId ? exportSubs(filterFormId) : toast.error('Выберите форму, ответы которой нужно скачать.')}
                 className="px-3 py-1.5 rounded-lg text-xs font-bold border border-[var(--border-color)] text-[var(--text-main)] hover:bg-black/5 dark:hover:bg-white/10">
                 Скачать
               </button>
@@ -1404,7 +1441,7 @@ export default function FormBuilder() {
               <button
                 onClick={() => oneForm
                   ? setFieldDraft({ formId: oneForm.id, fieldId: '', value: '' })
-                  : alert('Выбраны заявки разных анкет — у них разные поля. Отфильтруйте по одной анкете.')}
+                  : toast.error('Выбраны заявки разных анкет — у них разные поля. Отфильтруйте по одной анкете.')}
                 className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-bold">
                 Изменить поле
               </button>
@@ -1414,10 +1451,10 @@ export default function FormBuilder() {
                 return (
                   <button disabled={bulkMail}
                     onClick={async () => {
-                      if (!confirm(`Отправить письмо ещё раз ${mailable.length} заявителям?`)) return;
+                      if (!(await confirmDialog({ title: `Отправить письмо ещё раз ${mailable.length} заявителям?` }))) return;
                       setBulkMail(true);
-                      try { const j = await emailApi(currentOrgId, '/resend', { method: 'POST', body: JSON.stringify({ event: 'form', submissionIds: mailable.map((x: any) => x.id) }) }); alert(j.failed ? `Отправлено: ${j.sent}. Не ушло: ${j.failed} — причины в «Письма → Журнал».` : `Отправлено: ${j.sent}`); }
-                      catch (e: any) { alert(e.message); } finally { setBulkMail(false); }
+                      try { const j = await emailApi(currentOrgId, '/resend', { method: 'POST', body: JSON.stringify({ event: 'form', submissionIds: mailable.map((x: any) => x.id) }) }); toast.success(j.failed ? `Отправлено: ${j.sent}. Не ушло: ${j.failed} — причины в «Письма → Журнал».` : `Отправлено: ${j.sent}`); }
+                      catch (e: any) { toast.error(e.message); } finally { setBulkMail(false); }
                     }}
                     className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-bold disabled:opacity-50">
                     {bulkMail ? 'Отправка…' : `Переотправить письмо (${mailable.length})`}
@@ -1448,7 +1485,7 @@ export default function FormBuilder() {
                   : 'Под фильтры ничего не подошло.'}
             </div>
           ) : (
-            <table className="w-full text-left text-xs">
+            <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-xs">
               <thead className="bg-[var(--bg-panel)] border-b border-[var(--border-color)] text-[var(--text-muted)] font-mono uppercase text-[11px]">
                 <tr>
                   <th className="pl-5 pr-1 py-3 w-8">
@@ -1594,7 +1631,7 @@ export default function FormBuilder() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </div>
         )}
@@ -1643,9 +1680,6 @@ export default function FormBuilder() {
                 <div className="space-y-1">
                   <label className="block text-[11px] font-semibold text-[var(--text-muted)]">Новое значение для всех</label>
                   {fieldInput(field, fieldDraft.value, v => setFieldDraft({ ...fieldDraft, value: v }))}
-                  <p className="text-[11px] text-[var(--text-muted)]">
-                    Прежние значения сохранятся в истории каждой заявки.
-                  </p>
                 </div>
               )}
 
@@ -1706,9 +1740,6 @@ export default function FormBuilder() {
                   className="w-full px-2.5 py-1.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-lg text-sm">
                   {Object.entries(STATUS_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
                 </select>
-                <p className="text-[11px] text-[var(--text-muted)]">
-                  Заявки, которым этот статус не подходит по анкете, будут пропущены — покажем, какие и почему.
-                </p>
               </div>
             )}
 
@@ -1734,11 +1765,7 @@ export default function FormBuilder() {
                   <span>{statusDraft.note.length}/300</span>
                 </div>
               </div>
-            ) : (
-              <p className="text-[11px] text-[var(--text-muted)]">
-                Статус сменится молча — заявитель увидит только новое состояние, без пояснения.
-              </p>
-            )}
+            ) : null}
 
             <div className="flex items-center justify-end gap-2 pt-1">
               <button onClick={() => setStatusDraft(null)} disabled={statusBusy}
@@ -1871,9 +1898,6 @@ export default function FormBuilder() {
                     {fieldInput(f, editDraft[f.id], v => setEditDraft({ ...editDraft, [f.id]: v }))}
                   </div>
                 ))}
-                <p className="text-[11px] text-[var(--text-muted)]">
-                  Файлы и фото здесь не меняются. Прежние значения останутся в истории.
-                </p>
                 <div className="flex justify-end gap-2">
                   <button onClick={() => setEditDraft(null)} disabled={editBusy}
                     className="px-4 py-2 rounded-xl border border-[var(--border-color)] font-bold text-sm disabled:opacity-40">
@@ -2029,15 +2053,6 @@ export default function FormBuilder() {
                       </button>
                     ))}
                   </div>
-                  {formMode === 'ticket' && (
-                    <p className="text-[11px] text-[var(--text-muted)] pt-1">
-                      QR-билет появится у гостя на странице отслеживания, как только заявку
-                      одобрят. На входе билеты проверяют сотрудники через «Проверку билетов»
-                      в меню воркспейса: камера сканирует QR гостя, вход отмечается
-                      автоматически, повторный вход блокируется. Волонтёров добавьте как
-                      сотрудников организации.
-                    </p>
-                  )}
                   <label className="flex items-center gap-2 text-[11px] text-[var(--text-muted)] cursor-pointer pt-1">
                     <input type="checkbox" checked={qrTrackingEnabled} onChange={(e) => setQrTrackingEnabled(e.target.checked)} />
                     Выдавать QR-код отслеживания после отправки
@@ -2151,12 +2166,6 @@ export default function FormBuilder() {
                             )}
                           </div>
 
-                          {options.length === 0 && (
-                            <p className="pl-2 text-[11px] text-[var(--text-muted)]">
-                              Пока пусто. Добавьте варианты, из которых гость будет выбирать.
-                            </p>
-                          )}
-
                           {options.map((opt: string, optIdx: number) => (
                             <div key={optIdx} className="flex items-center gap-1.5 pl-2">
                               <span className="text-[11px] text-[var(--text-muted)] w-4 shrink-0 text-right">{optIdx + 1}.</span>
@@ -2205,12 +2214,6 @@ export default function FormBuilder() {
                         </div>
                       );
                     })()}
-                    {field.type === 'file' && (
-                      <p className="text-[11px] text-[var(--text-muted)]">
-                        Гость приложит фото (сожмётся автоматически) или файл любого формата до 650 КБ: PDF, Word, PowerPoint, архив.
-                        Установщики и исполняемые файлы (APK, EXE, скрипты) не принимаются. Файл открывается в кабинете прямо на странице.
-                      </p>
-                    )}
                   </div>
                 ))}
               </div>

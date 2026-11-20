@@ -3,6 +3,7 @@ import admin from "firebase-admin";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { revokeAllSessions } from "../server/session.js";
 import { telegramConfig } from "../server/telegram.js";
+import { actorOf, writeAudit } from "../server/audit.js";
 
 /**
  * /api/profile — профиль сотрудника: имя, телефон, оповещения о входе,
@@ -49,11 +50,21 @@ router.put("/", requireFirebaseAuth, async (req: any, res: any) => {
     }
     if (req.body?.phone !== undefined) patch.phone = str(req.body.phone, 30);
     if (typeof req.body?.loginAlerts === "boolean") patch.loginAlerts = req.body.loginAlerts;
-    await db().collection("users").doc(req.user.uid).set(patch, { merge: true });
+    const userRef = db().collection("users").doc(req.user.uid);
+    const oldName = patch.displayName ? String((await userRef.get()).data()?.displayName || "") : "";
+    await userRef.set(patch, { merge: true });
     // Имя видят коллеги — обновляем его и в членствах (там его читают списки сотрудников).
     if (patch.displayName) {
       const ms = await db().collection("memberships").where("userId", "==", req.user.uid).get();
       await Promise.all(ms.docs.map(m => m.ref.update({ displayName: patch.displayName })));
+      // Руководство видит в журнале каждой организации, что сотрудник сменил имя.
+      if (oldName !== patch.displayName) {
+        const tenants = [...new Set(ms.docs.map(m => String(m.data().tenantId || "")).filter(Boolean))];
+        await Promise.all(tenants.map(t => writeAudit(db(), t, {
+          actor: actorOf(req.user), action: "profile.rename", section: "staff", target: { kind: "user", id: req.user.uid, name: String(patch.displayName) },
+          detail: "Сотрудник сменил имя в профиле", changes: [{ label: "Имя", from: oldName, to: String(patch.displayName) }],
+        })));
+      }
     }
     return res.json({ success: true });
   } catch (e: any) { return res.status(500).json({ success: false, error: e.message }); }

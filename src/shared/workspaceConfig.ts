@@ -231,6 +231,18 @@ export const ACTIVITY_PRESETS: { key: string; label: string; config: WorkspaceCo
   },
 ];
 
+/** Слияние «по умолчанию + настройки»: пустая строка значит «не задано» и не стирает умолчание. */
+function mergeDefined<T extends object>(base: T, over: unknown): T {
+  const out = { ...base } as Record<string, unknown>;
+  if (over && typeof over === "object") {
+    for (const [k, v] of Object.entries(over as Record<string, unknown>)) {
+      if (v === undefined || v === null || v === "") continue;
+      out[k] = v;
+    }
+  }
+  return out as T;
+}
+
 /** Конфиг организации с добивкой прежних текстов по умолчанию. */
 export function resolveWorkspaceConfig(raw: unknown): typeof DEFAULT_WORKSPACE_CONFIG & { setupCompleted: boolean } {
   const c = (raw && typeof raw === "object" ? raw : {}) as WorkspaceConfig;
@@ -239,12 +251,12 @@ export function resolveWorkspaceConfig(raw: unknown): typeof DEFAULT_WORKSPACE_C
     activityType: c.activityType || DEFAULT_WORKSPACE_CONFIG.activityType,
     dashboardTitle: c.dashboardTitle || DEFAULT_WORKSPACE_CONFIG.dashboardTitle,
     dashboardSubtitle: c.dashboardSubtitle || DEFAULT_WORKSPACE_CONFIG.dashboardSubtitle,
-    terms: { ...DEFAULT_WORKSPACE_CONFIG.terms, ...(c.terms || {}) },
-    schedule: { ...DEFAULT_WORKSPACE_CONFIG.schedule, ...(c.schedule || {}) },
+    terms: mergeDefined(DEFAULT_WORKSPACE_CONFIG.terms, c.terms),
+    schedule: mergeDefined(DEFAULT_WORKSPACE_CONFIG.schedule, c.schedule),
     registration: mergeRegistration(c.registration),
-    tickets: { ...DEFAULT_WORKSPACE_CONFIG.tickets, ...(c.tickets || {}) },
-    email: { ...DEFAULT_WORKSPACE_CONFIG.email, ...(c.email || {}) },
-    landing: { ...DEFAULT_WORKSPACE_CONFIG.landing, ...(c.landing || {}) },
+    tickets: mergeDefined(DEFAULT_WORKSPACE_CONFIG.tickets, c.tickets),
+    email: mergeDefined(DEFAULT_WORKSPACE_CONFIG.email, c.email),
+    landing: mergeDefined(DEFAULT_WORKSPACE_CONFIG.landing, c.landing),
   };
 }
 
@@ -258,9 +270,8 @@ function mergeRegistration(raw: RegistrationConfig | undefined): Required<Regist
   const c = raw || {};
   const byKey = new Map((Array.isArray(c.fields) ? c.fields : []).map(f => [f?.key, f]));
   return {
-    ...base,
-    ...c,
-    fields: base.fields.map(def => ({ ...def, ...(byKey.get(def.key) || {}) })),
+    ...mergeDefined(base, c),
+    fields: base.fields.map(def => ({ ...def, ...mergeDefined({} as Record<string, unknown>, byKey.get(def.key)) })),
     gradeOptions: Array.isArray(c.gradeOptions) && c.gradeOptions.length ? c.gradeOptions : base.gradeOptions,
   };
 }

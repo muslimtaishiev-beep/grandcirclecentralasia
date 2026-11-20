@@ -412,6 +412,7 @@ router.post("/:id/invite", requireFirebaseAuth, requireTeam, async (req: any, re
       try {
         const t = await db.collection("tenants").doc(tenantId).get();
         const r = await sendStaffInviteEmail({
+          tenantId,
           email: resolveWorkspaceConfig(t.data()?.workspaceConfig).email,
           to: email,
           fullName: staffName,
@@ -463,8 +464,12 @@ router.put("/:id/workspace-config", requireFirebaseAuth, requireSettings, requir
   try {
     const tenantId = req.params.id;
     const db = admin.firestore();
-    const c = req.body?.config || {};
+    const incoming = req.body?.config || {};
     const str = (v: unknown, max = 120) => String(v ?? "").trim().slice(0, max);
+    // Слияние, а не замена: раздел, которого нет в запросе, остаётся как был.
+    const existingSnap = await db.collection("tenants").doc(tenantId).get();
+    const prev = (existingSnap.data()?.workspaceConfig || {}) as Record<string, any>;
+    const c: any = { ...prev, ...Object.fromEntries(Object.entries(incoming).filter(([, v]) => v !== undefined)) };
 
     const clean = {
       setupCompleted: true,

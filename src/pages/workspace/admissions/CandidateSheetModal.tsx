@@ -7,6 +7,7 @@ import type { QAnswers, QTemplate } from "../../../shared/questionnaires";
 import { tenantLogos } from "../../../shared/legal";
 import { candidateSheet, sheetDocument } from "../../../lib/admissionPrint";
 import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui";
+import { confirmDialog } from "../../../components/ui";
 import type { Api } from "./admissionApi";
 import { candidateDoc, latestTest, saveCandidate, sheetFields, topicFeedback, type SheetField, type TestSummary } from "./candidateForm";
 import HistoryModal from "./HistoryModal";
@@ -125,7 +126,7 @@ export default function CandidateSheetModal({ applicantId, api, tenant, startEdi
     try { await saveCandidate(org, candidateDoc({ form: cfg, orgName: org.name, applicant: d.applicant, parentForm, test, photo }), d.applicant.child.name); }
     catch (e: any) { setError(e.message); } finally { setBusy(""); }
   };
-  const close = () => { if (dirty && !confirm("Закрыть без сохранения?")) return; onClose(); };
+  const close = async () => { if (dirty && !(await confirmDialog({ title: "Закрыть без сохранения?", message: "Правки анкеты кандидата не сохранены.", confirmLabel: "Закрыть", danger: true }))) return; onClose(); };
 
   if (!d) return <Modal title={cfg.title} onClose={onClose} xwide>{error ? <div className="text-sm text-rose-600">{error}</div> : <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--text-muted)]" /></div>}</Modal>;
   const a = d.applicant;
@@ -136,7 +137,7 @@ export default function CandidateSheetModal({ applicantId, api, tenant, startEdi
           {editing ? (
             <>
               <button className={btnPrimary} disabled={busy === "save" || !dirty} onClick={save}>{busy === "save" && <Loader2 className="w-4 h-4 animate-spin" />} Сохранить</button>
-              <button className={btn} disabled={busy === "save"} onClick={() => { if (!dirty || confirm("Отменить правки?")) { setEditing(false); setDraft(null); } }}><X className="w-4 h-4" /> Отмена</button>
+              <button className={btn} disabled={busy === "save"} onClick={async () => { if (!dirty || (await confirmDialog({ title: "Отменить правки?", confirmLabel: "Отменить", danger: true }))) { setEditing(false); setDraft(null); } }}><X className="w-4 h-4" /> Отмена</button>
               <div className="lg:hidden inline-flex rounded-lg border border-[var(--border-color)] p-0.5 text-sm">
                 {(["form", "sheet"] as const).map(p => <button key={p} onClick={() => setPane(p)} className={`px-3 py-1 rounded-md ${pane === p ? "bg-[var(--accent)] text-white" : "text-[var(--text-main)]"}`}>{p === "form" ? "Форма" : "Лист"}</button>)}
               </div>
@@ -159,7 +160,7 @@ export default function CandidateSheetModal({ applicantId, api, tenant, startEdi
           </div>
         </div>
       </div>
-      {history && <HistoryModal entries={d.audit} onClose={() => setHistory(false)} />}
+      {history && <HistoryModal api={api} applicantId={applicantId} onClose={() => setHistory(false)} />}
     </Modal>
   );
 }

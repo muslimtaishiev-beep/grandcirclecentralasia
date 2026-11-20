@@ -6,7 +6,7 @@ import { requireScreen } from "../server/tenantAccess.js";
 import { writeAudit, actorOf } from "../server/audit.js";
 import { cashCol, cashEntryDoc } from "../server/cash.js";
 import {
-  normTime, lessonsOverlap, subscriptionStatus, sanitizeDirectory, sanitizePlan,
+  normTime, lessonsOverlap, todayIn, subscriptionStatus, sanitizeDirectory, sanitizePlan,
   type EduDirectory, type SubAction,
 } from "../shared/edu.js";
 
@@ -45,7 +45,7 @@ router.get("/:tenantId/directory", requireFirebaseAuth, requirePerm(db, "edu:sch
   try {
     const t = req.params.tenantId;
     const [dir, staff, currency] = await Promise.all([loadDirectory(t), teachers(t), currencyOf(t)]);
-    return res.json({ success: true, ...dir, teachers: staff, currency });
+    return res.json({ success: true, ...dir, teachers: staff, currency, today: todayIn(dir.timezone) });
   } catch (e: any) { return res.status(500).json({ success: false, error: e.message }); }
 });
 router.put("/:tenantId/directory", ...schedGuard("schedule"), async (req: any, res: any) => {
@@ -199,7 +199,7 @@ router.post("/:tenantId/lessons/copy-week", ...schedGuard("schedule"), async (re
 });
 
 // ── Абонементы ──
-async function allSubs(t: string) {
+async function allSubs(t: string, tz: string) {
   const [own, flat] = await Promise.all([
     col(t, "edu_subscriptions").get(),
     db().collection("edu_subscriptions").where("tenantId", "==", t).get().catch(() => null),
@@ -211,15 +211,16 @@ async function allSubs(t: string) {
   const key = (x: any) => `${x.studentContactId}|${x.createdAt}`;
   const ownKeys = new Set([...out.values()].map(key));
   for (const d of flat?.docs || []) { const x = { ...d.data(), id: `flat_${d.id}` }; if (!ownKeys.has(key(x))) out.set(x.id, x); }
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIn(tz);
   return [...out.values()].map(s => ({ ...s, status: subscriptionStatus(s, today) })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
 router.get("/:tenantId/subscriptions", ...schedGuard("subscriptions"), async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
-    const [subs, dir, currency] = await Promise.all([allSubs(t), loadDirectory(t), currencyOf(t)]);
-    return res.json({ success: true, subscriptions: subs, plans: dir.plans, groups: dir.groups, currency });
+    const dir = await loadDirectory(t);
+    const [subs, currency] = await Promise.all([allSubs(t, dir.timezone), currencyOf(t)]);
+    return res.json({ success: true, subscriptions: subs, plans: dir.plans, groups: dir.groups, rooms: dir.rooms, timezone: dir.timezone, currency, today: todayIn(dir.timezone) });
   } catch (e: any) { return res.status(500).json({ success: false, error: e.message }); }
 });
 
@@ -233,7 +234,7 @@ router.post("/:tenantId/subscriptions", ...schedGuard("subscriptions"), async (r
     const plan = b.planId ? dir.plans.find(p => p.id === b.planId) : null;
     const p = sanitizePlan({ ...(plan || {}), ...b, id: plan?.id || "custom", name: plan?.name || str(b.planName) || "Абонемент" });
     if (!p) return res.status(400).json({ success: false, error: "Проверьте вид, число занятий и цену" });
-    const startDate = /^\d{4}-\d{2}-\d{2}$/.test(b.startDate) ? b.startDate : new Date().toISOString().slice(0, 10);
+    const startDate = /^\d{4}-\d{2}-\d{2}$/.test(b.startDate) ? b.startDate : todayIn(dir.timezone);
     const exp = new Date(`${startDate}T00:00:00Z`); exp.setUTCDate(exp.getUTCDate() + p.days);
     const group = b.groupId ? dir.groups.find(g => g.id === b.groupId) : null;
     const ref = col(t, "edu_subscriptions").doc();
@@ -267,7 +268,7 @@ router.post("/:tenantId/subscriptions/:id/:action", ...schedGuard("subscriptions
     if (String(req.params.id).startsWith("flat_")) return res.status(409).json({ success: false, error: "Старая запись — выдайте абонемент заново" });
     const ref = col(t, "edu_subscriptions").doc(req.params.id);
     const note = str(req.body?.note, 300);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIn((await loadDirectory(t)).timezone);
     let result: any = null;
     const err = await db().runTransaction(async tx => {
       const snap = await tx.get(ref);

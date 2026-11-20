@@ -112,7 +112,13 @@ async function onCallback(cq: any) {
   await ref.update({ status: "denied", deniedAt: Date.now() });
   await db().collection("audit_logs").add({ timestamp: admin.firestore.Timestamp.now(), action: "LOGIN_DENIED_SIGNOUT_ALL", actorUid: uid, ip: ev.ip, device: ev.device, at: ev.at }).catch(() => {});
   await answer("Все сеансы завершены");
-  await sendTelegram(chatId, "Все сеансы завершены 🔒", `Вход ${ev.device} · IP ${ev.ip || "—"} · ${timeText(ev.at)} отклонён. На всех устройствах нужно войти заново. Смените пароль: профиль → «Безопасность».`, "/login");
+  // Ссылка на смену пароля — прямо в сообщении: человек под угрозой не ищет, где её сделать.
+  let resetUrl = "";
+  try {
+    const email = (await admin.auth().getUser(uid)).email;
+    if (email) resetUrl = await admin.auth().generatePasswordResetLink(email);
+  } catch (e) { console.error("[telegram] reset link:", e); }
+  await sendTelegram(chatId, "Все сеансы завершены 🔒", `Вход ${ev.device} · IP ${ev.ip || "—"} · ${timeText(ev.at)} отклонён. На всех устройствах нужно войти заново.${resetUrl ? " Смените пароль по кнопке ниже." : " Смените пароль: на странице входа → «Забыли пароль»."}`, "/login", resetUrl ? [[{ text: "Сменить пароль", url: resetUrl }]] : []);
 }
 
 export default router;

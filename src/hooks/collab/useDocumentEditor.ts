@@ -124,8 +124,22 @@ export function useDocumentEditor(tenantId: string, docId: string | undefined) {
 
   const current = () => docRef.current?.blocks || [];
 
+  // Набор текста пишется в историю не на каждую букву, а «кусками»: пауза
+  // в секунду или переход в другой блок — новый шаг отмены. Иначе отмена
+  // откатывала бы весь набранный текст к самому началу.
+  const typingRef = useRef<{ blockId: string; ts: number } | null>(null);
   const updateBlock = useCallback((blockId: string, content: string) => {
-    setBlocks(current().map(b => (b.id === blockId ? { ...b, content } : b)), false);
+    const now = Date.now();
+    const t = typingRef.current;
+    const chunk = t && t.blockId === blockId && now - t.ts < 1000;
+    typingRef.current = { blockId, ts: now };
+    const next = current().map(b => (b.id === blockId ? { ...b, content } : b));
+    if (chunk) {
+      historyRef.current[historyIdxRef.current] = clone(next);
+      setBlocks(next, false);
+    } else {
+      setBlocks(next, true);
+    }
   }, [setBlocks]);
 
   const updateBlockStyle = useCallback((blockId: string, styleUpdates: Partial<DocBlock>) => {
@@ -189,6 +203,7 @@ export function useDocumentEditor(tenantId: string, docId: string | undefined) {
 
   const undo = useCallback(() => {
     if (historyIdxRef.current > 0) {
+      typingRef.current = null;
       historyIdxRef.current -= 1;
       setBlocks(clone(historyRef.current[historyIdxRef.current]), false);
     }
@@ -196,6 +211,7 @@ export function useDocumentEditor(tenantId: string, docId: string | undefined) {
 
   const redo = useCallback(() => {
     if (historyIdxRef.current < historyRef.current.length - 1) {
+      typingRef.current = null;
       historyIdxRef.current += 1;
       setBlocks(clone(historyRef.current[historyIdxRef.current]), false);
     }

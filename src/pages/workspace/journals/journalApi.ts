@@ -18,7 +18,7 @@ export function useJournalApi(tenantId: string) {
 
 export interface JournalListItem {
   id: string; title: string; description: string; templateKey?: string;
-  columnCount: number; updatedAt: number; role: JournalRole;
+  columnCount: number; updatedAt: number; role: JournalRole; archivedAt?: number;
 }
 
 export interface Employee { uid: string; name: string; email: string }

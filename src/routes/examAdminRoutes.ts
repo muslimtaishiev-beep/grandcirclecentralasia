@@ -196,7 +196,7 @@ router.get("/:tenantId/exams/:id", ...viewOrApplicant("exam"), checkIds, async (
     if (!exam) return fail(res, 404, "Экзамен не найден");
     const bank = await bankFor(t, exam.sections.map(s => s.disciplineId));
     const plans = Object.fromEntries(exam.sections.map(s => [s.id, sectionPlan(s, bank)]));
-    return res.json({ success: true, exam, plans, pin: req.viaAdmission ? "" : pinNow(exam), canEdit: req.canEdit && !exam.archived, canReview: req.canReview, archived: !!exam.archived });
+    return res.json({ success: true, exam, plans, pin: req.viaAdmission ? "" : pinNow(exam), canEdit: req.canEdit && !exam.archived, canReview: req.canReview, canManage: !!req.canEdit, archived: !!exam.archived });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
@@ -330,7 +330,7 @@ router.get("/:tenantId/live", ...view, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const snap = await col(t, "exam_attempts").where("status", "==", "in_progress")
-      .select("examId", "examTitle", "shortId", "student.name", "student.level", "startedAt", "current", "sections", "applicantId", "refNo", "proctoring.totalViolations").get();
+      .select("examId", "examTitle", "shortId", "student.name", "student.level", "startedAt", "current", "sections", "applicantId", "refNo", "proctoring.totalViolations", "proctoring.bySeverity", "proctoring.recent").get();
     const now = Date.now();
     // Брошенные работы с вышедшим временем досдаются сразу: у них появляется
     // результат, приёмная получает уведомление, а в «Сейчас» они не висят.
@@ -353,13 +353,14 @@ router.get("/:tenantId/live", ...view, async (req: any, res: any) => {
         id: d.id, examId: x.examId, examTitle: x.examTitle, shortId: x.shortId, name: x.student?.name || "", level: x.student?.level || "",
         startedAt: x.startedAt, section: cur?.title || "", sectionNo: (x.current || 0) + 1, sectionCount: (x.sections || []).length,
         deadline: cur?.deadline || null, waitingStart: !!cur && !cur.deadline,
-        applicantId: x.applicantId || null, refNo: x.refNo || null, violations: x.proctoring?.totalViolations || 0,
+        applicantId: x.applicantId || null, refNo: x.refNo || null, violations: x.proctoring?.totalViolations || 0, highViolations: x.proctoring?.bySeverity?.HIGH || 0,
+        lastViolation: (x.proctoring?.recent || []).slice(-1)[0]?.description || "",
       };
     })
       // Брошенные давно (время вышло больше часа назад) — не «сейчас»: их досдаст открытие списка работ.
       .filter(r => !r.deadline || r.deadline > now - 60 * 60_000)
       .sort((a, b) => (a.deadline || Infinity) - (b.deadline || Infinity));
-    return res.json({ success: true, live, now });
+    return res.json({ success: true, live, now, canReview: !!req.canReview });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 

@@ -132,6 +132,11 @@ class CrmService {
     return ref.id;
   }
 
+  /** Воронки нет — создаём стартовую (этапы из DEFAULT_STAGES), чтобы «Сделки» не висели пустыми. */
+  async ensureDefaultPipeline(tenantId: string, author: Author) {
+    return this.savePipeline(tenantId, { name: 'Воронка продаж', stages: DEFAULT_STAGES, currency: DEFAULT_CURRENCY, isDefault: true }, author);
+  }
+
   async setDefaultPipeline(tenantId: string, pipelines: CrmPipeline[], id: string) {
     const batch = writeBatch(db);
     for (const p of pipelines) if (p.isDefault !== (p.id === id)) batch.update(doc(db, 'tenants', tenantId, 'crm_pipelines', p.id), { isDefault: p.id === id });
@@ -228,7 +233,9 @@ class CrmService {
   }
 
   /** Окончательно — только из архива. */
-  async deleteContact(tenantId: string, id: string, name: string, author: Author) {
+  async deleteContact(tenantId: string, id: string, name: string, author: Author, type?: string) {
+    // Доступ сотрудника снимается только в «Роли и доступы»; карточку-сотрудника здесь не стираем.
+    if (type === 'employee') throw new Error('Карточка сотрудника не удаляется из CRM');
     await deleteDoc(doc(db, 'crm_contacts', id));
     try { await deleteDoc(doc(db, 'tenants', tenantId, 'crm_contacts', id)); } catch { /* нет копии */ }
     const batch = writeBatch(db);

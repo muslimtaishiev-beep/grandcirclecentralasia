@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from "react";
 import { Navigate, useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
+import { PageHeader, Tabs, useUrlTab } from "../../../components/ui";
 import { canAdmissions, canExamsAdmin, resolvePermissions, type PermissionKey } from "../../../shared/permissions";
 import BankTab from "./BankTab";
 import ExamsListTab from "./ExamsListTab";
-import ArchiveTab from "./ArchiveTab";
+import ArchiveHub from "./ArchiveHub";
+import WorksTab from "./WorksTab";
 import LiveTab from "./LiveTab";
 import { gradeOf } from "../../../shared/questionnaires";
 import type { ExamListItem } from "./examApi";
@@ -16,7 +18,8 @@ import { useAdmissionApi } from "../admissions/admissionApi";
  * прежнего теста. Поступающие — в своём разделе «Приём»; прежние адреса
  * (?tab=admissions, ?side=psych) переводятся туда.
  */
-const TABS = [["list", "Экзамены"], ["live", "Сейчас"], ["bank", "Банк вопросов"], ["archive", "Архив прежнего теста"]] as const;
+const TABS = [["list", "Экзамены"], ["live", "Сейчас"], ["works", "Работы"], ["bank", "Банк вопросов"], ["archive", "Архив"]] as const;
+const TAB_IDS = TABS.map(t => t[0]);
 
 export default function ExamsPage() {
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
@@ -45,7 +48,7 @@ export default function ExamsPage() {
   const tests = canExamsAdmin(granted), reception = admissionsOn && granted.has("admission:manage");
   const tabs = TABS.filter(() => tests);
   const admForLive = reception || granted.has("psych:view") ? admApi : null;
-  const tab = (tabs.find(t => t[0] === params.get("tab"))?.[0] || "list") as (typeof TABS)[number][0];
+  const [tab, setTab] = useUrlTab<(typeof TABS)[number][0]>("tab", TAB_IDS, "list");
   // Прежние адреса поступающих и те, у кого нет прав на экзамены, — в «Приём».
   if (tenantId && (params.get("tab") === "admissions" || params.get("side") === "psych" || (!tests && admissionsOn))) {
     const q = new URLSearchParams(params); q.delete("tab");
@@ -53,21 +56,14 @@ export default function ExamsPage() {
   }
   return (
     <div className="space-y-4 max-w-[1600px] mx-auto">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="flex-1 text-xl md:text-2xl font-bold text-[var(--text-main)]">Экзамены</h1>
-      </div>
+      <PageHeader title="Экзамены" className="!mb-0" tabs={<Tabs value={tab} onChange={t => setTab(t as typeof tab)} tabs={tabs.map(([id, label]) => ({ id, label }))} />} />
       {(
         <>
-          <div className="flex gap-1 border-b border-[var(--border-color)] overflow-x-auto hide-scrollbar">
-            {tabs.map(([k, l]) => (
-              <button key={k} onClick={() => setParams(k === "list" ? {} : { tab: k }, { replace: true })}
-                className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 -mb-px ${tab === k ? "border-[var(--accent)] text-[var(--accent)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-main)]"}`}>{l}</button>
-            ))}
-          </div>
           {tenantId && tab === "list" && <ExamsListTab api={adminApi} tenantId={tenantId} onNewApplicant={reception ? (grade, examId) => setNewApplicant({ grade, examId }) : undefined} />}
           {tenantId && tab === "live" && <LiveTab api={adminApi} admApi={admissionsOn ? admForLive : null} tenant={activeTenant} />}
+          {tenantId && tab === "works" && <WorksTab api={adminApi} tenant={activeTenant} />}
           {tenantId && tab === "bank" && <BankTab api={bankApi} />}
-          {tenantId && tab === "archive" && <ArchiveTab api={adminApi} />}
+          {tenantId && tab === "archive" && <ArchiveHub api={adminApi} bankApi={bankApi} tenantId={tenantId} />}
         </>
       )}
       {newApplicant && (

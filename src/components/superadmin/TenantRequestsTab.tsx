@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Check, X, Building, Mail, Phone, Clock } from "lucide-react";
 import { auth } from "../../lib/firebase";
+import { confirmDialog, toast } from "../ui";
 
 /**
  * Both endpoints here are behind requireFirebaseAuth + requireSuperAdmin, so
@@ -73,7 +74,12 @@ export function TenantRequestsTab() {
   };
 
   const handleAction = async (id: string, action: "approve" | "reject", suggestedSub?: string) => {
-    if (!window.confirm(`Are you sure you want to ${action} this request?`)) return;
+    const ok = await confirmDialog({
+      title: action === "approve" ? "Одобрить заявку?" : "Отклонить заявку?",
+      confirmLabel: action === "approve" ? "Одобрить" : "Отклонить",
+      danger: action === "reject",
+    });
+    if (!ok) return;
 
     setProcessingId(id);
     try {
@@ -86,27 +92,28 @@ export function TenantRequestsTab() {
         body: JSON.stringify({
           action,
           subdomain: action === "approve" ? (subdomains[id] || suggestedSub || "") : undefined,
-          rejectReason: action === "reject" ? "Rejected by SuperAdmin" : undefined,
+          rejectReason: action === "reject" ? "Отклонено администратором платформы" : undefined,
         })
       });
       const data = await res.json();
       if (data.success) {
-        setRequests(requests.map(req => req.id === id ? { ...req, status: action === "approve" ? "approved" : "rejected" } : req));
+        setRequests(prev => prev.map(req => req.id === id ? { ...req, status: action === "approve" ? "approved" : "rejected", ...(action === "approve" ? { outcome: { tenantId: data.tenantId, subdomain: data.subdomain, ownerEmail: data.ownerEmail, inviteEmailSent: data.inviteEmailSent } } : {}) } : req));
+        toast.success(action === "approve" ? "Организация создана" : "Заявка отклонена");
         // Адреса новой организации — суперадмин сразу шлёт их школе.
         if (action === "approve" && data.urls) setApproved(prev => ({ ...prev, [id]: data }));
       } else {
-        alert(data.error || "Action failed");
+        toast.error(data.error || "Не удалось выполнить действие");
       }
     } catch (e) {
       console.error(e);
-      alert("Network error");
+      toast.error("Ошибка сети");
     } finally {
       setProcessingId(null);
     }
   };
 
   if (loading) {
-    return <div className="p-6 text-[#888888] font-mono text-xs">Loading requests...</div>;
+    return <div className="p-6 text-[#888888] font-mono text-xs">Загрузка заявок...</div>;
   }
 
   const pendingRequests = requests.filter(r => r.status === "pending");
@@ -115,8 +122,8 @@ export function TenantRequestsTab() {
   return (
     <div className="bg-[#0a0a0a] border border-[#333333] rounded-lg p-6 space-y-6">
       <div>
-        <h3 className="text-sm font-bold text-[#ffffff]">Organization Join Requests</h3>
-        <p className="text-xs text-[#888888] mt-0.5">Approve or reject new schools applying for the platform</p>
+        <h3 className="text-sm font-bold text-[#ffffff]">Заявки организаций</h3>
+        <p className="text-xs text-[#888888] mt-0.5">Новые организации, подавшие заявку</p>
       </div>
 
       {error && (
@@ -127,11 +134,11 @@ export function TenantRequestsTab() {
 
       {pendingRequests.length === 0 ? (
         <div className="bg-[#111111] border border-[#222222] rounded-md p-8 text-center text-[#666666] font-mono text-xs">
-          No pending requests
+          Новых заявок нет
         </div>
       ) : (
         <div className="space-y-4">
-          <h4 className="text-xs font-bold text-[#ffffff] uppercase font-mono tracking-wider">Pending ({pendingRequests.length})</h4>
+          <h4 className="text-xs font-bold text-[#ffffff] uppercase font-mono tracking-wider">Ожидают ({pendingRequests.length})</h4>
           {pendingRequests.map(req => (
             <div key={req.id} className="bg-[#111111] border border-[#f5a623]/30 rounded-md p-4 flex flex-col sm:flex-row justify-between gap-4">
               <div className="space-y-2">
@@ -142,7 +149,7 @@ export function TenantRequestsTab() {
                 <div className="text-xs text-[#888888] flex flex-col gap-1">
                   <div className="flex items-center gap-1.5"><Mail className="w-3 h-3"/> {req.contactEmail}</div>
                   {req.contactPhone && <div className="flex items-center gap-1.5"><Phone className="w-3 h-3"/> {req.contactPhone}</div>}
-                  <div className="flex items-center gap-1.5"><Clock className="w-3 h-3"/> Requested: {new Date(req.requestedAt?.seconds ? req.requestedAt.seconds * 1000 : Date.now()).toLocaleString()}</div>
+                  <div className="flex items-center gap-1.5"><Clock className="w-3 h-3"/> Подана: {new Date(req.requestedAt?.seconds ? req.requestedAt.seconds * 1000 : Date.now()).toLocaleString()}</div>
                 </div>
                 {req.description && (
                   <div className="text-xs text-[#aaaaaa] mt-2 bg-[#222222] p-2 rounded">
@@ -169,7 +176,7 @@ export function TenantRequestsTab() {
                   className="bg-[#112211] hover:bg-[#224422] text-[#50e3c2] border border-[#224422] px-3 py-1.5 rounded transition flex items-center gap-1.5 text-xs font-bold disabled:opacity-50 cursor-pointer"
                 >
                   <Check className="w-3.5 h-3.5" />
-                  Approve
+                  Одобрить
                 </button>
                 <button
                   onClick={() => handleAction(req.id, "reject")}
@@ -177,25 +184,9 @@ export function TenantRequestsTab() {
                   className="bg-[#221111] hover:bg-[#442222] text-[#ff4444] border border-[#442222] px-3 py-1.5 rounded transition flex items-center gap-1.5 text-xs font-bold disabled:opacity-50 cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
-                  Reject
+                  Отклонить
                 </button>
                 </div>
-                {approved[req.id]?.urls && (
-                  <div className="bg-[#112211] border border-[#224422] rounded p-2 text-[11px] font-mono text-[#50e3c2] space-y-0.5">
-                    <div>✓ Создано: {approved[req.id].tenantId}</div>
-                    <div className={approved[req.id].inviteEmailSent ? "" : "text-[#f5a623]"}>
-                      {approved[req.id].inviteEmailSent
-                        ? `✉ Письмо для входа отправлено: ${approved[req.id].ownerEmail}`
-                        : `⚠ Письмо не отправлено — пришлите владельцу сброс пароля вручную`}
-                    </div>
-                    <div>Экзамены: {approved[req.id].urls.directory}</div>
-                    <div>Воркспейс: {approved[req.id].urls.workspace}</div>
-                    {/* Субдомен записан в организацию, но адрес заработает
-                        только после переноса DNS домена на Vercel (wildcard).
-                        Пока живём директориями — их и показываем школе. */}
-                    <div className="text-[#557755]">Субдомен (после настройки DNS): {approved[req.id].urls.site}</div>
-                  </div>
-                )}
               </div>
             </div>
           ))}
@@ -204,17 +195,33 @@ export function TenantRequestsTab() {
 
       {processedRequests.length > 0 && (
         <div className="space-y-4 pt-6 border-t border-[#222222]">
-          <h4 className="text-xs font-bold text-[#ffffff] uppercase font-mono tracking-wider">Processed</h4>
+          <h4 className="text-xs font-bold text-[#ffffff] uppercase font-mono tracking-wider">Обработанные</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {processedRequests.map(req => (
               <div key={req.id} className="bg-[#111111] border border-[#222222] rounded-md p-4 space-y-2 opacity-70">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-xs text-[#ffffff]">{req.organizationName}</span>
                   <span className={`text-[10px] uppercase font-mono px-1.5 py-0.5 rounded ${req.status === "approved" ? "bg-[#112211] text-[#50e3c2]" : "bg-[#221111] text-[#ff4444]"}`}>
-                    {req.status}
+                    {req.status === "approved" ? "Одобрена" : "Отклонена"}
                   </span>
                 </div>
                 <div className="text-[11px] text-[#888888]">{req.contactEmail}</div>
+                {req.status === "approved" && (req.outcome || approved[req.id]) && (
+                  <div className="bg-[#112211] border border-[#224422] rounded p-2 text-[11px] font-mono text-[#50e3c2] space-y-0.5 break-all">
+                    <div>Организация: {req.outcome?.tenantId || approved[req.id]?.tenantId}</div>
+                    <div className={(req.outcome?.inviteEmailSent ?? approved[req.id]?.inviteEmailSent) ? "" : "text-[#f5a623]"}>
+                      {(req.outcome?.inviteEmailSent ?? approved[req.id]?.inviteEmailSent)
+                        ? `Письмо владельцу отправлено: ${req.outcome?.ownerEmail || approved[req.id]?.ownerEmail}`
+                        : "Письмо не отправлено"}
+                    </div>
+                    {approved[req.id]?.inviteLink && (
+                      <button onClick={() => { navigator.clipboard.writeText(approved[req.id].inviteLink); toast.success("Ссылка скопирована"); }}
+                        className="underline cursor-pointer">Скопировать ссылку для входа владельца</button>
+                    )}
+                    <a href={`/workspace/${req.outcome?.tenantId || approved[req.id]?.tenantId}`} target="_blank" rel="noreferrer" className="underline block">Открыть кабинет</a>
+                  </div>
+                )}
+                {req.status === "rejected" && req.rejectReason && <div className="text-[11px] text-[#888888]">{req.rejectReason}</div>}
               </div>
             ))}
           </div>

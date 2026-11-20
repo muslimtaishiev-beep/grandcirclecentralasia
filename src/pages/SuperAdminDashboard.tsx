@@ -41,8 +41,10 @@ import { collection, onSnapshot, updateDoc, doc, query, orderBy, limit, where, g
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { db, auth } from "../lib/firebase";
 import { TenantRequestsTab } from "../components/superadmin/TenantRequestsTab";
+import { PlatformAdminsTab } from "../components/superadmin/PlatformAdminsTab";
+import { UiFeedbackProvider, useUrlTab } from "../components/ui";
 import { ORG_MODULES, WORKSPACE_SCREENS, NON_HIDEABLE_SCREENS } from "../shared/permissions";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 
 interface OrganizationProject {
   id: string;
@@ -155,26 +157,6 @@ export default function SuperAdminDashboard() {
     setIsAuthenticated(false);
   };
 
-  const [isOptimizing, setIsOptimizing] = useState(false);
-  const handleOptimizeDb = async () => {
-    if (isOptimizing) return;
-    setIsOptimizing(true);
-    const tid = toast.loading("Оптимизация БД...");
-    try {
-      const res = await fetch("/api/admin/db/optimize", { method: "POST", headers: { "Content-Type": "application/json" } });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        toast.success(`БД оптимизирована: ${data.results.updatedSubmissions} submissions, ${data.results.updatedDeals} deals updated.`, { id: tid });
-      } else {
-        throw new Error(data.error);
-      }
-    } catch(e: any) {
-      toast.error(`Ошибка оптимизации: ${e.message}`, { id: tid });
-    } finally {
-      setIsOptimizing(false);
-    }
-  };
-
   const [projects, setProjects] = useState<OrganizationProject[]>([]);
   const [liveSessions, setLiveSessions] = useState<any[]>([]);
   const [logs, setLogs] = useState<VercelSystemLog[]>([]);
@@ -182,7 +164,8 @@ export default function SuperAdminDashboard() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [logsError, setLogsError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<"projects" | "deployments" | "logs" | "storage" | "flags" | "settings" | "requests">("projects");
+  const [activeTab, setActiveTab] = useUrlTab<"projects" | "deployments" | "logs" | "storage" | "flags" | "settings" | "requests" | "admins">(
+    "tab", ["projects", "deployments", "logs", "storage", "flags", "settings", "requests", "admins"] as const, "projects");
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
 
@@ -291,7 +274,7 @@ export default function SuperAdminDashboard() {
     }, () => {});
 
     // 3. Fetch Maintenance status
-    fetch("/api/public/maintenance")
+    fetch("/api/superadmin/maintenance")
       .then(res => res.json())
       .then(data => {
         if (data) {
@@ -357,13 +340,9 @@ export default function SuperAdminDashboard() {
     setMaintenanceSuccess(false);
     try {
       setMaintenanceEnabled(enabledState);
-      const token = localStorage.getItem("admin_token") || sessionStorage.getItem("admin_token") || "";
-      const res = await fetch("/api/admin/maintenance", {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
+      const res = await fetch("/api/superadmin/maintenance", {
+        method: "PUT",
+        headers: await superHeaders(),
         body: JSON.stringify({
           enabled: enabledState,
           message: maintenanceMessage,
@@ -373,9 +352,13 @@ export default function SuperAdminDashboard() {
       if (res.ok) {
         setMaintenanceSuccess(true);
         setTimeout(() => setMaintenanceSuccess(false), 3000);
+      } else {
+        setMaintenanceEnabled(!enabledState);
+        toast.error("Не удалось сохранить режим техработ");
       }
     } catch (e) {
-      console.error("Failed to update maintenance mode", e);
+      setMaintenanceEnabled(!enabledState);
+      toast.error("Не удалось сохранить режим техработ");
     } finally {
       setIsSavingMaintenance(false);
     }
@@ -542,10 +525,10 @@ export default function SuperAdminDashboard() {
           setGeneratedPasswordShow(customPassword);
         }
       } else {
-        alert(data.error || "Ошибка при назначении руководителя");
+        toast.error(data.error || "Ошибка при назначении руководителя");
       }
     } catch (err: any) {
-      alert(err.message || "Ошибка соединения с сервером");
+      toast.error(err.message || "Ошибка соединения с сервером");
     } finally {
       setIsAssigningDirector(false);
     }
@@ -637,7 +620,7 @@ export default function SuperAdminDashboard() {
 
   return (
     <div className="min-h-dvh bg-[#000000] text-[#ededed] font-sans antialiased selection:bg-[#fff] selection:text-[#000]">
-      <Toaster position="top-right" />
+      <UiFeedbackProvider />
       
       {/* ── HEADER ── */}
       <header className="border-b border-[#333333] bg-[#000000] sticky top-0 z-40">
@@ -657,13 +640,6 @@ export default function SuperAdminDashboard() {
 
           <div className="flex items-center gap-3 text-xs">
             <button
-              onClick={handleOptimizeDb}
-              disabled={isOptimizing}
-              className={`flex items-center gap-1.5 text-xs text-[#50e3c2] hover:text-[#70f3d2] bg-[#112222] border border-[#224444] px-3 py-1.5 rounded transition font-medium ${isOptimizing ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-            >
-              <Database className="w-3.5 h-3.5" /> Optimize DB
-            </button>
-            <button
               onClick={handleAdminLogout}
               className="flex items-center gap-1.5 text-xs text-[#ff6666] hover:text-[#ff8888] bg-[#221111] border border-[#442222] px-3 py-1.5 rounded transition font-medium cursor-pointer"
             >
@@ -682,13 +658,14 @@ export default function SuperAdminDashboard() {
             { id: "storage", label: "Хранилище", icon: Database },
             { id: "flags", label: "Флаги Прокторинга", icon: Sliders },
             { id: "settings", label: "API Ключи", icon: Settings },
+            { id: "admins", label: "Суперадмины", icon: Shield },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => setActiveTab(tab.id as typeof activeTab)}
                 className={`py-2.5 border-b-2 flex items-center gap-2 transition whitespace-nowrap cursor-pointer ${
                   isActive 
                     ? "border-[#ffffff] text-[#ffffff] font-semibold" 
@@ -849,7 +826,7 @@ export default function SuperAdminDashboard() {
                         <span>Управлять</span>
                       </button>
                       <a
-                        href={`/workspace/${project.slug}`}
+                        href={`/workspace/${project.id}`}
                         target="_blank"
                         rel="noreferrer"
                         className="p-2 bg-[#1a1a1a] hover:bg-[#262626] text-[#ededed] rounded-lg transition flex items-center justify-center border border-[#333333]"
@@ -925,6 +902,7 @@ export default function SuperAdminDashboard() {
 
         {/* ── TAB: REQUESTS ── */}
         {activeTab === "requests" && <TenantRequestsTab />}
+        {activeTab === "admins" && <PlatformAdminsTab />}
 
         {/* ── TAB 3: LOGS ── */}
         {activeTab === "logs" && (
@@ -1130,7 +1108,7 @@ export default function SuperAdminDashboard() {
                     <h3 className="text-xs font-bold text-[#888888] uppercase tracking-wider font-mono">Переход в модули организации</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <a
-                        href={`/workspace/${selectedOrgModal.slug}`}
+                        href={`/workspace/${selectedOrgModal.id}`}
                         target="_blank"
                         rel="noreferrer"
                         className="p-4 bg-[#111111] hover:bg-[#1a1a1a] border border-[#222222] hover:border-[#9F7AEA] rounded-xl transition flex items-center gap-3 group"
@@ -1145,7 +1123,7 @@ export default function SuperAdminDashboard() {
                       </a>
 
                       <a
-                        href={`/workspace/${selectedOrgModal.slug}/builder`}
+                        href={`/workspace/${selectedOrgModal.id}/builder`}
                         target="_blank"
                         rel="noreferrer"
                         className="p-4 bg-[#111111] hover:bg-[#1a1a1a] border border-[#222222] hover:border-[#50e3c2] rounded-xl transition flex items-center gap-3 group"
@@ -1175,7 +1153,7 @@ export default function SuperAdminDashboard() {
                       </a>
 
                       <a
-                        href={`/workspace/${selectedOrgModal.slug}/settings`}
+                        href={`/workspace/${selectedOrgModal.id}/settings`}
                         target="_blank"
                         rel="noreferrer"
                         className="p-4 bg-[#111111] hover:bg-[#1a1a1a] border border-[#222222] hover:border-amber-400 rounded-xl transition flex items-center gap-3 group"

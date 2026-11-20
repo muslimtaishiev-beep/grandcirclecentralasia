@@ -1,29 +1,59 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { Modal } from "../journals/components/ui";
+import { Button, Spinner, toast } from "../../../components/ui";
+import type { Api } from "./admissionApi";
 
-/** Что произошло — подписи событий истории поступающего. */
+/** Что произошло — подписи событий истории поступающего и раздела. */
 export const AUDIT: Record<string, string> = {
-  created: "Карточка создана", edited: "Изменена карточка", deleted: "Карточка удалена", viewed: "Открыл анкеты с данными о здоровье",
+  created: "Карточка создана", edited: "Изменена карточка", deleted: "Карточка удалена навсегда", archived: "Карточка убрана в архив", restored: "Карточка возвращена из архива",
+  viewed: "Открыл анкеты с данными о здоровье",
   parent_form_started: "Начата анкета родителя", parent_form: "Родитель заполнил анкету",
-  form_started: "Начата сессия", form_done: "Анкета завершена", form_reopened: "Анкета открыта для правки", form_edited: "Изменена завершённая анкета",
-  referral_issued: "Направлен на тест", referral_changed: "Направление изменено", referral_manual: "Направление выдано вручную", referral_revoked: "Направление снято",
+  form_started: "Начата анкета", form_done: "Анкета завершена", form_reopened: "Анкета открыта для правки", form_edited: "Изменена завершённая анкета", form_reset: "Анкета сброшена",
+  referral_issued: "Направлен на тест", referral_changed: "Направление изменено", referral_manual: "Направление выдано вручную", referral_revoked: "Направление снято", referral_restored: "Направление возвращено",
   referral_emailed: "Направление отправлено на почту", email_sent: "Письмо отправлено", email_failed: "Письмо не ушло",
   test_started: "Начал тест", test_section: "Закончил часть теста", tested: "Тест сдан", attempt: "Работа",
   paper_results: "Внесены результаты на бумаге", paper_deleted: "Удалены результаты на бумаге",
   candidate: "Изменена анкета кандидата", decision: "Решение", feedback: "Обратная связь", relink: "Перевыпущен QR",
+  template_created: "Создана анкета", template_edited: "Изменена анкета", template_copied: "Анкета скопирована", template_archived: "Анкета убрана в архив", template_restored: "Анкета возвращена из архива", template_deleted: "Анкета удалена",
+  candidate_form_edited: "Изменён вид анкеты кандидата", settings_edited: "Изменены письма родителю",
 };
 
+const KINDS: [string, string][] = [["", "Все"], ["forms", "Анкеты"], ["referral", "Направление"], ["test", "Тест"], ["decision", "Решение"], ["email", "Письма"], ["card", "Карточка"], ["views", "Просмотры"]];
 interface Entry { action: string; detail?: string; byName?: string; at: number; changes?: { label: string; from: string; to: string }[] }
 
-export default function HistoryModal({ entries, onClose }: { entries: Entry[]; onClose: () => void }) {
-  const list = [...entries].sort((a, b) => b.at - a.at);
+/** История: по 100 записей, «Ещё» подгружает прежние; scope «section» — история раздела (анкеты, удаления). */
+export default function HistoryModal({ api, applicantId, scope = "card", onClose }: { api: Api; applicantId?: string; scope?: "card" | "section"; onClose: () => void }) {
+  const [list, setList] = useState<Entry[]>([]);
+  const [more, setMore] = useState(false);
+  const [kind, setKind] = useState("");
+  const [loading, setLoading] = useState(true);
+  const base = scope === "section" ? "/history" : `/applicants/${applicantId}/history`;
+  const load = useCallback(async (before?: number, k = kind) => {
+    setLoading(true);
+    try {
+      const q = new URLSearchParams();
+      if (before) q.set("before", String(before));
+      if (k && scope === "card") q.set("kind", k);
+      const j = await api(`${base}${q.size ? `?${q}` : ""}`);
+      setList(prev => (before ? [...prev, ...j.items] : j.items)); setMore(!!j.more);
+    } catch (e: any) { toast.error(e.message); } finally { setLoading(false); }
+  }, [api, base, kind, scope]);
+  useEffect(() => { void load(undefined, kind); }, [kind]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <Modal title="История" onClose={onClose} wide>
+    <Modal title={scope === "section" ? "История раздела" : "История"} onClose={onClose} wide>
+      {scope === "card" && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {KINDS.map(([k, l]) => <button key={k} type="button" onClick={() => setKind(k)} aria-pressed={kind === k}
+            className={`px-3 py-1 rounded-full text-xs font-medium border ${kind === k ? "bg-[var(--accent)] border-[var(--accent)] text-white" : "border-[var(--border-color)] text-[var(--text-main)]"}`}>{l}</button>)}
+        </div>
+      )}
       <ul className="text-sm divide-y divide-[var(--border-color)]">
-        {list.map((x, k) => <Row key={k} x={x} />)}
-        {!list.length && <li className="py-6 text-center text-[var(--text-muted)]">Пока пусто</li>}
+        {list.map((x, k) => <Row key={`${x.at}_${k}`} x={x} />)}
+        {!list.length && !loading && <li className="py-6 text-center text-[var(--text-muted)]">Пока пусто</li>}
       </ul>
+      {loading && <Spinner />}
+      {more && !loading && <div className="pt-3 flex justify-center"><Button onClick={() => void load(list[list.length - 1]?.at)}>Ещё</Button></div>}
     </Modal>
   );
 }

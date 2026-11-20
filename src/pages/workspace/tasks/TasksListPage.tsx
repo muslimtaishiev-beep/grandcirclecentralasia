@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useOutletContext, Link } from 'react-router-dom';
 import { useTaskManager } from '../../../hooks/useTaskManager';
-import { WorkspaceTask } from '../../../types/tasks';
+import { useTenantAccess } from '../../../hooks/useCrmPerms';
+import { statusTitle, priorityTitle } from './components/taskLabels';
 import { Plus, List, LayoutGrid } from 'lucide-react';
 import TaskFiltersToolbar from './components/TaskFiltersToolbar';
 import CreateTaskModal from './components/CreateTaskModal';
@@ -9,8 +10,10 @@ import TaskModal from './components/TaskModal';
 
 export default function TasksListPage() {
   const { activeTenant } = useOutletContext<any>();
-  const { tasks, filters, setFilters } = useTaskManager(activeTenant?.id);
-  const [selectedTask, setSelectedTask] = useState<WorkspaceTask | null>(null);
+  const { tasks, allTasks, members, nameOf, filters, setFilters } = useTaskManager(activeTenant?.id);
+  const { isAdmin, uid } = useTenantAccess();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedTask = allTasks.find(t => t.id === selectedId) || null;
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   return (
@@ -27,7 +30,7 @@ export default function TasksListPage() {
         </div>
         
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-between md:justify-end">
-          <TaskFiltersToolbar filters={filters} onFilterChange={setFilters} />
+          <TaskFiltersToolbar filters={filters} onFilterChange={setFilters} members={members} />
           <button 
             onClick={() => setIsCreateOpen(true)}
             className="flex items-center gap-2 bg-[var(--accent)] text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md hover:brightness-110 transition shrink-0 cursor-pointer"
@@ -45,6 +48,7 @@ export default function TasksListPage() {
                 <th className="px-6 py-4 font-bold">Название</th>
                 <th className="px-6 py-4 font-bold">Статус</th>
                 <th className="px-6 py-4 font-bold">Приоритет</th>
+                <th className="px-6 py-4 font-bold">Исполнитель</th>
                 <th className="px-6 py-4 font-bold">Прогресс</th>
                 <th className="px-6 py-4 font-bold text-right">Дедлайн</th>
               </tr>
@@ -52,7 +56,7 @@ export default function TasksListPage() {
             <tbody className="divide-y divide-[var(--border-color)]">
               {tasks.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-sm font-medium text-[var(--text-muted)]">
+                  <td colSpan={6} className="px-6 py-8 text-center text-sm font-medium text-[var(--text-muted)]">
                     Задачи не найдены
                   </td>
                 </tr>
@@ -60,20 +64,21 @@ export default function TasksListPage() {
                 const completed = task.subtasks?.filter(s => s.isCompleted).length || 0;
                 const total = task.subtasks?.length || 0;
                 return (
-                  <tr key={task.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition cursor-pointer" onClick={() => setSelectedTask(task)}>
+                  <tr key={task.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition cursor-pointer" onClick={() => setSelectedId(task.id)}>
                     <td className="px-6 py-4">
                       <div className="font-bold text-sm text-[var(--text-main)] line-clamp-1">{task.title}</div>
                     </td>
                     <td className="px-6 py-4">
                       <span className="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                        {task.status}
+                        {statusTitle(task.status)}
                       </span>
                     </td>
                     <td className="px-6 py-4">
                       <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                        {task.priority}
+                        {priorityTitle(task.priority)}
                       </span>
                     </td>
+                    <td className="px-6 py-4 text-sm text-[var(--text-muted)]">{(task.assigneeStaffIds || []).map(nameOf).join(', ') || '—'}</td>
                     <td className="px-6 py-4">
                       {total > 0 ? (
                         <div className="flex items-center gap-2">
@@ -88,7 +93,7 @@ export default function TasksListPage() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <span className="text-sm font-medium text-[var(--text-muted)]">
-                        {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : '—'}
+                        {task.dueDate ? new Date(task.dueDate).toLocaleDateString('ru-RU') : '—'}
                       </span>
                     </td>
                   </tr>
@@ -99,8 +104,8 @@ export default function TasksListPage() {
         </div>
       </div>
 
-      <TaskModal isOpen={!!selectedTask} onClose={() => setSelectedTask(null)} task={selectedTask || undefined} />
-      <CreateTaskModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} tenantId={activeTenant?.id} />
+      {selectedTask && <TaskModal task={selectedTask} members={members} nameOf={nameOf} isAdmin={isAdmin} onClose={() => setSelectedId(null)} />}
+      {isCreateOpen && <CreateTaskModal onClose={() => setIsCreateOpen(false)} tenantId={activeTenant?.id} members={members} defaultAssigneeId={uid} />}
     </div>
   );
 }

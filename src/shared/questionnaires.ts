@@ -6,7 +6,7 @@ import { describeWhen, evalWhen, sanitizeWhen, UNKNOWN, type CondField, type Con
  *
  * Анкета — шаблон из блоков и пунктов. Кто её заполняет и кто видит целиком,
  * задаётся правами в самом шаблоне (fillPermission / viewPermission), а не в
- * коде: психологическая диагностика, собеседование с завучем или анкета
+ * коде: диагностика, собеседование с завучем или анкета
  * родителя — один механизм, меняется в настройках.
  *
  * Пункт может зависеть от класса ребёнка: виден не всем классам (grades),
@@ -233,7 +233,7 @@ export function metricValue(n: QNorm, m: Record<string, number | null> | undefin
 
 /**
  * Подсказка оценки по нормам класса. null — норм для класса нет или цифры
- * не введены. Решает психолог: подсказка не ставится сама.
+ * не введены. Решает специалист: подсказка не ставится сама.
  */
 export function suggestRating(i: QItem, g: number | null, m: Record<string, number | null> | undefined): { level: Level; value: number; norm: QNorm } | null {
   const n = normFor(i, g);

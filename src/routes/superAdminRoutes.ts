@@ -3,6 +3,9 @@ import admin from "firebase-admin";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { WORKSPACE_SCREENS, NON_HIDEABLE_SCREENS, normalizeTenantStatus } from "../shared/permissions.js";
 import { invalidateTenant } from "../server/tenantAccess.js";
+import { provisionTenant, ProvisionError } from "../server/provisionTenant.js";
+import { syncClaims } from "../server/claims.js";
+import { forgetAccount } from "../server/session.js";
 
 const router = Router();
 
@@ -130,176 +133,60 @@ router.post("/tenant-requests/:id", requireFirebaseAuth, requireSuperAdmin, asyn
     }
 
     if (action === "approve") {
-      // Субдомен задаёт суперадмин при одобрении; без него — из названия.
-      //
-      // Раньше id был случайным (org_a7f3k2m9), писалось поле slug, которое
-      // никто в коде не читает, и НЕ писался subdomain — а резолвер доменов
-      // ищет именно по subdomain. Организация создавалась, но ни её адрес
-      // <sub>.studyfreeforum.com, ни директория /org_.../ не работали никогда.
-      const rawSub = String(req.body?.subdomain || requestData.organizationName || "")
-        .toLowerCase()
-        .replace(/[^a-z0-9-]+/g, "-")
-        .replace(/(^-|-$)+/g, "")
-        .slice(0, 40);
-      if (!rawSub || rawSub.length < 3) {
-        return res.status(400).json({
-          success: false,
-          error: "Субдомен должен быть от 3 символов: латиница, цифры, дефис",
+      // Создание — общий provisionTenant(): не затирает существующую организацию,
+      // пишет членство владельца с userId и воронку CRM по умолчанию.
+      let r;
+      try {
+        r = await provisionTenant(db, {
+          name: requestData.organizationName,
+          subdomain: String(req.body?.subdomain || requestData.organizationName || ""),
+          ownerEmail: String(req.body?.ownerEmail || requestData.contactEmail || ""),
+          phone: requestData.contactPhone || "",
+          actorUid: uid,
         });
-      }
-      const RESERVED = new Set(["www", "app", "admin", "api", "mail", "staging", "dev", "studyfreeforum"]);
-      if (RESERVED.has(rawSub)) {
-        return res.status(400).json({ success: false, error: `Субдомен «${rawSub}» зарезервирован` });
-      }
-
-      // Читаемый id из субдомена: /org_oxford_school/placement вместо
-      // /org_a7f3k2m9/... — эти адреса печатают на афишах и диктуют по телефону.
-      const tenantId = `org_${rawSub.replace(/-/g, "_")}`;
-
-      // Занятость — и по id, и по субдомену: у старых организаций id и
-      // subdomain могут не совпадать.
-      const [idTaken, subTaken] = await Promise.all([
-        db.collection("tenants").doc(tenantId).get(),
-        db.collection("tenants").where("subdomain", "==", rawSub).limit(1).get(),
-      ]);
-      if (idTaken.exists || !subTaken.empty) {
-        return res.status(409).json({ success: false, error: `Субдомен «${rawSub}» уже занят` });
+      } catch (e: any) {
+        if (e instanceof ProvisionError) return res.status(e.status).json({ success: false, error: e.message });
+        throw e;
       }
 
-      const newTenant = {
-        id: tenantId,
-        // Формат документа — тот же, что у TenantProvisioningService: два пути
-        // создания обязаны давать совместимые организации, иначе у половины
-        // тенантов не работают модули и биллинг.
-        slug: rawSub,
-        subdomain: rawSub,
-        name: requestData.organizationName,
-        tierId: "starter",
-        // Разделы регулируются platformDisabledScreens (суперадмин) и
-        // disabledScreens/disabledModules (организация); список enabledModules
-        // никто не читает и больше не пишется.
-        platformDisabledScreens: [],
-        ownerEmail: requestData.contactEmail || "",
-        // Новой организации при первом входе владельца показывается быстрая
-        // настройка: вид деятельности, терминология, поля расписания.
-        // Существующих организаций флаг не касается — у них его просто нет.
-        needsWorkspaceSetup: true,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        status: "active",
-        branding: {
-          logoUrl: null,
-          primaryColor: "#000000",
-          loginMessage: null
-        },
-        settings: {
-          maxStudents: 50,
-          allowedDomains: [],
-          proctoringEnabled: false,
-          storageProvider: "firebase_storage",
-          gasUrl: null,
-          gasApiKey: null
-        },
-        contacts: {
-          // Пустые строки, не undefined: Firestore отказывается писать
-          // документ с undefined, а телефон в заявке необязателен.
-          email: requestData.contactEmail || "",
-          phone: requestData.contactPhone || ""
-        }
+      // Итог остаётся в заявке: после перезагрузки суперадмин его видит.
+      const outcome = {
+        tenantId: r.tenantId, subdomain: r.subdomain, ownerEmail: r.ownerEmail, inviteEmailSent: r.inviteEmailSent,
       };
-
-      await db.collection("tenants").doc(tenantId).set(newTenant);
-
-      // Биллинг-поддокумент: TierLimitEnforcer без него откатывается на
-      // дефолты и лимиты считаются неверно (зеркало TenantProvisioningService).
-      await db.collection("tenants").doc(tenantId)
-        .collection("billing").doc("subscription").set({
-          tierId: "starter", status: "active",
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-
-      // Аккаунт владельца и письмо-приглашение.
-      //
-      // Firebase сам писем не шлёт: создание пользователя через Admin SDK —
-      // тихая операция, а generatePasswordResetLink только возвращает ссылку.
-      // Раньше заявку часто подавали без регистрации, requestedByUserId был
-      // пуст, членство записывалось с userId: undefined — и владелец
-      // одобренной организации не мог войти вообще: ни аккаунта, ни письма.
-      let ownerUid = requestData.requestedByUserId || "";
-      let inviteEmailSent = false;
-      const ownerEmail = String(requestData.contactEmail || "").trim().toLowerCase();
-      if (ownerEmail) {
-        try {
-          let ownerUser;
-          try {
-            ownerUser = await admin.auth().getUserByEmail(ownerEmail);
-          } catch {
-            ownerUser = await admin.auth().createUser({ email: ownerEmail, emailVerified: false });
-          }
-          ownerUid = ownerUser.uid;
-
-          // Письмо «установите пароль» — через REST sendOobCode: только этот
-          // путь реально отправляет почту силами Firebase. Для уже
-          // существующего аккаунта это обычный сброс пароля — тоже уместно.
-          const apiKey = process.env.VITE_FIREBASE_API_KEY || "AIzaSyBefuNSd2j9CJJ92EWcg0am9s3zBSSHS4Y";
-          const oob = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`, {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ requestType: "PASSWORD_RESET", email: ownerEmail }),
-          });
-          inviteEmailSent = oob.ok;
-        } catch (e: any) {
-          // Организация важнее письма: если почтовый шаг упал, одобрение всё
-          // равно проходит, а суперадмин видит в ответе, что письмо не ушло.
-          console.error("[approve] не удалось создать владельца/отправить письмо:", e?.message);
-        }
-      }
-
-      if (ownerUid) {
-        const membershipId = `mem_${ownerUid}_${tenantId}`;
-        await db.collection("memberships").doc(membershipId).set({
-          id: membershipId,
-          userId: ownerUid,
-          tenantId: tenantId,
-          role: "org:owner",
-          status: "active",
-          invitedBy: uid,
-          joinedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-      }
-
       await requestRef.update({
         status: "approved",
         reviewedBy: uid,
+        reviewedByEmail: req.user.email || "",
         reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+        tenantId: r.tenantId,
+        outcome,
       });
 
-      // Record Audit Log
       await recordAuditLog(db, {
         userId: uid,
         userEmail: req.user.email,
         action: "TENANT_APPROVE",
-        target: tenantId,
+        target: r.tenantId,
         details: `Approved organization: ${requestData.organizationName}`,
         ip: req.ip
       });
 
       return res.json({
-        success: true, message: "Tenant approved and created", tenantId,
-        subdomain: rawSub,
-        inviteEmailSent,
-        ownerEmail,
+        success: true, message: "Tenant approved and created",
+        ...outcome,
+        ...(r.inviteLink ? { inviteLink: r.inviteLink } : {}),
         urls: {
-          site: `https://${rawSub}.studyfreeforum.com`,
-          directory: `/${tenantId}/admission`,
-          workspace: `/workspace/${tenantId}`,
+          site: `https://${r.subdomain}.studyfreeforum.com`,
+          directory: `/${r.tenantId}/admission`,
+          workspace: `/workspace/${r.tenantId}`,
         },
       });
     } else {
       await requestRef.update({
         status: "rejected",
-        rejectReason: rejectReason || "No reason provided",
+        rejectReason: String(rejectReason || "Причина не указана").slice(0, 500),
         reviewedBy: uid,
+        reviewedByEmail: req.user.email || "",
         reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -395,6 +282,94 @@ router.put("/tenants/:id/proctoring", requireFirebaseAuth, requireSuperAdmin, as
     return res.json({ success: true, proctoringEnabled: patch.proctoringEnabled, proctoringFlags: patch.proctoringFlags });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ─────────────────── Режим техработ ───────────────────
+
+const MAINT_DEFAULT = { enabled: false, message: "Идут плановые технические работы. Доступ будет восстановлен в ближайшее время.", estimatedTime: "30 минут" };
+let maintCache: { at: number; v: any } | null = null;
+
+/** Режим техработ хранится в Firestore (system/maintenance): виден всем экземплярам сервера. */
+export async function readMaintenance(): Promise<any> {
+  if (maintCache && Date.now() - maintCache.at < 10_000) return maintCache.v;
+  let v: any = { ...MAINT_DEFAULT, updatedAt: null };
+  try {
+    const d = await admin.firestore().collection("system").doc("maintenance").get();
+    if (d.exists) v = { ...MAINT_DEFAULT, ...d.data() };
+  } catch (e: any) { console.error("[maintenance] read:", e?.message); }
+  maintCache = { at: Date.now(), v };
+  return v;
+}
+
+export async function writeMaintenance(b: any, uid: string): Promise<any> {
+  const v = {
+    enabled: b?.enabled === true,
+    message: String(b?.message || MAINT_DEFAULT.message).slice(0, 500),
+    estimatedTime: String(b?.estimatedTime || MAINT_DEFAULT.estimatedTime).slice(0, 60),
+    updatedAt: new Date().toISOString(),
+    updatedBy: uid,
+  };
+  await admin.firestore().collection("system").doc("maintenance").set(v);
+  maintCache = { at: Date.now(), v };
+  return v;
+}
+
+// GET /api/superadmin/maintenance — открыто: страницу техработ видят все
+router.get("/maintenance", async (_req: any, res: any) => {
+  const { updatedBy, ...pub } = await readMaintenance();
+  res.set("Cache-Control", "no-store");
+  return res.json(pub);
+});
+
+// PUT /api/superadmin/maintenance — { enabled, message, estimatedTime }
+router.put("/maintenance", requireFirebaseAuth, requireSuperAdmin, async (req: any, res: any) => {
+  try {
+    const v = await writeMaintenance(req.body, req.user.uid);
+    await recordAuditLog(admin.firestore(), {
+      userId: req.user.uid, userEmail: req.user.email, action: v.enabled ? "MAINTENANCE_ON" : "MAINTENANCE_OFF",
+      target: "system", details: v.message, ip: req.ip,
+    });
+    return res.json({ success: true, maintenance: v });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: "Не удалось сохранить режим техработ" });
+  }
+});
+
+// ─────────────────── Администраторы платформы ───────────────────
+
+// GET /api/superadmin/admins
+router.get("/admins", requireFirebaseAuth, requireSuperAdmin, async (req: any, res: any) => {
+  try {
+    const snap = await admin.firestore().collection("superadmins").get();
+    const admins = await Promise.all(snap.docs.map(async d => {
+      let email = String(d.data()?.email || ""), name = "";
+      try { const u = await admin.auth().getUser(d.id); email = u.email || email; name = u.displayName || ""; } catch { /* аккаунта нет */ }
+      return { uid: d.id, email, name, self: d.id === req.user.uid };
+    }));
+    return res.json({ success: true, admins });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: "Не удалось загрузить список" });
+  }
+});
+
+// DELETE /api/superadmin/admins/:uid — снять права суперадмина (себя — нельзя)
+router.delete("/admins/:uid", requireFirebaseAuth, requireSuperAdmin, async (req: any, res: any) => {
+  try {
+    const target = String(req.params.uid);
+    if (target === req.user.uid) return res.status(400).json({ success: false, error: "Нельзя снять права с самого себя" });
+    const db = admin.firestore();
+    const ref = db.collection("superadmins").doc(target);
+    if (!(await ref.get()).exists) return res.status(404).json({ success: false, error: "Не суперадмин" });
+    await ref.delete();
+    forgetAccount(target);
+    try { await syncClaims(db, target); } catch (e: any) { console.error("[admins] claims:", e?.message); }
+    await recordAuditLog(db, {
+      userId: req.user.uid, userEmail: req.user.email, action: "SUPERADMIN_REVOKE", target, details: "Снят суперадмин", ip: req.ip,
+    });
+    return res.json({ success: true });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: "Не удалось снять права" });
   }
 });
 

@@ -4,6 +4,7 @@ import { SheetCellData } from '../../../../types/collab';
 interface Props {
   id: string;
   data?: SheetCellData;
+  readOnly?: boolean;
   isActive: boolean;
   isEditing: boolean;
   onClick: () => void;
@@ -12,23 +13,30 @@ interface Props {
   onKeyDown: (e: React.KeyboardEvent) => void;
 }
 
-export default function SheetCell({ id, data, isActive, isEditing, onClick, onDoubleClick, onChange, onKeyDown }: Props) {
+export default function SheetCell({ id, data, readOnly, isActive, isEditing, onClick, onDoubleClick, onChange, onKeyDown }: Props) {
   const [editVal, setEditVal] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Значение для правки берём один раз — при входе в правку. Правка коллеги
+  // в этой же ячейке не должна затирать то, что человек уже печатает.
+  const rawRef = useRef('');
+  const doneRef = useRef(false);
+  const commit = () => { if (doneRef.current) return; doneRef.current = true; onChange(editVal); };
+  rawRef.current = data?.rawValue || '';
   useEffect(() => {
-    if (isEditing && isActive) {
-      setEditVal(data?.rawValue || '');
+    if (isEditing && isActive && !readOnly) {
+      doneRef.current = false;
+      setEditVal(rawRef.current);
       setTimeout(() => inputRef.current?.focus(), 0);
     }
-  }, [isEditing, isActive, data]);
+  }, [isEditing, isActive, readOnly]);
 
   const displayVal = data?.computedValue || data?.rawValue || '';
   let formattedVal = displayVal;
   
-  if (data?.style?.format === 'currency' && !isNaN(Number(displayVal))) {
-    formattedVal = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'USD' }).format(Number(displayVal));
-  } else if (data?.style?.format === 'percent' && !isNaN(Number(displayVal))) {
+  if (data?.style?.format === 'currency' && displayVal !== '' && !isNaN(Number(displayVal))) {
+    formattedVal = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(displayVal));
+  } else if (data?.style?.format === 'percent' && displayVal !== '' && !isNaN(Number(displayVal))) {
     formattedVal = `${Number(displayVal)}%`;
   }
 
@@ -49,14 +57,18 @@ export default function SheetCell({ id, data, isActive, isEditing, onClick, onDo
       onDoubleClick={onDoubleClick}
       style={{ minWidth: 100 }} // Assuming default width
     >
-      {isEditing && isActive ? (
+      {isEditing && isActive && !readOnly ? (
         <input 
           ref={inputRef}
           type="text"
           value={editVal}
           onChange={e => setEditVal(e.target.value)}
-          onKeyDown={onKeyDown}
-          onBlur={() => onChange(editVal)}
+          onKeyDown={e => {
+            if (e.key === 'Escape') { doneRef.current = true; onChange(rawRef.current); return; }
+            if (e.key === 'Enter' || e.key === 'Tab') { commit(); }
+            onKeyDown(e);
+          }}
+          onBlur={commit}
           className="absolute inset-0 w-full h-full px-2 bg-[var(--bg-surface)] text-[var(--text-main)] outline outline-2 outline-emerald-500 text-sm font-mono z-20"
         />
       ) : (

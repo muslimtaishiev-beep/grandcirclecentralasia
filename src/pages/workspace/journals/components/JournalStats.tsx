@@ -103,7 +103,7 @@ function Leaderboard({ rows, who, noShow }: { rows: LeaderRow[]; who: string; no
   return (
     <div className={`${card} p-4`}>
       <h4 className="font-semibold text-sm text-[var(--text-main)] mb-1 flex items-center gap-1.5"><Trophy className="w-4 h-4 text-amber-500" /> Лидерборд не отработанных</h4>
-      <p className="text-xs text-[var(--text-muted)] mb-3">Больше всего незакрытых записей, затем просроченных{noShow ? ` и «${noShow.toLowerCase()}»` : ""}. Всего: {rows.length}.</p>
+      <div className="text-xs text-[var(--text-muted)] mb-3">Всего: {rows.length}</div>
       <div className="overflow-x-auto -mx-4 px-4">
         <table className="w-full text-sm min-w-[520px]">
           <thead className="text-[11px] uppercase font-mono text-[var(--text-muted)]">

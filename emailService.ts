@@ -1,4 +1,4 @@
-import { sendMail } from "./src/server/mail.js";
+import { sendLogged } from "./src/server/mailLog.js";
 import { appUrl } from "./src/server/emailEvents.js";
 
 
@@ -46,6 +46,8 @@ ${signature ? `<p style="margin:0 0 8px;font-size:13px;line-height:20px;color:#4
 }
 
 interface TestResultEmailParams {
+  /** Организация: письмо уйдёт с её ящика (если подключён) и попадёт в журнал писем. */
+  tenantId?: string;
   email?: TenantEmailSettings;
   to: string;
   studentName: string;
@@ -101,7 +103,8 @@ export async function sendTestResultEmail(params: TestResultEmailParams): Promis
     </p>`;
 
   try {
-    return await sendMail({
+    return await sendLogged({
+      tenantId: params.tenantId, kind: "result", label: studentName,
       fromName: params.email?.fromName || tenantName || "Приёмная комиссия",
       replyTo: params.email?.replyTo,
       to: params.to,
@@ -114,6 +117,7 @@ export async function sendTestResultEmail(params: TestResultEmailParams): Promis
 }
 
 interface StaffInviteEmailParams {
+  tenantId?: string;
   email?: TenantEmailSettings;
   to: string;
   fullName: string;
@@ -157,7 +161,8 @@ export async function sendStaffInviteEmail(params: StaffInviteEmailParams): Prom
     </p>`;
 
   try {
-    return await sendMail({
+    return await sendLogged({
+      tenantId: params.tenantId, kind: "invite", label: fullName,
       fromName: params.email?.fromName || tenantName || "Образовательная платформа",
       replyTo: params.email?.replyTo,
       to: params.to,
@@ -170,6 +175,7 @@ export async function sendStaffInviteEmail(params: StaffInviteEmailParams): Prom
 }
 
 export interface FormTicketEmailParams {
+  tenantId?: string;
   email?: TenantEmailSettings;
   to: string;
   applicantName: string;
@@ -234,7 +240,8 @@ export async function sendFormTicketEmail(params: FormTicketEmailParams): Promis
     </p>`;
 
   try {
-    return await sendMail({
+    return await sendLogged({
+      tenantId: params.tenantId, kind: "ticket", label: applicantName || eventTitle,
       fromName: params.email?.fromName || eventTitle || "Билетная система",
       replyTo: params.email?.replyTo,
       to: params.to,

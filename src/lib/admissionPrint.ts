@@ -55,7 +55,7 @@ export function openHtml(html: string): boolean {
 }
 
 /** Направление на тест: QR ведёт ученика в его тест (сотрудника — в карточку). */
-export async function referralHTML(org: PrintOrg, c: PrintChild, o: { token: string; examTitle: string; psychName: string; outcome: string }) {
+export async function referralHTML(org: PrintOrg, c: PrintChild, o: { token: string; examTitle: string; specialistName: string; outcome: string }) {
   const url = linkUrl(o.token);
   const big = await qr(url);
   return page(`Направление ${no(c.refNo)}`, `<div class="sheet">
@@ -71,7 +71,7 @@ export async function referralHTML(org: PrintOrg, c: PrintChild, o: { token: str
       <p>3. Введите PIN, который назовёт организатор.</p>
       <p class="hint">Номер поступающего: <b>${no(c.refNo)}</b>. Не передавайте направление другим.</p>
     </div></div>
-    <div class="sign"><span>Специалист: ${esc(o.psychName)} ______________</span><span>${esc(today())}</span></div>
+    <div class="sign"><span>Специалист: ${esc(o.specialistName)} ______________</span><span>${esc(today())}</span></div>
   </div>`);
 }
 
@@ -101,7 +101,7 @@ export async function parentHTML(org: PrintOrg, c: PrintChild, o: { parentToken:
   </div>`);
 }
 
-/** Бланк психолога для записей на сессии — под класс ребёнка, с QR карточки. */
+/** Бланк специалиста для записей на встрече — под класс ребёнка, с QR карточки. */
 export async function staffBlankHTML(org: PrintOrg, c: PrintChild, o: { cardToken: string; template: QTemplate; grade: number | null }) {
   const body = visibleSections(o.template, o.grade).map(s => {
     const ratings = s.items.filter(i => i.kind === "rating");
@@ -121,7 +121,7 @@ export async function staffBlankHTML(org: PrintOrg, c: PrintChild, o: { cardToke
 /**
  * Бланк сессии, заполненный: те же графы, что на бумажном бланке, с
  * отметками, цифрами проб, комментариями и заключением. Его скачивает
- * администрация, чтобы не просить психолога печатать.
+ * администрация, чтобы не просить специалиста печатать.
  */
 export async function sessionSheet(org: PrintOrg, c: PrintChild, o: { cardToken: string; template: QTemplate; grade: number | null; answers: QAnswers; outcome: string | null; byName: string; at: number | null }) {
   const t = o.template;

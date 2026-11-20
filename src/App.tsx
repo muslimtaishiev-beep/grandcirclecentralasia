@@ -15,7 +15,7 @@ const AdminCMS = lazy(() => import("./components/AdminCMS"));
 const SubscriptionBillingDashboard = React.lazy(() => import('./pages/workspace/billing/SubscriptionBillingDashboard'));
 const GlobalWatermarks = lazy(() => import("./components/GlobalWatermarks"));
 const MetricsCarousel = lazy(() => import("./components/MetricsCarousel").then(m => ({ default: m.MetricsCarousel })));
-import { Routes, Route, useLocation, useNavigate, useParams, Link, Navigate } from "react-router-dom";
+import { Routes, Route, useLocation, useNavigate, useParams, useSearchParams, Link, Navigate } from "react-router-dom";
 
 // New Pages
 const Login = lazy(() => import("./pages/Login"));
@@ -42,6 +42,11 @@ const TicketScanner = lazy(() => import("./pages/workspace/tickets/TicketScanner
 const WorkspaceSetupPage = lazy(() => import("./pages/workspace/settings/WorkspaceSetupPage"));
 const EmailTemplatesPage = lazy(() => import("./pages/workspace/settings/EmailTemplatesPage"));
 import RequirePermission from "./components/workspace/RequirePermission";
+const AdminOverview = lazy(() => import("./pages/workspace/admin/OverviewPage"));
+const AdminStaff = lazy(() => import("./pages/workspace/admin/StaffPage"));
+const AdminStaffCard = lazy(() => import("./pages/workspace/admin/StaffCard"));
+const AdminAudit = lazy(() => import("./pages/workspace/admin/AuditPage"));
+const AdminIntegrations = lazy(() => import("./pages/workspace/admin/IntegrationsPage"));
 const RolesAndAccess = lazy(() => import("./pages/workspace/settings/RolesAndAccess"));
 const FunctionStudio = lazy(() => import("./pages/workspace/functions/FunctionStudio"));
 const QrTracker = lazy(() => import("./pages/public/QrTracker"));
@@ -97,6 +102,17 @@ import { GlobalTooltip } from "./components/ui/GlobalTooltip";
 
 /** Страницы, где нужен подвал сайта форума (LEAD+ Forum). */
 const FORUM_FOOTER_PATHS = new Set(["/", "/privacy", "/terms"]);
+
+/** Старые ссылки exams?tab=admissions / ?side=psych → «Приём». Срабатывает до проверки прав на «Экзамены»: у сотрудника приёма их может не быть. */
+function LegacyAdmissionsRedirect({ children }: { children: React.ReactNode }) {
+  const { orgId } = useParams();
+  const [params] = useSearchParams();
+  if (orgId && (params.get("tab") === "admissions" || params.get("side") === "psych")) {
+    const q = new URLSearchParams(params); q.delete("tab");
+    return <Navigate to={`/workspace/${orgId}/admissions${q.toString() ? `?${q}` : ""}`} replace />;
+  }
+  return <>{children}</>;
+}
 
 /** Старые адреса тестов и среза в кабинете → «Экзамены» этой организации. */
 function ToExams() {
@@ -293,9 +309,9 @@ export default function App() {
           <Route path="/form/:formId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Формы Заявки"><PublicForm /></GracefulErrorBoundary>} />
           
           <Route path="/workspace" element={<ProtectedRoute><WorkspaceLayout /></ProtectedRoute>}>
-            <Route index element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
-            <Route path=":orgId" element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
-            <Route path=":orgId/dashboard" element={<GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary>} />
+            <Route index element={<RequirePermission navKey="dashboard"><GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId" element={<RequirePermission navKey="dashboard"><GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/dashboard" element={<RequirePermission navKey="dashboard"><GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/profile" element={<GracefulErrorBoundary fallbackTitle="Ошибка Профиля"><Suspense fallback={null}><ProfilePage /></Suspense></GracefulErrorBoundary>} />
             <Route path=":orgId/settings" element={<RequirePermission navKey="workspaceSetup"><GracefulErrorBoundary fallbackTitle="Ошибка Настроек"><WorkspaceSettings /></GracefulErrorBoundary></RequirePermission>} />
             {/* Роли и права сведены в один экран /settings/roles. Старые
@@ -304,13 +320,18 @@ export default function App() {
             <Route path=":orgId/settings/permissions" element={<Navigate to="../roles" relative="path" replace />} />
             <Route path=":orgId/settings/permission-matrix" element={<Navigate to="../roles" relative="path" replace />} />
             <Route path=":orgId/settings/roles" element={<GracefulErrorBoundary fallbackTitle="Ошибка Ролей"><RequirePermission navKey="permissions"><RolesAndAccess /></RequirePermission></GracefulErrorBoundary>} />
+            <Route path=":orgId/admin" element={<RequirePermission navKey="adminOverview"><GracefulErrorBoundary fallbackTitle="Ошибка обзора"><Suspense fallback={null}><AdminOverview /></Suspense></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/admin/staff" element={<RequirePermission navKey="staff"><GracefulErrorBoundary fallbackTitle="Ошибка списка сотрудников"><Suspense fallback={null}><AdminStaff /></Suspense></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/admin/staff/:uid" element={<RequirePermission navKey="staff"><GracefulErrorBoundary fallbackTitle="Ошибка карточки сотрудника"><Suspense fallback={null}><AdminStaffCard /></Suspense></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/admin/audit" element={<RequirePermission navKey="audit"><GracefulErrorBoundary fallbackTitle="Ошибка журнала"><Suspense fallback={null}><AdminAudit /></Suspense></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/admin/integrations" element={<RequirePermission navKey="integrations"><GracefulErrorBoundary fallbackTitle="Ошибка интеграций"><Suspense fallback={null}><AdminIntegrations /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/settings/workspace" element={<RequirePermission navKey="workspaceSetup"><GracefulErrorBoundary fallbackTitle="Ошибка Настроек Воркспейса"><WorkspaceSetupPage /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/settings/emails" element={<RequirePermission navKey="emailTemplates"><GracefulErrorBoundary fallbackTitle="Ошибка Шаблонов писем"><EmailTemplatesPage /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/settings/departments" element={<RequirePermission navKey="departments"><GracefulErrorBoundary fallbackTitle="Ошибка Оргструктуры"><OrgStructure /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/settings/templates" element={<RequirePermission navKey="docs"><GracefulErrorBoundary fallbackTitle="Ошибка Шаблонов"><DocumentTemplates /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/builder" element={<RequirePermission navKey="builder" devOnly><GracefulErrorBoundary fallbackTitle="Ошибка Конструктора"><WorkspaceBuilder /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/builder/forms" element={<RequirePermission navKey="forms"><GracefulErrorBoundary fallbackTitle="Ошибка Конструктора Заявок"><FormBuilder /></GracefulErrorBoundary></RequirePermission>} />
-            <Route path=":orgId/exams" element={<RequirePermission navKey="exams"><GracefulErrorBoundary fallbackTitle="Ошибка Экзаменов"><ExamsPage /></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/exams" element={<LegacyAdmissionsRedirect><RequirePermission navKey="exams"><GracefulErrorBoundary fallbackTitle="Ошибка Экзаменов"><ExamsPage /></GracefulErrorBoundary></RequirePermission></LegacyAdmissionsRedirect>} />
             <Route path=":orgId/exams/:examId" element={<RequirePermission navKey="exams"><GracefulErrorBoundary fallbackTitle="Ошибка Экзамена"><ExamDetailPage /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/journals" element={<RequirePermission navKey="journals"><GracefulErrorBoundary fallbackTitle="Ошибка Журналов"><JournalsListPage /></GracefulErrorBoundary></RequirePermission>} />
             {/* «Поступающие» живут во вкладке «Психолог» раздела «Экзамены»; старый адрес ведёт туда. */}

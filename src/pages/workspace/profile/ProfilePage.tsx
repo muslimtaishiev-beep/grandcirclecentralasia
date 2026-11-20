@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Loader2, LogOut, MonitorSmartphone, ShieldCheck } from "lucide-react";
-import { signOut } from "firebase/auth";
+import { KeyRound, Loader2, LogOut, MonitorSmartphone, ShieldCheck } from "lucide-react";
+import { sendPasswordResetEmail, signOut } from "firebase/auth";
 import { auth } from "../../../lib/firebase";
 import { btn, btnPrimary, card, input, label } from "../journals/components/ui";
 import { TelegramIcon } from "../../../components/workspace/TelegramIcon";
 import { useParams } from "react-router-dom";
 import NotifySettings from "./NotifySettings";
+import { Tabs, confirmDialog, toast, useUrlTab } from "../../../components/ui";
 export { TelegramIcon };
 
 /**
@@ -27,8 +28,12 @@ const api = async (path: string, init: RequestInit = {}) => {
 };
 const when = (ms: number) => new Date(ms).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 
+const TABS = [{ id: "profile", label: "Профиль" }, { id: "notify", label: "Уведомления" }, { id: "security", label: "Безопасность" }] as const;
+type TabId = typeof TABS[number]["id"];
+
 export default function ProfilePage() {
   const { orgId } = useParams<{ orgId: string }>();
+  const [tab, setTab] = useUrlTab<TabId>("tab", TABS, "profile");
   const [d, setD] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -67,9 +72,10 @@ export default function ProfilePage() {
           <div className="text-sm text-[var(--text-muted)] truncate">{p.email}</div>
         </div>
       </div>
+      <Tabs tabs={[...TABS]} value={tab} onChange={id => setTab(id as TabId)} />
       {error && <div className="text-sm text-rose-600">{error}</div>}
 
-      <section className={`${card} p-4 space-y-3`}>
+      {tab === "profile" && <section className={`${card} p-4 space-y-3`}>
         <h2 className="font-bold text-[var(--text-main)]">Данные</h2>
         <div className="grid sm:grid-cols-2 gap-3">
           <div><span className={label}>Имя и фамилия</span><input className={input} value={name} onChange={e => setName(e.target.value)} /></div>
@@ -80,9 +86,9 @@ export default function ProfilePage() {
             {busy === "save" && <Loader2 className="w-4 h-4 animate-spin" />} Сохранить
           </button>
         )}
-      </section>
+      </section>}
 
-      {d.telegram.configured && (
+      {tab === "notify" && d.telegram.configured && (
         <section className={`${card} p-4 space-y-3`}>
           <h2 className="font-bold text-[var(--text-main)] flex items-center gap-2"><TelegramIcon /> Telegram</h2>
           {d.telegram.linked ? (
@@ -96,13 +102,12 @@ export default function ProfilePage() {
               {busy === "tg" ? <Loader2 className="w-4 h-4 animate-spin" /> : <TelegramIcon className="w-5 h-5" />} Подключить Telegram
             </button>
           )}
-          <p className="text-xs text-[var(--text-muted)]">Уведомления сайта и оповещения о входе в аккаунт.</p>
         </section>
       )}
 
-      {orgId && <NotifySettings tenantId={orgId} />}
+      {tab === "notify" && orgId && <NotifySettings tenantId={orgId} />}
 
-      <section className={`${card} p-4 space-y-3`}>
+      {tab === "security" && <section className={`${card} p-4 space-y-3`}>
         <h2 className="font-bold text-[var(--text-main)] flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-emerald-600" /> Безопасность</h2>
         <label className="flex items-center gap-2 text-sm text-[var(--text-main)]">
           <input type="checkbox" checked={p.loginAlerts} disabled={busy === "alerts"}
@@ -124,10 +129,17 @@ export default function ProfilePage() {
             {!d.logins.length && <li className="py-2 text-[var(--text-muted)]">Пока нет записей</li>}
           </ul>
         </div>
-        <button className={`${btn} text-rose-600`} disabled={busy === "out"} onClick={() => confirm("Выйти на всех устройствах, включая это? Везде нужно будет войти заново.") && run("out", async () => { await api("/profile/signout-all", { method: "POST" }); await signOut(auth); })}>
-          <LogOut className="w-4 h-4" /> Выйти на всех устройствах
-        </button>
-      </section>
+        <div className="flex flex-wrap gap-2">
+          {p.provider === "password" && (
+            <button className={btn} disabled={busy === "pwd"} onClick={() => run("pwd", async () => { await sendPasswordResetEmail(auth, p.email); toast.success(`Ссылка для смены пароля отправлена на ${p.email}`); })}>
+              <KeyRound className="w-4 h-4" /> Сменить пароль
+            </button>
+          )}
+          <button className={`${btn} text-rose-600`} disabled={busy === "out"} onClick={async () => { if (await confirmDialog({ title: "Выйти на всех устройствах?", message: "Включая это: везде нужно будет войти заново.", confirmLabel: "Выйти", danger: true })) void run("out", async () => { await api("/profile/signout-all", { method: "POST" }); await signOut(auth); }); }}>
+            <LogOut className="w-4 h-4" /> Выйти на всех устройствах
+          </button>
+        </div>
+      </section>}
     </div>
   );
 }

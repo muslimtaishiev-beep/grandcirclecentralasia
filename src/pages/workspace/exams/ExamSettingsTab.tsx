@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, ListChecks, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { DIFFICULTY_LABEL, type Difficulty } from "../../../shared/exams";
 import { REG_PRESETS, type Exam, type ExamSection, type ExamSettings, type RegField, type ScaleBand } from "../../../shared/examRun";
+import { InfoHint, confirmDialog, toast } from "../../../components/ui";
 import { btn, btnPrimary, card, input, label } from "../journals/components/ui";
 import type { Api, DisciplineRow, SetRow } from "./examApi";
 import QuestionPicker from "./QuestionPicker";
@@ -15,8 +16,10 @@ type Plan = { pool: number; have: Record<Difficulty, number>; want: number; shor
  * Конструктор экзамена: дисциплины из банка и все настройки, которые раньше
  * были зашиты в «Тесты» и «Срез», — каждая включается для этого экзамена.
  */
-export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }: {
+export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved, onDirty }: {
   exam: Exam; api: Api; bankApi: Api; canEdit: boolean; onSaved: (e: Exam) => void;
+  /** Родитель знает о несохранённых правках (предупреждение при уходе) и может сохранить их сам. */
+  onDirty?: (dirty: boolean, save: () => Promise<boolean>) => void;
 }) {
   const [title, setTitle] = useState(exam.title);
   const [description, setDescription] = useState(exam.description);
@@ -30,7 +33,6 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
   const [plans, setPlans] = useState<Record<string, Plan>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     bankApi("/disciplines").then(j => setDisciplines(j.disciplines)).catch(() => {});
@@ -54,22 +56,38 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
   const include = (d: DisciplineRow) =>
     setSections(xs => [...xs, { id: `s${Date.now().toString(36)}${xs.length}`, disciplineId: d.code, title: d.name, minutes: 30, mode: "all", levels: [], counts: { 1: 0, 2: 0, 3: 0 }, shuffle: false }]);
   /** Включить / выключить дисциплину одним нажатием. */
-  const toggle = (d: DisciplineRow) => {
+  const toggle = async (d: DisciplineRow) => {
     if (sections.some(s => s.disciplineId === d.code)) {
-      if (!confirm(`Убрать «${d.name}» из экзамена? Её настройки (минуты, классы, сложность) сбросятся.`)) return;
+      if (!(await confirmDialog({ title: `Убрать «${d.name}» из экзамена?`, message: "Настройки раздела сбросятся", confirmLabel: "Убрать", danger: true }))) return;
       setSections(xs => xs.filter(s => s.disciplineId !== d.code));
     } else include(d);
   };
 
-  const save = async () => {
+  const save = async (): Promise<boolean> => {
     setBusy(true); setError(null);
     try {
       const j = await api(`/exams/${exam.id}`, { method: "PUT", body: JSON.stringify({ title, description, group, sections, settings: st }) });
       setSections(j.exam.sections); setSt(j.exam.settings); onSaved(j.exam);
-      setNotice("Сохранено"); setTimeout(() => setNotice(null), 2500);
-    } catch (e: any) { setError(e.message); }
+      toast.success("Сохранено"); dropDraft();
+      return true;
+    } catch (e: any) { setError(e.message); return false; }
     finally { setBusy(false); }
   };
+  // Копия несохранённых правок в браузере: уход по меню или обрыв не стирают работу.
+  const draftKey = `exam_draft_${exam.id}`;
+  const [draft, setDraft] = useState<any>(() => {
+    try { const d = JSON.parse(localStorage.getItem(draftKey) || "null"); return d && d.base === exam.updatedAt ? d : null; } catch { return null; }
+  });
+  useEffect(() => {
+    if (!dirty || draft) return;
+    const t = setTimeout(() => { try { localStorage.setItem(draftKey, JSON.stringify({ base: exam.updatedAt, title, description, group, sections, st })); } catch { /* хранилище недоступно */ } }, 600);
+    return () => clearTimeout(t);
+  }, [dirty, draft, draftKey, exam.updatedAt, title, description, group, sections, st]);
+  const dropDraft = () => { try { localStorage.removeItem(draftKey); } catch { /* недоступно */ } setDraft(null); };
+  const applyDraft = () => { setTitle(draft.title); setDescription(draft.description); setGroup(draft.group); setSections(draft.sections); setSt(draft.st); setDraft(null); };
+  const saveRef = useRef(save); saveRef.current = save;
+  useEffect(() => { onDirty?.(dirty, () => saveRef.current()); }, [dirty, onDirty]);
+  useEffect(() => () => onDirty?.(false, async () => true), [onDirty]);
 
   const totalMinutes = sections.reduce((n, s, i) => n + (i > 0 && s.joinPrev ? 0 : s.minutes), 0);
   const totalQuestions = sections.reduce((n, s) => n + (plans[s.id]?.want ?? 0), 0);
@@ -81,6 +99,13 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
 
   return (
     <fieldset disabled={!canEdit} className="space-y-4 pb-24">
+      {canEdit && draft && dirty === false && (
+        <div className={`${card} p-3 flex flex-wrap items-center gap-2`}>
+          <span className="text-sm text-[var(--text-main)]">Найдены несохранённые правки</span>
+          <button type="button" className={btnPrimary} onClick={applyDraft}>Восстановить</button>
+          <button type="button" className={btn} onClick={dropDraft}>Отбросить</button>
+        </div>
+      )}
       <section className={`${card} p-4 grid sm:grid-cols-3 gap-3`}>
         <div className="sm:col-span-2"><span className={label}>Название</span><input className={input} value={title} onChange={e => setTitle(e.target.value)} /></div>
         <div><span className={label}>Папка</span><input className={input} value={group} onChange={e => setGroup(e.target.value)} placeholder="Вступительные 2027" /></div>
@@ -92,7 +117,6 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
       <section className={`${card} p-4 space-y-3`}>
         <div>
           <h3 className="font-bold text-[var(--text-main)]">Дисциплины из банка</h3>
-          <p className="text-xs text-[var(--text-muted)]">Включите те, что нужны этому экзамену. Новую дисциплину или вопросы добавляют во вкладке «Банк вопросов».</p>
         </div>
         {!disciplines.length && <p className="text-sm text-[var(--text-muted)]">В банке пока нет дисциплин.</p>}
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
@@ -121,7 +145,7 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
         <div className="flex items-end justify-between gap-2">
           <div>
             <h3 className="font-bold text-[var(--text-main)]">Порядок прохождения</h3>
-            <p className="text-xs text-[var(--text-muted)]">{st.paper ? "Тест на бумаге: правильные ответы вносит администрация в карточке поступающего." : `Ученик проходит дисциплины сверху вниз, у каждой свой таймер. Всего: ${totalMinutes} мин, ${totalQuestions} вопросов.`}</p>
+            {!st.paper && <p className="text-xs text-[var(--text-muted)] tabular-nums">{totalMinutes} мин · {totalQuestions} вопр.</p>}
           </div>
           <button className={btn} onClick={addSection} disabled={!disciplines.length} title="Ещё одна часть, например вторая часть той же дисциплины"><Plus className="w-4 h-4" /> Часть</button>
         </div>
@@ -192,7 +216,6 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
               {s.mode === "picked" && (
                 <div className="flex flex-wrap items-center gap-2">
                   <button type="button" className={btnPrimary} onClick={() => setPicking(i)}><ListChecks className="w-4 h-4" /> {(s.questionIds || []).length ? `Отмечено ${(s.questionIds || []).length} — изменить` : "Отметить вопросы"}</button>
-                  <span className="text-[11px] text-[var(--text-muted)]">Ученик получит ровно эти вопросы, в выбранном порядке. Другие экзамены их не затрагивают.</span>
                 </div>
               )}
               {plan && (
@@ -225,7 +248,6 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
             <div><span className={label}>по</span><input type="datetime-local" className={input} value={toLocal(st.access.closesAt)} onChange={e => set("access", { closesAt: fromLocal(e.target.value) })} /></div>
           </div>
           <div className="max-w-[220px]"><span className={label}>Попыток на человека</span><input type="number" min={1} max={20} className={input} value={st.access.maxAttempts} onChange={e => set("access", { maxAttempts: Number(e.target.value) || 1 })} /></div>
-          <p className="text-[11px] text-[var(--text-muted)]">Повторную попытку сверх лимита разрешает менеджер в карточке работы.</p>
         </section>
 
         <section className={`${card} p-4 space-y-3`}>
@@ -247,7 +269,6 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
 
         <section className={`${card} p-4 space-y-2`}>
           <h3 className="font-bold text-[var(--text-main)]">Регистрация ученика</h3>
-          <p className="text-xs text-[var(--text-muted)]">Фамилия и имя — всегда.</p>
           <Check checked={st.registration.phone} onChange={v => set("registration", { phone: v })}>Телефон (по нему узнаём повторную попытку)</Check>
           <Check checked={st.registration.email} onChange={v => set("registration", { email: v })}>Почта</Check>
           <Check checked={st.registration.level} onChange={v => set("registration", { level: v })}>Спросить уровень</Check>
@@ -265,7 +286,7 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
                 <Check key={k} checked={st.proctoring.detectors[k]} onChange={v => set("proctoring", { detectors: { ...st.proctoring.detectors, [k]: v } })}>{l}</Check>
               ))}
               <Check checked={st.proctoring.tabSwitch} onChange={v => set("proctoring", { tabSwitch: v })}>Уход со вкладки — нарушение</Check>
-              <p className="text-[11px] text-[var(--text-muted)]">Без камеры экзамен не прерывается — работа помечается «без наблюдения». На балл прокторинг не влияет.</p>
+              <InfoHint>Без камеры экзамен не прерывается — работа помечается «без наблюдения». На балл прокторинг не влияет.</InfoHint>
             </div>
           )}
         </section>
@@ -315,8 +336,7 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved }
       {canEdit && (
         <div className="fixed bottom-3 left-3 right-3 md:left-auto md:bottom-4 md:right-4 z-40 flex flex-col-reverse md:flex-row items-stretch md:items-center gap-2">
           {error && <div className="text-sm text-rose-600 bg-[var(--bg-surface)] border border-rose-500/30 rounded-lg px-3 py-2 shadow md:max-w-md">{error}</div>}
-          {notice && <div className="text-sm text-emerald-600 bg-[var(--bg-surface)] border border-emerald-500/30 rounded-lg px-3 py-2 shadow">{notice}</div>}
-          {dirty && !notice && <div className="text-sm text-amber-600 bg-[var(--bg-surface)] border border-amber-500/30 rounded-lg px-3 py-2 shadow">Есть несохранённые изменения</div>}
+          {dirty && <div className="text-sm text-amber-600 bg-[var(--bg-surface)] border border-amber-500/30 rounded-lg px-3 py-2 shadow">Есть несохранённые изменения</div>}
           <button className={`${btnPrimary} shadow-lg px-5 py-3 justify-center`} onClick={save} disabled={busy}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Сохранить</button>
         </div>
       )}
@@ -330,7 +350,6 @@ function ScaleEditor({ scale, onChange }: { scale: ScaleBand[]; onChange: (s: Sc
   return (
     <div>
       <span className={label}>Шкала уровней (необязательно)</span>
-      <p className="text-[11px] text-[var(--text-muted)] mb-1.5">Например: от 75% — «Сильный класс», от 45% — «Основной», от 0% — «Подготовительный». Попадает в результаты, сертификат и аналитику.</p>
       {rows.map((r, i) => (
         <div key={i} className="flex items-center gap-2 mb-1">
           <span className="text-xs text-[var(--text-muted)]">от</span>
@@ -352,7 +371,6 @@ function GroupsEditor({ groups, onChange }: { groups: string[]; onChange: (g: st
     <div>
       <span className={label}>Распределение по группам (классам)</span>
       <input className={input} value={text} onChange={e => setText(e.target.value)} onBlur={() => onChange(text.split(/[,;\n]/).map(x => x.trim()).filter(Boolean))} placeholder="7А, 7Б, 7В — пусто: не распределять" />
-      <p className="text-[11px] text-[var(--text-muted)] mt-1">Менеджер назначает группу в карточке работы; в аналитике — сколько в каждой.</p>
     </div>
   );
 }

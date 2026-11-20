@@ -25,6 +25,7 @@ export interface ExamListItem {
   updatedAt: number; opensAt: number | null; closesAt: number | null; total: number; live: number; done: number;
   /** Вступительный: для поступающих в эти классы. */
   grades?: number[]; paper?: boolean;
+  archived?: boolean; archivedAt?: number | null;
 }
 
 export const examLink = (code: string) => `${window.location.origin}/exam/${code}`;

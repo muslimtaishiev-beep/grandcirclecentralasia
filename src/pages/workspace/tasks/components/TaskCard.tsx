@@ -1,11 +1,14 @@
 import React from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { WorkspaceTask } from '../../../../types/tasks';
+import { priorityTitle, initials } from './taskLabels';
 import { CheckSquare, MessageSquare, Clock } from 'lucide-react';
 
 interface Props {
   task: WorkspaceTask;
   onClick: (task: WorkspaceTask) => void;
+  nameOf?: (id: string) => string;
+  draggable?: boolean;
 }
 
 const priorityColors = {
@@ -15,9 +18,10 @@ const priorityColors = {
   urgent: 'bg-red-100 text-red-600'
 };
 
-export default function TaskCard({ task, onClick }: Props) {
+export default function TaskCard({ task, onClick, nameOf, draggable = true }: Props) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
+    disabled: !draggable,
     data: {
       type: 'Task',
       task,
@@ -44,7 +48,7 @@ export default function TaskCard({ task, onClick }: Props) {
     >
       <div className="flex gap-2 mb-3 flex-wrap">
         <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${priorityColors[task.priority]}`}>
-          {task.priority}
+          {priorityTitle(task.priority)}
         </span>
         {task.tags?.map(tag => (
           <span key={tag} className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
@@ -74,7 +78,7 @@ export default function TaskCard({ task, onClick }: Props) {
           {task.dueDate && (
             <div className="flex items-center gap-1 text-orange-500">
               <Clock className="w-3.5 h-3.5" />
-              <span>{new Date(task.dueDate).toLocaleDateString()}</span>
+              <span>{new Date(task.dueDate).toLocaleDateString('ru-RU')}</span>
             </div>
           )}
         </div>
@@ -83,8 +87,8 @@ export default function TaskCard({ task, onClick }: Props) {
         {task.assigneeStaffIds && task.assigneeStaffIds.length > 0 && (
           <div className="flex -space-x-2">
             {task.assigneeStaffIds.slice(0, 3).map((id, i) => (
-              <div key={id} className="w-6 h-6 rounded-full bg-[var(--accent)] text-white flex items-center justify-center text-[10px] font-bold border-2 border-[var(--bg-panel)] z-10">
-                {id.substring(0,2).toUpperCase()}
+              <div key={id} title={nameOf?.(id)} className="w-6 h-6 rounded-full bg-[var(--accent)] text-white flex items-center justify-center text-[10px] font-bold border-2 border-[var(--bg-panel)] z-10">
+                {initials(nameOf ? nameOf(id) : id)}
               </div>
             ))}
           </div>

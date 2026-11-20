@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Copy, Download, KeyRound, Loader2, QrCode, Trash2, UserPlus } from "lucide-react";
+import { ArchiveRestore, ArrowLeft, Copy, Download, KeyRound, Loader2, QrCode, Trash2, UserPlus } from "lucide-react";
+import { Button, Tabs, confirmDialog, toast, useUrlTab } from "../../../components/ui";
+import HistoryTab from "./HistoryTab";
 import FancyQr, { QR_THEMES, downloadQr } from "../../../components/forms/FancyQr";
 import { tenantLogos } from "../../../shared/legal";
 import type { Exam } from "../../../shared/examRun";
@@ -28,12 +30,14 @@ export default function ExamDetailPage() {
   const [canEdit, setCanEdit] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
-  // Ученик из уведомления или QR (?open=) — сразу во вкладке учеников класса.
-  const [tab, setTab] = useState<"students" | "attempts" | "analytics" | "settings">(params.get("open") ? "students" : "attempts");
-  const picked = React.useRef(!!params.get("open"));
+  const [canReview, setCanReview] = useState(false);
+  const [canManage, setCanManage] = useState(false);
+  const [archived, setArchived] = useState(false);
+  /** Правки конструктора, ещё не сохранённые, и способ их сохранить. */
+  const dirtyRef = React.useRef<{ dirty: boolean; save: () => Promise<boolean> }>({ dirty: false, save: async () => true });
+  const onDirty = useCallback((dirty: boolean, save: () => Promise<boolean>) => { dirtyRef.current = { dirty, save }; }, []);
   const [qr, setQr] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [busy, setBusy] = useState(false);
+    const [busy, setBusy] = useState(false);
   const [openAttempt, setOpenAttempt] = useState<string | null>(null);
   const [newApplicant, setNewApplicant] = useState(false);
   const admApi = useAdmissionApi(tenantId);
@@ -44,11 +48,19 @@ export default function ExamDetailPage() {
   /** Вступительный тест класса и права на поступающих — вкладка «Ученики класса». */
   const classGrades = exam?.settings.admission?.grades || [];
   const students = classGrades.length > 0 && canAdmissions(granted);
-  useEffect(() => { if (params.get("open")) { picked.current = true; setTab("students"); } }, [params]);
-  useEffect(() => { if (students && !picked.current) setTab("students"); }, [students]);
+  // Несохранённые правки конструктора: браузер спросит при закрытии и обновлении вкладки.
+  useEffect(() => {
+    const h = (e: BeforeUnloadEvent) => { if (dirtyRef.current.dirty) { e.preventDefault(); e.returnValue = ""; } };
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, []);
+  // Ученик из уведомления или QR (?open=) — сразу во вкладке учеников класса.
+  const defTab = students || params.get("open") ? "students" : exam && !exam.sections.length && canEdit ? "settings" : "attempts";
+  const tabItems = [...(students ? [{ id: "students", label: "Ученики класса" }] : []), { id: "attempts", label: "Работы" }, { id: "analytics", label: "Аналитика" }, { id: "settings", label: "Конструктор" }, { id: "history", label: "История" }];
+  const [tab, setTab] = useUrlTab<"students" | "attempts" | "analytics" | "settings" | "history">("tab", tabItems.map(t => t.id) as any, defTab as any);
 
   const load = useCallback(async () => {
-    try { const j = await api(`/exams/${examId}`); setExam(j.exam); setPin(j.pin); setCanEdit(j.canEdit); if (!j.exam.sections.length) setTab(t => (t === "attempts" ? "settings" : t)); }
+    try { const j = await api(`/exams/${examId}`); setExam(j.exam); setPin(j.pin); setCanEdit(j.canEdit); setCanReview(!!j.canReview); setCanManage(!!j.canManage); setArchived(!!j.archived); }
     catch (e: any) { setError(e.message); }
   }, [api, examId]);
   useEffect(() => { if (tenantId) void load(); }, [load, tenantId]);
@@ -60,15 +72,34 @@ export default function ExamDetailPage() {
   }, [api, examId, exam?.settings.access.pinMode]);
 
   const setStatus = async (status: Exam["status"]) => {
+    // «Открыт» проверяет сохранённые настройки — несохранённые правки сначала сохраняем.
+    if (dirtyRef.current.dirty) {
+      if (!(await confirmDialog({ title: "Есть несохранённые правки конструктора", message: "Сохранить их и сменить статус?", confirmLabel: "Сохранить и продолжить" }))) return;
+      if (!(await dirtyRef.current.save())) return;
+    }
     setBusy(true); setError(null);
     try { const j = await api(`/exams/${examId}`, { method: "PUT", body: JSON.stringify({ status }) }); setExam(j.exam); setPin(j.pin); }
     catch (e: any) { setError(e.message); }
     finally { setBusy(false); }
   };
   const remove = async () => {
-    if (!exam || !confirm(`Удалить экзамен «${exam.title}»? Если по нему уже есть работы, он уйдёт в архив вместе с ними.`)) return;
-    try { await api(`/exams/${examId}`, { method: "DELETE" }); navigate(`/workspace/${tenantId}/exams`); }
-    catch (e: any) { setError(e.message); }
+    if (!exam || !(await confirmDialog({ title: `Удалить экзамен «${exam.title}»?`, message: "С работами — уйдёт в архив", confirmLabel: "Удалить", danger: true }))) return;
+    try {
+      const j = await api(`/exams/${examId}`, { method: "DELETE" });
+      dirtyRef.current = { dirty: false, save: async () => true };
+      if (j.archived) toast.success("Экзамен в архиве");
+      navigate(`/workspace/${tenantId}/exams${j.archived ? "?tab=archive" : ""}`);
+    } catch (e: any) { setError(e.message); }
+  };
+  const restore = async () => {
+    try { await api(`/exams/${examId}/restore`, { method: "POST" }); toast.success("Экзамен возвращён (закрыт)"); await load(); }
+    catch (e: any) { toast.error(e.message); }
+  };
+  /** Уходим со страницы — спросить, если в конструкторе есть несохранённое. */
+  const leave = async (e: React.MouseEvent) => {
+    if (!dirtyRef.current.dirty) return;
+    e.preventDefault();
+    if (await confirmDialog({ title: "Несохранённые правки будут потеряны", confirmLabel: "Уйти без сохранения", danger: true })) { dirtyRef.current = { dirty: false, save: async () => true }; navigate(`/workspace/${tenantId}/exams`); }
   };
 
   if (error && !exam) return <div className="p-6 text-center space-y-3"><p className="text-rose-600">{error}</p><Link className={btn} to={`/workspace/${tenantId}/exams`}><ArrowLeft className="w-4 h-4" /> К экзаменам</Link></div>;
@@ -80,11 +111,13 @@ export default function ExamDetailPage() {
   return (
     <div className="space-y-4 max-w-[1600px] mx-auto">
       <div className="flex flex-wrap items-center gap-3">
-        <Link to={`/workspace/${tenantId}/exams`} className="p-2 -ml-2 rounded-lg hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)]"><ArrowLeft className="w-5 h-5" /></Link>
+        <Link to={`/workspace/${tenantId}/exams${archived ? "?tab=archive" : ""}`} onClick={leave} className="p-2 -ml-2 rounded-lg hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)]"><ArrowLeft className="w-5 h-5" /></Link>
         <div className="flex-1 min-w-[60%] sm:min-w-0">
           {exam.group && <div className="text-[11px] uppercase font-mono font-bold text-[var(--text-muted)]">{exam.group}</div>}
           <h1 className="text-lg md:text-2xl font-bold text-[var(--text-main)] truncate">{exam.title}</h1>
         </div>
+        {archived && <span className="text-xs px-2 py-1 rounded-full bg-slate-500/10 text-[var(--text-muted)] ml-auto">В архиве</span>}
+        {archived && canManage && <Button variant="primary" icon={<ArchiveRestore className="w-4 h-4" />} onClick={restore}>Вернуть</Button>}
         {canEdit && (
           <div className="flex rounded-lg border border-[var(--border-color)] overflow-hidden ml-auto">
             {([["draft", "Черновик"], ["open", "Открыт"], ["closed", "Закрыт"]] as const).map(([k, l]) => (
@@ -93,22 +126,20 @@ export default function ExamDetailPage() {
             ))}
           </div>
         )}
-        {reception && !!exam.settings.admission?.grades?.length && (
+        {!archived && reception && !!exam.settings.admission?.grades?.length && (
           <button className={btnPrimary} onClick={() => setNewApplicant(true)}><UserPlus className="w-4 h-4" /> Поступающий{exam.settings.admission.grades.length === 1 ? ` в ${exam.settings.admission.grades[0]} класс` : ""}</button>
         )}
-        {canEdit && <button className={btn} onClick={remove} title="Удалить"><Trash2 className="w-4 h-4" /></button>}
+        {canEdit && !archived && <button className={btn} onClick={remove} title="Удалить"><Trash2 className="w-4 h-4" /></button>}
       </div>
       {error && <div className="text-sm text-rose-600">{error}</div>}
 
-      {exam.settings.paper ? (
-        <div className={`${card} p-4 text-sm text-[var(--text-main)]`}>Тест на бумаге: правильные ответы вносят в карточке поступающего, во вкладке «Тест и решение».</div>
-      ) : (
+      {!exam.settings.paper && (
       <div className={`${card} p-4 flex flex-wrap items-center gap-4`}>
         <div className="flex-1 min-w-[240px]">
           <div className="text-[11px] uppercase font-mono font-bold text-[var(--text-muted)]">Ссылка для учеников</div>
           <div className="font-mono text-sm text-[var(--text-main)] break-all">{link}</div>
           <div className="flex gap-2 mt-2">
-            <button className={btn} onClick={() => { navigator.clipboard?.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1500); }}><Copy className="w-4 h-4" /> {copied ? "Скопировано" : "Копировать"}</button>
+            <button className={btn} onClick={() => { navigator.clipboard?.writeText(link); toast.success("Ссылка скопирована"); }}><Copy className="w-4 h-4" /> Копировать</button>
             <button className={btn} onClick={() => setQr(true)}><QrCode className="w-4 h-4" /> QR</button>
           </div>
         </div>
@@ -116,24 +147,19 @@ export default function ExamDetailPage() {
           <div className="text-center px-4">
             <div className="text-[11px] uppercase font-mono font-bold text-[var(--text-muted)] flex items-center gap-1 justify-center"><KeyRound className="w-3.5 h-3.5" /> PIN {exam.settings.access.pinMode === "hourly" ? "этого часа" : ""}</div>
             <div className="text-4xl font-black tracking-[0.2em] tabular-nums text-[var(--text-main)]">{pin || "—"}</div>
-            {exam.settings.access.pinMode === "hourly" && <div className="text-[11px] text-[var(--text-muted)]">меняется в начале каждого часа</div>}
           </div>
         )}
-        {exam.status !== "open" && <div className="w-full text-xs text-amber-700">Экзамен {exam.status === "draft" ? "в черновике" : "закрыт"} — ученики не смогут начать. {canEdit ? "Нажмите «Открыт», когда всё готово." : ""}</div>}
       </div>
       )}
 
-      <div className="flex gap-1 border-b border-[var(--border-color)] overflow-x-auto hide-scrollbar">
-        {([...(students ? [["students", "Ученики класса"]] as const : []), ["attempts", "Работы"], ["analytics", "Аналитика"], ["settings", "Конструктор"]] as const).map(([k, l]) => (
-          <button key={k} onClick={() => { picked.current = true; setTab(k); }} className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 -mb-px ${tab === k ? "border-[var(--accent)] text-[var(--accent)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-main)]"}`}>{l}</button>
-        ))}
-      </div>
+      <Tabs tabs={tabItems} value={tab} onChange={t => setTab(t as typeof tab)} />
 
       {tab === "students" && students && <AdmissionsPage embedded mode="admin" classGrades={classGrades} />}
-      {tab === "attempts" && <AttemptsTab exam={exam} api={api} tenant={activeTenant} canEdit={canEdit} />}
+      {tab === "attempts" && <AttemptsTab exam={exam} api={api} tenant={activeTenant} canEdit={canManage} canReview={canReview} />}
       {tab === "analytics" && <ExamAnalyticsTab exam={exam} api={api} onOpen={setOpenAttempt} />}
+      {tab === "history" && <HistoryTab api={api} examId={exam.id} />}
       <div className={tab === "settings" ? "" : "hidden"}>
-        <ExamSettingsTab exam={exam} api={api} bankApi={bankApi} canEdit={canEdit} onSaved={e => { setExam(e); void load(); }} />
+        <ExamSettingsTab exam={exam} api={api} bankApi={bankApi} canEdit={canEdit} onSaved={e => { setExam(e); void load(); }} onDirty={onDirty} />
       </div>
 
       {newApplicant && (
@@ -141,7 +167,7 @@ export default function ExamDetailPage() {
           onClose={() => setNewApplicant(false)}
           onDone={id => { setNewApplicant(false); setParams({ open: id, ctab: "profile", qr: "parent" }, { replace: true }); }} />
       )}
-      {openAttempt && <AttemptModal attemptId={openAttempt} exam={exam} api={api} tenant={activeTenant} canEdit={canEdit} onChanged={() => {}} onClose={() => setOpenAttempt(null)} />}
+      {openAttempt && <AttemptModal attemptId={openAttempt} exam={exam} api={api} tenant={activeTenant} canEdit={canManage} onChanged={() => {}} onClose={() => setOpenAttempt(null)} />}
       {qr && (
         <Modal title={exam.title} onClose={() => setQr(false)}>
           <div className="flex flex-col items-center gap-3">

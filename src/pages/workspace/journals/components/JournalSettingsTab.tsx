@@ -1,15 +1,17 @@
 import React, { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, Trash2, Plus, Loader2, Upload, Save, Archive, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, Trash2, Plus, Loader2, Upload, Save, Archive, Users, History } from "lucide-react";
 import {
   COLUMN_TYPE_HINT, COLUMN_TYPE_LABEL, ROLE_LABEL, newId, optionsToTable, parseOptionsTable,
   type Journal, type JournalAccess, type JournalColumn, type JournalColumnType, type JournalRole,
   type JournalSettings, type SignSubfield, type SignSubfieldType,
 } from "../../../../shared/journals";
 import type { Employee } from "../journalApi";
+import { InfoHint, confirmDialog } from "../../../../components/ui";
 import { btn, btnPrimary, card, input, label } from "./ui";
 
 type Api = (path: string, init?: RequestInit) => Promise<any>;
 
+const HISTORY_LABEL = { create: "Создан", update: "Изменены настройки", access: "Изменён доступ", archive: "В архив", restore: "Из архива" } as const;
 const SUB_LABEL: Record<SignSubfieldType, string> = { checkbox: "Галочка с текстом", text: "Поле для текста", photo: "Фото" };
 
 /**
@@ -26,11 +28,15 @@ export default function JournalSettingsTab({ journal, api, onSaved, onArchived }
   const [settings, setSettings] = useState<JournalSettings>(journal.settings);
   const [access, setAccess] = useState<JournalAccess>(journal.access);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [roles, setRoles] = useState<{ id: string; name: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  useEffect(() => { api("/employees").then(j => setEmployees(j.employees || [])).catch(() => {}); }, [api]);
+  useEffect(() => {
+    api("/employees").then(j => setEmployees(j.employees || [])).catch(() => {});
+    api("/roles").then(j => setRoles(j.roles || [])).catch(() => {});
+  }, [api]);
 
   const dirty = JSON.stringify({ title, description, columns, settings, access })
     !== JSON.stringify({ title: journal.title, description: journal.description, columns: journal.columns, settings: journal.settings, access: journal.access });
@@ -48,8 +54,8 @@ export default function JournalSettingsTab({ journal, api, onSaved, onArchived }
     [n[i], n[j]] = [n[j], n[i]];
     return n;
   });
-  const remove = (c: JournalColumn) => {
-    if (!confirm(`Удалить колонку «${c.label}»? Уже внесённые в неё данные перестанут показываться.`)) return;
+  const remove = async (c: JournalColumn) => {
+    if (!(await confirmDialog({ title: `Удалить колонку «${c.label}»?`, message: "Внесённые в неё данные перестанут показываться", confirmLabel: "Удалить", danger: true }))) return;
     setColumns(cs => cs.filter(x => x.id !== c.id));
     setSettings(s => ({
       ...s, doneColumnIds: s.doneColumnIds.filter(x => x !== c.id),
@@ -78,7 +84,7 @@ export default function JournalSettingsTab({ journal, api, onSaved, onArchived }
     finally { setBusy(false); }
   };
   const archive = async () => {
-    if (!confirm(`Убрать журнал «${journal.title}» в архив? Он пропадёт из списка у всех.`)) return;
+    if (!(await confirmDialog({ title: `Убрать журнал «${journal.title}» в архив?`, message: "Из архива его можно вернуть", confirmLabel: "В архив", danger: true }))) return;
     try { await api(`/${journal.id}`, { method: "DELETE" }); onArchived(); }
     catch (e: any) { setError(e.message); }
   };
@@ -132,7 +138,7 @@ export default function JournalSettingsTab({ journal, api, onSaved, onArchived }
                 <div>
                   <span className={label}>Разрешённые имена — по одному в строке</span>
                   <NamesEditor names={c.allowedNames || []} onChange={allowedNames => upd(c.id, { allowedNames })} />
-                  <p className="text-[11px] text-[var(--text-muted)] mt-1">{(c.allowedNames || []).length} имён. Порядок слов и отчество не важны, ё = е.</p>
+                  <p className="text-[11px] text-[var(--text-muted)] mt-1">{(c.allowedNames || []).length} имён</p>
                 </div>
                 <label className="flex items-start gap-2 text-sm text-[var(--text-main)] sm:pt-5">
                   <input type="checkbox" className="mt-1" checked={c.allowEmployees !== false} onChange={e => upd(c.id, { allowEmployees: e.target.checked })} />
@@ -168,7 +174,6 @@ export default function JournalSettingsTab({ journal, api, onSaved, onArchived }
               </label>
             ))}
           </div>
-          <p className="text-[11px] text-[var(--text-muted)] mt-1">Для отметки «да / нет» засчитывается только «да».</p>
         </div>
         <div className="grid sm:grid-cols-3 gap-3">
           <ColSelect title="Кто в записи (для статистики по людям)" value={settings.personColumnId} cols={people} onChange={v => setSettings(s => ({ ...s, personColumnId: v }))} />
@@ -178,8 +183,7 @@ export default function JournalSettingsTab({ journal, api, onSaved, onArchived }
       </section>
 
       <section className={`${card} p-4 space-y-3`}>
-        <h3 className="font-bold text-[var(--text-main)] flex items-center gap-2"><Users className="w-4 h-4" /> Доступ</h3>
-        <p className="text-xs text-[var(--text-muted)]">Журнал видят только сотрудники организации. Администраторы организации и создатель журнала — всегда ответственные.</p>
+        <h3 className="font-bold text-[var(--text-main)] flex items-center gap-2"><Users className="w-4 h-4" /> Доступ <InfoHint>Журнал видят только сотрудники организации. Администраторы и создатель журнала — всегда ответственные.</InfoHint></h3>
         <div className="max-w-sm">
           <span className={label}>Все сотрудники</span>
           <select className={input} value={access.everyone} onChange={e => setAccess(a => ({ ...a, everyone: e.target.value as JournalAccess["everyone"] }))}>
@@ -209,6 +213,39 @@ export default function JournalSettingsTab({ journal, api, onSaved, onArchived }
           )}
         </div>
       </section>
+
+      <section className={`${card} p-4 space-y-2`}>
+        <h3 className="font-bold text-[var(--text-main)]">Доступ по должности</h3>
+        {Object.entries(access.roles || {}).map(([rid, r]) => (
+          <div key={rid} className="flex flex-wrap items-center gap-2">
+            <span className="flex-1 min-w-[160px] text-sm text-[var(--text-main)]">{roles.find(x => x.id === rid)?.name || rid}</span>
+            <select className={`${input} !w-auto`} value={r} onChange={e => setAccess(a => ({ ...a, roles: { ...(a.roles || {}), [rid]: e.target.value as JournalRole } }))}>
+              {(Object.keys(ROLE_LABEL) as JournalRole[]).map(x => <option key={x} value={x}>{ROLE_LABEL[x]}</option>)}
+            </select>
+            <button className={btn} onClick={() => setAccess(a => { const m = { ...(a.roles || {}) }; delete m[rid]; return { ...a, roles: m }; })}><Trash2 className="w-4 h-4" /></button>
+          </div>
+        ))}
+        {roles.filter(x => !(access.roles || {})[x.id]).length > 0 && (
+          <select className={`${input} max-w-sm`} value="" onChange={e => e.target.value && setAccess(a => ({ ...a, roles: { ...(a.roles || {}), [e.target.value]: "view" } }))}>
+            <option value="">+ Добавить должность…</option>
+            {roles.filter(x => !(access.roles || {})[x.id]).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
+        )}
+      </section>
+
+      {(journal.history || []).length > 0 && (
+        <section className={`${card} p-4 space-y-2`}>
+          <h3 className="font-bold text-[var(--text-main)] flex items-center gap-2"><History className="w-4 h-4" /> История настроек</h3>
+          <div className="space-y-2 max-h-72 overflow-y-auto">
+            {[...(journal.history || [])].reverse().map((h, i) => (
+              <div key={i} className="text-sm">
+                <div className="text-[var(--text-main)]"><b>{HISTORY_LABEL[h.action]}</b> · {h.byName} · <span className="text-[var(--text-muted)]">{new Date(h.at).toLocaleString("ru-RU")}</span></div>
+                {(h.changes || []).map((c, k) => <div key={k} className="text-xs text-[var(--text-muted)] break-words">{c.label}: {c.from || "—"} → {c.to || "—"}</div>)}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <button className={`${btn} text-rose-600`} onClick={archive}><Archive className="w-4 h-4" /> Убрать журнал в архив</button>
 
@@ -280,9 +317,7 @@ function OptionsEditor({ column, onChange }: { column: JournalColumn; onChange: 
       </div>
       {open && (
         <>
-          <p className="text-[11px] text-[var(--text-muted)]">
-            Скопируйте столбцы из Excel или Google Таблиц и вставьте сюда. Первый столбец — вариант, второй (необязательно) — группа, например класс ученика: по группам строится статистика. Не забудьте «Сохранить настройки».
-          </p>
+          <InfoHint>Вставьте столбцы из Excel или Google Таблиц: первый — вариант, второй (необязательно) — группа, например класс. По группам строится статистика.</InfoHint>
           <textarea rows={8} className={`${input} font-mono text-xs`} value={text} onChange={e => edit(e.target.value)}
             placeholder={"Иванов Иван\t7А\nПетрова Мария\t7А\nСидоров Пётр\t8Б"} />
           <button className={btn} onClick={() => { onChange(initial); setText(optionsToTable(initial)); }}>Вернуть как было</button>
@@ -324,7 +359,6 @@ function SubfieldsEditor({ column, columns, onChange }: { column: JournalColumn;
         <span className="text-xs text-[var(--text-muted)]">QR действует, ч:</span>
         <input type="number" min={1} max={336} className={`${input} !w-20`} value={column.tokenTtlHours || 24} onChange={e => onChange({ tokenTtlHours: Number(e.target.value) || 24 })} />
       </div>
-      <p className="text-[11px] text-[var(--text-muted)]">При сверке человек должен написать то же имя, что в записи: так подпись нельзя поставить за другого, просто отсканировав чужой QR.</p>
     </div>
   );
 }

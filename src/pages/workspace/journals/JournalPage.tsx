@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import {
-  ArrowLeft, Plus, Search, SlidersHorizontal, Download, Loader2, QrCode, ShieldCheck, Trash2, X, Image as ImageIcon, AlertTriangle, RefreshCw,
+  ArrowLeft, Upload, RotateCcw, Plus, Search, SlidersHorizontal, Download, Loader2, QrCode, ShieldCheck, Trash2, X, Image as ImageIcon, AlertTriangle, RefreshCw,
 } from "lucide-react";
 import {
   displayValue, entryStatus, isFilled, roleAtLeast, STATUS_LABEL, todayIso,
   type EntryStatus, type Journal, type JournalColumn, type JournalEntry, type JournalRole,
 } from "../../../shared/journals";
 import { useJournalApi } from "./journalApi";
+import { useUrlTab, toast, confirmDialog, Button } from "../../../components/ui";
+import ImportModal from "./components/ImportModal";
 import { exportEntriesXlsx } from "./journalExcel";
 import { tenantLogos } from "../../../shared/legal";
 import EntryPanel from "./components/EntryPanel";
@@ -42,7 +44,9 @@ export default function JournalPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"entries" | "stats" | "settings">("entries");
+  const [tab, setTab] = useUrlTab<"entries" | "stats" | "trash" | "settings">("tab", ["entries", "stats", "trash", "settings"], "entries");
+  const [importing, setImporting] = useState(false);
+  const [trash, setTrash] = useState<JournalEntry[] | null>(null);
 
   const [search, setSearch] = useState("");
   // "notdone" — открытые и просроченные вместе: «кто не отработал».
@@ -56,7 +60,8 @@ export default function JournalPage() {
 
   const load = useCallback(async () => {
     if (!tenantId || !journalId) return;
-    setLoading(true); setError(null);
+    // Спиннер — только при первой загрузке (loading = true по умолчанию): «Обновить» не стирает несохранённые настройки.
+    setError(null);
     try {
       const j = await api(`/${journalId}`);
       setJournal(j.journal); setRole(j.role); setEntries(j.entries || []);
@@ -105,6 +110,31 @@ export default function JournalPage() {
     });
   }, [entries, journal, search, status, filters, today]);
 
+  // Выбор не переживает смену отбора: иначе удалялись бы невидимые записи.
+  useEffect(() => {
+    setSelected(prev => {
+      if (!prev.size) return prev;
+      const vis = new Set(visible.map(e => e.id));
+      const next = new Set([...prev].filter(id => vis.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [visible]);
+
+  const loadTrash = useCallback(async () => {
+    try { setTrash((await api(`/${journalId}/trash`)).entries || []); } catch (e: any) { toast.error(e.message); setTrash([]); }
+  }, [api, journalId]);
+  useEffect(() => { if (tab === "trash") void loadTrash(); }, [tab, loadTrash]);
+
+  const removeOne = async (e: JournalEntry) => {
+    if (!(await confirmDialog({ title: "Удалить запись?", message: "Её можно вернуть во вкладке «Удалённые»", confirmLabel: "Удалить", danger: true }))) return;
+    try { await api(`/${journalId}/entries/${e.id}`, { method: "DELETE" }); setEntries(p => p.filter(x => x.id !== e.id)); setSelected(p => { const n = new Set(p); n.delete(e.id); return n; }); }
+    catch (err: any) { toast.error(err.message); }
+  };
+  const restoreOne = async (e: JournalEntry) => {
+    try { await api(`/${journalId}/entries/${e.id}/restore`, { method: "POST" }); setTrash(p => (p || []).filter(x => x.id !== e.id)); await load(); }
+    catch (err: any) { toast.error(err.message); }
+  };
+
   const activeFilters = Object.values(filters).filter(f => f.op || f.from || f.to || (Array.isArray(f.value) ? f.value.length : f.value !== undefined && f.value !== "")).length;
 
   const [exporting, setExporting] = useState(false);
@@ -112,7 +142,7 @@ export default function JournalPage() {
     if (!journal) return;
     setExporting(true);
     try { await exportEntriesXlsx(journal, visible, visible.length !== entries.length); }
-    catch (e: any) { alert(`Не удалось выгрузить: ${e.message}`); }
+    catch (e: any) { toast.error(`Не удалось выгрузить: ${e.message}`); }
     finally { setExporting(false); }
   };
 
@@ -121,10 +151,10 @@ export default function JournalPage() {
     try {
       const j = await api(`/${journalId}/entries/${e.id}`, { method: "PATCH", body: JSON.stringify({ values: { [c.id]: value } }) });
       merge([j.entry]);
-    } catch (err: any) { alert(err.message); }
+    } catch (err: any) { toast.error(err.message); }
   };
 
-  if (loading) return <div className="p-10 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--text-muted)]" /></div>;
+  if (loading && !journal) return <div className="p-10 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--text-muted)]" /></div>;
   if (error || !journal) {
     return (
       <div className="p-6 max-w-xl mx-auto text-center space-y-3">
@@ -164,13 +194,32 @@ export default function JournalPage() {
       </div>
 
       <div className="flex gap-1 border-b border-[var(--border-color)] overflow-x-auto hide-scrollbar">
-        {([["entries", `Записи (${entries.length})`], ["stats", "Статистика"], ...(canManage ? [["settings", "Настройки"]] : [])] as [typeof tab, string][]).map(([k, t]) => (
+        {([["entries", `Записи (${entries.length})`], ["stats", "Статистика"], ...(canManage ? [["trash", "Удалённые"], ["settings", "Настройки"]] : [])] as [typeof tab, string][]).map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`px-3 sm:px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition ${tab === k ? "border-[var(--accent)] text-[var(--accent)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-main)]"}`}>{t}</button>
         ))}
       </div>
 
       {tab === "stats" && <JournalStats journal={journal} entries={entries} />}
+      {tab === "trash" && canManage && (
+        <div className={`${card} overflow-x-auto`}>
+          {trash === null ? <div className="p-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-[var(--text-muted)]" /></div>
+            : trash.length === 0 ? <div className="px-4 py-10 text-center text-sm text-[var(--text-muted)]">Удалённых записей нет</div>
+            : (
+              <table className="w-full text-sm">
+                <tbody>
+                  {trash.map(e => (
+                    <tr key={e.id} className="border-t first:border-0 border-[var(--border-color)]">
+                      <td className="px-3 py-2 text-[var(--text-main)]">{tableCols.slice(0, 3).map(c => displayValue(c, e.values?.[c.id])).filter(Boolean).join(" · ") || "—"}</td>
+                      <td className="px-3 py-2 text-xs text-[var(--text-muted)] whitespace-nowrap">{(e as any).deletedAt ? new Date((e as any).deletedAt).toLocaleString("ru-RU") : ""}</td>
+                      <td className="px-3 py-2 text-right"><Button size="sm" icon={<RotateCcw className="w-3.5 h-3.5" />} onClick={() => restoreOne(e)}>Вернуть</Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+        </div>
+      )}
       {/* Настройки не размонтируются при смене вкладки: иначе несохранённые
           правки пропадали, стоило заглянуть в записи. */}
       {canManage && (
@@ -194,6 +243,7 @@ export default function JournalPage() {
             <button className={`${btn} ${activeFilters ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} onClick={() => setShowFilters(v => !v)}>
               <SlidersHorizontal className="w-4 h-4" /> Фильтры{activeFilters ? ` (${activeFilters})` : ""}
             </button>
+            {canEdit && <button className={btn} onClick={() => setImporting(true)} title="Загрузить записи из Excel"><Upload className="w-4 h-4" /> Загрузить</button>}
             <button className={btn} onClick={exportXlsx} disabled={exporting || !visible.length} title="Скачать в Excel то, что сейчас отобрано">
               {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Excel
             </button>
@@ -223,11 +273,11 @@ export default function JournalPage() {
               <button className={btnPrimary} onClick={() => setBulk(true)}>Заполнить колонку у всех</button>
               {canManage && (
                 <button className={`${btn} text-rose-600`} onClick={async () => {
-                  if (!confirm(`Удалить ${selected.size} записей?`)) return;
+                  if (!(await confirmDialog({ title: `Удалить записей: ${selected.size}?`, message: "Их можно вернуть во вкладке «Удалённые»", confirmLabel: "Удалить", danger: true }))) return;
                   try {
                     await api(`/${journalId}/entries/bulk`, { method: "POST", body: JSON.stringify({ ids: [...selected], action: "delete" }) });
                     setEntries(p => p.filter(e => !selected.has(e.id))); setSelected(new Set());
-                  } catch (e: any) { alert(e.message); }
+                  } catch (e: any) { toast.error(e.message); }
                 }}><Trash2 className="w-4 h-4" /> Удалить</button>
               )}
               <button className={btn} onClick={() => setSelected(new Set())}><X className="w-4 h-4" /> Снять выбор</button>
@@ -269,11 +319,12 @@ export default function JournalPage() {
                   )}
                   {tableCols.map(c => <th key={c.id} className="px-3 py-3 text-left whitespace-nowrap">{c.label}</th>)}
                   <th className="px-3 py-3 text-left">Статус</th>
+                  {canManage && <th className="px-3 py-3 w-8" />}
                 </tr>
               </thead>
               <tbody>
                 {visible.length === 0 && (
-                  <tr><td colSpan={tableCols.length + 2} className="px-4 py-10 text-center text-[var(--text-muted)]">
+                  <tr><td colSpan={tableCols.length + 3} className="px-4 py-10 text-center text-[var(--text-muted)]">
                     {entries.length ? "Ничего не найдено — измените поиск или фильтры" : canEdit ? "Записей пока нет — нажмите «Новая запись»" : "Записей пока нет"}
                   </td></tr>
                 )}
@@ -293,6 +344,7 @@ export default function JournalPage() {
                         </td>
                       ))}
                       <td className="px-3 py-2"><span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_TONE[st]}`}>{STATUS_LABEL[st]}</span></td>
+                      {canManage && <td className="px-3 py-2" onClick={ev => ev.stopPropagation()}><button className="p-1 text-[var(--text-muted)] hover:text-rose-600" title="Удалить запись" onClick={() => removeOne(e)}><Trash2 className="w-4 h-4" /></button></td>}
                     </tr>
                   );
                 })}
@@ -307,6 +359,7 @@ export default function JournalPage() {
           onSaved={merge} onClose={() => setEditing(null)}
           onShowQr={(entry, column) => { setEditing(null); setQr({ entry, column }); }} />
       )}
+      {importing && <ImportModal journal={journal} api={api} onDone={merge} onClose={() => setImporting(false)} />}
       {qr && <SignQrModal journal={journal} entry={qr.entry} column={qr.column} api={api} onSigned={onSigned} onClose={() => setQr(null)} logo={tenantLogos(activeTenant).markUrl} />}
       {bulk && (
         <BulkModal journal={journal} role={role} count={selected.size} onClose={() => setBulk(false)}
@@ -448,7 +501,6 @@ function BulkModal({ journal, role, count, onClose, onApply }: {
               : c.type === "date" ? <input type="date" className={input} value={value || ""} onChange={e => setValue(e.target.value || null)} />
               : c.type === "checkbox" ? <TriToggle value={value} yes={c.yesLabel || "Да"} no={c.noLabel || "Нет"} onChange={setValue} />
               : <input className={input} value={value || ""} onChange={e => setValue(e.target.value)} placeholder={c.type === "name_sign" ? "Фамилия и имя" : ""} />}
-            <p className="text-[11px] text-[var(--text-muted)] mt-1">Пустое значение очистит колонку у выбранных записей.</p>
           </div>
         )}
         {error && <div className="text-sm text-rose-600">{error}</div>}

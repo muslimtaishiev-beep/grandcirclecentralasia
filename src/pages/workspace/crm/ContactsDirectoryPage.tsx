@@ -1,316 +1,142 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useOutletContext } from 'react-router-dom';
+import { Search, Plus, Mail, Phone, Archive, Users } from 'lucide-react';
 import { useWorkspaceTerms } from '../../../lib/useWorkspaceConfig';
-import { useOutletContext, useNavigate, useParams } from 'react-router-dom';
-import { Search, Plus, Filter, MoreHorizontal, Mail, Phone, X, Check, Trash2 } from 'lucide-react';
-import { db } from '../../../lib/firebase';
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp, setDoc, doc, deleteDoc, limit } from 'firebase/firestore';
+import { Button, EmptyState, Modal, PageHeader, Spinner, Table, Tabs, btn, btnPrimary, confirmDialog, input, label, toast } from '../../../components/ui';
+import { crmService } from '../../../services/crmService';
+import { useCrmPerms } from '../../../hooks/useCrmPerms';
 import { CrmContact } from '../../../types/crm';
 import ContactProfileDrawer from './components/ContactProfileDrawer';
-import toast from 'react-hot-toast';
 
-/** Тип «сотрудник» есть в форме создания, но не в CrmContact. */
-const isStaffContact = (c: CrmContact) => String(c.type) === 'employee';
+type ContactType = CrmContact['type'];
 
 export default function ContactsDirectoryPage() {
   const terms = useWorkspaceTerms();
   const { activeTenant } = useOutletContext<any>();
-  const navigate = useNavigate();
-  const { orgId } = useParams();
-  const [contacts, setContacts] = useState<CrmContact[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [selectedContact, setSelectedContact] = useState<CrmContact | null>(null);
+  const tenantId: string = activeTenant?.id;
+  const { canManage, uid, name } = useCrmPerms();
+  const author = useMemo(() => ({ id: uid, name }), [uid, name]);
 
-  // Modal State
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [type, setType] = useState<'student' | 'lead' | 'partner' | 'employee'>('student');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [contacts, setContacts] = useState<CrmContact[] | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [search, setSearch] = useState('');
+  const [tab, setTab] = useState<'active' | 'archived'>('active');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [form, setForm] = useState<{ id?: string; fullName: string; phone: string; email: string; type: ContactType } | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!activeTenant?.id) return;
+    if (!tenantId) return;
+    return crmService.subscribeToContacts(tenantId, setContacts, () => setLoadError('Не удалось загрузить контакты. Обновите страницу.'));
+  }, [tenantId]);
 
-    // Живая подписка, но ограниченная: экран показывает список, а не всю
-    // базу контактов школы. Без limit браузер держал в памяти каждый контакт
-    // и перерисовывал таблицу на любое изменение любого из них.
-    const q1 = query(
-      collection(db, 'crm_contacts'),
-      where('tenantId', '==', activeTenant.id),
-      limit(500),
-    );
-    const unsub = onSnapshot(q1, (snap) => {
-      const list: CrmContact[] = [];
-      snap.forEach(d => {
-        const data = d.data();
-        list.push({
-          id: d.id,
-          tenantId: data.tenantId,
-          fullName: data.fullName || data.name || 'Без имени',
-          email: data.email || '—',
-          phone: data.phone != null ? String(data.phone) : '—',
-          type: data.type || 'student',
-          companyName: data.companyName || '',
-          totalDealsCount: data.totalDealsCount || 0,
-          totalRevenueGenerated: data.totalRevenueGenerated || 0,
-          createdAt: data.createdAt
-        } as CrmContact);
-      });
-      setContacts(list);
-    }, (err) => {
-      // Молчаливый console.warn превращал сбой запроса в пустой экран:
-      // менеджер видел «контактов нет» вместо «не удалось загрузить».
-      console.warn("CRM contacts listener notice:", err);
-      setLoadError("Не удалось загрузить контакты. Обновите страницу.");
-    });
+  const typeLabel: Record<string, string> = {
+    student: terms.student, lead: 'Лид', parent: 'Родитель', partner: 'Партнёр', corporate_client: 'Компания', employee: 'Сотрудник',
+  };
 
-    return () => unsub();
-  }, [activeTenant?.id]);
+  const list = contacts || [];
+  const selected = list.find(c => c.id === selectedId) || null;
+  const archivedCount = list.filter(c => c.status === 'archived').length;
+  const q = search.trim().toLowerCase();
+  const filtered = list.filter(c =>
+    (tab === 'archived') === (c.status === 'archived') &&
+    (!q || c.fullName.toLowerCase().includes(q) || c.phone.includes(q) || c.email.toLowerCase().includes(q)));
 
-  const handleCreateContact = async (e: React.FormEvent) => {
+  const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim() || !activeTenant?.id) return;
-
-    setIsSubmitting(true);
+    if (!form || !form.fullName.trim()) return;
+    setBusy(true);
     try {
-      const newContactDoc = {
-        tenantId: activeTenant.id,
-        fullName: fullName.trim(),
-        name: fullName.trim(),
-        phone: phone.trim() || '—',
-        email: email.trim() || '—',
-        type,
-        status: 'active',
-        totalDealsCount: 0,
-        totalRevenueGenerated: 0,
-        createdAt: serverTimestamp()
-      };
-
-      await addDoc(collection(db, 'crm_contacts'), newContactDoc);
-      // Also save to nested subcollection for backward compatibility
-      const nestedRef = doc(collection(db, 'tenants', activeTenant.id, 'crm_contacts'));
-      await setDoc(nestedRef, newContactDoc);
-
-      setFullName('');
-      setPhone('');
-      setEmail('');
-      setIsModalOpen(false);
+      if (form.id) await crmService.updateContact(tenantId, form.id, { fullName: form.fullName.trim(), phone: form.phone.trim(), email: form.email.trim(), type: form.type });
+      else await crmService.createContact(tenantId, form);
+      setForm(null);
     } catch (err: any) {
-      alert(`Ошибка добавления контакта: ${err.message}`);
-    } finally {
-      setIsSubmitting(false);
-    }
+      toast.error(err?.message || 'Не удалось сохранить контакт');
+    } finally { setBusy(false); }
   };
 
-  const handleDeleteContact = async (contact: CrmContact, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    // Доступ сотрудника снимается только в «Сотрудниках» (сервер, журнал,
-    // проверка прав). Удаление карточки контакта его не трогает.
-    if (isStaffContact(contact)) {
-      toast('Сотрудник удаляется в разделе «Роли и доступы»');
-      navigate(`/workspace/${orgId || activeTenant?.id}/settings/roles`);
-      return;
-    }
-    if (!window.confirm(`Удалить контакт «${contact.fullName}»?`)) return;
-
-    try {
-      await deleteDoc(doc(db, 'crm_contacts', contact.id));
-      if (activeTenant?.id) {
-        try { await deleteDoc(doc(db, 'tenants', activeTenant.id, 'crm_contacts', contact.id)); } catch { /* вложенной копии может не быть */ }
-      }
-      toast.success(`Контакт «${contact.fullName}» удалён`);
-      if (selectedContact?.id === contact.id) setSelectedContact(null);
-    } catch (err: any) {
-      toast.error(`Не удалось удалить контакт: ${err?.message || 'ошибка'}`);
-    }
+  const archive = async (c: CrmContact) => {
+    const to = c.status !== 'archived';
+    if (to && !(await confirmDialog({ title: `Убрать «${c.fullName}» в архив?`, confirmLabel: 'В архив' }))) return;
+    try { await crmService.archiveContact(tenantId, c.id, to, author); if (to) setSelectedId(null); }
+    catch (err: any) { toast.error(err?.message || 'Не удалось выполнить'); }
   };
 
-  const filtered = contacts.filter(c => 
-    (c.fullName || '').toLowerCase().includes(search.toLowerCase()) || 
-    String(c.phone || '').includes(search) ||
-    (c.email || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const remove = async (c: CrmContact) => {
+    if (c.type === 'employee') { toast.error('Карточка сотрудника не удаляется — доступ меняется в разделе сотрудников'); return; }
+    if (!(await confirmDialog({ title: `Удалить «${c.fullName}» навсегда?`, message: 'Восстановить будет нельзя.', confirmLabel: 'Удалить', danger: true }))) return;
+    try { await crmService.deleteContact(tenantId, c.id, c.fullName, author, c.type); setSelectedId(null); toast.success('Контакт удалён'); }
+    catch (err: any) { toast.error(err?.message || 'Не удалось удалить'); }
+  };
+
+  const f = (patch: Partial<NonNullable<typeof form>>) => setForm(v => (v ? { ...v, ...patch } : v));
 
   return (
-    <div className="h-full flex flex-col p-6 max-w-7xl mx-auto">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--text-main)] mb-1">Контакты & Абитуриенты (Directory)</h1>
-          <p className="text-sm font-medium text-[var(--text-muted)]">База учащихся, клиентов и партнеров ({contacts.length})</p>
-        </div>
-        
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-            <input 
-              type="text" 
-              placeholder="Поиск по имени или телефону..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl pl-10 pr-4 py-2 text-sm text-[var(--text-main)] focus:outline-none focus:border-[var(--accent)]"
-            />
-          </div>
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md transition shrink-0 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" /> Добавить Контакт
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-[var(--bg-panel)] rounded-2xl border border-[var(--border-color)] overflow-hidden flex-1 flex flex-col">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-[var(--bg-surface)] text-[var(--text-muted)] text-xs uppercase tracking-wider border-b border-[var(--border-color)]">
-                <th className="px-6 py-4 font-bold">Контакт</th>
-                <th className="px-6 py-4 font-bold">Связь</th>
-                <th className="px-6 py-4 font-bold">Тип</th>
-                <th className="px-6 py-4 font-bold">Сделки</th>
-                <th className="px-6 py-4 font-bold text-right">Действия</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--border-color)]">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-sm font-medium text-[var(--text-muted)]">
-                    Контакты не найдены. Нажмите "+ Добавить Контакт" для создания первой карточки.
-                  </td>
-                </tr>
-              ) : filtered.map(contact => (
-                <tr key={contact.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition cursor-pointer" onClick={() => setSelectedContact(contact)}>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      {contact.avatarUrl ? (
-                        <img src={contact.avatarUrl} alt="" className="w-10 h-10 rounded-full" />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-[var(--accent)] text-white flex items-center justify-center font-bold">
-                          {(contact.fullName || 'К')[0].toUpperCase()}
-                        </div>
-                      )}
-                      <div>
-                        <div className="font-bold text-sm text-[var(--text-main)]">{contact.fullName}</div>
-                        {contact.companyName && <div className="text-xs text-[var(--text-muted)] font-medium mt-0.5">{contact.companyName}</div>}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col gap-1 text-xs text-[var(--text-muted)] font-medium">
-                      <div className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" /> {contact.phone}</div>
-                      <div className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> {contact.email}</div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                      {contact.type}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold text-[var(--text-main)]">{contact.totalDealsCount}</span>
-                      <span className="text-xs text-emerald-500 font-bold">{(contact.totalRevenueGenerated || 0).toLocaleString()} KGS</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <button 
-                      className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition cursor-pointer" 
-                      onClick={(e) => handleDeleteContact(contact, e)}
-                      title={isStaffContact(contact) ? 'Сотрудники — в «Роли и доступы»' : 'Удалить контакт'}
-                    >
-                      <Trash2 className="w-4.5 h-4.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <ContactProfileDrawer 
-        isOpen={!!selectedContact} 
-        onClose={() => setSelectedContact(null)} 
-        onDeleteContact={handleDeleteContact}
-        contact={selectedContact || undefined} 
+    <div className="h-full flex flex-col p-6 max-w-7xl mx-auto w-full">
+      <PageHeader
+        title="Контакты"
+        actions={canManage ? <Button variant="primary" icon={<Plus className="w-4 h-4" />} onClick={() => setForm({ fullName: '', phone: '', email: '', type: 'student' })}>Контакт</Button> : undefined}
+        tabs={<Tabs value={tab} onChange={id => setTab(id as 'active' | 'archived')} tabs={[{ id: 'active', label: 'Контакты', icon: <Users className="w-4 h-4" /> }, { id: 'archived', label: 'Архив', icon: <Archive className="w-4 h-4" />, count: archivedCount }]} />}
       />
+      <div className="relative my-4 max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+        <input className={`${input} pl-9`} placeholder="Имя, телефон, почта" value={search} onChange={e => setSearch(e.target.value)} />
+      </div>
 
-      {/* Modal: Create Contact */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl">
-            <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-3">
-              <h3 className="font-bold text-base text-[var(--text-main)] flex items-center gap-2">
-                <Plus className="w-5 h-5 text-emerald-500" />
-                <span>Новый Контакт CRM</span>
-              </h3>
-              <button onClick={() => setIsModalOpen(false)} className="p-1 hover:bg-black/10 rounded text-slate-400">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateContact} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">{`ФИО: ${terms.student.toLowerCase()} / клиент *`}</label>
-                <input 
-                  type="text" 
-                  required
-                  placeholder="Иванов Иван Иванович"
-                  value={fullName}
-                  onChange={e => setFullName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Номер телефона</label>
-                <input 
-                  type="text" 
-                  placeholder="+996 555 123 456"
-                  value={phone}
-                  onChange={e => setPhone(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Электронная почта (Email)</label>
-                <input 
-                  type="email" 
-                  placeholder="student@gmail.com"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Тип контакта</label>
-                <select 
-                  value={type}
-                  onChange={e => setType(e.target.value as any)}
-                  className="w-full px-3.5 py-2.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="student">{terms.student}</option>
-                  <option value="lead">Лид / Заявка</option>
-                  <option value="partner">Партнер / Родитель</option>
-                  <option value="employee">Сотрудник</option>
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border-color)]">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 rounded-xl border text-xs font-bold">Отмена</button>
-                <button type="submit" disabled={isSubmitting} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
-                  <Check className="w-4 h-4" />
-                  <span>Сохранить</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {loadError ? <EmptyState title={loadError} /> : !contacts ? <Spinner /> : filtered.length === 0 ? (
+        <EmptyState icon={<Users className="w-8 h-8" />} title={q ? 'Ничего не найдено' : tab === 'archived' ? 'Архив пуст' : 'Контактов пока нет'}
+          action={!q && tab === 'active' && canManage ? <Button variant="primary" onClick={() => setForm({ fullName: '', phone: '', email: '', type: 'student' })}>Добавить контакт</Button> : undefined} />
+      ) : (
+        <Table>
+          <thead>
+            <tr className="text-left text-xs uppercase text-[var(--text-muted)] border-b border-[var(--border-color)]">
+              <th className="px-4 py-3">Контакт</th><th className="px-4 py-3">Связь</th><th className="px-4 py-3">Тип</th><th className="px-4 py-3">Сделки</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--border-color)]">
+            {filtered.map(c => (
+              <tr key={c.id} className="hover:bg-[var(--bg-surface-hover)] cursor-pointer" onClick={() => setSelectedId(c.id)}>
+                <td className="px-4 py-3 font-bold text-sm text-[var(--text-main)]">{c.fullName}{c.companyName && <div className="text-xs font-normal text-[var(--text-muted)]">{c.companyName}</div>}</td>
+                <td className="px-4 py-3 text-xs text-[var(--text-muted)]">
+                  {c.phone && <div className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" />{c.phone}</div>}
+                  {c.email && <div className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" />{c.email}</div>}
+                </td>
+                <td className="px-4 py-3 text-xs text-[var(--text-muted)]">{typeLabel[c.type] || c.type}</td>
+                <td className="px-4 py-3 text-sm font-bold text-[var(--text-main)]">{c.totalDealsCount}</td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
       )}
 
+      <ContactProfileDrawer
+        isOpen={!!selected} onClose={() => setSelectedId(null)} contact={selected || undefined}
+        onEditContact={canManage ? c => setForm({ id: c.id, fullName: c.fullName, phone: c.phone, email: c.email, type: c.type }) : undefined}
+        onArchiveContact={canManage ? archive : undefined}
+        onDeleteContact={canManage && selected?.status === 'archived' && selected.type !== 'employee' ? remove : undefined}
+      />
+
+      {form && (
+        <Modal title={form.id ? 'Контакт' : 'Новый контакт'} onClose={() => setForm(null)}>
+          <form onSubmit={save} className="space-y-4">
+            <div><label className={label}>ФИО</label><input className={input} required value={form.fullName} onChange={e => f({ fullName: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className={label}>Телефон</label><input className={input} value={form.phone} onChange={e => f({ phone: e.target.value })} /></div>
+              <div><label className={label}>Почта</label><input className={input} type="email" value={form.email} onChange={e => f({ email: e.target.value })} /></div>
+            </div>
+            <div>
+              <label className={label}>Тип</label>
+              <select className={input} value={form.type} onChange={e => f({ type: e.target.value as ContactType })} disabled={form.type === 'employee'}>
+                {Object.entries(typeLabel).filter(([k]) => k !== 'employee' || form.type === 'employee').map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" className={btn} onClick={() => setForm(null)}>Отмена</button>
+              <button type="submit" className={btnPrimary} disabled={busy}>Сохранить</button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 }

@@ -131,6 +131,10 @@ router.get("/:id/staff", requireFirebaseAuth, need("team:view", "team:manage"), 
       const r = await db().collection("custom_roles").doc(id).get();
       if (r.exists && r.data()?.tenantId === t) roles.set(id, String(r.data()?.name || ""));
     }
+    const depts = new Map<string, string>();
+    try {
+      for (const d of (await db().collection("departments").where("tenantId", "==", t).get()).docs) depts.set(d.id, String(d.data()?.name || ""));
+    } catch (e: any) { console.error("[admin] departments", e?.message); }
     const staff = members.map(m => {
       const u = users.get(String(m.userId));
       return {
@@ -143,6 +147,7 @@ router.get("/:id/staff", requireFirebaseAuth, need("team:view", "team:manage"), 
         customRoleId: m.customRoleId || null,
         systemRole: hasFullAccess(m.role) ? (isOwnerRole(m.role) ? "owner" : "admin") : null,
         departmentId: m.departmentId || null,
+        departmentName: m.departmentId ? depts.get(String(m.departmentId)) || "" : "",
         status: statusOf(m, u),
         lastSeenAt: lastSeen(u) || null,
         joinedAt: ms(m.joinedAt) || null,
@@ -191,6 +196,7 @@ router.get("/:id/staff/:uid", requireFirebaseAuth, need("team:view", "team:manag
         isSelf: uid === req.user.uid,
       },
       access,
+      member: { id: m.id, role: m.role || "", customRoleId: m.customRoleId || null, permissions: m.permissions ?? null, customPermissions: m.customPermissions ?? null },
       activity: recent(byHim),
       history: recent(aboutHim),
       logins: logins.docs.map(d => d.data() as any).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 30)

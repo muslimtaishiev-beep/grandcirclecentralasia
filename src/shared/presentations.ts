@@ -55,6 +55,9 @@ export interface Presentation {
   createdByName: string;
   createdAt: number;
   updatedAt: number;
+  /** Архив: скрыта из списка и по ссылке, восстанавливается. */
+  archivedAt?: number;
+  archivedBy?: string;
 }
 
 export const LIMITS = {

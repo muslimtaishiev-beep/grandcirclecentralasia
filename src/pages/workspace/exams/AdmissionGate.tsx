@@ -65,7 +65,6 @@ export default function AdmissionGate({ tenantId, value, onChange }: { tenantId:
           );
         })}
         {templates && templates.length > 0 && <button type="button" className={btn} onClick={() => set({ stages: [...value.stages, { templateId: templates.find(t => !value.stages.some(s => s.templateId === t.id))?.id || templates[0].id, passOutcomes: [] }] })}><Plus className="w-4 h-4" /> Этап</button>}
-        {denied && <p className="text-xs text-[var(--text-muted)]">Анкеты видны сотрудникам с правами раздела «Поступающие».</p>}
       </div>
       <div>
         <span className={label}>Уровень в анкете кандидата</span>

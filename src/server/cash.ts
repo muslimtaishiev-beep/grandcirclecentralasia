@@ -1,4 +1,5 @@
 import admin from "firebase-admin";
+import { todayIn } from "../shared/edu.js";
 
 /**
  * Касса организации: tenants/{t}/cash_entries — приходы и расходы, которые
@@ -35,6 +36,12 @@ const dayOf = (v: any): string => {
   return Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : "";
 };
 export const isDay = (s: unknown): s is string => typeof s === "string" && DAY.test(s);
+
+/** Сегодняшняя дата в часовом поясе организации (edu_settings/directory.timezone). */
+export async function tenantToday(db: Db, t: string): Promise<string> {
+  const snap = await db.collection("tenants").doc(t).collection("edu_settings").doc("directory").get();
+  return todayIn(String(snap.data()?.timezone || "UTC"));
+}
 
 export const cashCol = (db: Db, t: string) => db.collection("tenants").doc(t).collection("cash_entries");
 

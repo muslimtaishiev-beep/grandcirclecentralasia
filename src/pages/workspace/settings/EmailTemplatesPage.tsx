@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { ImagePlus, Loader2, Mail, Plus, Send, Trash2, X } from "lucide-react";
 import { emailApi } from "../../../lib/emailTemplatesApi";
 import { compressImageToDataUrl } from "../../../lib/compressImage";
@@ -9,6 +9,8 @@ import {
   EMAIL_EVENTS, type EmailEvent, type EmailKind, type EmailLogo, type EmailOrg, type EmailTemplate,
 } from "../../../shared/emailTemplate";
 import EmailLog from "./EmailLog";
+import SenderTab from "./EmailSenderTab";
+import { PageHeader, Tabs, useUrlTab, confirmDialog, toast } from "../../../components/ui";
 
 /**
  * Шаблоны писем организации: слева список, в центре поля, справа —
@@ -22,22 +24,20 @@ const KIND_LABEL = Object.fromEntries(EMAIL_KINDS.map(k => [k.id, k.label])) as 
 
 type Field = "subject" | "title" | "body" | "buttonText" | "footer";
 
+const TABS = [{ id: "sender", label: "Отправитель" }, { id: "templates", label: "Шаблоны" }, { id: "log", label: "Журнал" }] as const;
+type TabId = typeof TABS[number]["id"];
+
 export default function EmailTemplatesPage() {
   const { orgId = "" } = useParams();
-  const [params, setParams] = useSearchParams();
-  const tab = params.get("tab") === "log" ? "log" : "templates";
+  const [tab, setTab] = useUrlTab<TabId>("tab", TABS, "templates");
   return (
-    <div className="max-w-7xl mx-auto space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl md:text-2xl font-bold text-[var(--text-main)] flex items-center gap-2"><Mail className="w-6 h-6 text-[var(--accent)]" /> Письма</h1>
-        <div className="flex rounded-lg border border-[var(--border-color)] overflow-hidden text-sm">
-          {([["templates", "Шаблоны"], ["log", "Журнал"]] as const).map(([k, l]) => (
-            <button key={k} onClick={() => setParams(k === "log" ? { tab: "log" } : {}, { replace: true })}
-              className={`px-3 py-1.5 transition ${tab === k ? "bg-[var(--accent)] text-white font-semibold" : "text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]"}`}>{l}</button>
-          ))}
-        </div>
-      </div>
-      {tab === "log" ? <EmailLog tenantId={orgId} /> : <Templates orgId={orgId} />}
+    <div className="max-w-7xl mx-auto">
+      <PageHeader title={<span className="inline-flex items-center gap-2"><Mail className="w-6 h-6 text-[var(--accent)]" /> Письма</span>}
+        tabs={<Tabs tabs={[...TABS]} value={tab} onChange={id => setTab(id as TabId)} />} />
+      {tab === "sender" && <SenderTab orgId={orgId} />}
+      {/* Шаблоны остаются в памяти при переходе на другую вкладку — несохранённые правки не пропадают. */}
+      <div hidden={tab !== "templates"}><Templates orgId={orgId} /></div>
+      {tab === "log" && <EmailLog tenantId={orgId} />}
     </div>
   );
 }
@@ -67,13 +67,13 @@ function Templates({ orgId }: { orgId: string }) {
   const saved = list?.find(x => x.id === sel) || null;
   const dirty = sel === "new" ? true : !!saved && !same(saved, f);
 
-  const choose = (id: string) => {
-    if (dirty && !confirm("Изменения не сохранены. Перейти?")) return;
+  const choose = async (id: string) => {
+    if (dirty && !(await confirmDialog({ title: "Изменения не сохранены", message: "Перейти без сохранения?", confirmLabel: "Перейти" }))) return;
     const t = list?.find(x => x.id === id);
     if (t) { setSel(id); setF(t); setMsg(null); }
   };
-  const create = () => {
-    if (dirty && !confirm("Изменения не сохранены. Перейти?")) return;
+  const create = async () => {
+    if (dirty && !(await confirmDialog({ title: "Изменения не сохранены", message: "Перейти без сохранения?", confirmLabel: "Перейти" }))) return;
     setSel("new"); setF({ ...EMPTY_EMAIL_TEMPLATE, name: "Новый шаблон" }); setMsg(null);
   };
 
@@ -93,11 +93,11 @@ function Templates({ orgId }: { orgId: string }) {
   });
   const remove = () => run("del", async () => {
     if (sel === "new") { setSel(null); await load(list?.[0]?.id); return; }
-    if (!confirm(`Удалить шаблон «${f.name}»?`)) return;
+    if (!(await confirmDialog({ title: `Удалить шаблон «${f.name}»?`, confirmLabel: "Удалить", danger: true }))) return;
     try { await emailApi(orgId, `/${sel}`, { method: "DELETE" }); }
     catch (e: any) {
       if (e.status !== 409) throw e;
-      if (!confirm(`Шаблон выбран в настройках:\n${(e.data?.used || []).join("\n")}\n\nВсё равно удалить? Там письма перестанут уходить.`)) return;
+      if (!(await confirmDialog({ title: "Шаблон выбран в настройках", message: `${(e.data?.used || []).join(", ")}. Если удалить, там письма перестанут уходить.`, confirmLabel: "Всё равно удалить", danger: true }))) return;
       await emailApi(orgId, `/${sel}?force=1`, { method: "DELETE" });
     }
     setSel(null); await load("");
