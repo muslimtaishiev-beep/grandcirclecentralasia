@@ -67,6 +67,7 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
     return () => window.removeEventListener("sf:notification", on);
   }, [id, load]);
   const [saving, setSaving] = useState(false);
+  const profileDirty = useRef(false); // до раннего return — порядок хуков не меняется
 
   const staffTemplates = useMemo(() => (d?.templates || []).filter(t => t.audience === "staff" && (d!.canFill[t.id] || d!.canSee[t.id] || d!.forms.some(f => f.templateId === t.id))), [d]);
   const parentTpl = d?.templates.find(t => t.audience === "parent");
@@ -109,7 +110,6 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
     try { await saveSessions(org, a, sessions); } catch (e: any) { toast.error(e.message); } finally { setSaving(false); }
   };
   // Несохранённая правка профиля: закрыть окно — только после вопроса. Черновики анкет сохраняются сами.
-  const profileDirty = useRef(false);
   const guardedClose = async () => {
     if (profileDirty.current && !(await confirmDialog({ title: "Закрыть без сохранения?", message: "Правки профиля не сохранены.", confirmLabel: "Закрыть", danger: true }))) return;
     onClose();

@@ -61,6 +61,12 @@ export default function PublicSiteRenderer() {
     fetchPage();
   }, [orgId, slug]);
 
+  // Заголовок вкладки и светлая тема — до ранних return, порядок хуков постоянный.
+  useEffect(() => {
+    document.title = pageData?.seo?.metaTitle || 'Сайт';
+    document.documentElement.classList.remove('dark');
+  }, [pageData]);
+
   if (loading) {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-slate-50 text-slate-400">
@@ -208,12 +214,6 @@ export default function PublicSiteRenderer() {
     }
   };
 
-  // Setup basic global CSS for the loaded theme
-  useEffect(() => {
-    document.title = pageData?.seo.metaTitle || 'Сайт';
-    // Let's force light mode for public sites for now unless they want a dark background
-    document.documentElement.classList.remove('dark');
-  }, [pageData]);
 
   return (
     <div className="w-full min-h-dvh bg-slate-50">

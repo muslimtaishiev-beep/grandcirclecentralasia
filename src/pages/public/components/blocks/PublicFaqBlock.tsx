@@ -7,10 +7,9 @@ interface Props {
 }
 
 export default function PublicFaqBlock({ block }: Props) {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   if (block.type !== 'FAQ_ACCORDION') return null;
   const { config: { data }, background, spacing, typographyOverrides } = block as any;
-
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const toggle = (id: string) => {
     setExpandedIds(prev => {

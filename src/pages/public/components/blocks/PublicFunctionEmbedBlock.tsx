@@ -12,14 +12,14 @@ interface Props {
 }
 
 export default function PublicFunctionEmbedBlock({ block, tenantId }: Props) {
-  if (block.type !== 'FUNCTION_EMBED') return null;
-  const { config: { data }, background, spacing } = block as any;
+  const isEmbed = block.type === 'FUNCTION_EMBED';
+  const { config: { data = {} as any } = {} as any, background, spacing } = block as any;
   const [funcData, setFuncData] = useState<CustomBusinessFunction | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchFunc = async () => {
-      if (!data.embeddedFunctionId) {
+      if (!isEmbed || !data.embeddedFunctionId) {
         setLoading(false);
         return;
       }
@@ -35,7 +35,9 @@ export default function PublicFunctionEmbedBlock({ block, tenantId }: Props) {
       }
     };
     fetchFunc();
-  }, [data.embeddedFunctionId]);
+  }, [isEmbed, data.embeddedFunctionId]);
+
+  if (!isEmbed) return null;
 
   if (loading) {
     return <div className="py-20 flex justify-center"><Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--primary-color)' }} /></div>;
