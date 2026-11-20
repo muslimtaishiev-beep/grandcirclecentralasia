@@ -65,6 +65,7 @@ const PublicSiteRenderer = lazy(() => import("./pages/public/PublicSiteRenderer"
 const PublicPageEngine = lazy(() => import("./pages/public/PublicPageEngine"));
 const AutomationsDirectoryPage = lazy(() => import("./pages/workspace/automations/AutomationsDirectoryPage"));
 const AutomationLogsPage = lazy(() => import("./pages/workspace/automations/AutomationLogsPage"));
+const WorkspaceNotFound = lazy(() => import("./pages/workspace/NotFound"));
 const ScheduleGrid = lazy(() => import("./pages/workspace/edu/ScheduleCalendarPage"));
 const SubscriptionsManager = lazy(() => import("./pages/workspace/edu/SubscriptionsDirectoryPage"));
 const TeacherPayroll = lazy(() => import("./pages/workspace/edu/TeacherPayrollPage"));
@@ -313,6 +314,7 @@ export default function App() {
             <Route path=":orgId" element={<RequirePermission navKey="dashboard"><GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/dashboard" element={<RequirePermission navKey="dashboard"><GracefulErrorBoundary fallbackTitle="Ошибка Дашборда"><Suspense fallback={<DashboardSkeleton />}><WorkspaceDashboard /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/profile" element={<GracefulErrorBoundary fallbackTitle="Ошибка Профиля"><Suspense fallback={null}><ProfilePage /></Suspense></GracefulErrorBoundary>} />
+            <Route path=":orgId/*" element={<Suspense fallback={null}><WorkspaceNotFound /></Suspense>} />
             <Route path=":orgId/settings" element={<RequirePermission navKey="workspaceSetup"><GracefulErrorBoundary fallbackTitle="Ошибка Настроек"><WorkspaceSettings /></GracefulErrorBoundary></RequirePermission>} />
             {/* Роли и права сведены в один экран /settings/roles. Старые
                 адреса (в закладках, в письмах-инвайтах) редиректим туда, чтобы

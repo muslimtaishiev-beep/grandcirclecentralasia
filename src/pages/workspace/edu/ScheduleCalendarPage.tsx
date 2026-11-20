@@ -72,7 +72,7 @@ export default function ScheduleCalendarPage() {
       <PageHeader title={'Расписание'} actions={<>
         <Button variant="secondary" icon={<BookOpen className="w-4 h-4" />} onClick={() => setShowDir(true)}>Справочники</Button>
         {view === 'week' && <Button variant="secondary" icon={<CopyPlus className="w-4 h-4" />} onClick={copyWeek}>Копировать неделю</Button>}
-        <Button variant="primary" icon={<Plus className="w-4 h-4" />} onClick={() => setEditing({ slot: null, defaults: { date: view === 'week' ? (current >= range.from && current <= range.to ? current : range.from) : current } })}>{`Новое: ${terms.lesson.toLowerCase()}`}</Button>
+        <Button variant="primary" icon={<Plus className="w-4 h-4" />} onClick={() => setEditing({ slot: null, defaults: { date: view === 'week' ? (current >= range.from && current <= range.to ? current : range.from) : current } })}>{terms.lesson}</Button>
       </>} />
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -91,7 +91,7 @@ export default function ScheduleCalendarPage() {
       </div>
       {cal.error && <div role="alert" className="mb-3 p-3 rounded-lg bg-red-100 text-red-700 text-sm">{cal.error}</div>}
 
-      {dir.groups.length === 0 && <EmptyState title={`Добавьте ${terms.group.toLowerCase()}`} action={<Button variant="primary" onClick={() => setShowDir(true)}>Справочники</Button>} />}
+      {dir.groups.length === 0 && <EmptyState title="Справочники не заполнены" action={<Button variant="primary" onClick={() => setShowDir(true)}>Справочники</Button>} />}
 
       {(dir.groups.length > 0 || slots.length > 0) && (
         <div className="overflow-auto rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)]">
