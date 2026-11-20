@@ -494,8 +494,8 @@ export async function syncAllReferrals(t: string) {
 async function attemptsOf(t: string, applicantIds?: string[], detail?: { exams: boolean }) {
   let q: FirebaseFirestore.Query = col(t, "exam_attempts");
   q = applicantIds?.length === 1 ? q.where("applicantId", "==", applicantIds[0]) : q.where("applicantId", "!=", null);
-  const snap = await q.select("applicantId", "examId", "examTitle", "status", "shortId", "startedAt", "finishedAt", "result.sections", "result.percent", "result.topics", "decision", "superseded", "paper", "student.extra",
-    ...(detail ? ["student.name", "student.level", "student.phone", "student.email", "proctoring.enabled", "proctoring.totalViolations", "review.status", "published", "result.earned", "result.max"] : [])).get();
+  const snap = await q.select("applicantId", "examId", "examTitle", "status", "shortId", "startedAt", "finishedAt", "result.sections", "result.percent", "result.topics", "decision", "superseded", "paper", "student.extra", "student.phone",
+    ...(detail ? ["student.name", "student.level", "student.email", "proctoring.enabled", "proctoring.totalViolations", "review.status", "published", "result.earned", "result.max"] : [])).get();
   const exams = new Map((await tenantExams(t)).map(e => [e.id, e]));
   return snap.docs.map(d => {
     const x: any = d.data(); const e = exams.get(x.examId);
@@ -509,7 +509,7 @@ async function attemptsOf(t: string, applicantIds?: string[], detail?: { exams: 
       sections: (x.result?.sections || []).map((s: any) => ({ id: s.id, title: s.title, percent: s.percent, correct: s.correct, total: s.total })),
       topics: (x.result?.topics || []).filter((q: any) => q.topic && q.topic !== "—").map((q: any) => ({ topic: q.topic, percent: q.percent })),
       levels: e?.settings.admission?.levels || { mid: 50, high: 77 },
-      studentPhone: x.student?.extra?.studentPhone || "",
+      studentPhone: x.student?.extra?.studentPhone || x.student?.phone || "",
       decision: x.decision ? DECISION_LABEL[x.decision.value as Decision] : null,
       // Всё, что видно в экзамене: анкета при входе, итог, проверка, прокторинг — анкета и прокторинг только с правом на экзамены.
       ...(detail ? {
