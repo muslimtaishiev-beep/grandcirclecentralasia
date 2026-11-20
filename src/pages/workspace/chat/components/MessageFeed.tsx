@@ -11,6 +11,9 @@ interface Props {
   onToggleReaction: (messageId: string, emoji: string) => void;
   onReplyMessage?: (msg: ChatMessage) => void;
   onDeleteMessage?: (messageId: string) => void;
+  /** Удалять можно своё сообщение; администратор — любое (как в правилах базы). */
+  canDelete?: (msg: ChatMessage) => boolean;
+  onEndCall?: () => void;
 }
 
 export default function MessageFeed({ 
@@ -20,7 +23,9 @@ export default function MessageFeed({
   onJoinCall, 
   onToggleReaction,
   onReplyMessage,
-  onDeleteMessage 
+  onDeleteMessage,
+  canDelete,
+  onEndCall
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -31,10 +36,7 @@ export default function MessageFeed({
   return (
     <div className="flex-1 overflow-y-auto bg-[var(--bg-app)] relative flex flex-col">
       {activeCallSessionId && (
-        <InChatCallBanner 
-          sessionId={activeCallSessionId}
-          onJoin={onJoinCall}
-        />
+        <InChatCallBanner onJoin={onJoinCall} onEnd={onEndCall} />
       )}
 
       <div className="p-6 space-y-5 flex-1">
@@ -72,12 +74,12 @@ export default function MessageFeed({
                       <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">Инициатор: {senderName}</div>
                     </div>
                   </div>
-                  <button 
+                  {activeCallSessionId === msg.webrtcRoomId && <button 
                     onClick={onJoinCall}
                     className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer shrink-0"
                   >
                     Войти
-                  </button>
+                  </button>}
                 </div>
               </div>
             );
@@ -172,7 +174,7 @@ export default function MessageFeed({
                     </button>
                   )}
 
-                  {onDeleteMessage && (
+                  {onDeleteMessage && (canDelete ? canDelete(msg) : isMe) && (
                     <button 
                       onClick={() => {
                         if (window.confirm("Удалить это сообщение?")) {

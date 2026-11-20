@@ -257,6 +257,7 @@ import authRoutes from "./src/routes/authRoutes.js";
 import tenantRoutes from "./src/routes/tenantRoutes.js";
 import superAdminRoutes from "./src/routes/superAdminRoutes.js";
 import superTenantRoutes from "./src/routes/superTenantRoutes.js";
+import adminRoutes from "./src/routes/adminRoutes.js";
 import placementRoutes from "./src/routes/placementRoutes.js";
 import formRoutes from "./src/routes/formRoutes.js";
 import intakeRoutes from "./src/routes/intakeRoutes.js";
@@ -278,6 +279,7 @@ import { sendTestResultEmail } from "./emailService.js";
 
 app.use("/api/auth", authRoutes);
 app.use("/api/tenants", tenantRoutes);
+app.use("/api/tenants", adminRoutes);
 app.use("/api/superadmin", superAdminRoutes);
 app.use("/api/superadmin", superTenantRoutes);
 app.use("/api/placement", placementRoutes);
@@ -742,7 +744,7 @@ app.get("/api/tenant/finance-summary", requireFirebaseAuth, async (req: any, res
     // Деньги организации — только её сотрудникам с правом на зарплаты и кассу
     // (полный доступ его включает). Раньше хватало любого входа на платформу:
     // посторонний читал выручку и список учеников любой школы по её id.
-    if (!(await hasAnyPermission(db, req.user, tenantId, ["edu:payroll"]))) {
+    if (!(await hasAnyPermission(db, req.user, tenantId, ["finance:view", "edu:payroll"]))) {
       return res.status(403).json({ success: false, error: "Недостаточно прав" });
     }
 

@@ -1,14 +1,26 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useOutletContext } from 'react-router-dom';
-import ChannelSidebar from './components/ChannelSidebar';
+import ChannelSidebar, { dmTitle } from './components/ChannelSidebar';
 import MessageFeed from './components/MessageFeed';
 import MessageComposer from './components/MessageComposer';
 import VideoCall from '../../../components/chat/VideoCall';
 import { useChatRoom } from '../../../hooks/useChatRoom';
 import { useAuth } from '../../../contexts/AuthContext';
-import { Hash, Lock, Search, UserPlus, Users, Video } from 'lucide-react';
+import { chatService } from '../../../services/chatService';
+import { useWorkspaceAccess } from '../../../hooks/collab/useWorkspaceAccess';
+import { Hash, Lock, MessageSquare, UserPlus, Users, Video } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+/** Звонок старше 4 часов считаем завершённым: отметку мог не снять закрывший вкладку. */
+const CALL_TTL = 4 * 60 * 60 * 1000;
+function liveCall(id?: string | null): string | undefined {
+  if (!id) return undefined;
+  const ts = Number(String(id).replace(/^call_/, ''));
+  return Number.isFinite(ts) && ts > 0 && Date.now() - ts > CALL_TTL ? undefined : id;
+}
+
+const errText = (e: any) => (e?.code === 'permission-denied' ? 'Нет прав на это действие' : 'Не получилось — повторите');
 
 export default function ChatLayout() {
   const { activeTenant } = useOutletContext<{ activeTenant: any }>();
@@ -30,8 +42,12 @@ export default function ChatLayout() {
     createChannel,
     addMembersToActiveChannel,
     startCall,
+    endCall,
     toggleReaction
   } = useChatRoom(activeTenant?.id, activeChannelId);
+  const access = useWorkspaceAccess(activeTenant?.id);
+  const callId = liveCall(activeChannel?.activeCallSessionId);
+  const title = activeChannel ? (activeChannel.type === 'direct_message' ? dmTitle(activeChannel, staffList, user?.uid) : activeChannel.name) : '';
 
   // Auto-select first channel
   React.useEffect(() => {
@@ -45,18 +61,17 @@ export default function ChatLayout() {
     type: 'public_channel' | 'private_channel' | 'direct_message',
     memberStaffIds: string[]
   ) => {
-    const newId = await createChannel(name, type, memberStaffIds);
-    if (newId) {
-      setActiveChannelId(newId);
-      toast.success(`Канал "${name}" создан!`);
-    }
+    try {
+      const newId = await createChannel(name, type, memberStaffIds);
+      if (newId) setActiveChannelId(newId);
+    } catch (e) { toast.error(errText(e)); }
   };
 
   const handleAddMembersSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedAddStaffIds.length === 0) return;
-    await addMembersToActiveChannel(selectedAddStaffIds);
-    toast.success(`Участники добавлены в канал!`);
+    try { await addMembersToActiveChannel(selectedAddStaffIds); }
+    catch (e) { toast.error(errText(e)); return; }
     setSelectedAddStaffIds([]);
     setIsAddMembersOpen(false);
   };
@@ -71,13 +86,22 @@ export default function ChatLayout() {
 
   const handleStartCall = async () => {
     if (!activeChannel) return;
-    await startCall();
-    setActiveCallRoom({ channelName: activeChannel.name, channelId: activeChannel.id });
+    if (!callId) {
+      try { await startCall(); } catch (e) { toast.error(errText(e)); return; }
+    }
+    setActiveCallRoom({ channelName: title, channelId: activeChannel.id });
   };
 
   const handleJoinCall = () => {
     if (!activeChannel) return;
-    setActiveCallRoom({ channelName: activeChannel.name, channelId: activeChannel.id });
+    setActiveCallRoom({ channelName: title, channelId: activeChannel.id });
+  };
+
+  const handleEndCall = async () => {
+    const chId = activeCallRoom?.channelId || activeChannel?.id;
+    try { if (chId && activeTenant?.id) await chatService.endChannelCall(activeTenant.id, chId); else await endCall(); }
+    catch (e) { toast.error(errText(e)); }
+    setActiveCallRoom(null);
   };
 
   return (
@@ -85,6 +109,7 @@ export default function ChatLayout() {
       <ChannelSidebar 
         channels={channels}
         staffList={staffList}
+        currentUserId={user?.uid}
         activeChannelId={activeChannelId}
         onSelectChannel={setActiveChannelId}
         onCreateChannel={handleCreateChannel}
@@ -97,13 +122,11 @@ export default function ChatLayout() {
             <div className="h-16 border-b border-[var(--border-color)] bg-[var(--bg-panel)] flex items-center justify-between px-6 shrink-0 shadow-xs">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-bold">
-                  {activeChannel.type === 'public_channel' ? <Hash className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+                  {activeChannel.type === 'public_channel' ? <Hash className="w-5 h-5" /> : activeChannel.type === 'direct_message' ? <MessageSquare className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
                 </div>
                 <div>
-                  <h2 className="text-base font-black text-[var(--text-main)] leading-tight">{activeChannel.name}</h2>
+                  <h2 className="text-base font-bold text-[var(--text-main)] leading-tight truncate">{title}</h2>
                   <div className="text-xs text-[var(--text-muted)] font-medium flex items-center gap-2">
-                    <span>{activeChannel.type === 'public_channel' ? 'Публичный канал' : 'Приватная группа'}</span>
-                    <span>•</span>
                     <span className="flex items-center gap-1 font-bold text-emerald-500">
                       <Users className="w-3.5 h-3.5" />
                       {activeChannel.type === 'public_channel' ? `${staffList.length} уч.` : `${activeChannel.memberStaffIds?.length || 1} уч.`}
@@ -114,14 +137,14 @@ export default function ChatLayout() {
 
               {/* Action Tools */}
               <div className="flex items-center gap-2">
-                <button 
+                {activeChannel.type !== 'public_channel' && <button 
                   onClick={() => setIsAddMembersOpen(true)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-500 rounded-xl text-xs font-bold transition cursor-pointer"
                   title="Добавить сотрудников в чат"
                 >
                   <UserPlus className="w-4 h-4" />
-                  <span className="hidden sm:inline">+ Участники</span>
-                </button>
+                  <span className="hidden sm:inline">Участники</span>
+                </button>}
 
                 <button 
                   onClick={handleStartCall}
@@ -129,7 +152,7 @@ export default function ChatLayout() {
                   title="Начать групповой видеозвонок"
                 >
                   <Video className="w-4 h-4" />
-                  <span className="hidden sm:inline">Звонок</span>
+                  <span className="hidden sm:inline">{callId ? 'Присоединиться' : 'Звонок'}</span>
                 </button>
               </div>
             </div>
@@ -138,11 +161,13 @@ export default function ChatLayout() {
             <MessageFeed 
               messages={messages}
               currentUserId={user?.uid}
-              activeCallSessionId={activeChannel.activeCallSessionId}
+              activeCallSessionId={callId}
+              onEndCall={handleEndCall}
+              canDelete={m => m.senderStaffId === user?.uid || access.isAdmin}
               onJoinCall={handleJoinCall}
               onToggleReaction={toggleReaction}
               onReplyMessage={(msg) => setReplyingTo({ senderName: msg.senderName || 'Сотрудник', text: msg.text })}
-              onDeleteMessage={deleteMessage}
+              onDeleteMessage={id => { deleteMessage(id).catch(e => toast.error(errText(e))); }}
             />
 
             {/* Message Composer */}
@@ -155,7 +180,7 @@ export default function ChatLayout() {
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-[var(--text-muted)] font-medium">
-            Выберите канал или свяжитесь с коллегой
+            Выберите чат
           </div>
         )}
       </div>
@@ -164,6 +189,7 @@ export default function ChatLayout() {
       {activeCallRoom && activeTenant?.id && createPortal(
         <VideoCall 
           channelName={activeCallRoom.channelName}
+          onEndForAll={handleEndCall}
           tenantId={activeTenant.id}
           channelId={activeCallRoom.channelId}
           userName={user?.displayName || user?.email?.split('@')[0] || 'Коллега'}
@@ -185,7 +211,6 @@ export default function ChatLayout() {
             </div>
 
             <form onSubmit={handleAddMembersSubmit} className="space-y-3">
-              <p className="text-xs text-[var(--text-muted)]">Выберите коллег для приглашения в канал <b>#{activeChannel?.name}</b>:</p>
               <div className="max-h-48 overflow-y-auto space-y-1.5 p-2 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl">
                 {staffList.map(st => {
                   const isAlreadyMember = activeChannel?.memberStaffIds?.includes(st.id);

@@ -859,6 +859,14 @@ async function tenantKeys(tenantId: string): Promise<string[]> {
   return [s.data()?.apiKey, s.data()?.secretKey, t.data()?.apiKey, t.data()?.secretKey].filter((k): k is string => typeof k === "string" && k.length >= 16 && !isCompromised(k));
 }
 /** Хэши секретов, побывавших в коде (sha256): такие ключи считаются раскрытыми. */
+/** Ключ API хранится хэшем (выпуск — Администрирование → Интеграции). */
+const keyHash = (k: string) => crypto.createHash("sha256").update(String(k)).digest("hex");
+/** Запрос из браузера с сайта не из списка — отказ; сервер-сервер (без Origin) — как раньше. */
+function originAllowed(req: any, sec: any): boolean {
+  const list: string[] = Array.isArray(sec?.allowedOrigins) ? sec.allowedOrigins : [];
+  const origin = String(req.headers?.origin || "");
+  return !list.length || !origin || list.includes(origin);
+}
 const COMPROMISED_SECRETS = new Set(["3e8e1ddeb8df23cc78218f00f217ce6e03223e404a85806506bd09eaf2d726fe"]);
 const isCompromised = (v: string) => COMPROMISED_SECRETS.has(crypto.createHash("sha256").update(String(v)).digest("hex"));
 async function authenticateFormApi(req: any, res: any, next: any) {
@@ -888,12 +896,22 @@ async function authenticateFormApi(req: any, res: any, next: any) {
     const providedKey = apiKey || (secretHeader.startsWith("Bearer ") ? secretHeader.slice(7) : secretHeader);
     if (providedKey && providedKey.length >= 16 && !isCompromised(providedKey)) {
       if (tenantId) {
-        if ((await tenantKeys(tenantId)).some(k => safeEq(k, providedKey))) { bind(tenantId); return next(); }
+        const sec = (await db().collection("tenant_secrets").doc(tenantId).get()).data();
+        const byHash = !!sec?.apiKeyHash && safeEq(String(sec.apiKeyHash), keyHash(providedKey));
+        if (byHash || (await tenantKeys(tenantId)).some(k => safeEq(k, providedKey))) {
+          if (!originAllowed(req, sec)) return res.status(403).json({ success: false, error: "ORIGIN_NOT_ALLOWED", message: "Этот сайт не разрешён для ключа организации" });
+          bind(tenantId); return next();
+        }
       } else {
-        const k = await db().collection("tenant_secrets").where("apiKey", "==", providedKey).limit(1).get();
+        const h = await db().collection("tenant_secrets").where("apiKeyHash", "==", keyHash(providedKey)).limit(1).get();
+        const k = h.empty ? await db().collection("tenant_secrets").where("apiKey", "==", providedKey).limit(1).get() : h;
         const old = k.empty ? await db().collection("tenants").where("apiKey", "==", providedKey).limit(1).get() : null;
         const hit = !k.empty ? k.docs[0] : old && !old.empty ? old.docs[0] : null;
-        if (hit) { bind(hit.id); return next(); }
+        if (hit) {
+          const sec = !k.empty ? k.docs[0].data() : (await db().collection("tenant_secrets").doc(hit.id).get()).data();
+          if (!originAllowed(req, sec)) return res.status(403).json({ success: false, error: "ORIGIN_NOT_ALLOWED", message: "Этот сайт не разрешён для ключа организации" });
+          bind(hit.id); return next();
+        }
       }
     }
 

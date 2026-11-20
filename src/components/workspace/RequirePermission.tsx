@@ -1,6 +1,7 @@
 import { useOutletContext, Link, useParams } from "react-router-dom";
 import { Lock } from "lucide-react";
 import { resolvePermissions, resolveScreens, type PermissionKey } from "../../shared/permissions";
+import { navItemByScreen } from "../../shared/navigation";
 
 /**
  * Доступ к странице воркспейса по правам.
@@ -14,8 +15,8 @@ import { resolvePermissions, resolveScreens, type PermissionKey } from "../../sh
  * объяснения человек считает поломкой и идёт жаловаться.
  */
 export default function RequirePermission({
-  navKey, children,
-}: { navKey: string; children: React.ReactNode }) {
+  navKey, children, devOnly,
+}: { navKey: string; children: React.ReactNode; devOnly?: boolean }) {
   const ctx = useOutletContext<{ activeTenant?: any } | null>();
   const { orgId } = useParams();
   const tenant = ctx?.activeTenant;
@@ -42,7 +43,10 @@ export default function RequirePermission({
         disabledModules: tenant.disabledModules,
         granted: granted as Set<PermissionKey>,
       }).visible);
-  if (visible.has(navKey)) return <>{children}</>;
+  // Заготовки («В разработке») открыты только платформе.
+  const dev = devOnly || navItemByScreen(navKey)?.inDevelopment === true;
+  if (dev) { if (String(tenant.role) === "superadmin") return <>{children}</>; }
+  else if (visible.has(navKey)) return <>{children}</>;
 
   return (
     <div className="max-w-lg mx-auto py-20 text-center">

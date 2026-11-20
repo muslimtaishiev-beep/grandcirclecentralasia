@@ -22,15 +22,30 @@ const col = (t: string, name: string) => db().collection("tenants").doc(t).colle
 const str = (v: unknown, max = 200) => String(v ?? "").trim().slice(0, max);
 const fail = (res: any, status: number, error: string) => res.status(status).json({ success: false, error });
 
-/** Смотреть банк может и проверяющий; менять — тот, кто ведёт тесты или срез. */
-const access = (need: "view" | "edit") => async (req: any, res: any, next: any) => {
+/**
+ * Три уровня: смотреть (tests:read), проверять (tests:review — баллы,
+ * досдача, публикация, прокторинг) и управлять (tests:manage, placement:manage).
+ * Ключи ответов видят только проверяющие и выше.
+ */
+export type ExamLevel = "view" | "review" | "edit";
+export async function examLevel(user: any, tenantId: string): Promise<ExamLevel | null> {
+  if (user?.isSuperadmin === true) return "edit";
+  const perms = await callerPermissions(db(), user?.uid, tenantId, user);
+  if (perms.has("tests:manage") || perms.has("placement:manage")) return "edit";
+  if (perms.has("tests:review")) return "review";
+  if (perms.has("tests:read")) return "view";
+  return null;
+}
+const RANK: Record<ExamLevel, number> = { view: 1, review: 2, edit: 3 };
+const access = (need: ExamLevel) => async (req: any, res: any, next: any) => {
   try {
-    if (req.user?.isSuperadmin === true) { req.canEdit = true; return next(); }
-    const perms = await callerPermissions(db(), req.user?.uid, String(req.params.tenantId), req.user);
-    const canEdit = perms.has("tests:manage") || perms.has("placement:manage");
-    const canView = canEdit || perms.has("tests:review");
-    if (need === "edit" ? !canEdit : !canView) return fail(res, 403, need === "edit" ? "Менять банк вопросов может сотрудник с правом на тесты или срез" : "Нет доступа к экзаменам");
-    req.canEdit = canEdit;
+    const level = await examLevel(req.user, String(req.params.tenantId));
+    if (!level || RANK[level] < RANK[need]) {
+      return fail(res, 403, need === "edit" ? "Менять может сотрудник с правом на тесты или срез" : need === "review" ? "Нужно право «Проверка и прокторинг»" : "Нет доступа к экзаменам");
+    }
+    req.examLevel = level;
+    req.canEdit = level === "edit";
+    req.canReview = RANK[level] >= RANK.review;
     next();
   } catch (e: any) { return fail(res, 500, e.message); }
 };
@@ -42,6 +57,7 @@ const checkParams = (req: any, res: any, next: any) => {
   next();
 };
 export const view = [requireFirebaseAuth, requireScreen("exams", (req: any) => req.params.tenantId), access("view")];
+export const review = [requireFirebaseAuth, requireScreen("exams", (req: any) => req.params.tenantId), access("review")];
 export const edit = [requireFirebaseAuth, requireScreen("exams", (req: any) => req.params.tenantId), access("edit")];
 const who = (req: any) => str(req.user?.email || req.user?.uid, 120);
 
@@ -194,8 +210,9 @@ router.get("/:tenantId/questions", ...view, async (req: any, res: any) => {
     if (d) q = q.where("disciplineId", "==", d);
     const snap = await q.get();
     const questions = snap.docs.map(x => ({ ...(x.data() as BankQuestion), id: x.id }))
-      .sort((a, b) => a.disciplineId.localeCompare(b.disciplineId) || a.number - b.number);
-    return res.json({ success: true, questions });
+      .sort((a, b) => a.disciplineId.localeCompare(b.disciplineId) || a.number - b.number)
+      .map(q => (req.canReview ? q : { ...q, answer: "" }));
+    return res.json({ success: true, questions, canEdit: req.canEdit, canReview: req.canReview });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
@@ -298,9 +315,51 @@ router.post("/:tenantId/questions/bulk", ...edit, async (req: any, res: any) => 
         const ref = col(t, "exam_bank").doc(id);
         if (action === "delete") b.delete(ref); else b.update(ref, patch);
       }
+      // Удалённые — в корзину: вопрос можно вернуть с тем же номером.
+      if (action === "delete") {
+        const snaps = await db().getAll(...ids.slice(i, i + 400).map(id => col(t, "exam_bank").doc(id)));
+        for (const sn of snaps) if (sn.exists) b.set(col(t, "exam_bank_trash").doc(sn.id), { ...sn.data(), deletedAt: Date.now(), deletedBy: who(req) });
+      }
       await b.commit();
     }
     return res.json({ success: true, count: ids.length });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+// ── Корзина вопросов ────────────────────────────────────────────────────
+
+router.get("/:tenantId/questions-trash", ...view, async (req: any, res: any) => {
+  try {
+    const snap = await col(req.params.tenantId, "exam_bank_trash").get();
+    const questions = snap.docs.map(d => ({ ...(d.data() as any), id: d.id, answer: req.canReview ? d.data().answer : "" }))
+      .sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
+    return res.json({ success: true, questions });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+/** { ids, action: "restore" | "purge" } */
+router.post("/:tenantId/questions-trash", ...edit, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId;
+    const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map((x: unknown) => str(x, 20)).filter((x: string) => QUESTION_ID.test(x)))].slice(0, 2000) as string[];
+    const action = String(req.body?.action || "");
+    if (!ids.length) return fail(res, 400, "Не выбраны вопросы");
+    if (!["restore", "purge"].includes(action)) return fail(res, 400, "Неизвестное действие");
+    let n = 0;
+    for (let i = 0; i < ids.length; i += 200) {
+      const snaps = await db().getAll(...ids.slice(i, i + 200).map(id => col(t, "exam_bank_trash").doc(id)));
+      const b = db().batch();
+      for (const sn of snaps) {
+        if (!sn.exists) continue;
+        if (action === "restore") {
+          const { deletedAt: _a, deletedBy: _b, ...q } = sn.data() as any;
+          b.set(col(t, "exam_bank").doc(sn.id), { ...q, updatedAt: Date.now(), updatedBy: who(req) });
+        }
+        b.delete(sn.ref); n++;
+      }
+      await b.commit();
+    }
+    return res.json({ success: true, count: n });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 

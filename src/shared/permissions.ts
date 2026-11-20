@@ -1,3 +1,4 @@
+import { NAV_GROUPS } from "./navigation.js";
 /**
  * Права доступа — единственный источник правды.
  *
@@ -35,7 +36,9 @@ export type PermissionKey =
   // Заявки: кому из сотрудников слать уведомления в Telegram
   | "forms:notify"
   // Администрирование
-  | "team:manage" | "settings:manage";
+  | "team:manage" | "team:view" | "settings:manage" | "audit:view"
+  // Финансы
+  | "finance:view";
 
 export interface PermissionDef {
   key: PermissionKey;
@@ -72,8 +75,12 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: "intake:manage", label: "Приём заявок и бронирование", description: "Потоки приёма с внешних сайтов, занимаемые ресурсы и брони", category: "CRM и продажи" },
   { key: "forms:notify", label: "Уведомления по заявкам", description: "Подключать сотрудников к уведомлениям о новых заявках формы в Telegram (сотрудник подтверждает)", category: "CRM и продажи" },
 
-  { key: "team:manage", label: "Управление сотрудниками", description: "Приглашения, должности, назначение прав", category: "Администрирование" },
-  { key: "settings:manage", label: "Настройки организации", description: "Название, терминология экранов, модули, интеграции", category: "Администрирование" },
+  { key: "finance:view", label: "Финансовая сводка", description: "Касса, выплаты и поступления на главной", category: "Обучение и журнал" },
+
+  { key: "team:view", label: "Просмотр сотрудников", description: "Список сотрудников, их доступ и входы — без изменений", category: "Администрирование" },
+  { key: "team:manage", label: "Управление сотрудниками", description: "Приглашения, должности, назначение прав, отключение", category: "Администрирование" },
+  { key: "settings:manage", label: "Настройки организации", description: "Название, реквизиты, разделы, модули, интеграции", category: "Администрирование" },
+  { key: "audit:view", label: "Журнал действий", description: "Кто что делал в организации", category: "Администрирование" },
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSIONS.map(p => p.key);
@@ -108,7 +115,7 @@ export const PERMISSION_CODES: Record<PermissionKey, string> = {
   "crm:read": "cr", "crm:manage": "cm", "intake:manage": "ik", "forms:notify": "fn",
   "chat:use": "ch", "tasks:use": "ta", "docs:use": "dc", "sheets:use": "sh", "tickets:check": "tk", "journals:manage": "jm", "presentations:manage": "pr",
   "admission:manage": "ad", "psych:conduct": "ps", "psych:view": "pv",
-  "team:manage": "tg", "settings:manage": "sg",
+  "team:manage": "tg", "settings:manage": "sg", "team:view": "tw", "audit:view": "au", "finance:view": "fv",
 };
 
 export const encodePermissionCodes = (granted: Set<PermissionKey>): string =>
@@ -189,36 +196,8 @@ export const ROLE_PRESETS: { name: string; description: string; permissions: Per
  * navKey совпадает с ключом NAV_PERMISSION — выключение здесь убирает и пункт
  * меню, и доступ к странице (RequirePermission смотрит сюда же).
  */
-export const WORKSPACE_SCREENS: { key: string; label: string; group: string }[] = [
-  { key: "dashboard", label: "Дашборд", group: "Основное" },
-  { key: "chat", label: "Чаты", group: "Основное" },
-  { key: "tasks", label: "Задачи", group: "Основное" },
-  { key: "docs", label: "Документы", group: "Основное" },
-  { key: "sheets", label: "Таблицы", group: "Основное" },
-  { key: "journals", label: "Журналы", group: "Основное" },
-  { key: "presentations", label: "Презентации", group: "Основное" },
-
-  { key: "schedule", label: "Расписание", group: "Обучение" },
-  { key: "subscriptions", label: "Абонементы", group: "Обучение" },
-  { key: "payroll", label: "Зарплаты", group: "Обучение" },
-
-  { key: "exams", label: "Экзамены", group: "Тесты и приём" },
-  { key: "admissions", label: "Поступающие", group: "Тесты и приём" },
-
-  { key: "crm", label: "CRM", group: "Продажи и заявки" },
-  { key: "forms", label: "Заявки и QR", group: "Продажи и заявки" },
-  { key: "tickets", label: "Проверка билетов", group: "Продажи и заявки" },
-  { key: "intake", label: "Приём и бронирование", group: "Продажи и заявки" },
-
-  { key: "sites", label: "Site Builder", group: "Инструменты" },
-  { key: "functions", label: "Function Studio", group: "Инструменты" },
-  { key: "automations", label: "Автоматизации", group: "Инструменты" },
-
-  { key: "departments", label: "Оргструктура и отделы", group: "Администрирование" },
-  { key: "permissions", label: "Роли, доступы и сотрудники", group: "Администрирование" },
-  { key: "workspaceSetup", label: "Настройка воркспейса", group: "Администрирование" },
-  { key: "emailTemplates", label: "Письма: шаблоны и журнал", group: "Администрирование" },
-];
+export const WORKSPACE_SCREENS: { key: string; label: string; group: string }[] = NAV_GROUPS.flatMap(g =>
+  g.items.filter(i => i.screen).map(i => ({ key: i.screen as string, label: i.label, group: g.label })));
 
 /**
  * Экраны, которые нельзя выключать: без них воркспейс становится тупиком.

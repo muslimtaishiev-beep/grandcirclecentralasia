@@ -1,15 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Search, FileText, FileSpreadsheet, CheckSquare, Briefcase, MessageSquare, X, ArrowRight, Plus, Users, Calendar, Video, Settings, LayoutTemplate, Zap, Loader2 } from 'lucide-react';
+import { Search, FileText, X, ArrowRight, Loader2 } from 'lucide-react';
 import { searchGlobal, SearchResult } from '../../services/globalSearchService';
+
+/** Пункт быстрого перехода: разделы и подразделы из реестра навигации. */
+export interface SpotlightEntry { title: string; path: string; icon: React.ComponentType<{ className?: string }>; category: string; keywords?: string }
 
 interface SpotlightCommandBarProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Разделы, подразделы и действия, доступные сотруднику (собирает Layout по правам). */
+  entries?: SpotlightEntry[];
 }
 
-export default function SpotlightCommandBar({ isOpen, onClose }: SpotlightCommandBarProps) {
+export default function SpotlightCommandBar({ isOpen, onClose, entries = [] }: SpotlightCommandBarProps) {
   const { orgId } = useParams();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
@@ -57,24 +62,11 @@ export default function SpotlightCommandBar({ isOpen, onClose }: SpotlightComman
     return () => clearTimeout(delayDebounceFn);
   }, [query, orgId]);
 
-  const quickActions = [
-    { title: '+ Создать сделку', path: `/workspace/${orgId}/crm/deals`, icon: Plus, category: 'Действия' },
-    { title: '+ Новый документ', path: `/workspace/${orgId}/docs/new`, icon: FileText, category: 'Действия' },
-    { title: '+ Назначить урок', path: `/workspace/${orgId}/edu/schedule`, icon: Calendar, category: 'Действия' },
-    { title: '+ Запустить звонок', path: `/workspace/${orgId}/chat`, icon: Video, category: 'Действия' },
-  ];
+  const ql = query.toLowerCase().trim();
+  const filteredQuickLinks = entries.filter(item => `${item.title} ${item.category} ${item.keywords || ""}`.toLowerCase().includes(ql));
+  const startItems = entries.filter(e => e.category === "Действия").concat(entries.filter(e => e.category !== "Действия")).slice(0, 8);
 
-  const quickNav = [
-    { title: 'Роли и доступы', path: `/workspace/${orgId}/settings/roles`, icon: Settings, category: 'Навигация' },
-    { title: 'Тарифы и оплата', path: `/workspace/${orgId}/billing`, icon: Zap, category: 'Навигация' },
-    { title: 'Конструктор сайтов', path: `/workspace/${orgId}/sites`, icon: LayoutTemplate, category: 'Навигация' },
-  ];
-
-  const filteredQuickLinks = [...quickActions, ...quickNav].filter(item =>
-    item.title.toLowerCase().includes(query.toLowerCase())
-  );
-
-  const allDisplayItems = query ? [...filteredQuickLinks, ...results] : [...quickActions, ...quickNav];
+  const allDisplayItems = query ? [...filteredQuickLinks, ...results] : startItems;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -112,7 +104,7 @@ export default function SpotlightCommandBar({ isOpen, onClose }: SpotlightComman
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Что вы ищете? Поиск по контактам, документам, группам (Cmd+K)..."
+            placeholder="Разделы, люди, документы"
             className="w-full bg-transparent outline-none text-sm text-[var(--text-main)] placeholder:text-[var(--text-muted)]"
           />
           {loading && <Loader2 className="w-5 h-5 text-emerald-500 animate-spin shrink-0" />}

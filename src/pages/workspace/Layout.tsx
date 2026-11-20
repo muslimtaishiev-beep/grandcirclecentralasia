@@ -41,7 +41,11 @@ import GlobalNotifications from "../../components/workspace/GlobalNotifications"
 import UpdateBanner from "../../components/workspace/UpdateBanner";
 import QuickSetupWizard from "../../components/workspace/QuickSetupWizard";
 import { isPsychOnly, resolvePermissions, resolveScreens, normalizeTenantStatus, type PermissionKey } from "../../shared/permissions";
-import SpotlightCommandBar from "../../components/common/SpotlightCommandBar";
+import SpotlightCommandBar, { type SpotlightEntry } from "../../components/common/SpotlightCommandBar";
+import { NAV_GROUPS, activeNavItem, type NavItem } from "../../shared/navigation";
+import { NAV_ICONS } from "../../components/workspace/navIcons";
+import { UiFeedbackProvider } from "../../components/ui";
+
 
 export default function WorkspaceLayout() {
   const { user, logout } = useAuth();
@@ -148,7 +152,7 @@ export default function WorkspaceLayout() {
   const canSee = (navKey: string) => visibleScreens.has(navKey) && !(psychOnly && navKey === "dashboard");
   useEffect(() => {
     if (!psychOnly || !activeTenant) return;
-    if (new RegExp(`^/workspace/${activeTenant.id}(/dashboard)?/?$`).test(location.pathname)) navigate(`/workspace/${activeTenant.id}/exams?side=psych`, { replace: true });
+    if (new RegExp(`^/workspace/${activeTenant.id}(/dashboard)?/?$`).test(location.pathname)) navigate(`/workspace/${activeTenant.id}/admissions?side=psych`, { replace: true });
   }, [psychOnly, activeTenant, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
   const hasPerm = (perm: string) => granted.has(perm as PermissionKey);
   const isSuperadmin = String(activeTenant?.role || "") === "superadmin";
@@ -156,44 +160,35 @@ export default function WorkspaceLayout() {
     ? (activeTenant.suspended === true || normalizeTenantStatus(activeTenant.status) === "suspended")
     : false;
 
-  // Пункты меню и права на них — из общей карты NAV_PERMISSION, а не
-  // россыпью условий: одно место, где видно, что чем закрыто.
-  const navItems = activeTenant ? ([
-    ["dashboard", "Дашборд", "", LayoutDashboard],
-    ["schedule", "Расписание", "/edu/schedule", Calendar],
-    ["journals", "Журналы", "/journals", BookOpen],
-    ["presentations", "Презентации", "/presentations", MonitorPlay],
-    ["subscriptions", "Абонементы", "/edu/subscriptions", CreditCard],
-    ["payroll", "Зарплаты", "/edu/payroll", DollarSign],
-    ["chat", "Чаты", "/chat", MessageSquare],
-    ["tasks", "Задачи", "/tasks", CheckSquare],
-    ["tickets", "Проверка билетов", "/tickets", QrCode],
-    ["crm", "CRM", "/crm/contacts", Briefcase],
-    ["exams", "Экзамены", "/exams", ClipboardList],
-    // «Тесты», «Проверка и прокторинг» и «Вступительный срез» собраны в
-    // «Экзамены»; их страницы и старые ссылки учеников продолжают работать,
-    // но в меню их больше нет.
-    ["forms", "Заявки и QR", "/builder/forms", FileCheck2],
-    ["functions", "Конструктор функций", "/functions/studio", Settings2],
-    ["departments", "Оргструктура и отделы", "/settings/departments", FolderTree],
-    ["permissions", "Роли и доступы", "/settings/roles", Shield],
-    ["workspaceSetup", "Настройка воркспейса", "/settings/workspace", Sparkles],
-    ["emailTemplates", "Письма", "/settings/emails", Mail],
-    ["docs", "Документы", "/docs", FileText],
-    ["sheets", "Таблицы", "/sheets", FileSpreadsheet],
-    ["sites", "Конструктор сайта", "/sites", Globe],
-    ["automations", "Автоматизации", "/automations", Zap],
-  ] as const)
-    .filter(([key]) => canSee(key))
-    .map(([, name, suffix, icon]) => ({
-      name: name as string, path: `/workspace/${activeTenant.id}${suffix}`, icon: icon as any,
-    }))
-    .concat(
-      // Биллинг — только владельцу организации, правами не выдаётся.
-      ["owner", "org:owner", "superadmin"].includes(String(activeTenant.role))
-        ? [{ name: "Тарифы и оплата", path: `/workspace/${activeTenant.id}/billing`, icon: CreditCard }]
-        : []
-    ) : [];
+  // Меню — из реестра навигации (src/shared/navigation.ts): группы и пункты
+  // по правам. Заготовки («В разработке») видит только платформа.
+  const itemVisible = (it: NavItem) => {
+    if (it.menu === false) return false;
+    if (it.inDevelopment) return isSuperadmin && (!it.screen || canSee(it.screen));
+    if (!it.screen || !canSee(it.screen)) return false;
+    return !it.anyPerm || it.anyPerm.some(p => granted.has(p));
+  };
+  const navGroups = React.useMemo(() => (activeTenant ? NAV_GROUPS
+    .map(g => ({ id: g.id, label: g.label, items: g.items.filter(itemVisible) }))
+    .filter(g => g.items.length) : []), [activeTenant, visibleScreens, granted, isSuperadmin, psychOnly]); // eslint-disable-line react-hooks/exhaustive-deps
+  const active = activeTenant ? activeNavItem(location.pathname, activeTenant.id, navGroups.flatMap(g => g.items)) : null;
+  const hrefOf = (it: NavItem) => `/workspace/${activeTenant?.id}${it.path}`;
+  const screenOn = (screen: string) => navGroups.some(g => g.items.some(i => i.screen === screen));
+  // Cmd+K: те же разделы и подразделы, что в меню, плюс быстрые действия.
+  const spotlight = React.useMemo<SpotlightEntry[]>(() => {
+    if (!activeTenant) return [];
+    const base = `/workspace/${activeTenant.id}`;
+    const acts: SpotlightEntry[] = [
+      ["docs", "Новый документ", "/docs/new", "docs"], ["sheets", "Новая таблица", "/sheets/new", "sheets"],
+      ["crm", "Сделки", "/crm/deals", "crm"], ["schedule", "Назначить занятие", "/edu/schedule", "schedule"],
+    ].filter(([k]) => navGroups.some(g => g.items.some(i => i.screen === k)))
+      .map(([, t, p, ic]) => ({ title: t, path: base + p, icon: NAV_ICONS[ic as keyof typeof NAV_ICONS], category: "Действия" }));
+    const nav = navGroups.flatMap(g => g.items.flatMap(it => [
+      { title: it.label, path: base + it.path, icon: NAV_ICONS[it.icon], category: g.label },
+      ...(it.sub || []).filter(sb => sb.label !== it.label).map(sb => ({ title: sb.label, path: base + sb.path, icon: NAV_ICONS[it.icon], category: `${g.label} · ${it.label}`, keywords: sb.keywords })),
+    ]));
+    return [...acts, ...nav];
+  }, [activeTenant, navGroups]);
 
   if (loading) {
     return <div className="min-h-dvh bg-[var(--bg-app)] flex items-center justify-center text-[var(--text-muted)] font-mono text-sm">Загрузка…</div>;
@@ -240,10 +235,11 @@ export default function WorkspaceLayout() {
             {/* Быстрые ссылки в шапке подчиняются тем же правам, что и меню
                 слева: иначе сотрудник видел бы «CRM» в двух местах, где одно
                 ведёт на экран «нет доступа». */}
-            {canSee('chat') && <Link to={`/workspace/${orgId}/chat`} className="hover:text-[var(--accent)] transition">Чаты</Link>}
-            {canSee('tasks') && <Link to={`/workspace/${orgId}/tasks`} className="hover:text-[var(--accent)] transition">Задачи</Link>}
-            {canSee('crm') && <Link to={`/workspace/${orgId}/crm/deals`} className="hover:text-[var(--accent)] transition">CRM</Link>}
-            {canSee('exams') && <Link to={`/workspace/${orgId}/exams`} className="hover:text-[var(--accent)] transition">Экзамены</Link>}
+            {screenOn('chat') && <Link to={`/workspace/${orgId}/chat`} className="hover:text-[var(--accent)] transition">Чаты</Link>}
+            {screenOn('tasks') && <Link to={`/workspace/${orgId}/tasks`} className="hover:text-[var(--accent)] transition">Задачи</Link>}
+            {screenOn('crm') && <Link to={`/workspace/${orgId}/crm/deals`} className="hover:text-[var(--accent)] transition">CRM</Link>}
+            {screenOn('exams') && <Link to={`/workspace/${orgId}/exams`} className="hover:text-[var(--accent)] transition">Экзамены</Link>}
+            {screenOn('admissions') && <Link to={`/workspace/${orgId}/admissions`} className="hover:text-[var(--accent)] transition">Приём</Link>}
           </div>
 
           <div className="flex-1 relative cursor-pointer" onClick={() => setIsSearchOpen(true)}>
@@ -257,7 +253,7 @@ export default function WorkspaceLayout() {
           </div>
         </div>
 
-        <SpotlightCommandBar isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
+        <SpotlightCommandBar isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} entries={spotlight} />
 
         {/* Right: User Profile & Tools */}
         <div className="flex items-center gap-1 sm:gap-3 shrink-0">
@@ -332,18 +328,24 @@ export default function WorkspaceLayout() {
                 <button onClick={() => setIsMobileSidebarOpen(false)} className="p-2 -mr-2 rounded-lg text-[var(--text-muted)]" aria-label="Закрыть меню"><X className="w-5 h-5" /></button>
               </div>
               <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-                {navItems.map(item => {
-                  const isActive = location.pathname.includes(item.path);
-                  return (
-                    <Link key={item.name} to={item.path} onClick={() => setIsMobileSidebarOpen(false)}
-                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition ${
-                        isActive ? "bg-[var(--accent)] text-white" : "text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]"
-                      }`}>
-                      <item.icon className="w-5 h-5 shrink-0" />
-                      <span className="truncate">{item.name}</span>
-                    </Link>
-                  );
-                })}
+                {navGroups.map(g => (
+                  <div key={g.id} className="pb-1">
+                    {g.id !== "home" && <div className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{g.label}</div>}
+                    {g.items.map(item => {
+                      const Icon = NAV_ICONS[item.icon];
+                      const isActive = active === item;
+                      return (
+                        <Link key={item.label} to={hrefOf(item)} onClick={() => setIsMobileSidebarOpen(false)} aria-current={isActive ? "page" : undefined}
+                          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition ${
+                            isActive ? "bg-[var(--accent)] text-white" : "text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]"
+                          }`}>
+                          <Icon className="w-5 h-5 shrink-0" />
+                          <span className="truncate">{item.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
               <div className="p-2 border-t border-[var(--border-color)] shrink-0 space-y-0.5">
                 <button onClick={() => { setIsMobileSidebarOpen(false); navigate(`/workspace/${orgId}/profile`); }}
@@ -361,31 +363,37 @@ export default function WorkspaceLayout() {
 
         {/* Левая колонка — с планшета и шире. Прокручивается, если разделов
             больше, чем помещается по высоте; кнопка меню раскрывает подписи. */}
-        <div className={`relative z-0 hidden md:flex ${isMobileSidebarOpen ? "w-56 items-stretch px-2" : "w-16 items-center"} shrink-0 border-r border-[var(--border-color)] flex-col py-4 gap-2 overflow-y-auto hide-scrollbar transition-[width]`}>
+        <div className={`relative z-0 hidden md:flex ${isMobileSidebarOpen ? "w-56 items-stretch px-2" : "w-16 items-center"} shrink-0 border-r border-[var(--border-color)] flex-col py-3 gap-1 overflow-y-auto hide-scrollbar transition-[width]`}>
           <div aria-hidden className="absolute inset-0 -z-10 bg-[var(--bg-panel)] backdrop-blur-md pointer-events-none" />
-          {navItems.map((item) => {
-            const isActive = location.pathname.includes(item.path);
-            return (
-              <Link 
-                key={item.name}
-                to={item.path}
-                title={item.name}
-                data-tooltip={isMobileSidebarOpen ? undefined : item.name}
-                data-tooltip-pos="right"
-                className={`${isMobileSidebarOpen ? "h-11 px-3 gap-3 justify-start" : "w-12 h-12 justify-center"} shrink-0 rounded-xl flex items-center transition-all group relative ${
-                  isActive 
-                    ? 'bg-[var(--accent)] text-white shadow-md' 
-                    : 'text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/5 hover:text-[var(--text-main)]'
-                }`}
-              >
-                <item.icon className={`w-5 h-5 shrink-0 ${isActive ? 'scale-110' : 'group-hover:scale-110 transition-transform'}`} />
-                {isMobileSidebarOpen && <span className="text-sm font-medium truncate">{item.name}</span>}
-                {isActive && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-white rounded-r-full shadow-[0_0_8px_rgba(255,255,255,0.8)]"></div>
-                )}
-              </Link>
-            )
-          })}
+          {navGroups.map((g, gi) => (
+            <div key={g.id} className={`flex flex-col gap-1 ${isMobileSidebarOpen ? "items-stretch" : "items-center"}`} role="group" aria-label={g.label}>
+              {gi > 0 && (isMobileSidebarOpen
+                ? <div className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] truncate">{g.label}</div>
+                : <div aria-hidden className="w-8 my-1.5 border-t border-[var(--border-color)]" />)}
+              {g.items.map(item => {
+                const Icon = NAV_ICONS[item.icon];
+                const isActive = active === item;
+                return (
+                  <Link
+                    key={item.label}
+                    to={hrefOf(item)}
+                    title={item.label}
+                    aria-current={isActive ? "page" : undefined}
+                    data-tooltip={isMobileSidebarOpen ? undefined : item.label}
+                    data-tooltip-pos="right"
+                    className={`${isMobileSidebarOpen ? "h-10 px-3 gap-3 justify-start" : "w-12 h-11 justify-center"} shrink-0 rounded-xl flex items-center transition-all group relative ${
+                      isActive
+                        ? 'bg-[var(--accent)] text-white shadow-md'
+                        : 'text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/5 hover:text-[var(--text-main)]'
+                    }`}
+                  >
+                    <Icon className={`w-5 h-5 shrink-0 ${isActive ? '' : 'group-hover:scale-110 transition-transform'}`} />
+                    {isMobileSidebarOpen && <span className="text-sm font-medium truncate">{item.label}</span>}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
 
           {/* «Выйти» — в меню профиля в шапке. */}
         </div>
@@ -417,6 +425,7 @@ export default function WorkspaceLayout() {
                ) : (
                  <Outlet context={{ activeTenant: activeTenant || (orgId ? { id: orgId, name: orgId, slug: orgId } : null), tenants, refreshTenants: fetchTenants }} />
                )}
+               <UiFeedbackProvider />
             </main>
           </div>
         </div>

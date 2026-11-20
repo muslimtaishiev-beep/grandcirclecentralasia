@@ -1,59 +1,56 @@
-import { useState, useEffect } from 'react';
-import { crmService } from '../services/crmService';
+import { useState, useEffect, useMemo } from 'react';
+import { crmService, dealInPipeline, stageOfDeal } from '../services/crmService';
 import { CrmPipeline, CrmDeal } from '../types/crm';
 import { useAuth } from '../contexts/AuthContext';
 
 export function useCrmPipeline(tenantId: string) {
   const { user } = useAuth();
   const [pipelines, setPipelines] = useState<CrmPipeline[]>([]);
-  const [deals, setDeals] = useState<CrmDeal[]>([]);
-  const [activePipelineId, setActivePipelineId] = useState<string | null>(null);
+  const [allDeals, setAllDeals] = useState<CrmDeal[]>([]);
+  const [pickedId, setActivePipelineId] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!tenantId) return;
-    const unsub = crmService.subscribeToPipelines(tenantId, (data) => {
-      setPipelines(data);
-      if (data.length > 0 && !activePipelineId) {
-        const defaultPipe = data.find(p => p.isDefault) || data[0];
-        setActivePipelineId(defaultPipe.id);
-      }
-    });
+    setLoaded(false);
+    const unsub = crmService.subscribeToPipelines(tenantId, data => { setPipelines(data); setLoaded(true); }, () => { setError('Не удалось загрузить воронки'); setLoaded(true); });
     return () => unsub();
   }, [tenantId]);
 
   useEffect(() => {
-    if (!tenantId || !activePipelineId) return;
-    const unsub = crmService.subscribeToDeals(tenantId, activePipelineId, (data) => {
-      setDeals(data);
-    });
+    if (!tenantId) return;
+    const unsub = crmService.subscribeToDeals(tenantId, setAllDeals, () => setError('Не удалось загрузить сделки'));
     return () => unsub();
-  }, [tenantId, activePipelineId]);
+  }, [tenantId]);
 
-  const activePipeline = pipelines.find(p => p.id === activePipelineId);
+  const defaultId = (pipelines.find(p => p.isDefault) || pipelines[0])?.id || '';
+  const activePipeline = pipelines.find(p => p.id === pickedId) || pipelines.find(p => p.id === defaultId);
+  const activePipelineId = activePipeline?.id || null;
+
+  /** Сделки активной воронки, с этапом, приведённым к её этапам. */
+  const deals = useMemo(() => {
+    if (!activePipeline) return [];
+    return allDeals
+      .filter(d => dealInPipeline(d, activePipeline, defaultId))
+      .map(d => ({ ...d, stageId: stageOfDeal(d, activePipeline), currency: d.currency || activePipeline.currency || '' }));
+  }, [allDeals, activePipeline, defaultId]);
+
+  const author = { id: user?.uid || '', name: user?.displayName || user?.email || 'Сотрудник' };
 
   const moveDeal = async (dealId: string, targetStageId: string) => {
     if (!activePipeline) return;
-    
-    const targetStage = activePipeline.stages.find(s => s.id === targetStageId);
-    let newStatus: 'open' | 'won' | 'lost' = 'open';
-    if (targetStage?.isWonStage) newStatus = 'won';
-    else if (targetStage?.isLostStage) newStatus = 'lost';
-
-    // Optimistic update
-    setDeals(prev => prev.map(d => d.id === dealId ? { ...d, stageId: targetStageId, status: newStatus } : d));
-
-    await crmService.moveDealStage(tenantId, dealId, targetStageId, newStatus, {
-      id: user?.uid || 'unknown',
-      name: user?.displayName || user?.email || 'System'
-    });
+    const target = activePipeline.stages.find(s => s.id === targetStageId);
+    const newStatus: 'open' | 'won' | 'lost' = target?.isWonStage ? 'won' : target?.isLostStage ? 'lost' : 'open';
+    const prev = allDeals;
+    setAllDeals(p => p.map(d => (d.id === dealId ? { ...d, stageId: targetStageId, status: newStatus, pipelineId: d.pipelineId || activePipeline.id } : d)));
+    try {
+      await crmService.moveDealStage(tenantId, dealId, targetStageId, newStatus, author, target?.name, activePipeline.id);
+    } catch (e) {
+      setAllDeals(prev);
+      throw e;
+    }
   };
 
-  return {
-    pipelines,
-    activePipelineId,
-    setActivePipelineId,
-    activePipeline,
-    deals,
-    moveDeal
-  };
+  return { pipelines, activePipelineId, setActivePipelineId, activePipeline, deals, allDeals, moveDeal, loaded, error, author, defaultId };
 }

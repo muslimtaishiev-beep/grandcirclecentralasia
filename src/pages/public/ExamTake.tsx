@@ -70,7 +70,18 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   /** Работу закрыл не ученик (организатор или сервер) — показываем это на итоговом экране. */
   const [endedBy, setEndedBy] = useState<null | "organizer" | "annulled">(null);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "offline">("saved");
-  const pending = useRef<Record<string, string>>({});
+  // Неотправленные ответы живут и в браузере: перезагрузка или пропавшая
+  // сеть их не теряют — после возврата они уходят на сервер.
+  const pendKey = `${storeKey}_pending`;
+  const pending = useRef<Record<string, string>>((() => { try { return JSON.parse(localStorage.getItem(`exam_${code.toUpperCase()}_pending`) || "{}") || {}; } catch { return {}; } })());
+  const keepPending = useCallback(() => {
+    try { if (Object.keys(pending.current).length) localStorage.setItem(pendKey, JSON.stringify(pending.current)); else localStorage.removeItem(pendKey); } catch { /* хранилище недоступно */ }
+  }, [pendKey]);
+  /** Метка устройства — лимит неверных PIN считается по ней, а не по всему залу. */
+  const device = useMemo(() => {
+    try { let d = localStorage.getItem("exam_device"); if (!d) { d = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, "0")).join(""); localStorage.setItem("exam_device", d); } return d; }
+    catch { return ""; }
+  }, []);
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finishing = useRef(false);
   /** Прокручиваемая область вопросов в режиме «по одному на экран». */
@@ -85,7 +96,13 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
 
   const applyState = useCallback((s: State) => {
     setState(s); setSkew(s.serverNow - Date.now());
-    if (s.section) setAnswers(a => ({ ...s.section!.answers, ...a, ...pending.current }));
+    if (s.section) {
+      // Ответы из браузера — только этого раздела: остальные сервер уже не примет.
+      const ids = new Set(s.section.questions.map(q => q.id));
+      for (const k of Object.keys(pending.current)) if (!ids.has(k)) delete pending.current[k];
+      setAnswers(a => ({ ...s.section!.answers, ...a, ...pending.current }));
+    } else pending.current = {};
+    try { if (Object.keys(pending.current).length) localStorage.setItem(`${storeKey}_pending`, JSON.stringify(pending.current)); else localStorage.removeItem(`${storeKey}_pending`); } catch { /* недоступно */ }
     setPhase(s.status === "in_progress" ? "exam" : "final");
   }, []);
 
@@ -124,21 +141,24 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
     pending.current = {};
     setSaveState("saving");
     const p = (async () => {
-      try { await post("/answer", { token, answers: batch }); setSaveState("saved"); return true; }
+      try { await post("/answer", { token, answers: batch }); setSaveState("saved"); keepPending(); return true; }
       catch (e: any) {
         if (/сдана|вышло/.test(String(e?.message))) { setSaveState("saved"); setTimeout(() => void syncStateRef.current?.(), 0); return false; }
-        pending.current = { ...batch, ...pending.current }; setSaveState("offline");
+        pending.current = { ...batch, ...pending.current }; keepPending(); setSaveState("offline");
         flushTimer.current = setTimeout(() => void flush(), 4000);
         return false;
       }
     })();
     inflight.current = p;
     try { return await p; } finally { if (inflight.current === p) inflight.current = null; }
-  }, [post, token]);
+  }, [post, token, keepPending]);
+  // Вернулись после перезагрузки или обрыва — отправляем то, что ждало в браузере.
+  useEffect(() => { if (phase === "exam" && token && Object.keys(pending.current).length) void flush(); }, [phase, token, flush]);
   const setAnswer = (qid: string, v: any) => {
     const val = typeof v === "string" ? v : JSON.stringify(v);
     setAnswers(a => ({ ...a, [qid]: val }));
     pending.current[qid] = val;
+    keepPending();
     if (flushTimer.current) clearTimeout(flushTimer.current);
     flushTimer.current = setTimeout(() => void flush(), 1200);
   };
@@ -200,6 +220,21 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
       } catch { /* кадр не снялся — экзамен важнее */ }
     }
   }, [proctor.events, proctorActive]);
+  // Каждые 30 секунд — счётчики нарушений для экрана «Сейчас» у организатора.
+  const eventsRef = useRef(proctor.events); eventsRef.current = proctor.events;
+  const honestyRef = useRef(proctor.honestyIndex); honestyRef.current = proctor.honestyIndex;
+  useEffect(() => {
+    if (!proctorActive || !token) return;
+    let sent = -1;
+    const tick = () => {
+      const ev = eventsRef.current;
+      if (ev.length === sent) return;
+      sent = ev.length;
+      void post("/proctoring", { token, partial: true, honestyIndex: honestyRef.current, violations: ev.map(e => ({ type: e.type, severity: e.severity, description: e.description })) }).catch(() => {});
+    };
+    const t = setInterval(tick, 30_000);
+    return () => clearInterval(t);
+  }, [proctorActive, token, post]);
   const sendReport = useCallback(async () => {
     if (!proctorOn || reported.current || !token) return;
     if (!camOk && !camFail) return;
@@ -304,7 +339,7 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   const start = async () => {
     setBusy(true); setError(null);
     try {
-      const j = ref ? await post("/start-referral", { ref, pin: form.pin, consent: consent || refConsented, extra }) : await post("/start", { ...form, consent, extra });
+      const j = ref ? await post("/start-referral", { ref, device, pin: form.pin, consent: consent || refConsented, extra }) : await post("/start", { ...form, device, consent, extra });
       localStorage.setItem(storeKey, JSON.stringify({ token: j.token, shortId: j.shortId }));
       setToken(j.token);
       if (j.state.waitingStart) { setState(j.state); setPhase("photo"); }

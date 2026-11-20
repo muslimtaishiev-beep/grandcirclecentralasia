@@ -1,34 +1,21 @@
-import React from 'react';
-import { Video, Users } from 'lucide-react';
+import { Video } from 'lucide-react';
 
 interface Props {
-  sessionId: string;
   onJoin: () => void;
+  onEnd?: () => void;
 }
 
-export default function InChatCallBanner({ sessionId, onJoin }: Props) {
+export default function InChatCallBanner({ onJoin, onEnd }: Props) {
   return (
-    <div className="bg-indigo-600 text-white p-3 flex items-center justify-between shadow-md shrink-0">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center animate-pulse">
-          <Video className="w-5 h-5" />
-        </div>
-        <div>
-          <div className="font-bold flex items-center gap-2">
-            Идет групповой видеозвонок
-            <span className="flex items-center gap-1 text-xs bg-white/20 px-2 py-0.5 rounded-full">
-              <Users className="w-3 h-3" /> 3
-            </span>
-          </div>
-          <div className="text-xs text-indigo-200">Присоединяйтесь к обсуждению</div>
-        </div>
+    <div className="bg-indigo-600 text-white px-4 py-2.5 flex items-center justify-between gap-3 shrink-0">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <Video className="w-5 h-5 shrink-0" />
+        <span className="font-semibold text-sm truncate">Идёт звонок</span>
       </div>
-      <button 
-        onClick={onJoin}
-        className="px-4 py-2 bg-white text-indigo-600 font-bold rounded-xl shadow-sm hover:bg-indigo-50 transition"
-      >
-        Присоединиться
-      </button>
+      <div className="flex items-center gap-2 shrink-0">
+        {onEnd && <button onClick={onEnd} className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-semibold">Завершить</button>}
+        <button onClick={onJoin} className="px-3 py-1.5 bg-white text-indigo-700 text-xs font-semibold rounded-lg hover:bg-indigo-50">Присоединиться</button>
+      </div>
     </div>
   );
 }

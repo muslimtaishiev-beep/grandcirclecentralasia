@@ -10,6 +10,7 @@ import { checkTenantOpen, invalidateTenant, requireScreen } from "../server/tena
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { accessChangeDenied, callerPermissions, activeMembership, canAssignSystemRole, existingMembership, pickStrongest, rolePermissions } from "../server/access.js";
 import { syncClaims } from "../server/claims.js";
+import { actorOf, diffRows, writeAudit } from "../server/audit.js";
 import { sendStaffInviteEmail } from "../../emailService.js";
 import { appUrl } from "../server/emailEvents.js";
 import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
@@ -180,7 +181,7 @@ router.get("/my", requireFirebaseAuth, async (req: any, res: any) => {
 });
 
 // Middleware to check if user is an admin of the tenant
-const requireTenantAdmin = async (req: any, res: any, next: any) => {
+const requireTenantAdminWith = (...need: string[]) => async (req: any, res: any, next: any) => {
   try {
     // Суперадмин — только по документу в superadmins, не по домену почты.
     //
@@ -220,12 +221,10 @@ const requireTenantAdmin = async (req: any, res: any, next: any) => {
         const roleDoc = await db.collection("custom_roles").doc(String(membership.customRoleId)).get();
         if (roleDoc.exists) for (const p of (roleDoc.data()?.permissions || [])) own.add(String(p));
       }
-      allowed = own.has("team:manage") || own.has("settings:manage");
+      allowed = need.some(p => own.has(p));
     }
     if (!allowed) {
-      return res.status(403).json({
-        error: "Нет прав на управление организацией. Нужно право «Управление сотрудниками» или «Настройки организации».",
-      });
+      return res.status(403).json({ error: NEED_TEXT(need) });
     }
 
     // Приостановленная организация закрыта и для её администраторов.
@@ -238,9 +237,17 @@ const requireTenantAdmin = async (req: any, res: any, next: any) => {
     return res.status(500).json({ error: error.message });
   }
 };
+const PERM_TEXT: Record<string, string> = { "team:manage": "Управление сотрудниками", "team:view": "Просмотр сотрудников", "settings:manage": "Настройки организации" };
+const NEED_TEXT = (need: string[]) => `Нужно право ${need.map(p => `«${PERM_TEXT[p] || p}»`).join(" или ")}`;
+/** Сотрудники, должности, приглашения. */
+const requireTeam = requireTenantAdminWith("team:manage");
+/** Смотреть сотрудников и должности. */
+const requireTeamView = requireTenantAdminWith("team:manage", "team:view");
+/** Название, реквизиты, разделы, модули. */
+const requireSettings = requireTenantAdminWith("settings:manage");
 
 // POST /api/tenants/:id/invite - Invite staff to the organization
-router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: any, res: any) => {
+router.post("/:id/invite", requireFirebaseAuth, requireTeam, async (req: any, res: any) => {
   try {
     const { email, password, name, displayName, role, roleName, permissions } = req.body;
     const tenantId = req.params.id;
@@ -361,6 +368,7 @@ router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: 
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
       const synced = await syncClaimsSafe(db, targetUserId);
+      await writeAudit(db, tenantId, { actor: actorOf(req.user), action: "role.change", section: "access", target: { kind: "member", id: targetUserId, name: staffName }, detail: "Повторное приглашение", changes: diffRows([["Должность", existing.role, assignedRole], ["Личные права", migrateLegacyPermissions(existing).join(", "), wantedPerms.join(", ")]]) });
       return res.json({ success: true, claimsSynced: synced, message: synced ? "Имя, роль и разрешения сотрудника обновлены" : CLAIMS_LAG });
     }
 
@@ -378,6 +386,7 @@ router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: 
       joinedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     const claimsSynced = await syncClaimsSafe(db, targetUserId);
+    await writeAudit(db, tenantId, { actor: actorOf(req.user), action: "invite", section: "staff", target: { kind: "member", id: targetUserId, name: staffName }, detail: `${email} · ${assignedRole}${wantedPerms.length ? ` · личных прав: ${wantedPerms.length}` : ""}` });
 
     // Письмо сотруднику. Firebase сам ничего не шлёт: аккаунт создавался с
     // временным паролем, который видел только админ на экране, — сотрудник
@@ -450,7 +459,7 @@ router.post("/:id/invite", requireFirebaseAuth, requireTenantAdmin, async (req: 
  * обязательность полей расписания. Организации без конфига видят прежние
  * тексты — существующих это не трогает.
  */
-router.put("/:id/workspace-config", requireFirebaseAuth, requireTenantAdmin, requireScreen("workspaceSetup", byPathId), async (req: any, res: any) => {
+router.put("/:id/workspace-config", requireFirebaseAuth, requireSettings, requireScreen("workspaceSetup", byPathId), async (req: any, res: any) => {
   try {
     const tenantId = req.params.id;
     const db = admin.firestore();
@@ -533,6 +542,7 @@ router.put("/:id/workspace-config", requireFirebaseAuth, requireTenantAdmin, req
       needsWorkspaceSetup: admin.firestore.FieldValue.delete(),
     });
     invalidateTenant(tenantId);
+    await writeAudit(db, tenantId, { actor: actorOf(req.user), action: "settings.workspace", section: "settings", detail: clean.activityType || "" });
     return res.json({ success: true, config: clean });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error.message });
@@ -548,7 +558,7 @@ const ROLES = "custom_roles";
  * сертификатов и шаблонов документов. Раньше во всех документах платформы
  * были зашиты реквизиты одной организации.
  */
-router.put("/:id/legal", requireFirebaseAuth, requireTenantAdmin, requireScreen("workspaceSetup", byPathId), async (req: any, res: any) => {
+router.put("/:id/legal", requireFirebaseAuth, requireSettings, requireScreen("workspaceSetup", byPathId), async (req: any, res: any) => {
   try {
     const db = admin.firestore();
     const tenantId = req.params.id;
@@ -560,6 +570,7 @@ router.put("/:id/legal", requireFirebaseAuth, requireTenantAdmin, requireScreen(
     if (!legal.legalName) return res.status(400).json({ success: false, error: "Укажите официальное название организации" });
     await db.collection("tenants").doc(tenantId).update({ legal, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
     invalidateTenant(tenantId);
+    await writeAudit(db, tenantId, { actor: actorOf(req.user), action: "settings.legal", section: "settings", detail: legal.legalName });
     return res.json({ success: true, legal });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
@@ -567,7 +578,7 @@ router.put("/:id/legal", requireFirebaseAuth, requireTenantAdmin, requireScreen(
 });
 
 /** GET /api/tenants/:id/roles — должности организации. */
-router.get("/:id/roles", requireFirebaseAuth, requireTenantAdmin, requireScreen("permissions", byPathId), async (req: any, res: any) => {
+router.get("/:id/roles", requireFirebaseAuth, requireTeamView, requireScreen("permissions", byPathId), async (req: any, res: any) => {
   try {
     const db = admin.firestore();
     const snap = await db.collection(ROLES).where("tenantId", "==", req.params.id).get();
@@ -592,7 +603,7 @@ router.get("/:id/roles", requireFirebaseAuth, requireTenantAdmin, requireScreen(
 });
 
 /** POST /api/tenants/:id/roles — создать или изменить должность. */
-router.post("/:id/roles", requireFirebaseAuth, requireTenantAdmin, requireScreen("permissions", byPathId), async (req: any, res: any) => {
+router.post("/:id/roles", requireFirebaseAuth, requireTeam, requireScreen("permissions", byPathId), async (req: any, res: any) => {
   try {
     const db = admin.firestore();
     const tenantId = req.params.id;
@@ -640,7 +651,9 @@ router.post("/:id/roles", requireFirebaseAuth, requireTenantAdmin, requireScreen
       updatedBy: req.user?.email || req.user?.uid || "",
       ...(roleId ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),
     };
+    const prevPerms: string[] = roleId ? ((await db.collection(ROLES).doc(id).get()).data()?.permissions || []) : [];
     await db.collection(ROLES).doc(id).set(doc, { merge: true });
+    await writeAudit(db, tenantId, { actor: actorOf(req.user), action: roleId ? "role.save" : "role.create", section: "roles", target: { kind: "role", id, name: cleanName }, changes: diffRows([["Права", prevPerms.join(", "), wanted.join(", ")]]) });
     // Права должности изменились — обновить claims всех, кто на ней, ДО
     // ответа: на Vercel фоновая работа после ответа может не выполниться.
     let claimsFailed = 0;
@@ -659,7 +672,7 @@ router.post("/:id/roles", requireFirebaseAuth, requireTenantAdmin, requireScreen
 });
 
 /** DELETE /api/tenants/:id/roles/:roleId — удалить незанятую должность. */
-router.delete("/:id/roles/:roleId", requireFirebaseAuth, requireTenantAdmin, requireScreen("permissions", byPathId), async (req: any, res: any) => {
+router.delete("/:id/roles/:roleId", requireFirebaseAuth, requireTeam, requireScreen("permissions", byPathId), async (req: any, res: any) => {
   try {
     const db = admin.firestore();
     const { id: tenantId, roleId } = req.params;
@@ -682,6 +695,7 @@ router.delete("/:id/roles/:roleId", requireFirebaseAuth, requireTenantAdmin, req
       });
     }
     await db.collection(ROLES).doc(roleId).delete();
+    await writeAudit(db, tenantId, { actor: actorOf(req.user), action: "role.delete", section: "roles", target: { kind: "role", id: roleId, name: String(snap.data()?.name || "") } });
     return res.json({ success: true });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
@@ -689,7 +703,7 @@ router.delete("/:id/roles/:roleId", requireFirebaseAuth, requireTenantAdmin, req
 });
 
 /** PUT /api/tenants/:id/modules — что скрыто для всей организации. */
-router.put("/:id/modules", requireFirebaseAuth, requireTenantAdmin, requireScreen("permissions", byPathId), async (req: any, res: any) => {
+router.put("/:id/modules", requireFirebaseAuth, requireSettings, requireScreen("permissions", byPathId), async (req: any, res: any) => {
   try {
     const db = admin.firestore();
     const known = new Set(ORG_MODULES.map(m => m.key));
@@ -700,6 +714,7 @@ router.put("/:id/modules", requireFirebaseAuth, requireTenantAdmin, requireScree
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     invalidateTenant(req.params.id);
+    await writeAudit(db, req.params.id, { actor: actorOf(req.user), action: "settings.modules", section: "settings", detail: disabled.length ? `Выключены: ${disabled.join(", ")}` : "Все модули включены" });
     return res.json({ success: true, disabledModules: disabled });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
@@ -714,7 +729,7 @@ router.put("/:id/modules", requireFirebaseAuth, requireTenantAdmin, requireScree
  * отдельно. Дашборд выключить нельзя — без него воркспейс становится тупиком
  * без единой ссылки.
  */
-router.put("/:id/screens", requireFirebaseAuth, requireTenantAdmin, requireScreen("permissions", byPathId), async (req: any, res: any) => {
+router.put("/:id/screens", requireFirebaseAuth, requireSettings, requireScreen("permissions", byPathId), async (req: any, res: any) => {
   try {
     const db = admin.firestore();
     const known = new Set(WORKSPACE_SCREENS.map(sx => sx.key));
@@ -730,6 +745,7 @@ router.put("/:id/screens", requireFirebaseAuth, requireTenantAdmin, requireScree
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     invalidateTenant(req.params.id);
+    await writeAudit(db, req.params.id, { actor: actorOf(req.user), action: "settings.screens", section: "settings", detail: disabled.length ? `Скрыты: ${disabled.join(", ")}` : "Все разделы показаны" });
     return res.json({ success: true, disabledScreens: disabled, platformDisabledScreens: [...platform] });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
@@ -737,7 +753,7 @@ router.put("/:id/screens", requireFirebaseAuth, requireTenantAdmin, requireScree
 });
 
 /** POST /api/tenants/:id/members/:membershipId/role — назначить должность. */
-router.post("/:id/members/:membershipId/role", requireFirebaseAuth, requireTenantAdmin, requireScreen("permissions", byPathId), async (req: any, res: any) => {
+router.post("/:id/members/:membershipId/role", requireFirebaseAuth, requireTeam, requireScreen("permissions", byPathId), async (req: any, res: any) => {
   try {
     const db = admin.firestore();
     const { id: tenantId, membershipId } = req.params;
@@ -783,6 +799,7 @@ router.post("/:id/members/:membershipId/role", requireFirebaseAuth, requireTenan
 
     await memRef.update(patch);
     const claimsSynced = await syncClaimsSafe(db, String(mem.data()?.userId || ""));
+    await writeAudit(db, tenantId, { actor: actorOf(req.user), action: "role.change", section: "access", target: { kind: "member", id: String(target.userId || ""), name: String(target.displayName || "") }, changes: diffRows([["Должность", target.role, patch.role ?? (customRoleId === "" || customRoleId === null ? "без должности" : target.role)], ["Личные права", migrateLegacyPermissions(target).join(", "), (Array.isArray(permissions) ? personal : migrateLegacyPermissions(target)).join(", ")]]) });
     return res.json({ success: true, claimsSynced, ...(claimsSynced ? {} : { warning: CLAIMS_LAG }) });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
@@ -790,7 +807,7 @@ router.post("/:id/members/:membershipId/role", requireFirebaseAuth, requireTenan
 });
 
 // GET /api/tenants/:id/members - List members
-router.get("/:id/members", requireFirebaseAuth, requireTenantAdmin, requireScreen("permissions", byPathId), async (req: any, res: any) => {
+router.get("/:id/members", requireFirebaseAuth, requireTeamView, requireScreen("permissions", byPathId), async (req: any, res: any) => {
   try {
     const tenantId = req.params.id;
     const db = admin.firestore();

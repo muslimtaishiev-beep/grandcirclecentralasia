@@ -5,7 +5,7 @@ import { requireFirebaseAuth } from "./authRoutes.js";
 import { hasPerm, staffCaller } from "../server/access.js";
 import { sendMail } from "../server/mail.js";
 import { EVENT_PERMS, appUrl, orgMail, resend, type SendResult } from "../server/emailEvents.js";
-import { EMAIL_IMG_PREFIX, renderEmail, sampleVars, sanitizeEmailTemplate, varsFor, type EmailCtx, type EmailEvent } from "../shared/emailTemplate.js";
+import { EMAIL_EVENTS, EMAIL_IMG_PREFIX, renderEmail, sampleVars, sanitizeEmailTemplate, varsFor, type EmailCtx, type EmailEvent } from "../shared/emailTemplate.js";
 import type { PermissionKey } from "../shared/permissions.js";
 
 /**
@@ -140,7 +140,7 @@ router.post("/:t/test", requireFirebaseAuth, async (req: any, res: any) => {
 
 // ── Журнал отправок и переотправка ─────────────────────────────────────
 
-const EVENTS: EmailEvent[] = ["referral", "tested", "form"];
+const EVENTS: EmailEvent[] = EMAIL_EVENTS;
 const SAFE_ID = /^[A-Za-z0-9_-]{1,120}$/;
 const cleanCtx = (raw: any): EmailCtx => {
   const out: EmailCtx = {};

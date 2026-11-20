@@ -18,10 +18,10 @@ import {
 } from "../shared/questionnaires.js";
 import { applicantAudit, diffRows, STUDENT, SYSTEM, type AuditChange, type AuditWho } from "../server/applicantAudit.js";
 import {
-  admittedByStages, candidateOf, examForApplicant, sanitizeCandidate, stageOf, subjectLevel,
+  admitted, admittedByStages, applicantPath, candidateOf, examForApplicant, sanitizeCandidate, stageOf, subjectLevel,
   type Applicant, type ApplicantForm, type CandidateInfo, type LinkPurpose, type StageSummary,
 } from "../shared/admissions.js";
-import type { PermissionKey } from "../shared/permissions.js";
+import { isPermissionKey, type PermissionKey } from "../shared/permissions.js";
 
 /**
  * «Поступающие»: карточки, анкеты (родителя и сотрудников), направления на
@@ -51,7 +51,23 @@ const ID = /^[A-Za-z0-9_-]{1,64}$/;
 const deep = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 const ANY: PermissionKey[] = ["admission:manage", "psych:conduct", "psych:view"];
-const staff = [requireFirebaseAuth, requireScreen("admissions", (req: any) => req.params.tenantId), requirePerm(db, ...ANY)];
+/** Права, которые анкеты организации дают заполнять или видеть, — с ними тоже пускаем в раздел. */
+async function templatePerms(t: string): Promise<PermissionKey[]> {
+  const ts = await loadTemplates(t);
+  return [...new Set(ts.filter(x => !x.archived).flatMap(x => [x.fillPermission, x.viewPermission]).filter((k): k is PermissionKey => !!k && isPermissionKey(k)))];
+}
+/** Кто работает с поступающими: права приёма или право из какой-либо анкеты. */
+async function admissionPerms(t: string): Promise<PermissionKey[]> { return [...new Set([...ANY, ...(await templatePerms(t))])]; }
+const admissionAccess = async (req: any, res: any, next: any) => {
+  try {
+    const t = String(req.params.tenantId || "");
+    const c = await staffCaller(db(), t, req.user);
+    if (!c?.member) return fail(res, 403, "Доступно только сотрудникам организации");
+    if (!hasPerm(c, ...ANY) && !hasPerm(c, ...(await templatePerms(t)))) return fail(res, 403, "Недостаточно прав");
+    req.caller = c; next();
+  } catch (e: any) { return oops(res, e); }
+};
+const staff = [requireFirebaseAuth, requireScreen("admissions", (req: any) => req.params.tenantId), admissionAccess];
 const auth = optionalAuth(t => verifySession(t));
 
 // ── Права на анкеты ─────────────────────────────────────────────────────
@@ -68,7 +84,10 @@ const canEditTemplate = (c: StaffCaller, t?: QTemplate) =>
 const seesAcademic = (c: StaffCaller) => hasPerm(c, "admission:manage", "tests:manage", "placement:manage", "tests:review");
 const meOf = (c: StaffCaller) => ({
   admission: hasPerm(c, "admission:manage"), psych: hasPerm(c, "psych:conduct"), psychView: hasPerm(c, "psych:view"), academic: seesAcademic(c), name: c.name,
+  owner: c.full,
 });
+/** Доступ к анкете — всегда по действующему шаблону: снимок хранит только вопросы и нормы. */
+const withAccess = (snap: QTemplate, cur?: QTemplate): QTemplate => (cur ? { ...snap, fillPermission: cur.fillPermission, viewPermission: cur.viewPermission, sensitive: cur.sensitive } : snap);
 const LEVEL_WORD = ["Низкий", "Средний", "Отличный"] as const;
 
 // ── Уведомления администрации ───────────────────────────────────────────
@@ -84,7 +103,7 @@ type Audience = "admin" | "psych";
 const EVENT_PLAN: Record<AdmissionEvent, Partial<Record<Audience, string>>> = {
   new: { admin: "Новый поступающий", psych: "К вам новый ученик" },
   parent: { admin: "Анкета родителя заполнена", psych: "Анкета родителя заполнена" },
-  session: { admin: "Новая сессия у психолога" },
+  session: { admin: "Начата анкета специалиста" },
   done: { admin: "Сессия завершена — выдайте направление" },
   test_start: { admin: "Начал тест" },
   section: { admin: "Закончил часть теста" },
@@ -114,8 +133,9 @@ export async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEven
     for (const aud of ["admin", "psych"] as Audience[]) {
       const title = plan[aud];
       if (!title) continue;
-      const url = aud === "admin" ? adminUrl : `/workspace/${t}/exams?side=psych&open=${a.id}&ctab=psych`;
-      const uids = (await membersWith(db(), t, AUDIENCE_PERMS[aud])).map(r => r.uid).filter(u => !sent.has(u));
+      const url = aud === "admin" ? adminUrl : applicantPath(t, a.id, o.tid || "psych", "psych");
+      const perms = aud === "psych" ? [...AUDIENCE_PERMS.psych, ...(await loadTemplates(t)).filter(x => x.audience === "staff" && !x.archived && x.fillPermission && isPermissionKey(x.fillPermission)).map(x => x.fillPermission as PermissionKey)] : AUDIENCE_PERMS[aud];
+      const uids = (await membersWith(db(), t, [...new Set(perms)])).map(r => r.uid).filter(u => !sent.has(u));
       uids.forEach(u => sent.add(u));
       await deliver({ tenantId: t, event: `adm.${ev}`, uids, title, body, url, type: "admission", docId: u => `adm_${a.id}_${u}`, extra: { applicantId: a.id } });
     }
@@ -130,14 +150,9 @@ export async function notifyApplicantStep(t: string, applicantId: string, ev: "t
   await notifyAdmission(t, a, ev, { uid: "", name: "" }, { summary });
 }
 
-/** Адрес ребёнка у администрации — на странице экзамена его класса (иначе — «Поступающие»). */
-async function adminCardUrl(t: string, a: Pick<Applicant, "id" | "child" | "referral">, ctab: string, exams?: Exam[]) {
-  const g = gradeOf(a.child.grade);
-  const list = exams || await tenantExams(t);
-  const exam = list.find(e => e.id === a.referral?.examId && !e.archived)
-    || list.filter(e => !e.archived && g !== null && (e.settings.admission?.grades || []).includes(g))
-      .sort((x, y) => (x.status === "open" ? 0 : 1) - (y.status === "open" ? 0 : 1))[0];
-  return exam ? `/workspace/${t}/exams/${exam.id}?open=${a.id}&ctab=${ctab}` : `/workspace/${t}/exams?tab=admissions&open=${a.id}&ctab=${ctab}`;
+/** Адрес карточки у администрации — раздел «Приём»: туда пускает право приёма, а не права на экзамены. */
+async function adminCardUrl(t: string, a: Pick<Applicant, "id">, ctab: string) {
+  return applicantPath(t, a.id, ctab);
 }
 
 /** Итог теста одной строкой — для уведомления. */
@@ -253,6 +268,38 @@ function answerChanges(tpl: QTemplate, before: QAnswers | undefined, after: QAns
   return diffRows(items.map(i => [i.label || i.id, answerText(i, before?.[i.id]), answerText(i, after[i.id])] as [string, unknown, unknown]));
 }
 
+/** Действия по разделу (анкеты, вид анкеты кандидата, удаления) — в общую историю приёма. */
+const SECTION = "_section";
+const sectionAudit = (t: string, c: AuditWho, action: string, detail = "", changes: AuditChange[] = [], templateId?: string) =>
+  applicantAudit(t, SECTION, c, action, detail, changes, templateId ? { templateId } : {});
+
+/**
+ * Страница истории: новые сверху, по 100, с подгрузкой (before) и фильтром
+ * по виду события. «Было → стало» по анкете видит только тот, кому эта
+ * анкета открыта; у старых записей без метки анкета узнаётся по названию.
+ */
+async function historyPage(t: string, applicantId: string, c: StaffCaller, templates: QTemplate[], o: { before?: number; kind?: string }) {
+  let q: FirebaseFirestore.Query = col(t, "applicant_audit").where("applicantId", "==", applicantId);
+  const all = (await q.get()).docs.map(d => d.data() as any).sort((x, y) => y.at - x.at);
+  const KINDS: Record<string, (a: string) => boolean> = {
+    forms: a => a.startsWith("form_") || a.startsWith("parent_form") || a === "viewed",
+    referral: a => a.startsWith("referral"),
+    test: a => a.startsWith("test") || a === "tested" || a.startsWith("paper") || a === "attempt",
+    decision: a => a === "candidate" || a === "decision" || a === "feedback",
+    email: a => a.startsWith("email") || a === "referral_emailed",
+    card: a => ["created", "edited", "archived", "restored", "deleted", "relink"].includes(a),
+  };
+  const pick = o.kind && KINDS[o.kind] ? KINDS[o.kind] : () => true;
+  const hidden = (x: any) => {
+    const tpl = x.templateId ? templates.find(tt => tt.id === x.templateId) : (x.action?.startsWith("form_") ? templates.find(tt => String(x.detail || "").startsWith(tt.title)) : undefined);
+    if (x.action?.startsWith("form_") && !tpl) return true; // анкету не узнать — изменения не показываем
+    return !!tpl && !canSee(c, tpl);
+  };
+  const rows = all.filter(x => (!o.before || x.at < o.before) && pick(String(x.action || "")));
+  const items = rows.slice(0, 100).map(x => (x.changes && hidden(x) ? { ...x, changes: undefined } : x));
+  return { items, more: rows.length > 100 };
+}
+
 /** Сквозной номер поступающего — счётчик в транзакции, без дублей. */
 async function nextRefNo(t: string): Promise<number> {
   const ref = col(t, "admission_meta").doc("counter");
@@ -309,14 +356,21 @@ export async function syncReferral(t: string, a: Applicant, templates?: QTemplat
   // тест — система подбирает по классу; экзамена ещё нет — направление всё
   // равно выдано, тест подставится, когда его откроют для этого класса.
   const override = !!a.referral?.manual;
-  if (!override && !admittedByStages(a)) {
+  const allExams = exams || await tenantExams(t);
+  const tpls = templates || await loadTemplates(t);
+  const g = gradeOf(a.child.grade);
+  // Экзамен класса без этапов «до теста» — пускает сразу.
+  const noStages = g !== null && allExams.some(e => !e.archived && e.status !== "closed" && (e.settings.admission?.grades || []).includes(g) && !(e.settings.admission?.stages || []).length);
+  if (!override && !admitted(a, noStages)) {
     if (a.referral) {
       await col(t, "applicants").doc(a.id).update({ referral: null, updatedAt: Date.now() });
-      await audit(t, a.id, SYSTEM, "referral_revoked", "итог сессии не пускает к тесту");
+      if (!a.referralBlocked) await audit(t, a.id, SYSTEM, "referral_revoked", "итог не пускает к тесту");
     }
     return null;
   }
-  const exam = examForApplicant(exams || await tenantExams(t), a, byId(templates || await loadTemplates(t)), override);
+  // Допуск только по «экзамену без этапов» — из таких и выбираем.
+  const pool = override || admittedByStages(a) ? allExams : allExams.filter(e => !(e.settings.admission?.stages || []).length);
+  const exam = examForApplicant(pool, a, byId(tpls), override);
   const want = { examId: exam?.id || null, examTitle: exam?.title || "", examCode: exam?.code || null };
   if (a.referral && a.referral.examId === want.examId && a.referral.examTitle === want.examTitle) return a.referral;
   await referralTokenFor(t, a);
@@ -358,12 +412,66 @@ export async function emailReferral(t: string, applicantId: string, o: { force?:
 }
 registerResender("referral", (t, ctx, by) => (ctx.applicantId ? emailReferral(t, ctx.applicantId, { force: true, by }) : Promise.resolve({ sent: false, reason: "Нет карточки" })));
 
+async function admissionSettings(t: string): Promise<{ parentFormEmail?: string; decisionEmail?: string }> {
+  return (await col(t, "admission_meta").doc("settings").get()).data() || {};
+}
+
+/** Анкета родителю на почту — ссылкой; шаблон — в настройках анкет. */
+export async function emailParentForm(t: string, a: Applicant, o: { force?: boolean; by?: string } = {}): Promise<SendResult> {
+  try {
+    const templateId = (await admissionSettings(t)).parentFormEmail || "";
+    if (!templateId) return { sent: false, reason: "В настройках анкет не выбрано письмо «Анкета родителю»" };
+    if (!a.tokens?.parent) return { sent: false, reason: "Нет ссылки на анкету" };
+    const r = await sendTemplated({
+      tenantId: t, templateId, to: a.parent.email || "", event: "parent_form", refId: `${t}_${a.id}`, force: o.force, by: o.by,
+      ctx: { applicantId: a.id, label: `${a.child.name}, ${a.child.grade} класс` },
+      actionUrl: applicantPath(t, a.id, "profile"), noRecipient: "Нет почты родителя",
+      mirror: { ref: col(t, "applicants").doc(a.id), field: "parentFormEmail" },
+      vars: { имя: a.parent.name, ребёнок: a.child.name, класс: a.child.grade, ссылка: `${await appUrl()}/a/${a.tokens.parent}` },
+    });
+    await auditEmail(t, a.id, "Анкета родителю", r);
+    return r;
+  } catch (e) { console.error("[admissions] parent email", e); return { sent: false, reason: "Не удалось отправить" }; }
+}
+registerResender("parent_form", async (t, ctx, by) => {
+  const a = ctx.applicantId ? await loadApplicant(t, ctx.applicantId) : null;
+  return a ? emailParentForm(t, a, { force: true, by }) : { sent: false, reason: "Нет карточки" };
+});
+
+/** Решение — письмом родителю: одно на каждое окончательное решение. */
+export async function emailDecision(t: string, a: Applicant, o: { force?: boolean; by?: string } = {}): Promise<SendResult> {
+  try {
+    const c = candidateOf(a);
+    if (!c?.decision) return { sent: false, reason: "Решения ещё нет" };
+    const templateId = (await admissionSettings(t)).decisionEmail || "";
+    if (!templateId) return { sent: false, skipped: !o.force, reason: "В настройках анкет не выбрано письмо «Решение»" };
+    const token = await referralTokenFor(t, a);
+    const r = await sendTemplated({
+      tenantId: t, templateId, to: a.parent.email || "", event: "decision", refId: `${t}_${a.id}_${c.decision}`, force: o.force, by: o.by,
+      ctx: { applicantId: a.id, label: `${a.child.name}, ${a.child.grade} класс` },
+      actionUrl: applicantPath(t, a.id, "test"), noRecipient: "Нет почты родителя",
+      mirror: { ref: col(t, "applicants").doc(a.id), field: "decisionEmail" },
+      vars: {
+        имя: a.parent.name, ребёнок: a.child.name, класс: a.child.grade, решение: c.decisionLabel,
+        обратная_связь: c.feedbackGiven ? c.feedback : "", ссылка: `${await appUrl()}/a/${token}`,
+      },
+    });
+    await auditEmail(t, a.id, "Решение", r);
+    return r;
+  } catch (e) { console.error("[admissions] decision email", e); return { sent: false, reason: "Не удалось отправить" }; }
+}
+registerResender("decision", async (t, ctx, by) => {
+  const a = ctx.applicantId ? await loadApplicant(t, ctx.applicantId) : null;
+  return a ? emailDecision(t, a, { force: true, by }) : { sent: false, reason: "Нет карточки" };
+});
+
 /** Экзамен сохранили (поменяли классы или этапы) — подставить тест всем, кто его ждёт. */
 export async function syncAllReferrals(t: string) {
   const [snap, templates, exams] = await Promise.all([col(t, "applicants").get(), loadTemplates(t), tenantExams(t)]);
   for (const d of snap.docs) {
     const a = { ...(d.data() as Applicant), id: d.id };
-    if (a.referral || admittedByStages(a)) await syncReferral(t, a, templates, exams).catch(e => console.warn("[admissions] sync", e?.message));
+    if (a.archived) continue;
+    await syncReferral(t, a, templates, exams).catch(e => console.warn("[admissions] sync", e?.message));
   }
 }
 
@@ -412,9 +520,18 @@ const sanitizeParent = (b: any) => ({ name: str(b?.name, 120), phone: str(b?.pho
 
 router.get("/:tenantId/templates", ...staff, async (req: any, res: any) => {
   try {
-    const ts = await loadTemplates(req.params.tenantId);
+    const t = req.params.tenantId;
+    const ts = await loadTemplates(t);
     const c: StaffCaller = req.caller;
-    return res.json({ success: true, templates: ts.filter(x => !x.archived), canEdit: Object.fromEntries(ts.map(x => [x.id, canEditTemplate(c, x)])), canCreate: canEditTemplate(c) });
+    const used = new Set((await col(t, "applicant_forms").select("templateId").get()).docs.map(d => String(d.data().templateId)));
+    const settings = (await col(t, "admission_meta").doc("settings").get()).data() || {};
+    return res.json({
+      success: true, templates: ts.filter(x => !x.archived), archived: ts.filter(x => x.archived),
+      used: Object.fromEntries(ts.map(x => [x.id, used.has(x.id)])),
+      canEdit: Object.fromEntries(ts.map(x => [x.id, canEditTemplate(c, x)])), canCreate: canEditTemplate(c),
+      canAccess: hasPerm(c, "settings:manage"),
+      emails: { parentForm: String(settings.parentFormEmail || ""), decision: String(settings.decisionEmail || "") },
+    });
   } catch (e: any) { return oops(res, e); }
 });
 
@@ -432,6 +549,7 @@ router.put("/:tenantId/candidate-form", ...staff, async (req: any, res: any) => 
     const prev = (await ref.get()).data() as CandidateFormConfig | undefined;
     const form: CandidateFormConfig = { ...sanitizeCandidateForm(req.body, prev || null), updatedBy: c.name, updatedAt: Date.now() };
     await ref.set(form);
+    await sectionAudit(t, c, "candidate_form_edited", "вид анкеты кандидата");
     return res.json({ success: true, form });
   } catch (e: any) { return oops(res, e); }
 });
@@ -442,6 +560,7 @@ router.post("/:tenantId/templates", ...staff, async (req: any, res: any) => {
     const id = `tpl_${randomBytes(5).toString("hex")}`;
     const tpl = sanitizeTemplate({ ...req.body, id }, undefined, parentTemplate(await loadTemplates(req.params.tenantId)));
     await col(req.params.tenantId, "questionnaire_templates").doc(id).create(tpl);
+    await sectionAudit(req.params.tenantId, req.caller, "template_created", tpl.title, [], id);
     return res.json({ success: true, template: tpl });
   } catch (e: any) { return oops(res, e); }
 });
@@ -464,7 +583,76 @@ router.put("/:tenantId/templates/:tid", ...staff, async (req: any, res: any) => 
     if (!hasPerm(c, "settings:manage", "admission:manage")) body = { ...body, outcome: prev.outcome };
     const tpl = { ...sanitizeTemplate({ ...body, id: tid, audience: prev.audience }, prev, parentTemplate(all)), updatedBy: c.name, updatedAt: Date.now() };
     await ref.set(tpl);
+    const accessText = (x: QTemplate) => [x.fillPermission || "", x.viewPermission || "", x.sensitive ? "здоровье" : ""].join(" / ");
+    const count = (x: QTemplate) => x.sections.reduce((n, sec) => n + sec.items.length, 0);
+    await sectionAudit(t, c, "template_edited", tpl.title, diffRows([
+      ["Название", prev.title, tpl.title], ["Блоков", prev.sections.length, tpl.sections.length], ["Вопросов", count(prev), count(tpl)],
+      ["Доступ", accessText(prev), accessText(tpl)],
+    ]), tid);
     return res.json({ success: true, template: tpl });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** Копия анкеты — правится отдельно. Копия анкеты родителя ложится в архив: действующая одна. */
+router.post("/:tenantId/templates/:tid/copy", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller; const tid = String(req.params.tid);
+    if (!ID.test(tid) || !canEditTemplate(c)) return fail(res, 403, "Нет прав");
+    const all = await loadTemplates(t);
+    const src = all.find(x => x.id === tid);
+    if (!src) return fail(res, 404, "Анкета не найдена");
+    const id = `tpl_${randomBytes(5).toString("hex")}`;
+    const tpl = { ...sanitizeTemplate({ ...deep(src), id, title: `${src.title} (копия)`.slice(0, 120) }, undefined, parentTemplate(all)), ...(src.audience === "parent" ? { archived: true } : {}), updatedBy: c.name, updatedAt: Date.now() };
+    await col(t, "questionnaire_templates").doc(id).create(deep(tpl));
+    await sectionAudit(t, c, "template_copied", `${src.title} → ${tpl.title}`, [], id);
+    return res.json({ success: true, template: tpl });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** В архив / вернуть. Вернуть анкету родителя можно, только если другой действующей нет. */
+router.post("/:tenantId/templates/:tid/archive", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller; const tid = String(req.params.tid);
+    if (!ID.test(tid)) return fail(res, 400, "Неверная анкета");
+    const all = await loadTemplates(t);
+    const tpl = all.find(x => x.id === tid);
+    if (!tpl) return fail(res, 404, "Анкета не найдена");
+    if (!hasPerm(c, "settings:manage", "admission:manage")) return fail(res, 403, "Убирать анкеты может приёмная или администратор");
+    const archived = req.body?.archived !== false;
+    if (!archived && tpl.audience === "parent" && all.some(x => x.audience === "parent" && !x.archived && x.id !== tid)) return fail(res, 409, "Действующая анкета родителя уже есть — сначала уберите её в архив");
+    await col(t, "questionnaire_templates").doc(tid).update({ archived, updatedBy: c.name, updatedAt: Date.now() });
+    await sectionAudit(t, c, archived ? "template_archived" : "template_restored", tpl.title, [], tid);
+    if (tpl.audience === "staff") await syncAllReferrals(t).catch(() => {});
+    return res.json({ success: true });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** Удалить — только анкету без ответов; с ответами — в архив. */
+router.delete("/:tenantId/templates/:tid", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller; const tid = String(req.params.tid);
+    if (!ID.test(tid)) return fail(res, 400, "Неверная анкета");
+    if (!hasPerm(c, "settings:manage", "admission:manage")) return fail(res, 403, "Нет прав");
+    const ref = col(t, "questionnaire_templates").doc(tid);
+    const tpl = (await ref.get()).data() as QTemplate | undefined;
+    if (!tpl) return fail(res, 404, "Анкета не найдена");
+    if (!(await col(t, "applicant_forms").where("templateId", "==", tid).limit(1).get()).empty) return fail(res, 409, "По анкете уже есть ответы — уберите её в архив");
+    await ref.delete();
+    await sectionAudit(t, c, "template_deleted", tpl.title, [], tid);
+    return res.json({ success: true });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** Письма родителю: анкета и решение — какой шаблон (пусто — без письма). */
+router.put("/:tenantId/settings", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "settings:manage", "admission:manage")) return fail(res, 403, "Нет прав");
+    const id = (v: unknown) => (/^[A-Za-z0-9_-]{4,64}$/.test(String(v || "")) ? String(v) : "");
+    const next = { parentFormEmail: id(req.body?.parentForm), decisionEmail: id(req.body?.decision), updatedAt: Date.now(), updatedBy: c.name };
+    await col(t, "admission_meta").doc("settings").set(next, { merge: true });
+    await sectionAudit(t, c, "settings_edited", "письма родителю");
+    return res.json({ success: true });
   } catch (e: any) { return oops(res, e); }
 });
 
@@ -474,10 +662,12 @@ router.get("/:tenantId/applicants", ...staff, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const c: StaffCaller = req.caller; const academic = seesAcademic(c);
+    const archived = req.query.archived === "1" && hasPerm(c, "admission:manage");
     const [snap, attempts] = await Promise.all([col(t, "applicants").orderBy("createdAt", "desc").limit(3000).get(), academic ? attemptsOf(t) : []]);
+    const list = snap.docs.map(d => ({ ...(d.data() as Applicant), id: d.id })).filter(a => !!a.archived === archived);
     return res.json({
       success: true,
-      applicants: snap.docs.map(d => row({ ...(d.data() as Applicant), id: d.id }, attempts, academic)),
+      applicants: list.map(a => ({ ...row(a, attempts, academic), ...(a.archived ? { archived: a.archived } : {}), referralBlocked: !!a.referralBlocked })),
       me: meOf(c),
     });
   } catch (e: any) { return oops(res, e); }
@@ -521,6 +711,7 @@ router.post("/:tenantId/applicants", ...staff, async (req: any, res: any) => {
     };
     await ref.create(a);
     await audit(t, ref.id, c, "created");
+    await syncReferral(t, a).catch(e => console.warn("[admissions] sync", e?.message));
     await notifyAdmission(t, a, "new", c);
     return res.json({ success: true, id: ref.id, refNo });
   } catch (e: any) { return oops(res, e); }
@@ -537,17 +728,19 @@ router.get("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
       loadTemplates(t), col(t, "applicant_forms").where("applicantId", "==", a.id).get(), academic ? attemptsOf(t, [a.id]) : [],
     ]);
     let sensitive = false;
+    const cur = byId(templates);
     const forms = formsSnap.docs.map(d => {
-      const f = { ...(d.data() as ApplicantForm), id: d.id };
+      const raw = { ...(d.data() as ApplicantForm), id: d.id };
+      const f = { ...raw, template: withAccess(raw.template, cur[raw.templateId]) };
       if (canSee(c, f.template)) { if (f.template.sensitive) sensitive = true; return { ...f, full: true }; }
       // Без права — только итог: статус и заключение, без ответов.
       const o = outcomeOf(f.template, f.outcome);
       return { id: f.id, templateId: f.templateId, status: f.status, outcome: f.outcome, outcomeLabel: o?.label || "", full: false, template: { id: f.template.id, title: f.template.title, audience: f.template.audience } };
     });
-    if (sensitive) await audit(t, a.id, c, "viewed", "открыл анкеты с данными о здоровье и развитии");
-    const auditLog = hasPerm(c, "admission:manage")
-      ? (await col(t, "applicant_audit").where("applicantId", "==", a.id).get()).docs.map(d => d.data()).sort((x: any, y: any) => y.at - x.at).slice(0, 300)
-      : [];
+    // Просмотр — одна запись в час на сотрудника, а не на каждое автообновление.
+    if (sensitive) await applicantAudit(t, a.id, c, "viewed", "открыл анкеты с данными о здоровье и развитии", [], { key: `view_${a.id}_${c.uid}_${Math.floor(Date.now() / 3_600_000)}` });
+    const auditLog = hasPerm(c, "admission:manage") ? (await historyPage(t, a.id, c, templates, {})).items : [];
+    if (a.archived && !hasPerm(c, "admission:manage")) return fail(res, 404, "Поступающий не найден");
     const canFillMap = Object.fromEntries(templates.map(x => [x.id, canFill(c, x)]));
     const canSeeMap = Object.fromEntries(templates.map(x => [x.id, canSee(c, x)]));
     return res.json({
@@ -594,21 +787,130 @@ router.put("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
   } catch (e: any) { return oops(res, e); }
 });
 
+/**
+ * «Удалить» — в архив: из списка уходит, данные целы, «Вернуть» — обратно.
+ * Окончательно (?purge=1) — только из архива и только полный доступ
+ * (владелец, администратор): вместе с анкетами, ссылками, работами и фото.
+ */
 router.delete("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const c: StaffCaller = req.caller;
-    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Удалять карточки может приёмная");
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Убирать карточки может приёмная");
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
-    const forms = await col(t, "applicant_forms").where("applicantId", "==", a.id).get();
-    const links = await db().collection(LINKS).where("applicantId", "==", a.id).get();
-    const b = db().batch();
-    forms.docs.forEach(d => b.delete(d.ref));
-    links.docs.forEach(d => { if (d.data().tenantId === t) b.delete(d.ref); });
-    b.delete(col(t, "applicants").doc(a.id));
-    await b.commit();
-    await audit(t, a.id, c, "deleted", `${a.child.name}, № ${a.refNo}`);
+    if (req.query.purge === "1") {
+      if (!c.full) return fail(res, 403, "Удалить навсегда может владелец или администратор");
+      if (!a.archived) return fail(res, 409, "Сначала уберите карточку в архив");
+      await purgeApplicant(t, a);
+      await sectionAudit(t, c, "deleted", `${a.child.name}, № ${a.refNo}`);
+      return res.json({ success: true, purged: true });
+    }
+    await archiveApplicant(t, a, c);
     return res.json({ success: true });
+  } catch (e: any) { return oops(res, e); }
+});
+
+async function archiveApplicant(t: string, a: Applicant, c: StaffCaller) {
+  if (a.archived) return;
+  await col(t, "applicants").doc(a.id).update({ archived: { at: Date.now(), by: c.uid, byName: c.name }, updatedAt: Date.now() });
+  await audit(t, a.id, c, "archived");
+}
+async function restoreApplicant(t: string, a: Applicant, c: StaffCaller) {
+  if (!a.archived) return;
+  await col(t, "applicants").doc(a.id).update({ archived: null, updatedAt: Date.now() });
+  await audit(t, a.id, c, "restored");
+}
+async function purgeApplicant(t: string, a: Applicant) {
+  const [forms, links, attempts, hist] = await Promise.all([
+    col(t, "applicant_forms").where("applicantId", "==", a.id).get(),
+    db().collection(LINKS).where("applicantId", "==", a.id).get(),
+    col(t, "exam_attempts").where("applicantId", "==", a.id).get(),
+    col(t, "applicant_audit").where("applicantId", "==", a.id).get(),
+  ]);
+  const refs = [
+    ...forms.docs.map(d => d.ref), ...links.docs.filter(d => d.data().tenantId === t).map(d => d.ref),
+    ...attempts.docs.flatMap(d => [d.ref, col(t, "exam_photos").doc(d.id)]), ...hist.docs.map(d => d.ref),
+    col(t, "applicants").doc(a.id),
+  ];
+  for (let i = 0; i < refs.length; i += 400) { const b = db().batch(); refs.slice(i, i + 400).forEach(r => b.delete(r)); await b.commit(); }
+}
+
+router.post("/:tenantId/applicants/:id/restore", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Нет прав");
+    const a = await loadApplicant(t, String(req.params.id));
+    if (!a) return fail(res, 404, "Поступающий не найден");
+    await restoreApplicant(t, a, c);
+    return res.json({ success: true });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** Сразу по нескольким: в архив, вернуть, анкету родителю на почту. */
+router.post("/:tenantId/applicants-bulk", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Нет прав");
+    const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(String).filter((x: string) => ID.test(x)))].slice(0, 200) as string[];
+    const action = String(req.body?.action || "");
+    if (!ids.length || !["archive", "restore", "parent_email"].includes(action)) return fail(res, 400, "Выберите карточки и действие");
+    let ok = 0; const failed: string[] = [];
+    for (const id of ids) {
+      const a = await loadApplicant(t, id);
+      if (!a) continue;
+      try {
+        if (action === "archive") await archiveApplicant(t, a, c);
+        else if (action === "restore") await restoreApplicant(t, a, c);
+        else { const r = await emailParentForm(t, a, { force: true, by: c.uid }); if (!r.sent) throw new Error(r.reason || "не ушло"); }
+        ok++;
+      } catch (e: any) { failed.push(`${a.child.name}: ${e?.message || "ошибка"}`); }
+    }
+    return res.json({ success: true, ok, failed });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** История карточки: по 100, «Ещё» — before, фильтр по виду. */
+router.get("/:tenantId/applicants/:id/history", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Историю видит приёмная");
+    const id = String(req.params.id);
+    if (!ID.test(id)) return fail(res, 400, "Неверный поступающий");
+    const page = await historyPage(t, id, c, await loadTemplates(t), { before: Number(req.query.before) || undefined, kind: str(req.query.kind, 20) });
+    return res.json({ success: true, ...page });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** История раздела: правки анкет и вида анкеты кандидата, удаления карточек. */
+router.get("/:tenantId/history", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage", "settings:manage")) return fail(res, 403, "Нет прав");
+    const page = await historyPage(t, SECTION, c, await loadTemplates(t), { before: Number(req.query.before) || undefined });
+    return res.json({ success: true, ...page });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** «Сбросить анкету» ребёнка: начатую по ошибке — убрать, этап снять. */
+router.delete("/:tenantId/applicants/:id/forms/:tid", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller; const tid = String(req.params.tid);
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Сбрасывает анкету приёмная");
+    if (!ID.test(tid)) return fail(res, 400, "Неверная анкета");
+    const a = await loadApplicant(t, String(req.params.id));
+    if (!a) return fail(res, 404, "Поступающий не найден");
+    const fref = col(t, "applicant_forms").doc(`${a.id}_${tid}`);
+    const f = (await fref.get()).data() as ApplicantForm | undefined;
+    if (!f) return fail(res, 404, "Анкета не начата");
+    await fref.delete();
+    const patch: any = { updatedAt: Date.now() };
+    if (f.template.audience === "parent") patch.parentForm = { status: "none", at: null, by: null };
+    else patch[`stages.${tid}`] = admin.firestore.FieldValue.delete();
+    await col(t, "applicants").doc(a.id).update(patch);
+    await applicantAudit(t, a.id, c, "form_reset", f.template.title, [], { templateId: tid });
+    const fresh = await loadApplicant(t, a.id);
+    const referral = fresh ? await syncReferral(t, fresh) : null;
+    return res.json({ success: true, referral });
   } catch (e: any) { return oops(res, e); }
 });
 
@@ -627,9 +929,11 @@ router.put("/:tenantId/applicants/:id/forms/:tid", ...staff, async (req: any, re
     const fsnap = await fref.get();
     const prev = fsnap.exists ? (fsnap.data() as ApplicantForm) : null;
     // Снимок шаблона: у начатой анкеты — тот, по которому её начали.
-    const tpl = prev?.template || templates.find(x => x.id === tid);
-    if (!tpl) return fail(res, 404, "Анкета не найдена");
+    const snapTpl = prev?.template || templates.find(x => x.id === tid);
+    if (!snapTpl) return fail(res, 404, "Анкета не найдена");
+    const tpl = withAccess(snapTpl, templates.find(x => x.id === tid));
     if (!canFill(c, tpl)) return fail(res, 403, "Заполнять эту анкету может только сотрудник с нужным правом");
+    if (a.archived) return fail(res, 409, "Карточка в архиве — сначала верните её");
     const g = gradeOf(a.child.grade);
     const now = Date.now();
     const reopen = req.body?.reopen === true;
@@ -665,14 +969,15 @@ router.put("/:tenantId/applicants/:id/forms/:tid", ...staff, async (req: any, re
     }
     await col(t, "applicants").doc(a.id).update(patch);
     const oLabel = outcomeOf(tpl, outcome)?.label;
-    if (done) await audit(t, a.id, c, "form_done", [tpl.title, oLabel].filter(Boolean).join(" · "), prev?.status === "done" ? answerChanges(tpl, prev.answers, answers) : []);
-    else if (reopen) await audit(t, a.id, c, "form_reopened", tpl.title);
-    else if (!prev) await audit(t, a.id, c, tpl.audience === "parent" ? "parent_form_started" : "form_started", tpl.title);
+    const tag = { templateId: tid };
+    if (done) await applicantAudit(t, a.id, c, "form_done", [tpl.title, oLabel].filter(Boolean).join(" · "), prev?.status === "done" ? answerChanges(tpl, prev.answers, answers) : [], tag);
+    else if (reopen) await applicantAudit(t, a.id, c, "form_reopened", tpl.title, [], tag);
+    else if (!prev) await applicantAudit(t, a.id, c, tpl.audience === "parent" ? "parent_form_started" : "form_started", tpl.title, [], tag);
     else if (prev.status === "done") {
       // Сданную анкету поправили — что именно.
       const changes = answerChanges(tpl, prev.answers, answers);
       if ((prev.outcome || null) !== (outcome || null)) changes.unshift({ label: "Итог", from: outcomeOf(tpl, prev.outcome)?.label || "", to: oLabel || "" });
-      if (changes.length) await audit(t, a.id, c, "form_edited", tpl.title, changes);
+      if (changes.length) await applicantAudit(t, a.id, c, "form_edited", tpl.title, changes, tag);
     }
     let referral = a.referral;
     if (tpl.audience === "staff" && (done || reopen)) {
@@ -698,8 +1003,8 @@ router.post("/:tenantId/applicants/:id/referral", ...staff, async (req: any, res
     if (!a) return fail(res, 404, "Поступающий не найден");
     const reason = str(req.body?.reason, 500);
     const seed = { examId: null, examTitle: "", examCode: null, issuedAt: Date.now(), by: c.uid, byName: c.name, manual: true, reason };
-    await col(t, "applicants").doc(a.id).update({ referral: seed, updatedAt: Date.now() });
-    const referral = await syncReferral(t, { ...a, referral: seed });
+    await col(t, "applicants").doc(a.id).update({ referral: seed, referralBlocked: null, updatedAt: Date.now() });
+    const referral = await syncReferral(t, { ...a, referral: seed, referralBlocked: null });
     await audit(t, a.id, c, "referral_manual", `допущен к тесту${reason ? ` — ${reason}` : ""}`);
     if (referral?.examId) await emailReferral(t, a.id, { by: c.uid });
     return res.json({ success: true, referral });
@@ -724,15 +1029,61 @@ router.post("/:tenantId/applicants/:id/referral-email", ...staff, async (req: an
   } catch (e: any) { return oops(res, e); }
 });
 
+/** «На почту»: ссылка на анкету родителю. */
+router.post("/:tenantId/applicants/:id/parent-email", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Нет прав");
+    const key = `p_${t}_${req.params.id}`;
+    if (Date.now() - (lastReferralMail.get(key) || 0) < 60_000) return fail(res, 429, "Письмо только что ушло — подождите минуту");
+    const a = await loadApplicant(t, String(req.params.id));
+    if (!a) return fail(res, 404, "Поступающий не найден");
+    const r = await emailParentForm(t, a, { force: true, by: c.uid });
+    if (!r.sent) return fail(res, 400, r.reason || "Не отправилось");
+    lastReferralMail.set(key, Date.now());
+    return res.json({ success: true, to: a.parent.email });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** Письмо с решением — повторно, вручную. */
+router.post("/:tenantId/applicants/:id/decision-email", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Нет прав");
+    const a = await loadApplicant(t, String(req.params.id));
+    if (!a) return fail(res, 404, "Поступающий не найден");
+    const r = await emailDecision(t, a, { force: true, by: c.uid });
+    if (!r.sent) return fail(res, 400, r.reason || "Не отправилось");
+    return res.json({ success: true, to: a.parent.email });
+  } catch (e: any) { return oops(res, e); }
+});
+
 router.delete("/:tenantId/applicants/:id/referral", ...staff, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const c: StaffCaller = req.caller;
     if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Снимать направление может администратор");
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
-    await col(t, "applicants").doc(a.id).update({ referral: null, updatedAt: Date.now() });
-    await audit(t, a.id, c, "referral_revoked", a.referral?.examTitle || "");
+    const reason = str(req.body?.reason ?? req.query?.reason, 300);
+    // Отметка «снято администрацией»: автоматическая выдача её уважает, пока направление не вернут.
+    await col(t, "applicants").doc(a.id).update({ referral: null, referralBlocked: { by: c.uid, byName: c.name, at: Date.now(), reason }, updatedAt: Date.now() });
+    await audit(t, a.id, c, "referral_revoked", [a.referral?.examTitle, reason].filter(Boolean).join(" · "));
     return res.json({ success: true });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** «Вернуть»: снять отметку — направление снова выдаётся по итогам. */
+router.post("/:tenantId/applicants/:id/referral/restore", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Возвращать направление может администратор");
+    const a = await loadApplicant(t, String(req.params.id));
+    if (!a) return fail(res, 404, "Поступающий не найден");
+    await col(t, "applicants").doc(a.id).update({ referralBlocked: null, updatedAt: Date.now() });
+    await audit(t, a.id, c, "referral_restored");
+    const referral = await syncReferral(t, { ...a, referralBlocked: null });
+    if (referral?.examId) await emailReferral(t, a.id, { by: c.uid });
+    return res.json({ success: true, referral });
   } catch (e: any) { return oops(res, e); }
 });
 
@@ -853,6 +1204,7 @@ router.put("/:tenantId/applicants/:id/candidate", ...staff, async (req: any, res
     if ((prev?.decision || null) !== candidate.decision) {
       await audit(t, a.id, c, "decision", candidate.decision ? candidate.decisionLabel : "снято");
       if (candidate.decision) await notifyAdmission(t, a, "decision", c, { summary: candidate.decisionLabel });
+      if (candidate.decision && candidate.decisionFinal) await emailDecision(t, { ...a, ...(patch as any), candidate }, { by: c.uid });
     }
     if (!!prev?.feedbackGiven !== candidate.feedbackGiven) await audit(t, a.id, c, "feedback", candidate.feedbackGiven ? "дана — ученик видит результаты по QR" : "снята");
     if (patch.child && (patch.child as any).grade !== a.child.grade) await syncReferral(t, { ...a, ...patch } as any, await loadTemplates(t));
@@ -1032,7 +1384,7 @@ router.post("/link/:token/parent", async (req: any, res: any) => {
     const gate = await checkTenantOpen(l.tenantId, "admissions");
     if (!gate.ok) return fail(res, gate.status || 403, gate.error || "Недоступно");
     const a = l.applicant; const t = l.tenantId;
-    if (Object.values(a.stages).some(s => s.status === "done")) return fail(res, 409, "Психолог уже провёл встречу — изменить ответы можно через него");
+    if (Object.values(a.stages).some(s => s.status === "done")) return fail(res, 409, "Встреча со специалистом уже прошла — изменить ответы можно через приёмную");
     if (req.body?.consent !== true) return fail(res, 400, "Нужно согласие на обработку данных");
     const templates = await loadTemplates(t);
     const fref = col(t, "applicant_forms").doc(`${a.id}_${(templates.find(x => x.audience === "parent" && !x.archived) || { id: "" }).id}`);

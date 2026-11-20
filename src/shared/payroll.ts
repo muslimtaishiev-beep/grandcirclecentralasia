@@ -63,6 +63,8 @@ export interface EmployeeTerms {
   /** ИНН сотрудника — для ведомости и отчётности. */
   inn?: string;
   active: boolean;
+  /** Без учётной записи в системе — только для расчёта. */
+  external?: boolean;
 }
 
 export interface PayrollInputs {

@@ -1,5 +1,5 @@
 import { db } from '../lib/firebase';
-import { collection, doc, query, where, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, runTransaction, getDoc, limit } from 'firebase/firestore';
+import { collection, doc, query, where, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, runTransaction, getDoc } from 'firebase/firestore';
 import { ChatChannel, ChatMessage } from '../types/chat';
 
 function sanitizeData(obj: any): any {
@@ -89,9 +89,12 @@ class ChatService {
 
       for (const d of snap.docs) {
         const data = d.data();
-        let name = data.userName || data.fullName || '';
+        // Писать можно только тем, кто может войти: активное членство с учётной записью.
+        if (data.status && data.status !== 'active') continue;
+        if (!data.userId) continue;
+        let name = data.displayName || data.userName || data.fullName || '';
         let email = data.userEmail || data.email || '';
-        const uid = data.userId || d.id;
+        const uid = data.userId;
 
         // If name or email missing, attempt to fetch user document
         if ((!name || !email) && uid) {
@@ -121,24 +124,6 @@ class ChatService {
         });
       }
 
-      // 2. Also search root crm_contacts for employees/staff
-      const crmSnap = await getDocs(query(collection(db, 'crm_contacts'), where('tenantId', '==', tenantId), limit(300)));
-      crmSnap.forEach(d => {
-        const data = d.data();
-        if (data.type === 'employee' || data.type === 'staff') {
-          const email = data.email || '—';
-          const name = data.fullName || data.name || '';
-          
-          if (name || (email && email !== '—')) {
-            rawList.push({
-              id: d.id,
-              name: name || email.split('@')[0] || 'Сотрудник',
-              email,
-              role: formatRole(data.role)
-            });
-          }
-        }
-      });
     } catch (e) {
       console.warn("fetchOrgStaff notice:", e);
     }
@@ -148,7 +133,7 @@ class ChatService {
     
     for (const item of rawList) {
       // Key by email if available, otherwise by id
-      const key = (item.email && item.email !== '—') ? item.email.toLowerCase() : item.id;
+      const key = item.id;
       
       if (!uniqueMap.has(key)) {
         uniqueMap.set(key, item);
@@ -197,6 +182,7 @@ class ChatService {
 
     await setDoc(ref, payload);
 
+    // Сообщение уже сохранено — сбой подписи «последнее сообщение» его не отменяет.
     const channelRef = doc(db, 'tenants', tenantId, 'chat_channels', channelId);
     await updateDoc(channelRef, {
       lastMessage: {
@@ -204,7 +190,7 @@ class ChatService {
         senderName: message.senderName,
         timestamp: now
       }
-    });
+    }).catch(err => console.warn('lastMessage notice:', err));
 
     return ref.id;
   }

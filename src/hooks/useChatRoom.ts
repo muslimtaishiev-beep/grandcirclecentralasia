@@ -88,6 +88,13 @@ export function useChatRoom(tenantId: string, channelId: string | undefined) {
   ) => {
     if (!tenantId || !user?.uid) return;
     const memberStaffIds = Array.from(new Set([user.uid, ...selectedMemberStaffIds]));
+    // Личный диалог с теми же людьми уже есть — открываем его, второй не заводим.
+    if (type === 'direct_message') {
+      const same = channels.find(c => c.type === 'direct_message'
+        && (c.memberStaffIds || []).length === memberStaffIds.length
+        && memberStaffIds.every(id => c.memberStaffIds.includes(id)));
+      if (same) return same.id;
+    }
     
     const newId = await chatService.createChannel(tenantId, {
       name,

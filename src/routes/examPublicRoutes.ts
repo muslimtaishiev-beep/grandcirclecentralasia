@@ -149,10 +149,12 @@ const digits = (s: string) => s.replace(/\D/g, "");
  */
 const FAIL_WINDOW = 10 * 60_000, FAIL_LIMIT = 10;
 const failures = new Map<string, { n: number; until: number }>();
-function blocked(key: string): number {
+/** Общий потолок неверных PIN с одного адреса (школьная сеть) за окно. */
+const HALL_LIMIT = 150;
+function blocked(key: string, limit = FAIL_LIMIT): number {
   const f = failures.get(key);
   if (!f || Date.now() > f.until) return 0;
-  return f.n >= FAIL_LIMIT ? Math.ceil((f.until - Date.now()) / 60_000) : 0;
+  return f.n >= limit ? Math.ceil((f.until - Date.now()) / 60_000) : 0;
 }
 function fail1(key: string) {
   const f = failures.get(key);
@@ -245,13 +247,19 @@ router.get("/:code", async (req: any, res: any) => {
 function pinOk(exam: Exam, req: any, res: any): boolean {
   const acc = exam.settings.access; const t = exam.tenantId;
   const pin = str(req.body?.pin, 12).replace(/\D/g, "");
-  const pinKey = `pin:${exam.id}:${req.ip}`;
-  const wait = blocked(pinKey);
+  // Весь зал выходит в сеть с одного адреса школы: лимит считаем по
+  // устройству (метка из браузера) и отдельно — щедрый общий на адрес,
+  // чтобы ошибки одного ученика не запирали остальных, а перебор с одного
+  // адреса со сменой меток всё равно упирался в потолок.
+  const device = /^[\w-]{8,64}$/.test(String(req.body?.device || "")) ? String(req.body.device) : "none";
+  const pinKey = `pin:${exam.id}:${req.ip}:${device}`;
+  const hallKey = `pinhall:${exam.id}:${req.ip}`;
+  const wait = blocked(pinKey) || blocked(hallKey, HALL_LIMIT);
   if (wait) { fail(res, 429, `Слишком много неверных PIN. Попробуйте через ${wait} мин.`); return false; }
   // Постоянный PIN не задан — не пускаем: пустой PIN не должен совпадать с пустым.
   const fixed = acc.fixedPin.replace(/\D/g, "");
   const ok = acc.pinMode === "none" || (acc.pinMode === "hourly" ? pinMatches(pin, `${t}:${exam.id}`) : !!fixed && pin === fixed);
-  if (!ok) { fail1(pinKey); fail(res, 403, "Неверный PIN — уточните его у организатора в аудитории"); return false; }
+  if (!ok) { fail1(pinKey); fail1(hallKey); fail(res, 403, "Неверный PIN — уточните его у организатора в аудитории"); return false; }
   return true;
 }
 
@@ -525,6 +533,20 @@ router.post("/:code/proctoring", async (req: any, res: any) => {
     // «чистый» протокол поверх настоящего.
     if (a.proctoring?.endedAt) return fail(res, 409, "Протокол уже получен");
     const b = req.body || {};
+    // Промежуточный отчёт во время экзамена — только счётчики для «Сейчас»;
+    // протокол со снимками приходит один раз, в конце.
+    if (b.partial === true) {
+      if (a.status !== "in_progress") return res.json({ success: true });
+      const vs = Array.isArray(b.violations) ? b.violations.slice(0, 300) : [];
+      const bySeverity: Record<string, number> = { HIGH: 0, MEDIUM: 0, LOW: 0 };
+      for (const v of vs) { const k = ["LOW", "MEDIUM", "HIGH"].includes(v?.severity) ? v.severity : "LOW"; bySeverity[k]++; }
+      const last = vs.slice(-5).map((v: any) => ({ type: str(v?.type, 40), severity: ["LOW", "MEDIUM", "HIGH"].includes(v?.severity) ? v.severity : "LOW", description: str(v?.description, 200) }));
+      await col(t, "exam_attempts").doc(a.id).update({
+        proctoring: { enabled: true, live: true, totalViolations: vs.length, bySeverity, recent: last, honestyIndex: Number.isFinite(Number(b.honestyIndex)) ? Math.round(Number(b.honestyIndex)) : null, updatedAt: Date.now() },
+      });
+      if (bySeverity.HIGH > Number(a.proctoring?.bySeverity?.HIGH || 0)) await bumpLive(t, a.applicantId ? ["exams", "admissions"] : ["exams"], a.applicantId || a.id);
+      return res.json({ success: true });
+    }
     const startedAt = Number(b.startedAt) || null;
     const violations = (Array.isArray(b.violations) ? b.violations : []).slice(0, 300).map((v: any) => ({
       type: str(v?.type, 40), severity: ["LOW", "MEDIUM", "HIGH"].includes(v?.severity) ? v.severity : "LOW",

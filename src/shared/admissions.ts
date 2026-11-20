@@ -105,6 +105,10 @@ export interface Applicant {
     issuedAt: number; by: string; byName: string; manual: boolean; reason: string;
   } | null;
   paperResults: PaperResult[];
+  /** Направление снято администрацией — система не выдаёт его заново, пока не вернут. */
+  referralBlocked?: { by: string; byName: string; at: number; reason: string } | null;
+  /** В архиве: из списка убрана, данные целы, можно вернуть. */
+  archived?: { at: number; by: string; byName: string } | null;
   /** Прежнее решение (Принят / Резерв / Не принят) — читается через candidateOf. */
   decision?: { value: Decision; comment: string; by: string; at: number } | null;
   /** Анкета кандидата: заключение, обратная связь, решение (администрация). */
@@ -171,6 +175,21 @@ export const admittedByStages = (a: Pick<Applicant, "stages">) => {
   const st = Object.values(a.stages);
   return st.length > 0 && st.every(s => s.status === "done" && s.allowsTest);
 };
+
+/**
+ * Допуск к тесту: все пройденные этапы пускают — или экзамену класса этапы
+ * не нужны (тогда пускает сразу, если никто не поставил «не пускает»).
+ * Снятое администрацией направление система сама не возвращает.
+ */
+export function admitted(a: Pick<Applicant, "stages" | "referralBlocked">, examWithoutStages: boolean): boolean {
+  if (a.referralBlocked) return false;
+  if (admittedByStages(a)) return true;
+  return examWithoutStages && !Object.values(a.stages).some(s => s.status === "done" && !s.allowsTest);
+}
+
+/** Адрес карточки поступающего в кабинете — раздел «Приём», не зависит от экзамена. */
+export const applicantPath = (t: string, id: string, ctab = "profile", side?: "psych") =>
+  `/workspace/${t}/admissions?open=${encodeURIComponent(id)}&ctab=${encodeURIComponent(ctab)}${side ? `&side=${side}` : ""}`;
 
 /**
  * Экзамен для направления: открыт (или черновик — его откроют к дате), для

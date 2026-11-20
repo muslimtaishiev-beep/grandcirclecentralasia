@@ -130,7 +130,7 @@ function ParentForm({ info, token, staffBar }: { info: Extract<Info, { mode: "pa
     } catch { setError("Нет связи — попробуйте ещё раз"); } finally { setBusy(false); }
   };
   if (done) return (
-    <Shell org={info.org}><div className="bg-white rounded-2xl border border-slate-200 p-8 text-center space-y-2"><div className="text-5xl">✅</div><h1 className="text-xl font-bold">Спасибо! Анкета отправлена</h1><p className="text-sm text-slate-500">Психолог увидит ваши ответы перед встречей. До встречи ответы можно поправить по этой же ссылке.</p></div></Shell>
+    <Shell org={info.org}><div className="bg-white rounded-2xl border border-slate-200 p-8 text-center space-y-2"><div className="text-5xl">✅</div><h1 className="text-xl font-bold">Спасибо! Анкета отправлена</h1><p className="text-sm text-slate-500">Специалист увидит ваши ответы перед встречей. До встречи ответы можно поправить по этой же ссылке.</p></div></Shell>
   );
   return (
     <Shell org={info.org} wide>
@@ -139,7 +139,7 @@ function ParentForm({ info, token, staffBar }: { info: Extract<Info, { mode: "pa
           <h1 className="text-2xl font-bold text-slate-900">{info.template.title}</h1>
           {info.template.description && <p className="text-sm text-slate-600 mt-1">{info.template.description}</p>}
           {info.done && !info.locked && <p className="text-sm text-emerald-700 mt-2">Анкета уже отправлена — можно поправить ответы и отправить снова.</p>}
-          {info.locked && <p className="text-sm text-amber-700 mt-2">Психолог уже провёл встречу — ответы зафиксированы. Изменить их можно через психолога.</p>}
+          {info.locked && <p className="text-sm text-amber-700 mt-2">Встреча со специалистом уже прошла — ответы зафиксированы. Изменить их можно через приёмную.</p>}
         </div>
         {!info.locked && <FormFiller template={info.template} grade={g} answers={answers} onChange={setAnswers} />}
         {!info.locked && (

@@ -88,7 +88,7 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
   const excel = async () => {
     const { default: ExcelJS } = await import("exceljs");
     const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet("Поступающие");
-    ws.addRow(["№", "ФИО ребёнка", "Класс", "Дата рождения", "Родитель", "Телефон", "Анкета родителя", "Психолог", ...((me.academic && mode === "admin") ? ["Тест", "Результат", "Решение"] : []), "Этап"]);
+    ws.addRow(["№", "ФИО ребёнка", "Класс", "Дата рождения", "Родитель", "Телефон", "Анкета родителя", "Этапы", ...((me.academic && mode === "admin") ? ["Тест", "Результат", "Решение"] : []), "Этап"]);
     for (const r of visible) ws.addRow([no(r.refNo), r.child.name, r.child.grade, r.child.birthDate, r.parent.name, r.parent.phone, r.parentForm.status === "done" ? "да" : "",
       Object.values(r.stages).map(s => `${s.title}: ${s.status === "done" ? s.outcomeLabel : "идёт"}`).join("; "),
       ...((me.academic && mode === "admin") ? [r.attempt?.examTitle || r.referral?.examTitle || (r.paperResults ? "на бумаге" : ""), r.attempt?.parts.map(p => `${p.title}: ${p.value}`).join("; ") || (r.attempt?.percent != null ? `${r.attempt.percent}%` : ""),
@@ -143,7 +143,7 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
             <div className={`${card} overflow-x-auto`}>
               <table className="w-full text-sm min-w-[860px]">
                 <thead className="text-[11px] uppercase font-mono text-[var(--text-muted)] bg-[var(--bg-panel)]">
-                  <tr>{["№", "Ребёнок", "Класс", "Анкета род.", "Психолог", ...((me.academic && mode === "admin") ? ["Тест", "Решение"] : []), "Этап"].map(h => <th key={h} className="px-3 py-2.5 text-left whitespace-nowrap">{h}</th>)}</tr>
+                  <tr>{["№", "Ребёнок", "Класс", "Анкета род.", "Этапы", ...((me.academic && mode === "admin") ? ["Тест", "Решение"] : []), "Этап"].map(h => <th key={h} className="px-3 py-2.5 text-left whitespace-nowrap">{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {visible.map(r => (
@@ -152,7 +152,7 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
                       <td className="px-3 py-2"><div className="font-medium text-[var(--text-main)]">{r.child.name}</div><div className="text-[11px] text-[var(--text-muted)]">{r.parent.name}{r.parent.phone ? ` · ${r.parent.phone}` : ""}</div></td>
                       <td className="px-3 py-2">{r.child.grade}</td>
                       <td className="px-3 py-2">{r.parentForm.status === "done" ? <span className="text-emerald-700">✓</span> : <span className="text-[var(--text-muted)]">—</span>}</td>
-                      <td className="px-3 py-2">{Object.values(r.stages).map(s => <span key={s.templateId} className={`inline-block mr-1 mb-0.5 px-2 py-0.5 rounded text-[11px] font-medium ${s.status === "done" && s.tone ? TONE[s.tone] : s.status === "draft" ? "text-emerald-700 bg-emerald-500/10" : "text-[var(--text-muted)] bg-[var(--bg-surface-hover)]"}`}>{s.status === "done" ? s.outcomeLabel : "● у психолога"}</span>)}{!Object.keys(r.stages).length && <span className="text-[var(--text-muted)]">—</span>}
+                      <td className="px-3 py-2">{Object.values(r.stages).map(s => <span key={s.templateId} className={`inline-block mr-1 mb-0.5 px-2 py-0.5 rounded text-[11px] font-medium ${s.status === "done" && s.tone ? TONE[s.tone] : s.status === "draft" ? "text-emerald-700 bg-emerald-500/10" : "text-[var(--text-muted)] bg-[var(--bg-surface-hover)]"}`}>{s.status === "done" ? s.outcomeLabel : "● идёт"}</span>)}{!Object.keys(r.stages).length && <span className="text-[var(--text-muted)]">—</span>}
                         {(me.psych || me.psychView) && Object.values(r.stages).some(s => s.status === "done") && (
                           <button className="ml-1 align-middle p-1 rounded-md text-[var(--accent)] hover:bg-[var(--accent)]/10 disabled:opacity-50" title="Скачать бланк сессии" aria-label="Скачать бланк сессии" disabled={saving === r.id}
                             onClick={e => { e.stopPropagation(); void downloadSession(r.id); }}>{saving === r.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}</button>

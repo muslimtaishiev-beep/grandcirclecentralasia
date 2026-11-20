@@ -6,7 +6,7 @@ import { compressImageToDataUrl } from "../../../lib/compressImage";
 import { btn, btnPrimary, card, input, label } from "../journals/components/ui";
 import {
   EMAIL_KINDS, EMPTY_EMAIL_TEMPLATE, renderEmail, sampleVars, unknownVars, varLabel, varsFor,
-  type EmailEvent, type EmailKind, type EmailLogo, type EmailOrg, type EmailTemplate,
+  EMAIL_EVENTS, type EmailEvent, type EmailKind, type EmailLogo, type EmailOrg, type EmailTemplate,
 } from "../../../shared/emailTemplate";
 import EmailLog from "./EmailLog";
 
@@ -212,7 +212,7 @@ function Templates({ orgId }: { orgId: string }) {
               <span className={label}>Текст</span>
               {kind === "any" ? (
                 <div className="space-y-1 mb-1.5">
-                  {(["referral", "tested", "form"] as EmailEvent[]).map(ev => (
+                  {EMAIL_EVENTS.map(ev => (
                     <div key={ev} className="flex flex-wrap items-center gap-1">
                       <span className="text-[11px] text-[var(--text-muted)] w-24 shrink-0">{KIND_LABEL[ev]}</span>
                       {varsFor(ev).map(v => chip(v.key, ev, v.from[ev]))}

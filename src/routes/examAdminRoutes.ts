@@ -4,7 +4,10 @@ import { notifyTested, syncAllReferrals } from "./admissionRoutes.js";
 import { Router } from "express";
 import admin from "firebase-admin";
 import { randomBytes } from "crypto";
-import { view, edit } from "./examRoutes.js";
+import { view, review, edit, examLevel } from "./examRoutes.js";
+import { requireFirebaseAuth } from "./authRoutes.js";
+import { requireScreen } from "../server/tenantAccess.js";
+import { callerPermissions } from "../server/access.js";
 import { hourlyPin } from "../shared/pin.js";
 import type { BankQuestion } from "../shared/exams.js";
 import {
@@ -24,10 +27,13 @@ const router = Router();
 // Изменения экзаменов и работ — открытые экраны (работы, поступающие) обновляются сами.
 router.use("/:tenantId/exams", liveOnWrite(["exams", "admissions"]));
 router.use("/:tenantId/attempts", liveOnWrite(["exams", "admissions"], /^\/([^/]+)/));
+router.use("/:tenantId/attempts-bulk", liveOnWrite(["exams", "admissions"]));
+router.use("/:tenantId/attempts-trash", liveOnWrite(["exams", "admissions"]));
 // Действия с работой поступающего — в его историю.
 const ATTEMPT_ACTION: Record<string, string> = {
   publish: "Результаты опубликованы", unpublish: "Публикация снята", annul: "Работа аннулирована", restore: "Работа восстановлена",
-  allow_retake: "Разрешена пересдача", finish: "Работа досдана менеджером", delete: "Работа удалена", decision: "Решение по работе", group: "Группа",
+  allow_retake: "Разрешена пересдача", finish: "Работа досдана менеджером", delete: "Работа удалена в корзину", decision: "Решение по работе", group: "Группа",
+  extend: "Продлено время", recheck: "Перепроверка",
 };
 router.use("/:tenantId/attempts/:aid", async (req: any, res: any, next: any) => {
   if (req.method !== "POST" || !/^[A-Za-z0-9_-]{2,80}$/.test(req.params.tenantId) || !/^[A-Za-z0-9_-]{4,64}$/.test(req.params.aid)) return next();
@@ -58,6 +64,40 @@ const checkIds = (req: any, res: any, next: any) => {
   next();
 };
 const own = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
+
+/**
+ * История экзамена и его работ: tenants/{t}/exam_history — кто, когда, что.
+ * Ошибка записи не ломает действие.
+ */
+export async function examHistory(t: string, req: any, ev: { examId: string; attemptId?: string; action: string; detail?: string }) {
+  try {
+    await col(t, "exam_history").add({
+      examId: ev.examId, attemptId: ev.attemptId || null, action: str(ev.action, 80), detail: str(ev.detail, 500),
+      by: { uid: str(req?.user?.uid, 128), name: str(req?.user?.name || req?.user?.email || "Система", 120) }, at: Date.now(),
+    });
+  } catch (e: any) { console.warn("[exam-history]", e?.message); }
+}
+
+/**
+ * Работа поступающего и экзамен приёма открываются и приёмной: она ведёт
+ * ребёнка по карточке, а уведомления ведут на страницу работы.
+ */
+const viewOrApplicant = (kind: "exam" | "attempt") => [requireFirebaseAuth, requireScreen("exams", (req: any) => req.params.tenantId), async (req: any, res: any, next: any) => {
+  try {
+    const t = String(req.params.tenantId);
+    const level = await examLevel(req.user, t);
+    if (level) { req.examLevel = level; req.canEdit = level === "edit"; req.canReview = level !== "view"; return next(); }
+    const perms = await callerPermissions(db(), req.user?.uid, t, req.user);
+    if (perms.has("admission:manage")) {
+      const id = String(kind === "exam" ? req.params.id : req.params.aid);
+      if (!SAFE_ID.test(id)) return fail(res, 400, "Неверный идентификатор");
+      const d = (await col(t, kind === "exam" ? "exams" : "exam_attempts").doc(id).get()).data();
+      const ok = kind === "exam" ? !!d?.settings?.admission?.grades?.length : !!d?.applicantId;
+      if (ok) { req.examLevel = "view"; req.canEdit = false; req.canReview = false; req.viaAdmission = true; return next(); }
+    }
+    return fail(res, 403, "Нет доступа к экзаменам");
+  } catch (e: any) { return fail(res, 500, e.message); }
+}];
 
 export const examPinKey = (tenantId: string, examId: string) => `${tenantId}:${examId}`;
 
@@ -114,10 +154,10 @@ router.get("/:tenantId/exams", ...view, async (req: any, res: any) => {
       stats.set(x.examId, st);
     }
     const exams = es.docs.map(d => ({ ...(d.data() as Exam), id: d.id }))
-      .filter(e => !e.archived)
-      .map(e => ({ id: e.id, title: e.title, group: e.group, status: e.status, code: e.code, sections: e.sections.length, updatedAt: e.updatedAt, opensAt: e.settings.access.opensAt, closesAt: e.settings.access.closesAt, grades: e.settings.admission?.grades || [], paper: !!e.settings.paper, ...(stats.get(e.id) || { total: 0, live: 0, done: 0 }) }))
+      .filter(e => (req.query.archived === "1" ? !!e.archived : !e.archived))
+      .map(e => ({ id: e.id, archived: !!e.archived, archivedAt: (e as any).archivedAt || null, title: e.title, group: e.group, status: e.status, code: e.code, sections: e.sections.length, updatedAt: e.updatedAt, opensAt: e.settings.access.opensAt, closesAt: e.settings.access.closesAt, grades: e.settings.admission?.grades || [], paper: !!e.settings.paper, ...(stats.get(e.id) || { total: 0, live: 0, done: 0 }) }))
       .sort((a, b) => a.group.localeCompare(b.group, "ru") || a.title.localeCompare(b.title, "ru", { numeric: true }));
-    return res.json({ success: true, exams, canEdit: req.canEdit });
+    return res.json({ success: true, exams, canEdit: req.canEdit, canReview: req.canReview });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
@@ -144,18 +184,19 @@ router.post("/:tenantId/exams", ...edit, async (req: any, res: any) => {
     batch.create(ref, exam);
     batch.create(db().collection("exam_links").doc(code), { tenantId: t, examId: ref.id, createdAt: now });
     await batch.commit();
+    await examHistory(t, req, { examId: ref.id, action: src ? "Создан копией" : "Создан", detail: src ? src.title : exam.title });
     return res.json({ success: true, exam });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
-router.get("/:tenantId/exams/:id", ...view, checkIds, async (req: any, res: any) => {
+router.get("/:tenantId/exams/:id", ...viewOrApplicant("exam"), checkIds, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const exam = await loadExam(t, req.params.id);
-    if (!exam || exam.archived) return fail(res, 404, "Экзамен не найден");
+    if (!exam) return fail(res, 404, "Экзамен не найден");
     const bank = await bankFor(t, exam.sections.map(s => s.disciplineId));
     const plans = Object.fromEntries(exam.sections.map(s => [s.id, sectionPlan(s, bank)]));
-    return res.json({ success: true, exam, plans, pin: pinNow(exam), canEdit: req.canEdit });
+    return res.json({ success: true, exam, plans, pin: req.viaAdmission ? "" : pinNow(exam), canEdit: req.canEdit && !exam.archived, canReview: req.canReview, archived: !!exam.archived });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
@@ -172,7 +213,8 @@ router.put("/:tenantId/exams/:id", ...edit, checkIds, async (req: any, res: any)
   try {
     const t = req.params.tenantId;
     const exam = await loadExam(t, req.params.id);
-    if (!exam || exam.archived) return fail(res, 404, "Экзамен не найден");
+    if (!exam) return fail(res, 404, "Экзамен не найден");
+    if (exam.archived) return fail(res, 409, "Экзамен в архиве — сначала верните его");
     const b = req.body || {};
     const patch: Partial<Exam> = { updatedAt: Date.now() };
     if (b.title !== undefined) patch.title = str(b.title, 120) || exam.title;
@@ -198,6 +240,20 @@ router.put("/:tenantId/exams/:id", ...edit, checkIds, async (req: any, res: any)
     }
     await col(t, "exams").doc(exam.id).update(JSON.parse(JSON.stringify(patch)));
     const next = { ...exam, ...patch };
+    const STATUS_WORD: Record<string, string> = { draft: "Черновик", open: "Открыт", closed: "Закрыт" };
+    const changed: string[] = [];
+    if (patch.title !== undefined && patch.title !== exam.title) changed.push(`название: «${exam.title}» → «${patch.title}»`);
+    if (patch.group !== undefined && patch.group !== exam.group) changed.push(`группа: ${exam.group || "—"} → ${patch.group || "—"}`);
+    if (patch.description !== undefined && patch.description !== exam.description) changed.push("описание");
+    if (patch.sections && JSON.stringify(patch.sections) !== JSON.stringify(exam.sections)) changed.push(`разделы (${exam.sections.length} → ${patch.sections.length})`);
+    if (patch.settings) {
+      const a = exam.settings as any, z = patch.settings as any;
+      const keys = [...new Set([...Object.keys(a || {}), ...Object.keys(z || {})])].filter(k => JSON.stringify(a?.[k]) !== JSON.stringify(z?.[k]));
+      const SETTING_WORD: Record<string, string> = { access: "допуск и PIN", results: "результаты", scoring: "оценивание", proctoring: "прокторинг", admission: "приём", paper: "бумажный тест" };
+      if (keys.length) changed.push(`настройки: ${keys.map(k => SETTING_WORD[k] || k).join(", ")}`);
+    }
+    if (patch.status && patch.status !== exam.status) changed.unshift(`статус: ${STATUS_WORD[exam.status] || exam.status} → ${STATUS_WORD[patch.status] || patch.status}`);
+    if (changed.length) await examHistory(t, req, { examId: exam.id, action: patch.status && patch.status !== exam.status ? "Статус" : "Изменён", detail: changed.join("; ") });
     // Классы, этапы или статус экзамена поменялись — поступающие, которые ждут
     // тест своего класса, получают его сами (уже напечатанный QR начинает работать).
     if ((next as Exam).settings?.admission?.grades?.length || exam.settings?.admission?.grades?.length) {
@@ -222,10 +278,33 @@ router.delete("/:tenantId/exams/:id", ...edit, checkIds, async (req: any, res: a
         tx.delete(db().collection("exam_links").doc(exam.code));
         return false;
       }
-      tx.update(col(t, "exams").doc(exam.id), { archived: true, status: "closed", updatedAt: Date.now() });
+      tx.update(col(t, "exams").doc(exam.id), { archived: true, status: "closed", archivedAt: Date.now(), archivedBy: who(req), updatedAt: Date.now() });
       return true;
     });
+    await examHistory(t, req, { examId: exam.id, action: archived ? "В архиве" : "Удалён", detail: exam.title });
     return res.json({ success: true, archived });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+/** Вернуть экзамен из архива — закрытым: открыть его снова решает менеджер. */
+router.post("/:tenantId/exams/:id/restore", ...edit, checkIds, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId;
+    const exam = await loadExam(t, req.params.id);
+    if (!exam) return fail(res, 404, "Экзамен не найден");
+    if (!exam.archived) return fail(res, 409, "Экзамен не в архиве");
+    await col(t, "exams").doc(exam.id).update({ archived: false, status: "closed", archivedAt: admin.firestore.FieldValue.delete(), archivedBy: admin.firestore.FieldValue.delete(), updatedAt: Date.now() });
+    await examHistory(t, req, { examId: exam.id, action: "Возвращён из архива", detail: exam.title });
+    return res.json({ success: true });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+/** История экзамена и его работ — новые сверху. */
+router.get("/:tenantId/exams/:id/history", ...view, checkIds, async (req: any, res: any) => {
+  try {
+    const snap = await col(req.params.tenantId, "exam_history").where("examId", "==", String(req.params.id)).get();
+    const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })).sort((a, b) => b.at - a.at).slice(0, 500);
+    return res.json({ success: true, rows });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
@@ -253,7 +332,22 @@ router.get("/:tenantId/live", ...view, async (req: any, res: any) => {
     const snap = await col(t, "exam_attempts").where("status", "==", "in_progress")
       .select("examId", "examTitle", "shortId", "student.name", "student.level", "startedAt", "current", "sections", "applicantId", "refNo", "proctoring.totalViolations").get();
     const now = Date.now();
-    const live = snap.docs.map(d => {
+    // Брошенные работы с вышедшим временем досдаются сразу: у них появляется
+    // результат, приёмная получает уведомление, а в «Сейчас» они не висят.
+    const expired = snap.docs.filter(d => { const x: any = d.data(); const dl = x.sections?.[x.current]?.deadline; return dl && dl + 60_000 < now; });
+    if (expired.length) {
+      const exams = new Map<string, Exam | null>();
+      for (const d of expired.slice(0, 50)) {
+        const x: any = d.data();
+        if (!exams.has(x.examId)) exams.set(x.examId, await loadExam(t, x.examId));
+        const ex = exams.get(x.examId);
+        if (!ex) continue;
+        const full = await col(t, "exam_attempts").doc(d.id).get();
+        await finalizeIfExpired(t, ex, { ...(full.data() as Attempt), id: d.id }).catch(e => console.warn("[exam-admin] finalize", e?.message));
+      }
+    }
+    const done = new Set(expired.slice(0, 50).map(d => d.id));
+    const live = snap.docs.filter(d => !done.has(d.id)).map(d => {
       const x: any = d.data(); const cur = x.sections?.[x.current];
       return {
         id: d.id, examId: x.examId, examTitle: x.examTitle, shortId: x.shortId, name: x.student?.name || "", level: x.student?.level || "",
@@ -285,24 +379,26 @@ async function loadAttempt(t: string, id: string) {
   return s.exists ? ({ ...(s.data() as any), id: s.id } as Attempt & { questions: Record<string, any>; token: string }) : null;
 }
 
-router.get("/:tenantId/attempts/:aid", ...view, checkIds, async (req: any, res: any) => {
+router.get("/:tenantId/attempts/:aid", ...viewOrApplicant("attempt"), checkIds, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const a = await loadAttempt(t, req.params.aid);
     if (!a) return fail(res, 404, "Работа не найдена");
     const { token: _t, ...rest } = a;
-    return res.json({ success: true, attempt: rest });
+    // Ключи ответов — только проверяющим и выше.
+    if (!req.canReview && rest.questions) rest.questions = Object.fromEntries(Object.entries(rest.questions).map(([k, q]: any) => [k, { ...q, answer: "" }]));
+    return res.json({ success: true, attempt: rest, canReview: req.canReview, canEdit: req.canEdit });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
-router.get("/:tenantId/attempts/:aid/evidence", ...view, checkIds, async (req: any, res: any) => {
+router.get("/:tenantId/attempts/:aid/evidence", ...viewOrApplicant("attempt"), checkIds, async (req: any, res: any) => {
   try {
     const s = await col(req.params.tenantId, "exam_evidence").doc(String(req.params.aid)).get();
     return res.json({ success: true, snapshots: s.exists ? s.data()?.snapshots || [] : [] });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
-router.get("/:tenantId/attempts/:aid/photo", ...view, checkIds, async (req: any, res: any) => {
+router.get("/:tenantId/attempts/:aid/photo", ...viewOrApplicant("attempt"), checkIds, async (req: any, res: any) => {
   try {
     const s = await col(req.params.tenantId, "exam_photos").doc(String(req.params.aid)).get();
     return res.json({ success: true, photo: s.exists ? s.data()?.photo || null : null });
@@ -337,7 +433,7 @@ async function recheck(t: string, a: WithQuestions, settings: any, bank?: Map<st
 }
 
 /** Ручная проверка: баллы за вопросы и заметки; complete — проверка завершена. */
-router.post("/:tenantId/attempts/:aid/review", ...edit, checkIds, async (req: any, res: any) => {
+router.post("/:tenantId/attempts/:aid/review", ...review, checkIds, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const a = await loadAttempt(t, req.params.aid);
@@ -359,79 +455,219 @@ router.post("/:tenantId/attempts/:aid/review", ...edit, checkIds, async (req: an
     const result = gradeAttempt(a.sections, a.questions, a.answers, settings, overrides);
     const review = { status: req.body?.complete ? "done" : (a.review?.status || "none"), overrides, notes, by: who(req), at: Date.now() };
     await col(t, "exam_attempts").doc(a.id).update({ result, review });
+    await examHistory(t, req, { examId: a.examId, attemptId: a.id, action: req.body?.complete ? "Работа проверена" : "Изменены баллы", detail: `${a.student?.name || ""} · ${result.percent}%` });
     return res.json({ success: true, result, review });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
+/** Что может проверяющий; остальное — только тот, кто управляет экзаменами. */
+const REVIEW_ACTIONS = new Set(["publish", "unpublish", "finish", "recheck", "extend", "group"]);
+
+/** Аннулировали или удалили пересдачу — в зачёт возвращается работа, которую она заменила. */
+async function unsupersede(t: string, a: Attempt) {
+  const replaced = await col(t, "exam_attempts").where("examId", "==", a.examId).where("supersededBy", "==", a.id).get();
+  for (const d of replaced.docs) await d.ref.update({ superseded: false, supersededBy: admin.firestore.FieldValue.delete() });
+}
+
 /**
- * Действия над работой: publish / unpublish / annul / restore / allow_retake /
- * finish (досдать сейчас) / delete / decision / group.
+ * Действие над одной работой: publish / unpublish / annul / restore /
+ * allow_retake / finish / delete / decision / group / recheck / extend.
+ * Возвращает ошибку, флаг удаления или итог перепроверки.
  */
-router.post("/:tenantId/attempts/:aid/action", ...edit, checkIds, async (req: any, res: any) => {
+async function applyAction(t: string, req: any, a: Attempt & { questions: Record<string, any>; token: string }, exam: Exam | null, action: string, body: any): Promise<{ error?: [number, string]; deleted?: boolean; recheck?: any }> {
+  if (!REVIEW_ACTIONS.has(action) && !req.canEdit) return { error: [403, "Это действие доступно тому, кто управляет экзаменами"] };
+  const ref = col(t, "exam_attempts").doc(a.id);
+  const now = Date.now();
+  let detail = "";
+  switch (action) {
+    case "publish":
+      if (a.status !== "finished") return { error: [409, "Опубликовать можно только сданную работу"] };
+      if (exam?.settings.results.requireReview && a.review?.status !== "done") return { error: [409, "Сначала завершите проверку работы"] };
+      await ref.update({ published: true, publishedAt: now }); break;
+    case "unpublish": await ref.update({ published: false, publishedAt: null }); break;
+    case "annul":
+      await ref.update({ status: "annulled", published: false, annulledAt: now, annulledBy: who(req), annulReason: str(body?.reason, 300) });
+      await unsupersede(t, a);
+      detail = str(body?.reason, 300);
+      break;
+    case "restore":
+      if (a.status !== "annulled") return { error: [409, "Работа не аннулирована"] };
+      await ref.update({ status: a.result ? "finished" : "in_progress" });
+      if (a.result) await supersedeOthers(t, { ...(a as any), status: "finished" });
+      break;
+    case "allow_retake": await ref.update({ retakeAllowed: true }); break;
+    case "finish": {
+      if (a.status !== "in_progress" || !exam) return { error: [409, "Работа уже не идёт"] };
+      const result = gradeAttempt(a.sections, a.questions, a.answers, exam.settings, a.review?.overrides || {});
+      const sections = a.sections.map(s => ({ ...s, finishedAt: s.finishedAt || now }));
+      await ref.update({ status: "finished", finishedAt: now, sections, result, finishedBy: who(req) });
+      await supersedeOthers(t, { ...(a as any), status: "finished" });
+      await notifyTested(t, { ...(a as any), result }, exam);
+      break;
+    }
+    case "extend": {
+      const min = Math.round(Number(body?.minutes));
+      if (!Number.isFinite(min) || min === 0 || Math.abs(min) > 240) return { error: [400, "Укажите минуты: от −240 до 240"] };
+      if (a.status !== "in_progress") return { error: [409, "Работа уже не идёт"] };
+      const cur = a.sections[a.current];
+      if (!cur?.deadline) return { error: [409, "Раздел ещё не начат"] };
+      const sections = a.sections.map((s, k) => (k === a.current ? { ...s, deadline: Math.max(now, (s.deadline || now) + min * 60_000), minutes: Math.max(1, s.minutes + min) } : s));
+      await ref.update({ sections });
+      detail = `${min > 0 ? "+" : ""}${min} мин · ${cur.title}`;
+      break;
+    }
+    case "decision": {
+      const v = body?.value as Decision | null;
+      if (v !== null && !["accepted", "reserve", "rejected"].includes(v)) return { error: [400, "Неизвестное решение"] };
+      await ref.update({ decision: v ? { value: v, comment: str(body?.comment, 1000), by: who(req), at: now } : null });
+      detail = v || "снято";
+      break;
+    }
+    case "group": await ref.update({ group: str(body?.value, 30) || null }); detail = str(body?.value, 30); break;
+    case "recheck": {
+      if (a.status !== "finished") return { error: [409, "Перепроверить можно только сданную работу"] };
+      if ((a as any).paper) return { error: [409, "Тест на бумаге: результаты меняют в карточке поступающего"] };
+      const r = await recheck(t, a, exam?.settings || DEFAULT_SETTINGS);
+      await ref.update({ questions: r.questions, result: r.result, recheckedAt: now, recheckedBy: who(req) });
+      await examHistory(t, req, { examId: a.examId, attemptId: a.id, action: "Перепроверка", detail: `${a.student?.name || ""} · ${r.before}% → ${r.after}%` });
+      return { recheck: { keys: r.keys, before: r.before, after: r.after } };
+    }
+    case "delete": {
+      // В корзину: работа уходит из итогов, но её можно вернуть. Ссылка
+      // ученика (token) не переносится — по ней работа больше не открывается.
+      const { token: _t, ...keep } = a as any;
+      await col(t, "exam_attempts_trash").doc(a.id).set({ ...keep, deletedAt: now, deletedBy: who(req) });
+      await ref.delete();
+      await unsupersede(t, a);
+      await examHistory(t, req, { examId: a.examId, attemptId: a.id, action: "Работа удалена в корзину", detail: a.student?.name || "" });
+      return { deleted: true };
+    }
+    default: return { error: [400, "Неизвестное действие"] };
+  }
+  await examHistory(t, req, { examId: a.examId, attemptId: a.id, action: ATTEMPT_ACTION[action] || action, detail: [a.student?.name || "", detail].filter(Boolean).join(" · ") });
+  return {};
+}
+
+router.post("/:tenantId/attempts/:aid/action", ...review, checkIds, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const a = await loadAttempt(t, req.params.aid);
     if (!a) return fail(res, 404, "Работа не найдена");
     const exam = await loadExam(t, a.examId);
-    const ref = col(t, "exam_attempts").doc(a.id);
-    const action = String(req.body?.action || "");
-    const now = Date.now();
-    switch (action) {
-      case "publish":
-        if (a.status !== "finished") return fail(res, 409, "Опубликовать можно только сданную работу");
-        if (exam?.settings.results.requireReview && a.review?.status !== "done") return fail(res, 409, "Сначала завершите проверку работы");
-        await ref.update({ published: true, publishedAt: now }); break;
-      case "unpublish": await ref.update({ published: false, publishedAt: null }); break;
-      case "annul": {
-        await ref.update({ status: "annulled", published: false, annulledAt: now, annulledBy: who(req), annulReason: str(req.body?.reason, 300) });
-        // Аннулировали пересдачу — в зачёт возвращается работа, которую она заменила.
-        const replaced = await col(t, "exam_attempts").where("examId", "==", a.examId).where("supersededBy", "==", a.id).get();
-        for (const d of replaced.docs) await d.ref.update({ superseded: false, supersededBy: admin.firestore.FieldValue.delete() });
-        break;
-      }
-      case "restore":
-        if (a.status !== "annulled") return fail(res, 409, "Работа не аннулирована");
-        await ref.update({ status: a.result ? "finished" : "in_progress" });
-        if (a.result) await supersedeOthers(t, { ...(a as any), status: "finished" });
-        break;
-      case "allow_retake": await ref.update({ retakeAllowed: true }); break;
-      case "finish": {
-        if (a.status !== "in_progress" || !exam) return fail(res, 409, "Работа уже не идёт");
-        const result = gradeAttempt(a.sections, a.questions, a.answers, exam.settings, a.review?.overrides || {});
-        const sections = a.sections.map(s => ({ ...s, finishedAt: s.finishedAt || now }));
-        await ref.update({ status: "finished", finishedAt: now, sections, result, finishedBy: who(req) });
-        await supersedeOthers(t, { ...(a as any), status: "finished" });
-        await notifyTested(t, { ...(a as any), result }, exam);
-        break;
-      }
-      case "decision": {
-        const v = req.body?.value as Decision | null;
-        if (v !== null && !["accepted", "reserve", "rejected"].includes(v)) return fail(res, 400, "Неизвестное решение");
-        await ref.update({ decision: v ? { value: v, comment: str(req.body?.comment, 1000), by: who(req), at: now } : null }); break;
-      }
-      case "group": await ref.update({ group: str(req.body?.value, 30) || null }); break;
-      case "recheck": {
-        if (a.status !== "finished") return fail(res, 409, "Перепроверить можно только сданную работу");
-        if ((a as any).paper) return fail(res, 409, "Тест на бумаге: результаты меняют в карточке поступающего");
-        const r = await recheck(t, a, exam?.settings || DEFAULT_SETTINGS);
-        await ref.update({ questions: r.questions, result: r.result, recheckedAt: now, recheckedBy: who(req) });
-        const fresh = await loadAttempt(t, a.id);
-        return res.json({ success: true, attempt: fresh ? toRow(fresh) : null, recheck: { keys: r.keys, before: r.before, after: r.after } });
-      }
-      case "delete":
-        await ref.delete();
-        await col(t, "exam_evidence").doc(a.id).delete().catch(() => {});
-        await col(t, "exam_photos").doc(a.id).delete().catch(() => {});
-        return res.json({ success: true, deleted: true });
-      default: return fail(res, 400, "Неизвестное действие");
-    }
+    const out = await applyAction(t, req, a, exam, String(req.body?.action || ""), req.body);
+    if (out.error) return fail(res, out.error[0], out.error[1]);
+    if (out.deleted) return res.json({ success: true, deleted: true });
     const fresh = await loadAttempt(t, a.id);
-    return res.json({ success: true, attempt: fresh ? toRow(fresh) : null });
+    return res.json({ success: true, attempt: fresh ? toRow(fresh) : null, ...(out.recheck ? { recheck: out.recheck } : {}) });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+/** Массово: { ids, action, value?, reason?, minutes? } — по одной работе, итог по каждой. */
+router.post("/:tenantId/attempts-bulk", ...review, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId;
+    const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(String).filter((x: string) => SAFE_ID.test(x)))].slice(0, 500) as string[];
+    const action = String(req.body?.action || "");
+    if (!ids.length) return fail(res, 400, "Не выбраны работы");
+    if (!REVIEW_ACTIONS.has(action) && !req.canEdit) return fail(res, 403, "Это действие доступно тому, кто управляет экзаменами");
+    const exams = new Map<string, Exam | null>();
+    let ok = 0; const errors: { id: string; error: string }[] = [];
+    for (const id of ids) {
+      const a = await loadAttempt(t, id);
+      if (!a) { errors.push({ id, error: "Работа не найдена" }); continue; }
+      if (!exams.has(a.examId)) exams.set(a.examId, await loadExam(t, a.examId));
+      const out = await applyAction(t, req, a, exams.get(a.examId) || null, action, req.body);
+      if (out.error) errors.push({ id, error: out.error[1] }); else ok++;
+    }
+    return res.json({ success: true, ok, errors });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+/** Во время экзамена — всем идущим работам: продлить время или досдать. { action: "extend" | "finish", minutes? } */
+router.post("/:tenantId/exams/:id/live", ...review, checkIds, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId;
+    const exam = await loadExam(t, req.params.id);
+    if (!exam) return fail(res, 404, "Экзамен не найден");
+    const action = String(req.body?.action || "");
+    if (!["extend", "finish"].includes(action)) return fail(res, 400, "Неизвестное действие");
+    const snap = await col(t, "exam_attempts").where("examId", "==", exam.id).where("status", "==", "in_progress").get();
+    let ok = 0; const errors: { id: string; error: string }[] = [];
+    for (const d of snap.docs) {
+      const a = { ...(d.data() as any), id: d.id };
+      if (action === "extend" && !a.sections?.[a.current]?.deadline) continue;
+      const out = await applyAction(t, req, a, exam, action, req.body);
+      if (out.error) errors.push({ id: d.id, error: out.error[1] }); else ok++;
+    }
+    await examHistory(t, req, { examId: exam.id, action: action === "finish" ? "Досданы все идущие работы" : "Продлено время всем", detail: action === "extend" ? `${req.body?.minutes} мин · работ: ${ok}` : `работ: ${ok}` });
+    return res.json({ success: true, ok, errors });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+/** Все работы организации — общий список «Работы». ?status=&examId=&q= */
+router.get("/:tenantId/attempts", ...view, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId;
+    let q: FirebaseFirestore.Query = col(t, "exam_attempts");
+    const status = str(req.query.status, 20);
+    if (["in_progress", "finished", "annulled"].includes(status)) q = q.where("status", "==", status);
+    const examId = str(req.query.examId, 64);
+    if (examId && SAFE_ID.test(examId)) q = q.where("examId", "==", examId);
+    const snap = await q.select("examId", "examTitle", "shortId", "student", "status", "startedAt", "finishedAt", "result", "review", "published", "superseded", "group", "decision", "applicantId", "refNo", "proctoring", "sections", "answers", "current").get();
+    const needle = str(req.query.q, 80).toLowerCase();
+    const rows = snap.docs.map(d => toRow({ ...(d.data() as any), id: d.id }))
+      .filter(r => !needle || `${r.student?.name || ""} ${r.shortId || ""} ${r.examTitle || ""}`.toLowerCase().includes(needle))
+      .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+    return res.json({ success: true, attempts: rows.slice(0, 1000), total: rows.length, canEdit: req.canEdit, canReview: req.canReview });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+/** Корзина работ. ?examId= */
+router.get("/:tenantId/attempts-trash", ...view, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId;
+    let q: FirebaseFirestore.Query = col(t, "exam_attempts_trash");
+    const examId = str(req.query.examId, 64);
+    if (examId && SAFE_ID.test(examId)) q = q.where("examId", "==", examId);
+    const snap = await q.get();
+    const rows = snap.docs.map(d => ({ ...toRow({ ...(d.data() as any), id: d.id }), deletedAt: d.data().deletedAt, deletedBy: d.data().deletedBy }))
+      .sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
+    return res.json({ success: true, attempts: rows });
+  } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+/** { ids, action: "restore" | "purge" } — вернуть из корзины или стереть насовсем (со снимками и фото). */
+router.post("/:tenantId/attempts-trash", ...edit, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId;
+    const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(String).filter((x: string) => SAFE_ID.test(x)))].slice(0, 500) as string[];
+    const action = String(req.body?.action || "");
+    if (!ids.length) return fail(res, 400, "Не выбраны работы");
+    if (!["restore", "purge"].includes(action)) return fail(res, 400, "Неизвестное действие");
+    let n = 0;
+    for (const id of ids) {
+      const sn = await col(t, "exam_attempts_trash").doc(id).get();
+      if (!sn.exists) continue;
+      const a: any = { ...sn.data(), id };
+      if (action === "restore") {
+        const { deletedAt: _d, deletedBy: _b, ...keep } = a;
+        // Ссылка ученика выдаётся заново: прежняя ушла вместе с удалением.
+        await col(t, "exam_attempts").doc(id).set({ ...keep, token: randomBytes(24).toString("base64url") });
+        if (keep.status === "finished" && !keep.superseded) await supersedeOthers(t, keep);
+        await examHistory(t, req, { examId: a.examId, attemptId: id, action: "Работа возвращена из корзины", detail: a.student?.name || "" });
+      } else {
+        await col(t, "exam_evidence").doc(id).delete().catch(() => {});
+        await col(t, "exam_photos").doc(id).delete().catch(() => {});
+        await examHistory(t, req, { examId: a.examId, attemptId: id, action: "Работа удалена насовсем", detail: a.student?.name || "" });
+      }
+      await sn.ref.delete(); n++;
+    }
+    return res.json({ success: true, count: n });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
 /** Перепроверить все сданные работы экзамена по текущим ключам банка. */
-router.post("/:tenantId/exams/:id/recheck-all", ...edit, checkIds, async (req: any, res: any) => {
+router.post("/:tenantId/exams/:id/recheck-all", ...review, checkIds, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const exam = await loadExam(t, req.params.id);
@@ -462,7 +698,7 @@ router.post("/:tenantId/exams/:id/recheck-all", ...edit, checkIds, async (req: a
 });
 
 /** Опубликовать все сданные (и, если требуется, проверенные) работы экзамена. */
-router.post("/:tenantId/exams/:id/publish-all", ...edit, checkIds, async (req: any, res: any) => {
+router.post("/:tenantId/exams/:id/publish-all", ...review, checkIds, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId;
     const exam = await loadExam(t, req.params.id);
@@ -474,6 +710,7 @@ router.post("/:tenantId/exams/:id/publish-all", ...edit, checkIds, async (req: a
       for (const d of ready.slice(i, i + 400)) b.update(d.ref, { published: true, publishedAt: Date.now() });
       await b.commit();
     }
+    if (ready.length) await examHistory(t, req, { examId: exam.id, action: "Опубликованы результаты", detail: `работ: ${ready.length}` });
     return res.json({ success: true, count: ready.length, waitingReview: snap.docs.filter(d => !d.data().published && exam.settings.results.requireReview && d.data().review?.status !== "done").length });
   } catch (e: any) { return fail(res, 500, e.message); }
 });

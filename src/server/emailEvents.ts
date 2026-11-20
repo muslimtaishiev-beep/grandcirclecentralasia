@@ -53,8 +53,10 @@ export const EVENT_PERMS: Record<EmailEvent, PermissionKey[]> = {
   referral: ["admission:manage"],
   tested: ["admission:manage", "tests:manage"],
   form: ["team:manage", "certificates:issue", "crm:manage"],
+  parent_form: ["admission:manage"],
+  decision: ["admission:manage"],
 };
-const EVENT_TITLE: Record<EmailEvent, string> = { referral: "Направление", tested: "Письмо после теста", form: "Письмо по заявке" };
+const EVENT_TITLE: Record<EmailEvent, string> = { referral: "Направление", tested: "Письмо после теста", form: "Письмо по заявке", parent_form: "Анкета родителю", decision: "Письмо с решением" };
 
 export interface TemplatedSend {
   tenantId: string;

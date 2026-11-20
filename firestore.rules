@@ -136,6 +136,8 @@ service cloud.firestore {
       match /applicants/{d}              { allow read, write: if false; }
       match /applicant_forms/{d}         { allow read, write: if false; }
       match /applicant_audit/{d}         { allow read, write: if false; }
+      // Журнал действий организации: пишет только сервер, читает право «Журнал действий».
+      match /audit/{d}                   { allow read: if hasPerm(tenantId, 'au'); allow write: if false; }
       match /questionnaire_templates/{d} { allow read, write: if false; }
       match /admission_meta/{d}          { allow read, write: if false; }
       match /exams/{d}             { allow read, write: if false; }

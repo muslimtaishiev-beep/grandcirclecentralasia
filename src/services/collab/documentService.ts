@@ -1,5 +1,6 @@
 import { db } from '../../lib/firebase';
-import { collection, doc, query, where, onSnapshot, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, query, where, onSnapshot, setDoc, updateDoc, deleteDoc, runTransaction } from 'firebase/firestore';
+import { mergeBlocks } from './docMerge';
 import { WorkspaceDocument, DocBlock, DocAccessLevel, UserDocRole } from '../../types/collab';
 import { generateShortId } from '../../lib/utils';
 
@@ -105,6 +106,23 @@ class DocumentService {
       lastEditedByStaffId: staffId,
       updatedAt: Date.now()
     }));
+  }
+
+  /**
+   * Записать свои правки поверх того, что успели сохранить коллеги:
+   * в транзакции читаем текущие блоки и сливаем с ними (mergeBlocks).
+   * Возвращает итоговые блоки, которые легли в базу.
+   */
+  async commitBlocks(tenantId: string, docId: string, base: DocBlock[], local: DocBlock[], staffId: string): Promise<DocBlock[]> {
+    const ref = doc(db, 'tenants', tenantId, 'workspace_documents', docId);
+    return runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw Object.assign(new Error('Документ удалён'), { code: 'not-found' });
+      const server = ((snap.data() as WorkspaceDocument).blocks || []) as DocBlock[];
+      const merged = mergeBlocks(base, local, server);
+      tx.update(ref, sanitizeData({ blocks: merged, lastEditedByStaffId: staffId, updatedAt: Date.now() }));
+      return merged;
+    });
   }
 
   async updateTitle(tenantId: string, docId: string, title: string, staffId: string) {

@@ -7,7 +7,8 @@ import { appUrl } from "../server/emailEvents.js";
 import { randomBytes } from "crypto";
 import { syncClaims } from "../server/claims.js";
 import { verifySession } from "../server/session.js";
-import { recordLogin } from "../server/loginAlerts.js";
+import { recordLogin, deviceOf, ipOf } from "../server/loginAlerts.js";
+import { actorOf, writeAudit } from "../server/audit.js";
 import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
 
 const router = Router();
@@ -138,6 +139,17 @@ router.get("/me", requireFirebaseAuth, async (req: any, res: any) => {
     const activeTenantIds = Array.from(new Set(activeMemberships.map((m: any) => m.tenantId).filter(Boolean)));
     // Claims считаются из прав (должность + личные), а не из названия роли.
     const claimsChanged = await syncClaims(db, uid, req.user);
+
+    // Вход — в журнал каждой организации, один раз за сеанс (id по auth_time).
+    const authTime = Number(req.user?.auth_time) || 0;
+    if (authTime) {
+      const ua = String(req.headers?.["user-agent"] || "").slice(0, 300);
+      await Promise.all(activeTenantIds.map((t: any) => writeAudit(db, String(t), {
+        actor: actorOf(req.user), action: "login", section: "security",
+        target: { kind: "member", id: uid, name: String(req.user?.name || req.user?.email || "") },
+        detail: `${deviceOf(ua)} · IP ${ipOf(req) || "—"}`,
+      }, `login_${uid}_${authTime}`)));
+    }
 
     return res.json({
       success: true,
@@ -288,6 +300,7 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
       membershipDoc.permissions = invitedPerms;
     }
     await db.collection("memberships").doc(membershipId).set(membershipDoc, { merge: true });
+    await writeAudit(db, targetTenantId, { actor: actorOf(req.user), action: was ? "role.change" : "invite", section: was ? "access" : "staff", target: { kind: "member", id: uid, name: String(membershipDoc.displayName || "") }, detail: `${String(email || "")} · ${String(membershipDoc.role || "")}` });
 
     // Claims приглашённого — из его прав, чтобы правила Firestore применились
     // после первого обновления токена.

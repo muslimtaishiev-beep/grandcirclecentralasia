@@ -63,7 +63,7 @@ export async function referralHTML(org: PrintOrg, c: PrintChild, o: { token: str
     <h1>Направление на тестирование</h1>
     <p>Выдано: <b>${esc(c.name)}</b>, поступающему в ${esc(c.grade)} класс.</p>
     <p>Тест: <b>${esc(o.examTitle || `вступительный тест, ${c.grade} класс`)}</b></p>
-    <p>Собеседование с психологом пройдено.</p>
+    <p>Собеседование пройдено.</p>
     <div class="big"><img src="${big}" alt=""><div>
       <p><b>Как начать тест</b></p>
       <p>1. В аудитории отсканируйте этот код камерой телефона.</p>
@@ -71,7 +71,7 @@ export async function referralHTML(org: PrintOrg, c: PrintChild, o: { token: str
       <p>3. Введите PIN, который назовёт организатор.</p>
       <p class="hint">Номер поступающего: <b>${no(c.refNo)}</b>. Не передавайте направление другим.</p>
     </div></div>
-    <div class="sign"><span>Психолог: ${esc(o.psychName)} ______________</span><span>${esc(today())}</span></div>
+    <div class="sign"><span>Специалист: ${esc(o.psychName)} ______________</span><span>${esc(today())}</span></div>
   </div>`);
 }
 
@@ -91,7 +91,7 @@ export async function parentHTML(org: PrintOrg, c: PrintChild, o: { parentToken:
     <div class="big"><img src="${big}" alt=""><div>
       <p><b>Заполните анкету на телефоне</b></p>
       <p>Наведите камеру на код — откроется анкета вашего ребёнка. Это займёт 5 минут.</p>
-      <p class="hint">Нет телефона под рукой — заполните бумажный вариант на следующей странице и отдайте психологу.</p>
+      <p class="hint">Нет телефона под рукой — заполните бумажный вариант на следующей странице и отдайте в приёмную.</p>
     </div></div>
   </div><div class="sheet">
     ${await head(org, c, linkUrl(o.cardToken, "parent"), "Анкета для родителей (бумажный вариант)")}
