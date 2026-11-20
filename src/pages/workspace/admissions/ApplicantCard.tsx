@@ -1,7 +1,7 @@
 import EmailResend from "../../../components/workspace/EmailResend";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLive } from "../../../lib/useLive";
-import { Archive, ArchiveRestore, Camera, CheckCircle2, ClipboardList, Copy, Download, ExternalLink, History, Loader2, Lock, Pencil, Printer, QrCode, RefreshCw, ShieldAlert, Trash2, Undo2 } from "lucide-react";
+import { Archive, ArchiveRestore, Camera, CheckCircle2, ClipboardList, Copy, Download, ExternalLink, History, Loader2, Lock, Pencil, Printer, QrCode, RefreshCw, RotateCcw, ShieldAlert, Trash2, Undo2 } from "lucide-react";
 import FormFiller from "../../../components/admissions/FormFiller";
 import { STAGE_LABEL, stageOf, type Applicant, type CandidateInfo, type PaperResult } from "../../../shared/admissions";
 import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
@@ -170,6 +170,15 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
           <FormTab key="parent" api={api} a={a} tpl={parentForm?.template || parentTpl} form={parentForm} canFill={!!d.canFill[parentTpl.id]} canSee={!!d.canSee[parentTpl.id] || !!parentForm?.full}
             grade={grade} onSaved={changed} onMaterial={material(parentTpl)}
             note={parentForm?.status === "done" ? (parentForm.filledBy?.kind === "parent" ? "Заполнил родитель по ссылке" : `Внесено с бумаги: ${parentForm.filledBy?.name || ""}`) : "Родитель ещё не заполнил. Анкету с QR можно распечатать кнопкой «Анкета родителю»."} />
+        )}
+        {tab === "parent" && parentTpl && parentForm && d.me.admission && !a.archived && (
+          <div className="flex justify-end border-t border-[var(--border-color)] pt-3">
+            <Button variant="danger" size="sm" icon={<RotateCcw className="w-3.5 h-3.5" />} onClick={async () => {
+              if (!(await confirmDialog({ title: "Очистить анкету родителя и выдать заново?", message: "Ответы уйдут в архив, ссылка родителя откроет пустую анкету.", confirmLabel: "Очистить и выдать", danger: true }))) return;
+              try { await api(`/applicants/${a.id}/parent-form/reset`, { method: "POST", body: JSON.stringify({}) }); toast.success("Анкета очищена — отправьте ссылку родителю"); await changed(); setQr("parent"); }
+              catch (e: any) { toast.error(e.message); }
+            }}>Очистить и выдать заново</Button>
+          </div>
         )}
         {staffTemplates.map(t => tab === t.id && (
           <FormTab key={t.id} api={api} a={a} tpl={d.forms.find(f => f.templateId === t.id)?.template || t} form={d.forms.find(f => f.templateId === t.id)}

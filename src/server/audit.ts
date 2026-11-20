@@ -85,6 +85,8 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   "form.archive": "Форма в архиве",
   "form.restore": "Форма возвращена из архива",
   "form.purge": "Форма стёрта",
+  "digitize.save": "Оцифровка сохранена",
+  "digitize.delete": "Оригинал оцифровки удалён",
 };
 
 // ── Платформенный журнал audit_logs (суперадмин) ──

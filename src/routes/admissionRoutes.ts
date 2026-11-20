@@ -1164,6 +1164,31 @@ router.post("/:tenantId/applicants/:id/parent-email", ...staff, async (req: any,
   } catch (e: any) { return oops(res, e); }
 });
 
+/**
+ * Анкета родителя заполнена неверно — очистить и выдать заново. Прежние ответы
+ * не пропадают: копия — в applicant_forms_archive, отметка — в истории.
+ * Ссылка родителя снова открывает пустую анкету; данные карточки не трогаем.
+ */
+router.post("/:tenantId/applicants/:id/parent-form/reset", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Нет прав");
+    const a = await loadApplicant(t, String(req.params.id));
+    if (!a) return fail(res, 404, "Поступающий не найден");
+    if (a.archived) return fail(res, 409, "Карточка в архиве");
+    const snap = (await col(t, "applicant_forms").where("applicantId", "==", a.id).get()).docs
+      .find(d => (d.data() as ApplicantForm).template?.audience === "parent");
+    if (!snap) return fail(res, 409, "Анкета родителя ещё не заполнялась");
+    const now = Date.now();
+    await col(t, "applicant_forms_archive").doc(`${snap.id}_${now}`).set(deep({ ...snap.data(), resetAt: now, resetBy: c.uid, resetByName: c.name, reason: str(req.body?.reason, 300) }));
+    await snap.ref.delete();
+    await col(t, "applicants").doc(a.id).update({ parentForm: { status: "none", at: null, by: null }, updatedAt: now });
+    await audit(t, a.id, c, "parent_form_reset", str(req.body?.reason, 300));
+    await bumpLive(t, ["admissions"], a.id).catch(() => {});
+    return res.json({ success: true });
+  } catch (e: any) { return oops(res, e); }
+});
+
 /** Письмо с решением — повторно, вручную. */
 router.post("/:tenantId/applicants/:id/decision-email", ...staff, async (req: any, res: any) => {
   try {
