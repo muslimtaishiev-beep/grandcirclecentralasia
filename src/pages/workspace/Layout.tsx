@@ -267,7 +267,7 @@ export default function WorkspaceLayout() {
           <button onClick={toggleTheme} className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full text-[var(--text-main)] transition">
             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
           </button>
-          <GlobalNotifications />
+          <GlobalNotifications tenant={activeTenant || (orgId ? { id: orgId } : null)} />
           <UpdateBanner />
           
           {/* Профиль: при наведении — меню «Профиль» и «Выйти» */}

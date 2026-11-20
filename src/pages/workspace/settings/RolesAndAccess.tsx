@@ -380,11 +380,7 @@ export default function RolesAndAccess({ view, onInviteClose, onInvited }: { vie
       {view !== "invite" && tab === "modules" && (
         <div className="space-y-5">
           <div className="space-y-2">
-            <p className="text-xs text-[var(--text-muted)]">
-              Скрытый раздел исчезает из меню у ВСЕХ сотрудников, включая тех, кому
-              право выдано должностью. Так убирают то, чем компания не пользуется.
-              Разделы, закрытые платформой, здесь не показываются.
-            </p>
+            
             {[...new Set(WORKSPACE_SCREENS.map(sx => sx.group))].map(group => {
               const items = WORKSPACE_SCREENS.filter(sx => sx.group === group && !platformOff.has(sx.key));
               if (!items.length) return null;

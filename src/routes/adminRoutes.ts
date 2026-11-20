@@ -324,19 +324,53 @@ async function sendPasswordEmail(email: string): Promise<boolean> {
   }
 }
 
-/** POST /api/tenants/:id/staff/:uid/reset-password — письмо со сменой пароля сотруднику. */
+/** Читаемый временный пароль: без похожих символов (0/O, 1/l). */
+function tempPassword(): string {
+  const abc = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = randomBytes(12);
+  return Array.from(bytes, x => abc[x % abc.length]).join("");
+}
+
+/**
+ * POST /api/tenants/:id/staff/:uid/reset-password
+ * mode "email" (по умолчанию) — сотруднику письмо со ссылкой смены пароля.
+ * mode "set" — пароль задаёт администратор (свой или созданный системой),
+ * все сеансы сотрудника завершаются. Только если учётная запись не состоит
+ * в других организациях: иначе админ одной школы получил бы вход в чужую.
+ */
 router.post("/:id/staff/:uid/reset-password", requireFirebaseAuth, need("team:manage"), async (req: any, res: any) => {
   try {
     const m = await actionTarget(req, res);
     if (!m) return;
-    const u = (await authUsers([String(m.userId)])).get(String(m.userId));
-    if (!u?.email) return fail(res, 409, "У сотрудника нет почты");
-    if (!(await sendPasswordEmail(u.email))) return fail(res, 502, "Письмо не отправилось — попробуйте позже");
-    await audited(req, m, "staff.password", "security", u.email);
-    return res.json({ success: true, sentTo: u.email });
+    const uid = String(m.userId);
+    const u = (await authUsers([uid])).get(uid);
+    if (!u) return fail(res, 404, "Учётная запись не найдена");
+    const mode = req.body?.mode === "set" ? "set" : "email";
+
+    if (mode === "email") {
+      if (!u.email) return fail(res, 409, "У сотрудника нет почты — задайте пароль сами");
+      if (!(await sendPasswordEmail(u.email))) return fail(res, 502, "Письмо не отправилось — попробуйте позже");
+      await audited(req, m, "staff.password", "security", u.email);
+      return res.json({ success: true, mode, sentTo: u.email });
+    }
+
+    if (req.user?.isSuperadmin !== true) {
+      const all = await db().collection("memberships").where("userId", "==", uid).get();
+      const other = all.docs.some(d => String(d.data().tenantId) !== String(req.params.id) && d.data().status !== "removed");
+      if (other) return fail(res, 409, "Сотрудник состоит и в других организациях — пароль можно сменить только письмом на его почту");
+    }
+    const typed = typeof req.body?.password === "string" ? req.body.password : "";
+    if (typed && (typed.length < 8 || typed.length > 128)) return fail(res, 400, "Пароль — от 8 до 128 символов");
+    const password = typed || tempPassword();
+    await admin.auth().updateUser(uid, { password });
+    await revokeAllSessions(uid);
+    forgetAccount(uid);
+    await audited(req, m, "staff.password.set", "security", typed ? "задан администратором" : "создан системой");
+    // Пароль возвращается только тот, что создал сервер: свой администратор и так знает.
+    return res.json({ success: true, mode, ...(typed ? {} : { password }) });
   } catch (e: any) {
     console.error("[admin] reset", e);
-    return fail(res, 500, "Не удалось отправить письмо");
+    return fail(res, 500, "Не удалось сменить пароль");
   }
 });
 

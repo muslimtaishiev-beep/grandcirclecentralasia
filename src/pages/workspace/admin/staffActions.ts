@@ -1,5 +1,6 @@
 import { confirmDialog, toast } from "../../../components/ui";
 import { del, errText, post, type StaffRow } from "./api";
+import { openResetPassword } from "./ResetPasswordModal";
 
 export type StaffActionKind = "suspend" | "resume" | "sessions" | "password" | "remove" | "resend" | "revoke";
 
@@ -25,12 +26,8 @@ export async function runStaffAction(tenantId: string, kind: StaffActionKind, s:
         await post(`${url}/revoke-sessions`);
         toast.success("Сеансы завершены");
         return true;
-      case "password": {
-        if (!(await confirmDialog({ title: `Сбросить пароль: ${who}`, message: "Сотруднику уйдёт письмо для смены пароля.", confirmLabel: "Отправить письмо" }))) return false;
-        const r = await post<{ sentTo: string }>(`${url}/reset-password`);
-        toast.success(`Письмо отправлено: ${r.sentTo}`);
-        return true;
-      }
+      case "password":
+        return await openResetPassword(url, who);
       case "remove":
         if (!(await confirmDialog({ title: `Удалить из организации: ${who}`, message: "Учётная запись останется, доступ к организации пропадёт.", confirmLabel: "Удалить", danger: true }))) return false;
         await del(url);

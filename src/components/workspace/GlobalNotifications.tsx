@@ -9,9 +9,14 @@ import clsx from 'clsx';
 import { clientTypeEvent } from '../../shared/notifyEvents';
 import { loadNotifyPrefs } from '../../pages/workspace/profile/NotifySettings';
 
-export default function GlobalNotifications() {
+/**
+ * Колокольчик живёт в шапке Layout — вне <Outlet>, поэтому организацию
+ * получает пропсом (useOutletContext там пуст, подписка не запускалась).
+ */
+export default function GlobalNotifications({ tenant }: { tenant?: { id: string } | null }) {
   const { user } = useAuth();
-  const { activeTenant } = useOutletContext<any>() || {};
+  const outlet = useOutletContext<any>() || {};
+  const activeTenant = tenant || outlet.activeTenant;
   const { notifications: all, loaded, markAsRead, markAllAsRead } = useNotifications(activeTenant?.id, user?.uid);
   const navigate = useNavigate();
 
