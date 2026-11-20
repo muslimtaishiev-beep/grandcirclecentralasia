@@ -1,7 +1,7 @@
 import EmailResend from "../../../components/workspace/EmailResend";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLive } from "../../../lib/useLive";
-import { Archive, ArchiveRestore, Camera, CheckCircle2, ClipboardList, Copy, Download, ExternalLink, History, Loader2, Lock, Pencil, Printer, QrCode, RefreshCw, Trash2, Undo2 } from "lucide-react";
+import { Archive, ArchiveRestore, Camera, CheckCircle2, ClipboardList, Copy, Download, ExternalLink, History, Loader2, Lock, Pencil, Printer, QrCode, RefreshCw, ShieldAlert, Trash2, Undo2 } from "lucide-react";
 import FormFiller from "../../../components/admissions/FormFiller";
 import { STAGE_LABEL, stageOf, type Applicant, type CandidateInfo, type PaperResult } from "../../../shared/admissions";
 import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
@@ -14,6 +14,8 @@ import { Button, confirmDialog, toast } from "../../../components/ui";
 import { TONE, type Api, type Me } from "./admissionApi";
 import { saveSessions, sessionsOf } from "./sessionPdf";
 import AttemptViewer from "../exams/AttemptViewer";
+import ProctoringDossier from "../../../components/ProctoringDossier";
+import { useExamApi } from "../exams/examApi";
 import { latestTest, type TestSummary } from "./candidateForm";
 import CandidateSheetModal from "./CandidateSheetModal";
 import HistoryModal from "./HistoryModal";
@@ -24,9 +26,17 @@ import HistoryModal from "./HistoryModal";
  * данными о здоровье приходит с сервера только тем, кому разрешено.
  */
 interface FormDoc { id: string; templateId: string; status: "draft" | "done"; outcome: string | null; outcomeLabel?: string; full: boolean; template: QTemplate; answers?: QAnswers; grade?: number | null; filledBy?: { kind: string; name: string }; doneAt?: number | null; consent?: unknown }
+/** Работа в карточке: итог — всем, анкета с экзамена и прокторинг — только с правом на экзамены (examAccess). */
+interface CardAttempt extends TestSummary {
+  id: string; examId: string; shortId: string; decision: string | null; startedAt?: number;
+  examAccess?: boolean; levelLabel?: string; earned?: number | null; max?: number | null; reviewDone?: boolean; published?: boolean;
+  student?: { name: string; level: string; phone: string; email: string };
+  extraRows?: { label: string; value: string }[];
+  proctoring?: { enabled: boolean; totalViolations: number };
+}
 interface TestExam { id: string; title: string; paper: boolean; sections: { id: string; title: string; tasks: number }[] }
 interface Data {
-  applicant: Applicant; forms: FormDoc[]; attempts: (TestSummary & { id: string; examId: string; shortId: string; decision: string | null })[]; audit: any[];
+  applicant: Applicant; forms: FormDoc[]; attempts: CardAttempt[]; audit: any[];
   templates: QTemplate[]; canFill: Record<string, boolean>; canSee: Record<string, boolean>; me: Me;
   testExam: TestExam | null;
   candidateForm: CandidateFormConfig | null;
@@ -387,15 +397,7 @@ function TestTab({ a, d, api, tenant, onSaved, onOpenSheet }: { a: Applicant; d:
 
       <section className="space-y-2">
         <h3 className="font-bold text-[var(--text-main)]">Тест</h3>
-        {d.attempts.length ? d.attempts.map(x => (
-          <div key={x.id} className="rounded-xl border border-[var(--border-color)] p-3 text-sm flex flex-wrap items-center gap-2">
-            <b>{x.examTitle}</b><span className="text-[var(--text-muted)]">{x.paper ? "на бумаге" : `№ работы ${x.shortId}`}</span>
-            <span>{x.status === "in_progress" ? "пишет сейчас" : x.status === "annulled" ? "аннулирована" : x.sections.map(p => `${p.title}: ${p.percent}%`).join(" · ") || (x.percent != null ? `${x.percent}%` : "сдан")}</span>
-            {x.parts.filter(p => p.kind === "labels" || p.kind === "band").map(p => <span key={p.title} className="text-xs px-2 py-0.5 rounded bg-[var(--bg-surface-hover)]">{p.title}: {p.value}</span>)}
-            <button className="ml-auto px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20" onClick={() => setResult({ id: x.id, examId: x.examId })}>Результаты</button>
-            <a className="text-[var(--accent)] text-xs inline-flex items-center gap-1 hover:underline" href={`/workspace/${t}/exams/${x.examId}`}><ExternalLink className="w-3.5 h-3.5" /> Экзамен</a>
-          </div>
-        )) : <p className="text-sm text-[var(--text-muted)]">{d.testExam?.paper ? "Тест пишут на бумаге в школе — внесите результаты ниже." : "Онлайн-теста ещё не было."}</p>}
+        {d.attempts.length ? d.attempts.map(x => <AttemptBlock key={x.id} x={x} tenantId={t} onOpen={() => setResult({ id: x.id, examId: x.examId })} />) : <p className="text-sm text-[var(--text-muted)]">{d.testExam?.paper ? "Тест пишут на бумаге в школе — внесите результаты ниже." : "Онлайн-теста ещё не было."}</p>}
         {d.testExam?.paper && canManage && <PaperTestForm key={d.testExam.id + (test?.finishedAt || 0)} exam={d.testExam} prev={d.attempts.find(x => x.paper && x.examId === d.testExam!.id) || null}
           onSave={(rows, photo) => act(() => api(`/applicants/${a.id}/paper-test`, { method: "POST", body: JSON.stringify({ examId: d.testExam!.id, rows, ...(photo ? { photo } : {}) }) }))} />}
         {a.paperResults.map(p => (
@@ -414,6 +416,62 @@ function TestTab({ a, d, api, tenant, onSaved, onOpenSheet }: { a: Applicant; d:
 
       {result && <AttemptViewer tenant={tenant} attemptId={result.id} examId={result.examId} onClose={() => setResult(null)} onChanged={onSaved} />}
       {paper && <PaperModal p={paper} onClose={() => setPaper(null)} onSave={async x => { await api(`/applicants/${a.id}/paper`, { method: "POST", body: JSON.stringify(x) }); setPaper(null); onSaved(); }} />}
+    </div>
+  );
+}
+
+const fmtDate = (ms?: number | null) => (ms ? new Date(ms).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
+const fmtN = (n: number) => String(Math.round(n * 10) / 10).replace(".", ",");
+
+/** Работа экзамена в карточке: то же, что в самом экзамене — анкета при входе, результаты, проверка, досье прокторинга. */
+function AttemptBlock({ x, tenantId, onOpen }: { x: CardAttempt; tenantId: string; onOpen: () => void }) {
+  const examApi = useExamApi(tenantId, "exam-admin");
+  const [dossier, setDossier] = useState<{ report: any } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const openDossier = async () => {
+    setLoading(true);
+    try { const j = await examApi(`/attempts/${x.id}`); setDossier({ report: { ...(j.attempt.proctoring || {}), violations: j.attempt.proctoring?.violations || [] } }); }
+    catch (e: any) { toast.error(e.message); }
+    finally { setLoading(false); }
+  };
+  const state = x.status === "in_progress" ? "пишет сейчас" : x.status === "annulled" ? "аннулирована" : x.superseded ? "заменена пересдачей" : "";
+  const info = x.student ? [x.student.name, x.student.level && `${x.levelLabel || "Класс"}: ${x.student.level}`, x.student.phone, x.student.email].filter(Boolean) : [];
+  return (
+    <div className="rounded-xl border border-[var(--border-color)] p-3 text-sm space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <b>{x.examTitle}</b>
+        <span className="text-[var(--text-muted)]">{x.paper ? "на бумаге" : `№ работы ${x.shortId}`}</span>
+        <span className="text-xs text-[var(--text-muted)]">{fmtDate(x.finishedAt || x.startedAt)}</span>
+        {state && <span className="text-xs px-2 py-0.5 rounded-full bg-slate-500/10 text-[var(--text-muted)]">{state}</span>}
+        {x.reviewDone && <span className="text-xs px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-700">Проверено</span>}
+        {x.published && <span className="text-xs px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-700">Опубликовано</span>}
+        {x.decision && <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)]">{x.decision}</span>}
+      </div>
+      {x.examAccess && (info.length > 0 || (x.extraRows?.length || 0) > 0) && (
+        <div className="rounded-lg bg-[var(--bg-surface-hover)] p-2.5 space-y-1">
+          <div className="text-xs font-medium text-[var(--text-muted)]">Анкета с экзамена</div>
+          <div className="grid sm:grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
+            {x.student?.name && <div><span className="text-[var(--text-muted)]">ФИО: </span>{x.student.name}</div>}
+            {x.student?.level && <div><span className="text-[var(--text-muted)]">{x.levelLabel || "Класс"}: </span>{x.student.level}</div>}
+            {x.student?.phone && <div><span className="text-[var(--text-muted)]">Телефон: </span>{x.student.phone}</div>}
+            {x.student?.email && <div><span className="text-[var(--text-muted)]">Почта: </span>{x.student.email}</div>}
+            {(x.extraRows || []).map(r => <div key={r.label}><span className="text-[var(--text-muted)]">{r.label}: </span>{r.value}</div>)}
+          </div>
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        {x.status === "finished" && x.percent != null && <span className="px-2 py-0.5 rounded bg-[var(--bg-surface-hover)] font-bold">Итог: {fmtN(x.percent)}%{x.earned != null && x.max ? <span className="font-normal text-xs text-[var(--text-muted)]"> {fmtN(x.earned)} / {fmtN(x.max)}</span> : null}</span>}
+        {x.status === "finished" && x.sections.map(p => <span key={p.id} className="text-xs px-2 py-0.5 rounded bg-[var(--bg-surface-hover)]">{p.title}: {p.percent}%</span>)}
+        {x.parts.filter(p => p.kind === "labels" || p.kind === "band").map(p => <span key={p.title} className="text-xs px-2 py-0.5 rounded bg-[var(--bg-surface-hover)]">{p.title}: {p.value}</span>)}
+        {x.status === "finished" && x.percent == null && x.sections.length === 0 && <span>сдан</span>}
+      </div>
+      {x.examAccess && (
+        <div className="flex flex-wrap items-center gap-2">
+          {x.proctoring?.enabled && <Button size="sm" variant="secondary" loading={loading} icon={<ShieldAlert className="w-3.5 h-3.5" />} onClick={openDossier}>Досье прокторинга{x.proctoring.totalViolations ? ` · ${x.proctoring.totalViolations}` : ""}</Button>}
+          <Button size="sm" variant="secondary" icon={<ExternalLink className="w-3.5 h-3.5" />} onClick={onOpen}>Открыть работу</Button>
+        </div>
+      )}
+      {dossier && x.student && <ProctoringDossier shortId={x.shortId} studentName={x.student.name} grade={x.student.level} report={dossier.report} loadSnapshots={async () => (await examApi(`/attempts/${x.id}/evidence`)).snapshots} onClose={() => setDossier(null)} />}
     </div>
   );
 }

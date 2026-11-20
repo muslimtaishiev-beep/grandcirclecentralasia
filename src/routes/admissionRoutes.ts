@@ -10,7 +10,7 @@ import { verifySession } from "../server/session.js";
 import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
 import { tenantLogos } from "../shared/legal.js";
 import { LEGAL_VERSION } from "../shared/legalDocs.js";
-import { DECISION_LABEL, paperResult, partResults, sanitizeSections, sanitizeSettings, type Decision, type Exam, type ExamResult } from "../shared/examRun.js";
+import { DECISION_LABEL, REG_PRESETS, paperResult, partResults, sanitizeSections, sanitizeSettings, type Decision, type Exam, type ExamResult } from "../shared/examRun.js";
 import { NEUTRAL_CANDIDATE_FORM, sanitizeCandidateForm, type CandidateFormConfig } from "../shared/candidateForm.js";
 import {
   answerText, dropHidden, gradeOf, missingFor, outcomeOf, sanitizeAnswers, sanitizeTemplate,
@@ -486,10 +486,11 @@ export async function syncAllReferrals(t: string) {
 }
 
 /** Работы поступающих по тесту: статус и итоги частей (без ответов). */
-async function attemptsOf(t: string, applicantIds?: string[]) {
+async function attemptsOf(t: string, applicantIds?: string[], detail?: { exams: boolean }) {
   let q: FirebaseFirestore.Query = col(t, "exam_attempts");
   q = applicantIds?.length === 1 ? q.where("applicantId", "==", applicantIds[0]) : q.where("applicantId", "!=", null);
-  const snap = await q.select("applicantId", "examId", "examTitle", "status", "shortId", "startedAt", "finishedAt", "result.sections", "result.percent", "result.topics", "decision", "superseded", "paper", "student.extra").get();
+  const snap = await q.select("applicantId", "examId", "examTitle", "status", "shortId", "startedAt", "finishedAt", "result.sections", "result.percent", "result.topics", "decision", "superseded", "paper", "student.extra",
+    ...(detail ? ["student.name", "student.level", "student.phone", "student.email", "proctoring.enabled", "proctoring.totalViolations", "review.status", "published", "result.earned", "result.max"] : [])).get();
   const exams = new Map((await tenantExams(t)).map(e => [e.id, e]));
   return snap.docs.map(d => {
     const x: any = d.data(); const e = exams.get(x.examId);
@@ -505,6 +506,21 @@ async function attemptsOf(t: string, applicantIds?: string[]) {
       levels: e?.settings.admission?.levels || { mid: 50, high: 77 },
       studentPhone: x.student?.extra?.studentPhone || "",
       decision: x.decision ? DECISION_LABEL[x.decision.value as Decision] : null,
+      // Всё, что видно в экзамене: анкета при входе, итог, проверка, прокторинг — анкета и прокторинг только с правом на экзамены.
+      ...(detail ? {
+        examAccess: detail.exams,
+        levelLabel: e?.settings.registration.levelLabel || "Класс",
+        earned: x.result?.earned ?? null, max: x.result?.max ?? null,
+        reviewDone: x.review?.status === "done", published: !!x.published,
+        ...(detail.exams ? {
+          student: { name: x.student?.name || "", level: x.student?.level || "", phone: x.student?.phone || "", email: x.student?.email || "" },
+          extraRows: Object.entries((x.student?.extra || {}) as Record<string, string>).filter(([, v]) => String(v || "").trim()).map(([id, value]) => ({
+            label: (e?.settings.registration.extra || []).find(f => f.id === id)?.label || REG_PRESETS.find(f => f.id === id)?.label || id,
+            value: id === "birthDate" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value).toLocaleDateString("ru-RU") : String(value),
+          })),
+          proctoring: { enabled: !!x.proctoring?.enabled, totalViolations: Number(x.proctoring?.totalViolations) || 0 },
+        } : {}),
+      } : {}),
     };
   });
 }
@@ -703,6 +719,63 @@ router.get("/:tenantId/by-no/:n", ...staff, async (req: any, res: any) => {
   } catch (e: any) { return oops(res, e); }
 });
 
+// ── Работа экзамена ↔ карточка поступающего ─────────────────────────────
+
+/** ФИО для сравнения: без регистра, «ё» = «е», без знаков, слова по алфавиту (порядок не важен). */
+const nameKey = (v: unknown) => String(v || "").toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9\s]/g, " ").split(/\s+/).filter(Boolean).sort().join(" ");
+const phoneKey = (v: unknown) => { const d = String(v || "").replace(/\D/g, ""); return d.length >= 7 ? d.slice(-9) : ""; };
+
+/**
+ * Привязать работу экзамена к карточке: найти ту же карточку (ФИО + дата
+ * рождения, иначе ФИО + телефон родителя или ученика) или создать из данных
+ * работы. Прошлые данные карточки остаются. Повторный вызов ничего не меняет.
+ */
+router.post("/:tenantId/applicants/from-attempt", requireFirebaseAuth, async (req: any, res: any) => {
+  try {
+    const t = String(req.params.tenantId || ""); const examId = String(req.body?.examId || ""); const attemptId = String(req.body?.attemptId || "");
+    if (!ID.test(t) || !ID.test(examId) || !ID.test(attemptId)) return fail(res, 400, "Неверный адрес работы");
+    const c = await staffCaller(db(), t, req.user);
+    if (!c?.member) return fail(res, 403, "Доступно только сотрудникам организации");
+    if (!hasPerm(c, "admission:manage", "tests:review", "tests:manage")) return fail(res, 403, "Недостаточно прав");
+    const aref = col(t, "exam_attempts").doc(attemptId);
+    const x: any = (await aref.get()).data();
+    if (!x || x.examId !== examId) return fail(res, 404, "Работа не найдена");
+    if (x.applicantId) {
+      const cur = await loadApplicant(t, String(x.applicantId));
+      if (cur) return res.json({ success: true, applicantId: cur.id, refNo: cur.refNo, created: false, linked: false });
+    }
+    const examTitle = str(x.examTitle, 200);
+    const extra: Record<string, string> = x.student?.extra || {};
+    const birth = /^\d{4}-\d{2}-\d{2}$/.test(String(extra.birthDate || "")) ? String(extra.birthDate) : "";
+    const key = nameKey(x.student?.name);
+    if (!key) return fail(res, 400, "В работе нет имени ученика");
+    const phones = [extra.parentPhone, extra.studentPhone, x.student?.phone].map(phoneKey).filter(Boolean);
+    const all = (await col(t, "applicants").get()).docs.map(d => ({ ...(d.data() as Applicant), id: d.id })).filter(a => !a.archived && nameKey(a.child?.name) === key);
+    const found = (birth && all.find(a => a.child.birthDate === birth))
+      || (phones.length ? all.find(a => { const p = phoneKey(a.parent?.phone); return !!p && phones.includes(p); }) : undefined)
+      || undefined;
+    let id: string; let refNo: number; let created = false;
+    if (found) { id = found.id; refNo = found.refNo; }
+    else {
+      const ref = col(t, "applicants").doc(); id = ref.id;
+      const [n, parentT, cardT] = await Promise.all([nextRefNo(t), makeLink(t, id, "parent"), makeLink(t, id, "card")]);
+      refNo = n; created = true;
+      const now = Date.now();
+      const a: Applicant = {
+        id, tenantId: t, refNo, child: sanitizeChild({ name: x.student?.name, birthDate: birth, grade: x.student?.level, school: extra.school }),
+        parent: sanitizeParent({ name: extra.parentName, phone: extra.parentPhone, email: extra.parentEmail }), note: "",
+        parentForm: { status: "none", at: null, by: null }, stages: {}, referral: null, paperResults: [], decision: null,
+        tokens: { parent: parentT, card: cardT }, createdAt: now, updatedAt: now, createdBy: c.uid, createdByName: c.name,
+      };
+      await ref.create(a);
+    }
+    await aref.update({ applicantId: id, refNo });
+    const what = `${examTitle ? `«${examTitle}» ` : ""}№ ${str(x.shortId, 20)}`;
+    await audit(t, id, c, "attempt", `${created ? "Создана из работы экзамена" : "Привязана работа экзамена"} ${what}`);
+    return res.json({ success: true, applicantId: id, refNo, created, linked: true });
+  } catch (e: any) { return oops(res, e); }
+});
+
 router.post("/:tenantId/applicants", ...staff, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const c: StaffCaller = req.caller;
@@ -737,7 +810,7 @@ router.get("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
     if (!a.archived) a.referral = await syncReferral(t, a).catch(() => a.referral);
     const academic = seesAcademic(c);
     const [templates, formsSnap, attempts] = await Promise.all([
-      loadTemplates(t), col(t, "applicant_forms").where("applicantId", "==", a.id).get(), academic ? attemptsOf(t, [a.id]) : [],
+      loadTemplates(t), col(t, "applicant_forms").where("applicantId", "==", a.id).get(), academic ? attemptsOf(t, [a.id], { exams: hasPerm(c, "tests:read", "tests:review", "tests:manage", "placement:manage") }) : [],
     ]);
     let sensitive = false;
     const cur = byId(templates);

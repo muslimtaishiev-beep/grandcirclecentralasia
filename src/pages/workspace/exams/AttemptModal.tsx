@@ -10,10 +10,9 @@ import { tenantLogos, resolveLegalProfile } from "../../../shared/legal";
 import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui";
 import type { Api } from "./examApi";
 import { useAdmissionApi } from "../admissions/admissionApi";
-import { candidateDoc, latestTest, saveCandidate, testOfAttempt } from "../admissions/candidateForm";
+import { canAdmissions, resolvePermissions, type PermissionKey } from "../../../shared/permissions";
 import CandidateSheetModal from "../admissions/CandidateSheetModal";
 import EmailResend from "../../../components/workspace/EmailResend";
-import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
 
 type Full = Attempt & { questions: Record<string, FrozenQuestion> };
 
@@ -39,38 +38,24 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
   const admApi = useAdmissionApi(exam.tenantId);
   /** Вступительный тест: вместо сертификата и отчёта по темам — анкета кандидата. */
   const admission = !!exam.settings.admission?.candidateForm;
-  /** Есть карточка поступающего и права на неё — окно анкеты (просмотр, правка, история); иначе — PDF из данных работы. */
+  /** Анкета кандидата — всегда окно карточки поступающего (просмотр, правка, история, PDF); работа без карточки привязывается к ней или заводит её. */
   const [sheetId, setSheetId] = useState<string | null>(null);
+  const granted = useMemo(() => (Array.isArray(tenant?.effectivePermissions)
+    ? new Set<PermissionKey>(tenant.effectivePermissions)
+    : resolvePermissions({ role: tenant?.role, permissions: tenant?.permissions, customPermissions: tenant?.customPermissions, rolePermissions: tenant?.customRole?.permissions, disabledModules: tenant?.disabledModules })), [tenant]);
+  /** Без прав на раздел «Поступающие» кнопку не показываем — урезанного PDF не бывает. */
+  const canCard = canAdmissions(granted);
   const openCandidate = async () => {
-    if (!a) return;
-    if (a.applicantId) {
-      setBusy("candidate");
-      const ok = await admApi(`/applicants/${a.applicantId}`).then(() => true).catch(() => false);
-      setBusy(null);
-      if (ok) { setSheetId(a.applicantId); return; }
-    }
-    await downloadCandidate();
-  };
-  const downloadCandidate = async () => {
     if (!a) return;
     setBusy("candidate"); setError(null);
     try {
-      const own = testOfAttempt(a, exam);
-      const org = { name: String(tenant?.name || ""), logoUrl: tenantLogos(tenant).logoUrl };
-      let doc = null;
-      // Есть карточка и права на неё — анкета целиком (анкета родителя, решение, QR).
-      if (a.applicantId) {
-        try {
-          const d = await admApi(`/applicants/${a.applicantId}`);
-          doc = candidateDoc({ form: d.candidateForm || NEUTRAL_CANDIDATE_FORM, orgName: org.name, applicant: d.applicant, parentForm: d.forms.find((f: any) => f.full && f.template.audience === "parent") || null, test: (d.attempts.length ? latestTest(d.attempts) : null) || own, photo });
-        } catch { /* нет прав на карточку — из данных работы */ }
+      let id = a.applicantId || "";
+      if (!id) {
+        const j = await admApi("/applicants/from-attempt", { method: "POST", body: JSON.stringify({ examId: exam.id, attemptId: a.id }) });
+        id = j.applicantId; setA({ ...a, applicantId: id, refNo: j.refNo ?? a.refNo }); onChanged();
+        toast.success(j.created ? "Карточка поступающего создана" : "Работа привязана к карточке поступающего");
       }
-      if (!doc) {
-        const form: CandidateFormConfig = await admApi("/candidate-form").then(j => j.form).catch(() => NEUTRAL_CANDIDATE_FORM);
-        const x = a.student.extra || {};
-        doc = candidateDoc({ form, orgName: org.name, test: own, photo, fallback: { name: a.student.name, birthDate: x.birthDate || "", grade: a.student.level || "", school: x.school || "", parentName: x.parentName || "", parentPhone: x.parentPhone || "", studentPhone: x.studentPhone || a.student.phone || "" } });
-      }
-      await saveCandidate(org, doc, a.student.name);
+      setSheetId(id);
     } catch (e: any) { setError(e.message); }
     finally { setBusy(null); }
   };
@@ -131,7 +116,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
           <div className="flex-1 min-w-[220px] text-sm space-y-0.5">
             <div className="text-[var(--text-muted)]">{[a.student.level && `${s.registration.levelLabel}: ${a.student.level}`, a.student.phone, a.student.email].filter(Boolean).join(" · ")}</div>
             {extraRowsOf(a, exam).length > 0 && <div className="text-xs text-[var(--text-muted)]">{extraRowsOf(a, exam).map(x => `${x.label}: ${x.value}`).join(" · ")}</div>}
-            {a.applicantId && <a href={`/workspace/${exam.tenantId}/exams/${exam.id}?open=${a.applicantId}&ctab=test`} className="text-xs text-[var(--accent)] hover:underline">Поступающий{a.refNo ? ` № ${String(a.refNo).padStart(4, "0")}` : ""} — карточка</a>}
+            {a.applicantId && canCard && <a href={`/workspace/${exam.tenantId}/admissions?open=${a.applicantId}&ctab=test`} className="text-xs text-[var(--accent)] hover:underline">Поступающий{a.refNo ? ` № ${String(a.refNo).padStart(4, "0")}` : ""} — карточка</a>}
             <div className="text-[var(--text-muted)]">Начал {new Date(a.startedAt).toLocaleString("ru-RU")}{a.finishedAt ? ` · сдал ${new Date(a.finishedAt).toLocaleString("ru-RU")} (${Math.round((a.finishedAt - a.startedAt) / 60000)} мин)` : ""}</div>
             <div className="flex flex-wrap gap-1.5 pt-1">
               {a.status === "in_progress" && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700">Сдаёт: {a.sections[a.current]?.title}</span>}
@@ -172,7 +157,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
             {a.status === "finished" && (a.published
               ? <button className={btn} disabled={!!busy} onClick={() => act("unpublish")}><EyeOff className="w-4 h-4" /> Снять публикацию</button>
               : <button className={btnPrimary} disabled={!!busy} onClick={() => act("publish")}><Eye className="w-4 h-4" /> Опубликовать</button>)}
-            {r && admission && <button className={btn} disabled={!!busy} onClick={openCandidate}>{busy === "candidate" ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />} Анкета кандидата</button>}
+            {r && admission && canCard && <button className={btn} disabled={!!busy} onClick={openCandidate}>{busy === "candidate" ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />} Анкета кандидата</button>}
             {r && !admission && s.results.certificate && printData && <button className={btn} onClick={() => openPrint(certificateHTML(printData)) || toast.error("Разрешите всплывающие окна")}><Award className="w-4 h-4" /> Сертификат</button>}
             {r && !admission && printData && <button className={btn} onClick={() => openPrint(reportHTML(printData)) || toast.error("Разрешите всплывающие окна")}><FileText className="w-4 h-4" /> Отчёт по темам</button>}
             {pr.enabled && <button className={btn} onClick={() => setDossier(true)}><ShieldAlert className="w-4 h-4" /> Досье прокторинга</button>}
