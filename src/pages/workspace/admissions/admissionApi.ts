@@ -10,7 +10,7 @@ export function useAdmissionApi(tenantId: string): Api {
     const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
     const r = await fetch(`/api/admissions/${tenantId}${path}`, { ...init, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(init.headers || {}) } });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok || j.success === false) throw Object.assign(new Error(j.error || `Ошибка ${r.status}`), { missing: j.missing });
+    if (!r.ok || j.success === false) throw Object.assign(new Error(j.error || `Ошибка ${r.status}`), { missing: j.missing, duplicate: j.duplicate });
     return j;
   }, [tenantId]);
 }

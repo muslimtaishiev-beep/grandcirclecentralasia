@@ -811,6 +811,13 @@ router.post("/:tenantId/applicants", ...staff, async (req: any, res: any) => {
     const child = sanitizeChild(req.body?.child);
     if (child.name.split(/\s+/).filter(Boolean).length < 2) return fail(res, 400, "Укажите фамилию и имя ребёнка");
     if (gradeOf(child.grade) === null) return fail(res, 400, "Укажите класс, в который поступает");
+    // Тот же ребёнок уже есть (ФИО + дата рождения, либо ФИО без даты) — не плодим дубль без явного «создать всё равно».
+    if (req.body?.force !== true) {
+      const k = nameKey(child.name);
+      const same = (await col(t, "applicants").get()).docs.map(d => ({ ...(d.data() as Applicant), id: d.id }))
+        .find(a => !a.archived && nameKey(a.child?.name) === k && (!child.birthDate || !a.child?.birthDate || a.child.birthDate === child.birthDate));
+      if (same) return res.status(409).json({ success: false, error: `Такой поступающий уже есть: № ${String(same.refNo).padStart(4, "0")}`, duplicate: { id: same.id, refNo: same.refNo } });
+    }
     const ref = col(t, "applicants").doc();
     const [refNo, parentT, cardT] = await Promise.all([nextRefNo(t), makeLink(t, ref.id, "parent"), makeLink(t, ref.id, "card")]);
     const now = Date.now();
@@ -1530,3 +1537,6 @@ router.post("/link/:token/parent", async (req: any, res: any) => {
 });
 
 export default router;
+
+/** Запись в историю карточки — для разовых правок данных и других модулей. */
+export { audit as writeApplicantHistory };

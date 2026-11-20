@@ -11,12 +11,13 @@ export default function NewApplicantModal({ api, grade, onClose, onDone }: { api
   const [f, setF] = useState({ name: "", birthDate: "", grade: grade || "", parentName: "", phone: "", email: "", note: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const save = async () => {
-    setBusy(true); setError(null);
+  const [dup, setDup] = useState<{ id: string; refNo: number } | null>(null);
+  const save = async (force = false) => {
+    setBusy(true); setError(null); setDup(null);
     try {
-      const j = await api("/applicants", { method: "POST", body: JSON.stringify({ child: { name: f.name, birthDate: f.birthDate, grade: f.grade }, parent: { name: f.parentName, phone: f.phone, email: f.email }, note: f.note }) });
+      const j = await api("/applicants", { method: "POST", body: JSON.stringify({ child: { name: f.name, birthDate: f.birthDate, grade: f.grade }, parent: { name: f.parentName, phone: f.phone, email: f.email }, note: f.note, ...(force ? { force: true } : {}) }) });
       onDone(j.id, f.grade);
-    } catch (e: any) { setError(e.message); setBusy(false); }
+    } catch (e: any) { setError(e.message); if (e.duplicate) setDup(e.duplicate); setBusy(false); }
   };
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
   return (
@@ -33,9 +34,15 @@ export default function NewApplicantModal({ api, grade, onClose, onDone }: { api
           <div><span className={label}>Почта родителя</span><input className={input} type="email" inputMode="email" value={f.email} onChange={set("email")} placeholder="name@mail.com" /></div>
         </div>
         {error && <div className="text-sm text-rose-600">{error}</div>}
+        {dup && (
+          <div className="flex flex-wrap gap-2">
+            <button className={btnPrimary} onClick={() => onDone(dup.id, f.grade)}>Открыть № {String(dup.refNo).padStart(4, "0")}</button>
+            <button className={btn} disabled={busy} onClick={() => void save(true)}>Это другой ребёнок — создать</button>
+          </div>
+        )}
         <div className="flex justify-end gap-2">
           <button className={btn} onClick={onClose}>Отмена</button>
-          <button className={btnPrimary} disabled={busy || !f.name.trim() || !f.grade.trim()} onClick={save}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Завести</button>
+          <button className={btnPrimary} disabled={busy || !f.name.trim() || !f.grade.trim()} onClick={() => void save()}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Завести</button>
         </div>
       </div>
     </Modal>
