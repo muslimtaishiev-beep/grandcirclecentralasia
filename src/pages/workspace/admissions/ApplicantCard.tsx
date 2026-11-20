@@ -468,7 +468,7 @@ function AttemptBlock({ x, tenantId, onOpen }: { x: CardAttempt; tenantId: strin
       {x.examAccess && (
         <div className="flex flex-wrap items-center gap-2">
           {x.proctoring?.enabled && <Button size="sm" variant="secondary" loading={loading} icon={<ShieldAlert className="w-3.5 h-3.5" />} onClick={openDossier}>Досье прокторинга{x.proctoring.totalViolations ? ` · ${x.proctoring.totalViolations}` : ""}</Button>}
-          <Button size="sm" variant="secondary" icon={<ExternalLink className="w-3.5 h-3.5" />} onClick={onOpen}>Открыть работу</Button>
+          <Button size="sm" variant="secondary" icon={<ExternalLink className="w-3.5 h-3.5" />} onClick={onOpen}>Ответы и проверка</Button>
         </div>
       )}
       {dossier && x.student && <ProctoringDossier shortId={x.shortId} studentName={x.student.name} grade={x.student.level} report={dossier.report} loadSnapshots={async () => (await examApi(`/attempts/${x.id}/evidence`)).snapshots} onClose={() => setDossier(null)} />}

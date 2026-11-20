@@ -92,8 +92,10 @@ async function advance(t: string, exam: Exam, attemptId: string, expected: numbe
   if (out.changed) await bumpLive(t, out.a.applicantId ? ["exams", "admissions"] : ["exams"], out.a.applicantId || attemptId);
   // Ученик сдал повторную попытку — прежняя больше не считается.
   if (out.finished) await supersedeOthers(t, out.a);
+  // Без направления — экзаменаторам «Тест сдан», даже если работа сейчас сама попадёт в «Поступающие».
+  const viaReferral = !!out.a.applicantId;
   if (out.finished) await notifyTested(t, out.a, exam);
-  if (out.finished && !out.a.applicantId) {
+  if (out.finished && !viaReferral) {
     const pct = out.a.result?.percent;
     await notifyEvent({
       tenantId: t, event: "exam.finished", perms: EXAM_STAFF, title: "Тест сдан", type: "exam",

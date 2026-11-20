@@ -175,6 +175,11 @@ type TestedAttempt = { id?: string; applicantId?: string; result?: ExamResult | 
 
 /** Ученик сдал тест — сообщить администрации (по направлению) и письмо по шаблону экзамена. */
 export async function notifyTested(t: string, x: TestedAttempt, exam: Exam) {
+  // Сдал вступительный экзамен без направления — работа сама попадает в «Поступающие».
+  if (!x.applicantId && x.id && isAdmissionExam(exam)) {
+    const r = await linkAttempt(t, x.id, { uid: "", name: "Система" }).catch(e => { console.warn("[admissions] link", e?.message); return null; });
+    if (r && "applicantId" in r) (x as any).applicantId = r.applicantId;
+  }
   const a = x.applicantId ? await loadApplicant(t, x.applicantId).catch(() => null) : null;
   if (a) await audit(t, a.id, STUDENT(a.child.name), "tested", [exam.title, resultSummary(exam, x.result)].filter(Boolean).join(" · "));
   await emailTested(t, x, exam, a);
@@ -725,11 +730,63 @@ router.get("/:tenantId/by-no/:n", ...staff, async (req: any, res: any) => {
 const nameKey = (v: unknown) => String(v || "").toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9\s]/g, " ").split(/\s+/).filter(Boolean).sort().join(" ");
 const phoneKey = (v: unknown) => { const d = String(v || "").replace(/\D/g, ""); return d.length >= 7 ? d.slice(-9) : ""; };
 
+/** Вступительный экзамен: работы попадают в «Поступающие». */
+export const isAdmissionExam = (e: Exam | null | undefined) => {
+  const ad: any = e?.settings?.admission || {};
+  return !!(ad.candidateForm || ad.referralOnly || (ad.grades || []).length || (ad.stages || []).length);
+};
+
+export type LinkResult = { applicantId: string; refNo: number; created: boolean; linked: boolean } | { ambiguous: number } | null;
+
 /**
  * Привязать работу экзамена к карточке: найти ту же карточку (ФИО + дата
- * рождения, иначе ФИО + телефон родителя или ученика) или создать из данных
- * работы. Прошлые данные карточки остаются. Повторный вызов ничего не меняет.
+ * рождения, иначе ФИО + телефон; одна карточка с таким ФИО без
+ * противоречий — она) или создать из данных работы. Несколько карточек с
+ * тем же ФИО и без различий — ничего не делаем (не плодим дубль).
+ * Прошлые данные карточки остаются. Повторный вызов ничего не меняет.
  */
+export async function linkAttempt(t: string, attemptId: string, c: { uid: string; name: string }): Promise<LinkResult> {
+  const aref = col(t, "exam_attempts").doc(attemptId);
+  const x: any = (await aref.get()).data();
+  if (!x) return null;
+  if (x.applicantId) {
+    const cur = await loadApplicant(t, String(x.applicantId));
+    if (cur) return { applicantId: cur.id, refNo: cur.refNo, created: false, linked: false };
+  }
+  const examTitle = str(x.examTitle, 200);
+  const extra: Record<string, string> = x.student?.extra || {};
+  const birth = /^\d{4}-\d{2}-\d{2}$/.test(String(extra.birthDate || "")) ? String(extra.birthDate) : "";
+  const key = nameKey(x.student?.name);
+  if (!key) return null;
+  const phones = [extra.parentPhone, extra.studentPhone, x.student?.phone].map(phoneKey).filter(Boolean);
+  const all = (await col(t, "applicants").get()).docs.map(d => ({ ...(d.data() as Applicant), id: d.id })).filter(a => !a.archived && nameKey(a.child?.name) === key);
+  const byBirth = birth ? all.filter(a => a.child.birthDate === birth) : [];
+  const byPhone = phones.length ? all.filter(a => { const p = phoneKey(a.parent?.phone); return !!p && phones.includes(p); }) : [];
+  const noConflict = (a: Applicant) => (!birth || !a.child.birthDate || a.child.birthDate === birth);
+  const found = byBirth.length === 1 ? byBirth[0] : byPhone.length === 1 ? byPhone[0]
+    : all.length === 1 && noConflict(all[0]) ? all[0] : undefined;
+  if (!found && all.length > 1) return { ambiguous: all.length };
+  let id: string; let refNo: number; let created = false;
+  if (found) { id = found.id; refNo = found.refNo; }
+  else {
+    const ref = col(t, "applicants").doc(); id = ref.id;
+    const [n, parentT, cardT] = await Promise.all([nextRefNo(t), makeLink(t, id, "parent"), makeLink(t, id, "card")]);
+    refNo = n; created = true;
+    const now = Date.now();
+    const a: Applicant = {
+      id, tenantId: t, refNo, child: sanitizeChild({ name: x.student?.name, birthDate: birth, grade: x.student?.level, school: extra.school }),
+      parent: sanitizeParent({ name: extra.parentName, phone: extra.parentPhone, email: extra.parentEmail }), note: "",
+      parentForm: { status: "none", at: null, by: null }, stages: {}, referral: null, paperResults: [], decision: null,
+      tokens: { parent: parentT, card: cardT }, createdAt: now, updatedAt: now, createdBy: c.uid, createdByName: c.name,
+    };
+    await ref.create(a);
+  }
+  await aref.update({ applicantId: id, refNo });
+  const what = `${examTitle ? `«${examTitle}» ` : ""}№ ${str(x.shortId, 20)}`;
+  await audit(t, id, c as any, "attempt", `${created ? "Создана из работы экзамена" : "Привязана работа экзамена"} ${what}`);
+  return { applicantId: id, refNo, created, linked: true };
+}
+
 router.post("/:tenantId/applicants/from-attempt", requireFirebaseAuth, async (req: any, res: any) => {
   try {
     const t = String(req.params.tenantId || ""); const examId = String(req.body?.examId || ""); const attemptId = String(req.body?.attemptId || "");
@@ -737,42 +794,13 @@ router.post("/:tenantId/applicants/from-attempt", requireFirebaseAuth, async (re
     const c = await staffCaller(db(), t, req.user);
     if (!c?.member) return fail(res, 403, "Доступно только сотрудникам организации");
     if (!hasPerm(c, "admission:manage", "tests:review", "tests:manage")) return fail(res, 403, "Недостаточно прав");
-    const aref = col(t, "exam_attempts").doc(attemptId);
-    const x: any = (await aref.get()).data();
+    const x: any = (await col(t, "exam_attempts").doc(attemptId).get()).data();
     if (!x || x.examId !== examId) return fail(res, 404, "Работа не найдена");
-    if (x.applicantId) {
-      const cur = await loadApplicant(t, String(x.applicantId));
-      if (cur) return res.json({ success: true, applicantId: cur.id, refNo: cur.refNo, created: false, linked: false });
-    }
-    const examTitle = str(x.examTitle, 200);
-    const extra: Record<string, string> = x.student?.extra || {};
-    const birth = /^\d{4}-\d{2}-\d{2}$/.test(String(extra.birthDate || "")) ? String(extra.birthDate) : "";
-    const key = nameKey(x.student?.name);
-    if (!key) return fail(res, 400, "В работе нет имени ученика");
-    const phones = [extra.parentPhone, extra.studentPhone, x.student?.phone].map(phoneKey).filter(Boolean);
-    const all = (await col(t, "applicants").get()).docs.map(d => ({ ...(d.data() as Applicant), id: d.id })).filter(a => !a.archived && nameKey(a.child?.name) === key);
-    const found = (birth && all.find(a => a.child.birthDate === birth))
-      || (phones.length ? all.find(a => { const p = phoneKey(a.parent?.phone); return !!p && phones.includes(p); }) : undefined)
-      || undefined;
-    let id: string; let refNo: number; let created = false;
-    if (found) { id = found.id; refNo = found.refNo; }
-    else {
-      const ref = col(t, "applicants").doc(); id = ref.id;
-      const [n, parentT, cardT] = await Promise.all([nextRefNo(t), makeLink(t, id, "parent"), makeLink(t, id, "card")]);
-      refNo = n; created = true;
-      const now = Date.now();
-      const a: Applicant = {
-        id, tenantId: t, refNo, child: sanitizeChild({ name: x.student?.name, birthDate: birth, grade: x.student?.level, school: extra.school }),
-        parent: sanitizeParent({ name: extra.parentName, phone: extra.parentPhone, email: extra.parentEmail }), note: "",
-        parentForm: { status: "none", at: null, by: null }, stages: {}, referral: null, paperResults: [], decision: null,
-        tokens: { parent: parentT, card: cardT }, createdAt: now, updatedAt: now, createdBy: c.uid, createdByName: c.name,
-      };
-      await ref.create(a);
-    }
-    await aref.update({ applicantId: id, refNo });
-    const what = `${examTitle ? `«${examTitle}» ` : ""}№ ${str(x.shortId, 20)}`;
-    await audit(t, id, c, "attempt", `${created ? "Создана из работы экзамена" : "Привязана работа экзамена"} ${what}`);
-    return res.json({ success: true, applicantId: id, refNo, created, linked: true });
+    if (!nameKey(x.student?.name)) return fail(res, 400, "В работе нет имени ученика");
+    const r = await linkAttempt(t, attemptId, c);
+    if (!r) return fail(res, 404, "Работа не найдена");
+    if ("ambiguous" in r) return fail(res, 409, `В «Поступающих» ${r.ambiguous} карточки с таким ФИО — откройте нужную и привяжите вручную`);
+    return res.json({ success: true, ...r });
   } catch (e: any) { return oops(res, e); }
 });
 
