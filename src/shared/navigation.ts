@@ -99,9 +99,8 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     id: "admin", label: "Администрирование", items: [
-      { screen: "permissions", label: "Сотрудники и доступ", path: "/settings/roles", icon: "team", match: ["/settings/permissions", "/settings/permission-matrix"], sub: [{ label: "Роли и доступы", path: "/settings/roles", keywords: "сотрудники должности права приглашение" }] },
-      { screen: "adminOverview", label: "Обзор администрирования", path: "/admin", icon: "workspace", sub: [{ label: "Обзор: что не настроено", path: "/admin", keywords: "настройка проверка" }] },
-      { screen: "staff", label: "Сотрудники", path: "/admin/staff", icon: "team", sub: [{ label: "Сотрудники: список и карточки", path: "/admin/staff", keywords: "отключить входы" }, { label: "Кто может…", path: "/admin/staff?tab=who", keywords: "право доступ отчёт" }, { label: "Передача владения", path: "/admin/staff?tab=owner", keywords: "владелец" }] },
+      { screen: "adminOverview", label: "Обзор", path: "/admin", icon: "workspace", sub: [{ label: "Обзор: что не настроено", path: "/admin", keywords: "настройка проверка" }] },
+      { screen: "staff", label: "Сотрудники", path: "/admin/staff", icon: "team", match: ["/settings/roles", "/settings/permissions", "/settings/permission-matrix"], sub: [{ label: "Сотрудники: список и карточки", path: "/admin/staff", keywords: "отключить входы пригласить" }, { label: "Должности и права", path: "/admin/staff?tab=roles", keywords: "роли должности права доступ" }, { label: "Кто может…", path: "/admin/staff?tab=who", keywords: "право доступ отчёт" }, { label: "Передача владения", path: "/admin/staff?tab=owner", keywords: "владелец" }] },
       { screen: "audit", label: "Журнал действий", path: "/admin/audit", icon: "audit", sub: [{ label: "Журнал действий", path: "/admin/audit", keywords: "аудит история" }] },
       { screen: "integrations", label: "Интеграции", path: "/admin/integrations", icon: "integrations", sub: [{ label: "Ключ API", path: "/admin/integrations", keywords: "api ключ сайты" }] },
       { screen: "departments", label: "Отделы", path: "/settings/departments", icon: "departments", sub: [{ label: "Оргструктура и отделы", path: "/settings/departments" }] },

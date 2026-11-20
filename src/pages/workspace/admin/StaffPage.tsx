@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Search, UserPlus, Users } from "lucide-react";
 import { Button, EmptyState, PageHeader, Spinner, Table, Tabs, input, useUrlTab } from "../../../components/ui";
@@ -9,13 +9,16 @@ import WhoCanPanel from "./WhoCanPanel";
 import OwnershipPanel from "./OwnershipPanel";
 import { auth } from "../../../lib/firebase";
 
-type Tab = "staff" | "who" | "owner";
+const RolesAndAccess = lazy(() => import("../settings/RolesAndAccess"));
+
+type Tab = "staff" | "roles" | "who" | "owner";
 
 export default function StaffPage() {
   const { tenantId, base, can, isOwner } = useAdminCtx();
   const nav = useNavigate();
   const tabs = [
     { id: "staff", label: "Сотрудники" },
+    { id: "roles", label: "Должности" },
     { id: "who", label: "Кто может…" },
     { id: "owner", label: "Передача владения", hidden: !isOwner },
   ] as const;
@@ -27,6 +30,7 @@ export default function StaffPage() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<"" | StaffStatus>("");
   const [role, setRole] = useState("");
+  const [inviting, setInviting] = useState(false);
 
   const load = useCallback(async () => {
     if (!tenantId) return;
@@ -50,9 +54,11 @@ export default function StaffPage() {
   return (
     <div className="max-w-6xl mx-auto">
       <PageHeader title="Сотрудники"
-        actions={can("team:manage") && <Button variant="primary" icon={<UserPlus className="h-4 w-4" />} onClick={() => nav(`${base}/settings/roles?tab=staff`)}>Пригласить</Button>}
+        actions={can("team:manage") && <Button variant="primary" icon={<UserPlus className="h-4 w-4" />} onClick={() => setInviting(true)}>Пригласить</Button>}
         tabs={<Tabs tabs={tabs.map(t => ({ ...t }))} value={tab} onChange={id => setTab(id as Tab)} />} />
 
+      {inviting && <Suspense fallback={null}><RolesAndAccess view="invite" onInviteClose={() => setInviting(false)} onInvited={() => void load()} /></Suspense>}
+      {tab === "roles" && <Suspense fallback={<Spinner />}><RolesAndAccess view="roles" /></Suspense>}
       {tab === "who" && <WhoCanPanel tenantId={tenantId} base={base} />}
       {tab === "owner" && isOwner && <OwnershipPanel tenantId={tenantId} onDone={load} />}
       {tab === "staff" && (

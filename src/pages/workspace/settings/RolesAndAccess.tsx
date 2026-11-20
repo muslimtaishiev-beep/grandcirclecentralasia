@@ -30,12 +30,17 @@ async function authHeaders() {
   return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 }
 
-export default function RolesAndAccess() {
+/**
+ * view — встроенный режим: «roles» (вкладка «Должности» на странице
+ * «Сотрудники»), «modules» (видимость разделов в настройках организации),
+ * «invite» (только окно приглашения). Без view — прежняя страница.
+ */
+export default function RolesAndAccess({ view, onInviteClose, onInvited }: { view?: "roles" | "modules" | "invite"; onInviteClose?: () => void; onInvited?: () => void } = {}) {
   const ctx = useOutletContext<{ activeTenant?: any; refreshTenants?: () => void } | null>();
   const tenant = ctx?.activeTenant;
   const tenantId = tenant?.id;
 
-  const [tab, setTab] = useState<"roles" | "staff" | "modules">("roles");
+  const [tab, setTab] = useState<"roles" | "staff" | "modules">(view === "modules" ? "modules" : "roles");
   const [roles, setRoles] = useState<Role[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,7 +57,8 @@ export default function RolesAndAccess() {
   const [access, setAccess] = useState<any | null>(null);
 
   // Добавление сотрудника — приглашение по email с должностью.
-  const [inviting, setInviting] = useState(false);
+  const [inviting, setInvitingRaw] = useState(view === "invite");
+  const setInviting = (v: boolean) => { setInvitingRaw(v); if (!v) onInviteClose?.(); };
   const [invite, setInvite] = useState({ fullName: "", email: "", customRoleId: "" });
   const [inviteMsg, setInviteMsg] = useState<{ ok: boolean; text: string; link?: string } | null>(null);
 
@@ -167,6 +173,7 @@ export default function RolesAndAccess() {
       void loadRoles();
       // Сообщение со ссылкой не прячем по таймеру: руководителю нужно успеть
       // её скопировать, иначе сотрудник не войдёт вовсе.
+      onInvited?.();
       if (j.emailSent) setTimeout(() => { setInviting(false); setInviteMsg(null); }, 2500);
     } catch { setInviteMsg({ ok: false, text: "Нет связи с сервером" }); }
     finally { setBusy(false); }
@@ -217,16 +224,16 @@ export default function RolesAndAccess() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-5 text-[var(--text-main)]">
-      <div className="border-b border-[var(--border-color)] pb-4">
+      {!view && <div className="border-b border-[var(--border-color)] pb-4">
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Shield className="w-6 h-6 text-emerald-500" /> Роли и доступы
         </h1>
         <p className="text-xs text-[var(--text-muted)] mt-1">
           {tenant.name} · должности компании, права сотрудников и видимость разделов
         </p>
-      </div>
+      </div>}
 
-      <div className="flex gap-1 bg-[var(--bg-app)] border border-[var(--border-color)] rounded-xl p-1 text-xs w-fit">
+      {!view && <div className="flex gap-1 bg-[var(--bg-app)] border border-[var(--border-color)] rounded-xl p-1 text-xs w-fit">
         {([["roles", `Должности (${roles.length})`], ["staff", `Сотрудники (${members.length})`], ["modules", "Разделы"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`px-4 py-2 rounded-lg font-bold transition ${
@@ -234,13 +241,13 @@ export default function RolesAndAccess() {
             {label}
           </button>
         ))}
-      </div>
+      </div>}
 
       {error && <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-3 text-sm text-red-500">{error}</div>}
       {notice && <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-3 text-sm text-emerald-600">{notice}</div>}
 
       {/* ── Должности ────────────────────────────────────────────────── */}
-      {tab === "roles" && (
+      {view !== "invite" && tab === "roles" && (
         <div className="space-y-3">
           <div className="flex flex-wrap gap-2 items-center">
             <button onClick={() => setEditing({ id: `new_${Date.now()}`, name: "", description: "", permissions: [] })}
@@ -297,7 +304,7 @@ export default function RolesAndAccess() {
       )}
 
       {/* ── Сотрудники ───────────────────────────────────────────────── */}
-      {tab === "staff" && (
+      {!view && tab === "staff" && (
         <div className="space-y-3">
         <div className="flex justify-between items-center">
           <p className="text-xs text-[var(--text-muted)]">
@@ -370,7 +377,7 @@ export default function RolesAndAccess() {
       )}
 
       {/* ── Модули организации ───────────────────────────────────────── */}
-      {tab === "modules" && (
+      {view !== "invite" && tab === "modules" && (
         <div className="space-y-5">
           <div className="space-y-2">
             <p className="text-xs text-[var(--text-muted)]">

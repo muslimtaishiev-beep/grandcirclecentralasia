@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { sanitizeLegal, type LegalProfile } from "../../../shared/legal";
 import { useOutletContext } from "react-router-dom";
 import { Sparkles, RotateCcw } from "lucide-react";
@@ -8,6 +8,8 @@ import {
   ACTIVITY_PRESETS, DEFAULT_WORKSPACE_CONFIG, resolveWorkspaceConfig,
   type WorkspaceConfig,
 } from "../../../shared/workspaceConfig";
+
+const RolesAndAccess = lazy(() => import("./RolesAndAccess"));
 import { resolvePermissions } from "../../../shared/permissions";
 
 /**
@@ -30,7 +32,7 @@ export default function WorkspaceSetupPage() {
   const [legal, setLegal] = useState<LegalProfile>({ legalName: "" });
   const [legalSaving, setLegalSaving] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useUrlTab("tab", ["profile", "legal", "terms", "sections"] as const, "profile");
+  const [tab, setTab] = useUrlTab("tab", ["profile", "legal", "terms", "sections", "modules"] as const, "profile");
 
   useEffect(() => {
     if (!tenant) return;
@@ -153,7 +155,8 @@ export default function WorkspaceSetupPage() {
         title={<span className="inline-flex items-center gap-2"><Sparkles className="w-6 h-6 text-emerald-500" />Организация</span>}
         tabs={<Tabs value={tab} onChange={t => setTab(t as typeof tab)} tabs={[
           { id: "profile", label: "Профиль" }, { id: "legal", label: "Реквизиты" },
-          { id: "terms", label: "Термины" }, { id: "sections", label: "Разделы" },
+          { id: "terms", label: "Термины" }, { id: "sections", label: "Анкеты и заявки" },
+          { id: "modules", label: "Видимость разделов" },
         ]} />}
       />
 
@@ -253,6 +256,7 @@ export default function WorkspaceSetupPage() {
 
       </>)}
 
+      {tab === "modules" && <Suspense fallback={<Spinner />}><RolesAndAccess view="modules" /></Suspense>}
       {tab === "sections" && (<>
 {/* Анкета регистрации на экзамен */}
       <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-5 space-y-3" data-testid="registration-section">

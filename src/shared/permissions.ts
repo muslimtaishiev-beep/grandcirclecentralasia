@@ -207,7 +207,7 @@ export const WORKSPACE_SCREENS: { key: string; label: string; group: string }[] 
  * себе экран, где разделы включаются обратно, и вернуть его может только
  * платформа. Кто их видит, по-прежнему решают права.
  */
-export const NON_HIDEABLE_SCREENS = new Set(["dashboard", "permissions", "workspaceSetup"]);
+export const NON_HIDEABLE_SCREENS = new Set(["dashboard", "permissions", "workspaceSetup", "staff", "adminOverview"]);
 
 export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | null> = {
   dashboard: null,

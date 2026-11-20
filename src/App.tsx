@@ -47,7 +47,6 @@ const AdminStaff = lazy(() => import("./pages/workspace/admin/StaffPage"));
 const AdminStaffCard = lazy(() => import("./pages/workspace/admin/StaffCard"));
 const AdminAudit = lazy(() => import("./pages/workspace/admin/AuditPage"));
 const AdminIntegrations = lazy(() => import("./pages/workspace/admin/IntegrationsPage"));
-const RolesAndAccess = lazy(() => import("./pages/workspace/settings/RolesAndAccess"));
 const FunctionStudio = lazy(() => import("./pages/workspace/functions/FunctionStudio"));
 const QrTracker = lazy(() => import("./pages/public/QrTracker"));
 const PublicForm = lazy(() => import("./pages/public/PublicForm"));
@@ -321,7 +320,7 @@ export default function App() {
                 не появлялось два рассинхронизированных экрана про одно и то же. */}
             <Route path=":orgId/settings/permissions" element={<Navigate to="../roles" relative="path" replace />} />
             <Route path=":orgId/settings/permission-matrix" element={<Navigate to="../roles" relative="path" replace />} />
-            <Route path=":orgId/settings/roles" element={<GracefulErrorBoundary fallbackTitle="Ошибка Ролей"><RequirePermission navKey="permissions"><RolesAndAccess /></RequirePermission></GracefulErrorBoundary>} />
+            <Route path=":orgId/settings/roles" element={<Navigate to="../../admin/staff?tab=roles" relative="path" replace />} />
             <Route path=":orgId/admin" element={<RequirePermission navKey="adminOverview"><GracefulErrorBoundary fallbackTitle="Ошибка обзора"><Suspense fallback={null}><AdminOverview /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/admin/staff" element={<RequirePermission navKey="staff"><GracefulErrorBoundary fallbackTitle="Ошибка списка сотрудников"><Suspense fallback={null}><AdminStaff /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/admin/staff/:uid" element={<RequirePermission navKey="staff"><GracefulErrorBoundary fallbackTitle="Ошибка карточки сотрудника"><Suspense fallback={null}><AdminStaffCard /></Suspense></GracefulErrorBoundary></RequirePermission>} />
