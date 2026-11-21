@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LayoutGrid, ListTree, Monitor, Plus, Save, SlidersHorizontal, Smartphone, Trash2, X } from "lucide-react";
+import { ArrowLeft, LayoutGrid, ListTree, Monitor, Plus, Save, SlidersHorizontal, Smartphone, Trash2 } from "lucide-react";
 import ResultExperience from "../../../components/resultPage/ResultExperience";
 import { Button, Spinner, Tabs, confirmDialog, toast } from "../../../components/ui";
 import { emailApi } from "../../../lib/emailTemplatesApi";
@@ -164,7 +164,7 @@ export default function ResultPageEditor({ tenantId, pageId, onClose, onBound, o
     <FocusCtx.Provider value={{ last: lastFocus }}>
       <div className="fixed inset-0 z-[60] bg-[var(--bg-app)] flex flex-col text-[var(--text-main)]">
         <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-[var(--border-color)] bg-[var(--bg-surface)] shrink-0">
-          <button className="p-2 rounded-lg hover:bg-[var(--bg-surface-hover)]" onClick={close} aria-label="Закрыть"><X className="w-4 h-4" /></button>
+          <button className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm hover:bg-[var(--bg-surface-hover)]" onClick={close} title="Назад" aria-label="Назад"><ArrowLeft className="w-4 h-4" /><span className="hidden sm:inline">Назад</span></button>
           <input value={name} onChange={e => setName(e.target.value)} placeholder="Название страницы" maxLength={80} disabled={!pid}
             className="flex-1 min-w-[140px] max-w-md bg-transparent border border-transparent hover:border-[var(--border-color)] focus:border-[var(--accent)] rounded-lg px-2 py-1.5 text-sm font-semibold outline-none" />
           <div className="ml-auto flex items-center gap-2">

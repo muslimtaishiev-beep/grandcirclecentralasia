@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { X, Search, Check } from "lucide-react";
+import { ArrowLeft, X, Search, Check } from "lucide-react";
 import type { SelectOption } from "../../shared/journals";
 
 /** Общие классы журналов — в тон остальному кабинету. */
@@ -29,7 +29,10 @@ export function Modal({ title, onClose, children, wide, xwide }: { title: string
           срезалось сверху, и до шапки с кнопками было не долистать. */}
       <div className={`${card} w-full min-h-dvh sm:min-h-0 rounded-none sm:rounded-2xl ${xwide ? "max-w-6xl" : wide ? "max-w-3xl" : "max-w-lg"} sm:my-auto`} onMouseDown={e => e.stopPropagation()}>
         <div className="sticky top-0 z-10 bg-[var(--bg-surface)] flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-[var(--border-color)] sm:rounded-t-2xl">
-          <h3 className="font-bold text-[var(--text-main)] truncate">{title}</h3>
+          <div className="flex items-center gap-1 min-w-0">
+            <button onClick={onClose} className="p-2 -ml-2 rounded hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)] shrink-0" title="Назад" aria-label="Назад"><ArrowLeft className="w-4 h-4" /></button>
+            <h3 className="font-bold text-[var(--text-main)] truncate">{title}</h3>
+          </div>
           <button onClick={onClose} className="p-2 -mr-1 rounded hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)]" title="Закрыть"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-4 sm:p-5">{children}</div>

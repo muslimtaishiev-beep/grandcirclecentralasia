@@ -36,6 +36,7 @@ import {
   MonitorPlay,
   Mail,
   X,
+  ArrowLeft,
 } from "lucide-react";
 import GlobalNotifications from "../../components/workspace/GlobalNotifications";
 import UpdateBanner from "../../components/workspace/UpdateBanner";
@@ -228,6 +229,14 @@ export default function WorkspaceLayout() {
             title="Показать или скрыть меню"
           >
             <Menu className="w-5 h-5" />
+          </button>
+          {/* Назад — на предыдущий экран; открыли кабинет по прямой ссылке — на главную. */}
+          <button
+            onClick={() => ((window.history.state?.idx ?? 0) > 0 ? navigate(-1) : navigate(`/workspace/${orgId}`))}
+            className="p-2 -ml-1 sm:-ml-3 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg text-[var(--text-main)] transition cursor-pointer"
+            title="Назад" aria-label="Назад"
+          >
+            <ArrowLeft className="w-5 h-5" />
           </button>
           
           <div className="flex items-center gap-2 min-w-0">

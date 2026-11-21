@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Copy, Plus, Trash2, X } from "lucide-react";
+import { ArrowLeft, Copy, Plus, Trash2, X } from "lucide-react";
 import { Button, EmptyState, Spinner, confirmDialog, toast } from "../../../components/ui";
 import { DEFAULT_VARIANT_KEY, PRESETS, blankVariant, type ResultPage, type Variant } from "../../../shared/resultPages";
 import { Thumb, type OrgInfo } from "./EditorKit";
@@ -49,6 +49,7 @@ export default function TemplateGallery({ tenantId, org, currentId, onPick, onCl
   return (
     <div className="absolute inset-0 z-30 bg-[var(--bg-app)] flex flex-col">
       <div className="flex items-center gap-2 px-4 h-12 border-b border-[var(--border-color)] bg-[var(--bg-surface)] shrink-0">
+        <button className="p-2 -ml-2 rounded-lg hover:bg-[var(--bg-surface-hover)] text-[var(--text-main)]" onClick={onClose} title="Назад" aria-label="Назад"><ArrowLeft className="w-4 h-4" /></button>
         <h3 className="font-bold text-[var(--text-main)]">Шаблоны</h3>
         <button className="ml-auto p-2 rounded-lg hover:bg-[var(--bg-surface-hover)] text-[var(--text-main)]" onClick={onClose} aria-label="Закрыть"><X className="w-4 h-4" /></button>
       </div>
