@@ -554,8 +554,8 @@ async function applyAction(t: string, req: any, a: Attempt & { questions: Record
         const at = Number(body?.at);
         const r = await publishCards(t, cardWho(req), [card.id], Number.isFinite(at) && at >= Date.now() + 60_000 ? Math.floor(at) : null);
         if (r.skipped[0]) return { error: [409, skipText(r.skipped[0])] };
+        // Таймер работы поступающего живёт в карточке — в самой работе его не держим.
         if (r.done) await ref.update({ published: true, publishedAt: now, publishAt: null });
-        else await ref.update({ publishAt: Math.floor(at) });
         detail = r.done ? "карточка поступающего" : "по таймеру";
         break;
       }
@@ -580,7 +580,7 @@ async function applyAction(t: string, req: any, a: Attempt & { questions: Record
       const { card, error } = await cardOf(t, req, a);
       if (error) return { error };
       if (card) await unpublishCard(t, card, cardWho(req));
-      await ref.update({ published: false, publishedAt: null });
+      await ref.update({ published: false, publishedAt: null, publishAt: null });
       break;
     }
     case "annul":
@@ -695,7 +695,7 @@ router.post("/:tenantId/attempts-bulk", ...review, async (req: any, res: any) =>
         if (card) {
           const r = await publishCards(t, by, [card.id], Math.floor(at));
           if (r.skipped[0]) errors.push({ id, error: skipText(r.skipped[0]) });
-          else { await col(t, "exam_attempts").doc(id).update({ publishAt: Math.floor(at) }); marked++; }
+          else marked++;
           continue;
         }
         plain.push(id);
