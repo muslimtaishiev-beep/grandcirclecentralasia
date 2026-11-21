@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import QuestionFactory from "../../components/tests/QuestionFactory";
 import ProctoringWarningOverlay from "../../components/ProctoringWarningOverlay";
@@ -7,6 +7,8 @@ import LegalLinks from "../../components/public/LegalLinks";
 import { GUARDIAN_NOTE, examConsentText, privacyHref, termsHref } from "../../shared/legalDocs";
 import { useProctoringEngine } from "../../lib/useProctoringEngine";
 import { certificateHTML, openPrint, reportHTML, type PrintData } from "../../lib/examPrint";
+
+const ResultExperience = lazy(() => import("../../components/resultPage/ResultExperience"));
 
 /**
  * Страница ученика: вход по ссылке экзамена и PIN, разделы с таймером,
@@ -632,20 +634,31 @@ function ResultLookup({ info, code }: { info: Info; code: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [res, setRes] = useState<any>(null);
-  const check = async () => {
+  // Личная ссылка из письма: токен работы вместо номера и фамилии.
+  const [search] = useSearchParams();
+  const linkKey = search.get("k") || "";
+  const [opening, setOpening] = useState(!!linkKey);
+  const check = async (viaLink = false) => {
     setBusy(true); setError(null);
     try {
-      const r = await fetch(`/api/exam-public/${code}/result`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shortId, name }) });
+      const r = await fetch(`/api/exam-public/${code}/result`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(viaLink ? { token: linkKey } : { shortId, name }) });
       const j = await r.json();
       if (!j.success) setError(j.error); else setRes(j);
     } catch { setError("Нет связи с сервером"); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setOpening(false); }
   };
+  useEffect(() => { if (linkKey) void check(true); }, [linkKey]);
   const printData = useMemo((): PrintData | null => res?.state === "ready" ? {
     title: res.exam.certificateTitle, examTitle: res.exam.title, student: { name: res.student.name, level: res.student.level, shortId: res.student.shortId },
     orgName: res.org.name, logoUrl: res.org.logoUrl, school: res.school, photo: res.photo, result: res.result,
   } : null, [res]);
   const MSG: Record<string, string> = { pending: "Работа проверяется. Результат появится после публикации.", hidden: "Результаты этого экзамена сообщает организатор.", in_progress: "Работа ещё не сдана.", annulled: "Работа аннулирована организатором." };
+  if (res?.state === "ready" && res.page) return (
+    <Suspense fallback={<div className="min-h-dvh grid place-items-center text-slate-400 text-sm">Открываем…</div>}>
+      <ResultExperience variant={res.page.variant} data={res.page.data} org={{ name: res.org?.name || info.org.name, logoUrl: res.org?.logoUrl || info.org.logoUrl || null }} mode="live" />
+    </Suspense>
+  );
+  if (opening) return <div className="min-h-dvh grid place-items-center text-slate-400 text-sm">Открываем…</div>;
   return (
     <Center>
       <PublicBrand name={info.org.name} logoUrl={info.org.logoUrl} />
@@ -657,7 +670,7 @@ function ResultLookup({ info, code }: { info: Info; code: string }) {
             <Field l="Фамилия"><input className={inp} value={name} onChange={e => setName(e.target.value)} /></Field>
             {error && <div className="text-sm text-rose-600">{error}</div>}
             {res && MSG[res.state] && <div className="text-sm text-slate-600 bg-slate-50 rounded-xl p-3">{MSG[res.state]}</div>}
-            <button className={primary} disabled={busy || shortId.length < 6 || name.trim().length < 2} onClick={check}>{busy ? "Ищем…" : "Показать результат"}</button>
+            <button className={primary} disabled={busy || shortId.length < 6 || name.trim().length < 2} onClick={() => void check()}>{busy ? "Ищем…" : "Показать результат"}</button>
           </>
         ) : (
           <>

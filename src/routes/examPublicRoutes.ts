@@ -11,6 +11,7 @@ import { tenantLogos } from "../shared/legal.js";
 import { resolveLegalProfile } from "../shared/legal.js";
 import { studentView, type BankQuestion } from "../shared/exams.js";
 import { LEGAL_VERSION } from "../shared/legalDocs.js";
+import { examResultView, examUsesPage } from "../server/examResults.js";
 import {
   DECISION_LABEL, gradeAttempt, isWindowOpen, partResults, pickSectionQuestions, readExtra,
   type Attempt, type AttemptSection, type Exam, type FrozenQuestion,
@@ -579,18 +580,27 @@ router.post("/:code/result", async (req: any, res: any) => {
     const r = await resolve(String(req.params.code).toUpperCase());
     if ("error" in r) return fail(res, r.status, r.error);
     const { exam, tenant } = r; const t = exam.tenantId;
+    // Личная ссылка из письма: токен работы вместо номера и фамилии.
+    const key = str(req.body?.token, 80);
     const shortId = str(req.body?.shortId, 10).replace(/\D/g, "");
     const name = str(req.body?.name, 80).toLowerCase().replace(/ё/g, "е").trim();
-    if (!shortId || name.length < 2) return fail(res, 400, "Укажите номер работы и фамилию");
+    if (!key && (!shortId || name.length < 2)) return fail(res, 400, "Укажите номер работы и фамилию");
     const lookKey = `res:${exam.id}:${req.ip}`;
     const wait = blocked(lookKey);
     if (wait) return fail(res, 429, `Слишком много попыток. Попробуйте через ${wait} мин.`);
-    const snap = await col(t, "exam_attempts").where("examId", "==", exam.id).where("shortId", "==", shortId).limit(1).get();
-    const a = snap.empty ? null : ({ ...(snap.docs[0].data() as Full), id: snap.docs[0].id });
-    // Фамилия целиком, а не первые буквы: «Ив» подходило к половине класса
-    // и сильно облегчало подбор чужого номера.
-    const tokens = (a?.student.name || "").toLowerCase().replace(/ё/g, "е").split(/\s+/);
-    if (!a || !tokens.includes(name)) { fail1(lookKey); return fail(res, 404, "Работа с таким номером и фамилией не найдена"); }
+    let a: Full | null;
+    if (key) {
+      a = await byToken(t, key);
+      if (a && a.examId !== exam.id) a = null;
+      if (!a) { fail1(lookKey); return fail(res, 404, "Ссылка устарела или неверна"); }
+    } else {
+      const snap = await col(t, "exam_attempts").where("examId", "==", exam.id).where("shortId", "==", shortId).limit(1).get();
+      a = snap.empty ? null : ({ ...(snap.docs[0].data() as Full), id: snap.docs[0].id });
+      // Фамилия целиком, а не первые буквы: «Ив» подходило к половине класса
+      // и сильно облегчало подбор чужого номера.
+      const tokens = (a?.student.name || "").toLowerCase().replace(/ё/g, "е").split(/\s+/);
+      if (!a || !tokens.includes(name)) { fail1(lookKey); return fail(res, 404, "Работа с таким номером и фамилией не найдена"); }
+    }
     if (a.status === "annulled") return res.json({ success: true, state: "annulled" });
     if (a.status !== "finished") return res.json({ success: true, state: "in_progress" });
     // Работа по направлению: результаты — по QR после обратной связи администрации.
@@ -598,6 +608,11 @@ router.post("/:code/result", async (req: any, res: any) => {
     const mode = exam.settings.results.showToStudent;
     if (mode === "never") return res.json({ success: true, state: "hidden" });
     if (mode === "after_publish" && !a.published) return res.json({ success: true, state: "pending" });
+    // Экзамен отдаёт результаты страницей — её и показываем (вариант по решению).
+    if (examUsesPage(exam)) {
+      const page = await examResultView(t, exam, a, str(tenant?.name, 120));
+      if (page) return res.json({ success: true, state: "ready", page, org: orgView(tenant) });
+    }
     const legal = resolveLegalProfile(tenant);
     let photo: string | null = null;
     if (exam.settings.results.certificate && a.hasPhoto) photo = (await col(t, "exam_photos").doc(a.id).get()).data()?.photo || null;

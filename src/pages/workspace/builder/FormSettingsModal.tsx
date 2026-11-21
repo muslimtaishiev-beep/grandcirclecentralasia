@@ -9,6 +9,7 @@ import {
   type Decision, type NotifyMode,
 } from "../../../shared/formDecisions";
 import ResultPageEditor from "../resultPages/ResultPageEditor";
+import FormGeneralTab from "./FormGeneralTab";
 import { rpApi, type PageRow } from "../resultPages/resultPagesApi";
 
 const field = "bg-[var(--bg-app)] border border-[var(--border-color)] rounded-lg px-2 py-1.5 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]";
@@ -35,10 +36,10 @@ async function saveApi(tenantId: string, formId: string, decisions: Decision[]) 
 const snap = (l: Decision[]) => JSON.stringify(l);
 
 /** «Настройки формы» (шестерёнка на карточке): состояния заявки и что уходит заявителю при смене. */
-export default function FormSettingsModal({ tenantId, form, subs, onClose }: {
-  tenantId: string; form: any; subs: any[]; onClose: () => void;
+export default function FormSettingsModal({ tenantId, form, subs, qrLogo, onClose }: {
+  tenantId: string; form: any; subs: any[]; qrLogo?: string; onClose: () => void;
 }) {
-  const [tab, setTab] = useState("decisions");
+  const [tab, setTab] = useState("general");
   const [list, setList] = useState<Decision[]>(() => resolveDecisions(form));
   /** Настройки уведомления открываются по «Настроить» — обычно они не нужны. */
   const [openNotify, setOpenNotify] = useState<Set<string>>(() => new Set());
@@ -99,8 +100,11 @@ export default function FormSettingsModal({ tenantId, form, subs, onClose }: {
     <>
       <Modal title={`Настройки формы · ${form.title || ""}`} onClose={onClose} wide>
         <div className="space-y-4">
-          <Tabs tabs={[{ id: "decisions", label: "Решения" }]} value={tab} onChange={setTab} />
-          <div className="space-y-3">
+          <Tabs tabs={[{ id: "general", label: "Общее" }, { id: "decisions", label: "Решения" }]} value={tab} onChange={setTab} />
+          <div className={tab === "general" ? "" : "hidden"}>
+            <FormGeneralTab tenantId={tenantId} form={form} qrLogo={qrLogo} onClose={onClose} />
+          </div>
+          <div className={`space-y-3 ${tab === "decisions" ? "" : "hidden"}`}>
             {list.map((d, i) => {
               const used = counts[d.id] || 0;
               const system = (FORM_STATUSES as readonly string[]).includes(d.id);

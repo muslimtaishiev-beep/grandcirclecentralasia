@@ -113,6 +113,18 @@ export const FORM_RESULT_VARS: ResultVar[] = [
   { key: "дата", label: "Дата", sample: "21 ноября 2026 г." },
 ];
 
+/** Переменные страницы результатов обычного экзамена. */
+export const EXAM_RESULT_VARS: ResultVar[] = [
+  { key: "имя", label: "Имя", sample: "Асанов Тимур" },
+  { key: "экзамен", label: "Экзамен", sample: "Итоговая работа по математике" },
+  { key: "балл", label: "Балл", sample: "18 / 20" },
+  { key: "процент", label: "Процент", sample: "90%" },
+  { key: "номер", label: "Номер работы", sample: "123456" },
+  { key: "решение", label: "Решение", sample: "Принят" },
+  { key: "организация", label: "Организация", sample: "Ваша организация" },
+  { key: "дата", label: "Дата", sample: "21 ноября 2026 г." },
+];
+
 /** Примерные значения для предпросмотра в редакторе. */
 export const resultSampleVars = (): Record<string, string> => Object.fromEntries(RESULT_VARS.map(v => [v.key, v.sample]));
 

@@ -1,6 +1,8 @@
 import { applicantAudit } from "../server/applicantAudit.js";
 import { liveOnWrite } from "../server/live.js";
-import { notifyTested, syncAllReferrals } from "./admissionRoutes.js";
+import { isAdmissionExam, notifyTested, syncAllReferrals } from "./admissionRoutes.js";
+import { emailExamResultsReady, examSendsOnPublish, examUsesPage } from "../server/examResults.js";
+import { registerJobHandler, scheduleJob } from "../server/scheduler.js";
 import { Router } from "express";
 import admin from "firebase-admin";
 import { randomBytes } from "crypto";
@@ -33,7 +35,7 @@ router.use("/:tenantId/attempts-trash", liveOnWrite(["exams", "admissions"]));
 const ATTEMPT_ACTION: Record<string, string> = {
   publish: "Результаты опубликованы", unpublish: "Публикация снята", annul: "Работа аннулирована", restore: "Работа восстановлена",
   allow_retake: "Разрешена пересдача", finish: "Работа досдана менеджером", delete: "Работа удалена в корзину", decision: "Решение по работе", group: "Группа",
-  extend: "Продлено время", recheck: "Перепроверка",
+  extend: "Продлено время", recheck: "Перепроверка", send_ready: "Письмо «Результаты готовы»",
 };
 router.use("/:tenantId/attempts/:aid", async (req: any, res: any, next: any) => {
   if (req.method !== "POST" || !/^[A-Za-z0-9_-]{2,80}$/.test(req.params.tenantId) || !/^[A-Za-z0-9_-]{4,64}$/.test(req.params.aid)) return next();
@@ -155,7 +157,7 @@ router.get("/:tenantId/exams", ...view, async (req: any, res: any) => {
     }
     const exams = es.docs.map(d => ({ ...(d.data() as Exam), id: d.id }))
       .filter(e => (req.query.archived === "1" ? !!e.archived : !e.archived))
-      .map(e => ({ id: e.id, archived: !!e.archived, archivedAt: (e as any).archivedAt || null, title: e.title, group: e.group, status: e.status, code: e.code, sections: e.sections.length, updatedAt: e.updatedAt, opensAt: e.settings.access.opensAt, closesAt: e.settings.access.closesAt, grades: e.settings.admission?.grades || [], paper: !!e.settings.paper, ...(stats.get(e.id) || { total: 0, live: 0, done: 0 }) }))
+      .map(e => ({ id: e.id, archived: !!e.archived, archivedAt: (e as any).archivedAt || null, title: e.title, group: e.group, status: e.status, code: e.code, sections: e.sections.length, updatedAt: e.updatedAt, opensAt: e.settings.access.opensAt, closesAt: e.settings.access.closesAt, grades: e.settings.admission?.grades || [], paper: !!e.settings.paper, pageDelivery: sanitizeSettings(e.settings).results.delivery === "page", ...(stats.get(e.id) || { total: 0, live: 0, done: 0 }) }))
       .sort((a, b) => a.group.localeCompare(b.group, "ru") || a.title.localeCompare(b.title, "ru", { numeric: true }));
     return res.json({ success: true, exams, canEdit: req.canEdit, canReview: req.canReview });
   } catch (e: any) { return fail(res, 500, e.message); }
@@ -462,7 +464,7 @@ router.post("/:tenantId/attempts/:aid/review", ...review, checkIds, async (req: 
 });
 
 /** Что может проверяющий; остальное — только тот, кто управляет экзаменами. */
-const REVIEW_ACTIONS = new Set(["publish", "unpublish", "finish", "recheck", "extend", "group"]);
+const REVIEW_ACTIONS = new Set(["publish", "unpublish", "finish", "recheck", "extend", "group", "send_ready"]);
 
 /** Аннулировали или удалили пересдачу — в зачёт возвращается работа, которую она заменила. */
 async function unsupersede(t: string, a: Attempt) {
@@ -475,7 +477,10 @@ async function unsupersede(t: string, a: Attempt) {
  * allow_retake / finish / delete / decision / group / recheck / extend.
  * Возвращает ошибку, флаг удаления или итог перепроверки.
  */
-async function applyAction(t: string, req: any, a: Attempt & { questions: Record<string, any>; token: string }, exam: Exam | null, action: string, body: any): Promise<{ error?: [number, string]; deleted?: boolean; recheck?: any }> {
+/** Письмо «Результаты готовы» обычной работе: страница результатов выбрана, экзамен не вступительный. */
+const readyMailApplies = (exam: Exam | null, a: Attempt): exam is Exam => !!exam && !a.applicantId && !isAdmissionExam(exam) && examUsesPage(exam);
+
+async function applyAction(t: string, req: any, a: Attempt & { questions: Record<string, any>; token: string }, exam: Exam | null, action: string, body: any): Promise<{ error?: [number, string]; deleted?: boolean; recheck?: any; email?: { sent: boolean; reason?: string; skipped?: boolean } }> {
   if (!REVIEW_ACTIONS.has(action) && !req.canEdit) return { error: [403, "Это действие доступно тому, кто управляет экзаменами"] };
   const ref = col(t, "exam_attempts").doc(a.id);
   const now = Date.now();
@@ -484,7 +489,22 @@ async function applyAction(t: string, req: any, a: Attempt & { questions: Record
     case "publish":
       if (a.status !== "finished") return { error: [409, "Опубликовать можно только сданную работу"] };
       if (exam?.settings.results.requireReview && a.review?.status !== "done") return { error: [409, "Сначала завершите проверку работы"] };
-      await ref.update({ published: true, publishedAt: now }); break;
+      await ref.update({ published: true, publishedAt: now, publishAt: null });
+      // Результаты отдаёт страница — письмо со ссылкой уходит при публикации (или позже кнопкой).
+      if (readyMailApplies(exam, a) && examSendsOnPublish(exam)) {
+        const email = await emailExamResultsReady(t, exam, { ...a, published: true, publishedAt: now }, { by: who(req) });
+        await examHistory(t, req, { examId: a.examId, attemptId: a.id, action: ATTEMPT_ACTION.publish, detail: [a.student?.name || "", email.sent ? `письмо: ${email.to || "ушло"}` : ""].filter(Boolean).join(" · ") });
+        return { email };
+      }
+      break;
+    case "send_ready": {
+      if (!readyMailApplies(exam, a)) return { error: [409, "У экзамена результаты не страницей по ссылке"] };
+      if (!a.published && sanitizeSettings(exam.settings).results.showToStudent !== "immediately") return { error: [409, "Сначала опубликуйте результаты"] };
+      const email = await emailExamResultsReady(t, exam, a, { force: true, by: who(req) });
+      if (!email.sent) return { error: [409, email.reason || "Письмо не отправлено"], email };
+      detail = email.to || "";
+      break;
+    }
     case "unpublish": await ref.update({ published: false, publishedAt: null }); break;
     case "annul":
       await ref.update({ status: "annulled", published: false, annulledAt: now, annulledBy: who(req), annulReason: str(body?.reason, 300) });
@@ -571,6 +591,20 @@ router.post("/:tenantId/attempts-bulk", ...review, async (req: any, res: any) =>
     const action = String(req.body?.action || "");
     if (!ids.length) return fail(res, 400, "Не выбраны работы");
     if (!REVIEW_ACTIONS.has(action) && !req.canEdit) return fail(res, 403, "Это действие доступно тому, кто управляет экзаменами");
+    // Публикация позже: одна задача на выбранные работы; в каждой — отметка «запланировано».
+    const at = Number(req.body?.at);
+    if (action === "publish" && Number.isFinite(at) && at >= Date.now() + 60_000) {
+      const key = `exam_pub:${randomBytes(8).toString("hex")}`;
+      const by = { uid: str(req.user?.uid, 128), name: str(req.user?.name || req.user?.email || "Сотрудник", 120) };
+      await scheduleJob({ tenantId: t, kind: "exam_publish", key, runAt: at, payload: { ids }, by });
+      let marked = 0; const errors: { id: string; error: string }[] = [];
+      for (const id of ids) {
+        const a = await loadAttempt(t, id);
+        if (!a || a.status !== "finished" || a.published) { errors.push({ id, error: !a ? "Работа не найдена" : a.published ? "Уже опубликовано" : "Работа не сдана" }); continue; }
+        await col(t, "exam_attempts").doc(id).update({ publishAt: Math.floor(at) }); marked++;
+      }
+      return res.json({ success: true, ok: marked, errors, scheduled: Math.floor(at) });
+    }
     const exams = new Map<string, Exam | null>();
     let ok = 0; const errors: { id: string; error: string }[] = [];
     for (const id of ids) {
@@ -712,8 +746,31 @@ router.post("/:tenantId/exams/:id/publish-all", ...review, checkIds, async (req:
       await b.commit();
     }
     if (ready.length) await examHistory(t, req, { examId: exam.id, action: "Опубликованы результаты", detail: `работ: ${ready.length}` });
+    if (ready.length && examSendsOnPublish(exam) && !isAdmissionExam(exam) && examUsesPage(exam)) {
+      for (const d of ready) {
+        const x = { ...(d.data() as Attempt), id: d.id, published: true };
+        if (!x.applicantId) await emailExamResultsReady(t, exam, x, { by: who(req) });
+      }
+    }
     return res.json({ success: true, count: ready.length, waitingReview: snap.docs.filter(d => !d.data().published && exam.settings.results.requireReview && d.data().review?.status !== "done").length });
   } catch (e: any) { return fail(res, 500, e.message); }
+});
+
+/** Публикация по таймеру: те же правила, что у кнопки (сданная, проверенная, не опубликованная). */
+registerJobHandler("exam_publish", async job => {
+  const t = job.tenantId;
+  const ids: string[] = (Array.isArray(job.payload?.ids) ? job.payload.ids : []).map(String).filter((x: string) => SAFE_ID.test(x));
+  const req = { user: { uid: job.createdBy?.uid || "", name: job.createdBy?.name || "Планировщик" }, canEdit: true };
+  const exams = new Map<string, Exam | null>();
+  let ok = 0; let skipped = 0;
+  for (const id of ids) {
+    const a = await loadAttempt(t, id);
+    if (!a || a.published) { skipped++; continue; }
+    if (!exams.has(a.examId)) exams.set(a.examId, await loadExam(t, a.examId));
+    const out = await applyAction(t, req, a, exams.get(a.examId) || null, "publish", {});
+    if (out.error) { skipped++; await col(t, "exam_attempts").doc(id).update({ publishAt: null }).catch(() => {}); } else ok++;
+  }
+  return `Опубликовано ${ok}${skipped ? `, пропущено ${skipped}` : ""}`;
 });
 
 // ── Архив прежнего вступительного теста ─────────────────────────────────

@@ -1,7 +1,7 @@
 import React, { useContext, useMemo } from "react";
 import { ArrowDown, ArrowUp, Film, Plus, Sparkles, Trash2, Mail } from "lucide-react";
 import { Button, Tabs, toast } from "../../../components/ui";
-import { BLOCK_TYPES, FORM_RESULT_VARS, RESULT_VARS, newBlock, newStep, type Block, type BlockType, type Frame, type LetterStep, type Step, type Theme, type Variant } from "../../../shared/resultPages";
+import { BLOCK_TYPES, EXAM_RESULT_VARS, FORM_RESULT_VARS, RESULT_VARS, newBlock, newStep, type Block, type BlockType, type Frame, type LetterStep, type Step, type Theme, type Variant } from "../../../shared/resultPages";
 import { FocusCtx, MediaField, Section, TextField, Thumb, Toggle, type OrgInfo } from "./EditorKit";
 
 export type Sel = { t: "step"; id: string } | { t: "block"; id: string } | { t: "theme" };
@@ -34,7 +34,7 @@ function useInsertVar() {
   };
 }
 
-export function LeftPanel({ variant, sel, onSelect, patch, pageKind }: { variant: Variant; sel: Sel; onSelect: (s: Sel) => void; patch: Patch; pageKind?: "form" }) {
+export function LeftPanel({ variant, sel, onSelect, patch, pageKind }: { variant: Variant; sel: Sel; onSelect: (s: Sel) => void; patch: Patch; pageKind?: "form" | "exam" }) {
   const insertVar = useInsertVar();
   const letter = letterOf(variant);
   const free = variant.steps.length < MAX_STEPS;
@@ -103,7 +103,7 @@ export function LeftPanel({ variant, sel, onSelect, patch, pageKind }: { variant
 
       <Section title="Переменные">
         <div className="flex flex-wrap gap-1.5">
-          {(pageKind === "form" ? FORM_RESULT_VARS : RESULT_VARS).map(v => (
+          {(pageKind === "form" ? FORM_RESULT_VARS : pageKind === "exam" ? EXAM_RESULT_VARS : RESULT_VARS).map(v => (
             <button key={v.key} title={`{{${v.key}}}`} onMouseDown={e => e.preventDefault()} onClick={() => insertVar(v.key)}
               className="text-xs rounded-full border border-[var(--border-color)] px-2 py-1 text-[var(--text-main)] hover:border-[var(--accent)] hover:text-[var(--accent)]">{v.label}</button>
           ))}

@@ -69,7 +69,7 @@ export default function WorksTab({ api, tenant }: { api: Api; tenant: any }) {
         ))}
       </div>
       {error && <div className="text-sm text-rose-600">{error}</div>}
-      <BulkBar api={api} ids={ids} canReview={perm.canReview} canManage={perm.canEdit} onDone={load} onClear={() => setSelected(new Set())} />
+      <BulkBar readyMail={exams.some(e => e.pageDelivery)} api={api} ids={ids} canReview={perm.canReview} canManage={perm.canEdit} onDone={load} onClear={() => setSelected(new Set())} />
       {!rows && !error && <div className="py-12 flex justify-center"><Spinner /></div>}
       {rows && !rows.length && <EmptyState title="Работ нет" />}
       {rows && rows.length > 0 && (

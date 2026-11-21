@@ -3,7 +3,7 @@ import { LayoutGrid, ListTree, Monitor, Plus, Save, SlidersHorizontal, Smartphon
 import ResultExperience from "../../../components/resultPage/ResultExperience";
 import { Button, Spinner, Tabs, confirmDialog, toast } from "../../../components/ui";
 import { emailApi } from "../../../lib/emailTemplatesApi";
-import { DEFAULT_VARIANT_KEY, PRESETS, SAMPLE_RESULT_DATA, fillVariant, presetVariant, resultSampleVars, type LetterStep, type ResultPage, type Variant } from "../../../shared/resultPages";
+import { DEFAULT_VARIANT_KEY, EXAM_RESULT_VARS, PRESETS, SAMPLE_RESULT_DATA, fillVariant, presetVariant, resultSampleVars, type LetterStep, type ResultPage, type Variant } from "../../../shared/resultPages";
 import { FocusCtx, type FocusTarget, type OrgInfo } from "./EditorKit";
 import { LeftPanel, RightPanel, type Patch, type Sel } from "./EditorPanels";
 import TemplateGallery from "./TemplateGallery";
@@ -34,7 +34,7 @@ export default function ResultPageEditor({ tenantId, pageId, onClose, onBound, o
   /** Свои исходы (вкладки вариантов) вместо исходов анкеты кандидата — например, состояния формы заявок. */
   outcomes?: { id: string; label: string }[];
   /** "form": страница заявки — в предпросмотре подставляются имя, форма и статус. */
-  pageKind?: "form";
+  pageKind?: "form" | "exam";
 }) {
   const narrow = useNarrow();
   const [pid, setPid] = useState<string | null>(pageId || null);
@@ -63,7 +63,8 @@ export default function ResultPageEditor({ tenantId, pageId, onClose, onBound, o
   useEffect(() => {
     if (outcomesProp) setOutcomes(outcomesProp.map(o => ({ id: o.id, label: o.label, final: false, trial: false })));
   }, [outcomesProp]);
-  const sampleVars = useMemo(() => (pageKind === "form" ? { ...resultSampleVars(), имя: "Асанов Тимур", форма: "Регистрация на форум", статус: "Одобрено" } : resultSampleVars()), [pageKind]);
+  const sampleVars = useMemo(() => (pageKind === "form" ? { ...resultSampleVars(), имя: "Асанов Тимур", форма: "Регистрация на форум", статус: "Одобрено" }
+    : pageKind === "exam" ? { ...resultSampleVars(), ...Object.fromEntries(EXAM_RESULT_VARS.map(v => [v.key, v.sample])) } : resultSampleVars()), [pageKind]);
 
   const open = useCallback(async (id: string) => {
     setLoading(true);

@@ -35,7 +35,6 @@ import { isFileValue, fileLabel, fileInfo } from '../../../shared/uploads';
 import { useAuth } from '../../../contexts/AuthContext';
 import { tenantLogos } from '../../../shared/legal';
 import FormSummary, { WhoModal, type WhoList } from './FormSummary';
-import EmailTemplateSelect from '../../../components/workspace/EmailTemplateSelect';
 import EmailResend from '../../../components/workspace/EmailResend';
 import FormNotifyModal from './FormNotifyModal';
 import { toast, confirmDialog, useUrlTab, Spinner, EmptyState } from '../../../components/ui';
@@ -856,11 +855,8 @@ export default function FormBuilder() {
         title: formTitle.trim(),
         description: formDesc.trim(),
         fields: cleanFields,
-        qrTrackingEnabled,
-        publicListed,
-        emailTemplateId,
-        mode: formMode,
-        ...(!editingFormId && { active: true }),
+        // Остальные настройки существующей формы правятся в «Настройки формы → Общее».
+        ...(!editingFormId && { qrTrackingEnabled, publicListed, emailTemplateId, mode: formMode, active: true }),
         updatedAt: serverTimestamp(),
         ...(!editingFormId && { createdAt: serverTimestamp(), createdBy: user?.uid || '' })
       }, { merge: true });
@@ -2112,44 +2108,24 @@ export default function FormBuilder() {
                 />
               </div>
 
+              {/* Тип выбирается при создании; у существующей формы — в шестерёнке → «Общее». */}
+              {!editingFormId && (
+                <div className="inline-flex rounded-xl border border-[var(--border-color)] p-0.5 text-xs">
+                  {([["application", "Заявка"], ["ticket", "Билет на событие"]] as const).map(([m, l]) => (
+                    <button key={m} type="button" onClick={() => setFormMode(m)}
+                      className={`px-3 py-1.5 rounded-lg font-semibold transition ${formMode === m ? "bg-[var(--accent)] text-white" : "text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]"}`}>{l}</button>
+                  ))}
+                </div>
+              )}
+
               {/* Dynamic Fields List */}
               <div className="space-y-3 pt-2">
-                {/* Режим определяет судьбу заявки после одобрения: заявка
-                    просто получает статус, билет — ещё и QR для входа. */}
-                <div className="space-y-2 p-3 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl">
-                  <label className="font-bold text-[var(--text-muted)] uppercase font-mono text-[11px]">Тип формы</label>
-                  <div className="flex gap-2">
-                    {([['application', 'Приём заявок'], ['ticket', 'Билеты на событие']] as const).map(([m, label]) => (
-                      <button key={m} type="button" onClick={() => setFormMode(m)}
-                        className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold border transition ${
-                          formMode === m
-                            ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500'
-                            : 'border-[var(--border-color)] text-[var(--text-muted)] hover:border-emerald-500/30'}`}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  <label className="flex items-center gap-2 text-[11px] text-[var(--text-muted)] cursor-pointer pt-1">
-                    <input type="checkbox" checked={qrTrackingEnabled} onChange={(e) => setQrTrackingEnabled(e.target.checked)} />
-                    Выдавать QR-код отслеживания после отправки
-                  </label>
-                  <label className="flex items-start gap-2 text-[11px] text-[var(--text-muted)] cursor-pointer">
-                    <input type="checkbox" checked={publicListed} onChange={(e) => setPublicListed(e.target.checked)} className="mt-0.5" />
-                    <span>
-                      Показывать в списке анкет для внешних сайтов
-                      <span className="block text-[10px] opacity-70">
-                        Анкету увидят на сторонних страницах организации. Ссылка работает и без этого.
-                      </span>
-                    </span>
-                  </label>
-                  {currentOrgId && <EmailTemplateSelect tenantId={currentOrgId} kind="form" title="Письмо после отправки" value={emailTemplateId} onChange={setEmailTemplateId} />}
-                  {currentOrgId && editingFormId && (
-                    <button type="button" onClick={() => setNotifyForm({ id: editingFormId, title: formTitle || 'Форма' })}
-                      className="flex items-center gap-2 text-sm text-[var(--text-main)] hover:text-[var(--accent)] transition cursor-pointer">
-                      <Bell className="w-4 h-4" /> Уведомления о заявках
-                    </button>
-                  )}
-                </div>
+                {currentOrgId && editingFormId && (
+                  <button type="button" onClick={() => setNotifyForm({ id: editingFormId, title: formTitle || 'Форма' })}
+                    className="flex items-center gap-2 text-sm text-[var(--text-main)] hover:text-[var(--accent)] transition cursor-pointer">
+                    <Bell className="w-4 h-4" /> Уведомления о заявках
+                  </button>
+                )}
 
                 <div className="flex items-center justify-between">
                   <label className="font-bold text-[var(--text-muted)] uppercase font-mono text-[11px]">Поля формы:</label>
@@ -2307,7 +2283,7 @@ export default function FormBuilder() {
       )}
 
       {/* Просмотр приложенных файлов: картинки, PDF, текст и медиа — на странице, остальное — скачать. */}
-      {settingsForm && currentOrgId && <FormSettingsModal tenantId={currentOrgId} form={forms.find(f => f.id === settingsForm.id) || settingsForm} subs={submissions} onClose={() => setSettingsForm(null)} />}
+      {settingsForm && currentOrgId && <FormSettingsModal tenantId={currentOrgId} form={forms.find(f => f.id === settingsForm.id) || settingsForm} subs={submissions} qrLogo={qrLogo} onClose={() => setSettingsForm(null)} />}
       {docView && <FileViewer title={docView.title} files={docView.files} onClose={() => setDocView(null)} />}
 
       {/* QR на саму форму — его печатают и вешают на стенд, чтобы люди

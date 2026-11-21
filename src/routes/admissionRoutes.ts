@@ -11,6 +11,7 @@ import { verifySession } from "../server/session.js";
 import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
 import { tenantLogos } from "../shared/legal.js";
 import { buildView } from "../server/resultPages.js";
+import { resendExamResultsReady } from "../server/examResults.js";
 import type { ResultData } from "../shared/resultPages.js";
 import { LEGAL_VERSION } from "../shared/legalDocs.js";
 import { DECISION_LABEL, REG_PRESETS, paperResult, partResults, sanitizeSections, sanitizeSettings, type Decision, type Exam, type ExamResult } from "../shared/examRun.js";
@@ -519,6 +520,7 @@ export async function emailResultsReady(t: string, a: Applicant, o: { force?: bo
   } catch (e) { console.error("[admissions] results-ready email", e); return { sent: false, reason: "Не удалось отправить" }; }
 }
 registerResender("results_ready", async (t, ctx, by) => {
+  if (ctx.attemptId && !ctx.applicantId) return resendExamResultsReady(t, ctx.attemptId, by);
   const a = ctx.applicantId ? await loadApplicant(t, ctx.applicantId) : null;
   return a ? emailResultsReady(t, a, { force: true, by }) : { sent: false, reason: "Нет карточки" };
 });

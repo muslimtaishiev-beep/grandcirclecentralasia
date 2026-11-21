@@ -621,6 +621,8 @@ export interface Attempt {
   proctoring: ProctoringSummary;
   published: boolean;
   publishedAt?: number | null;
+  /** Запланированная публикация (мс); снимается, когда результаты опубликованы. */
+  publishAt?: number | null;
   decision?: { value: Decision; comment: string; by: string; at: number } | null;
   group?: string | null;
   retakeAllowed?: boolean;

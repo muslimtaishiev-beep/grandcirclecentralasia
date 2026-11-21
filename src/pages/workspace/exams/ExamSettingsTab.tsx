@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, ListChecks, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { DIFFICULTY_LABEL, type Difficulty } from "../../../shared/exams";
-import { REG_PRESETS, type Exam, type ExamSection, type ExamSettings, type RegField, type ScaleBand } from "../../../shared/examRun";
+import { DECISION_LABEL, REG_PRESETS, type Decision, type Exam, type ExamSection, type ExamSettings, type RegField, type ScaleBand } from "../../../shared/examRun";
 import { Button, InfoHint, confirmDialog, toast } from "../../../components/ui";
 import { btn, btnPrimary, card, input, label } from "../journals/components/ui";
 import type { Api, DisciplineRow, SetRow } from "./examApi";
@@ -35,12 +35,13 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved, 
   const [disciplines, setDisciplines] = useState<DisciplineRow[]>([]);
   const [sets, setSets] = useState<SetRow[]>([]);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [tune, setTune] = useState(false);
   const [pageRows, setPageRows] = useState<PageRow[]>([]);
   const admissionExam = isAdmission(st);
   useEffect(() => {
-    if (!admissionExam || st.results.delivery !== "page") return;
+    if (st.results.delivery !== "page") return;
     rpApi(exam.tenantId).then(j => setPageRows(j.pages || [])).catch(() => {});
-  }, [exam.tenantId, admissionExam, st.results.delivery, st.results.pageId, editorOpen]);
+  }, [exam.tenantId, st.results.delivery, st.results.pageId, editorOpen]);
   /** Раздел, вопросы которого сейчас отмечают. */
   const [picking, setPicking] = useState<number | null>(null);
   const [plans, setPlans] = useState<Record<string, Plan>>({});
@@ -337,11 +338,10 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved, 
           <Check checked={st.results.decisions} onChange={v => set("results", { decisions: v })}>Решение по работе: принят / резерв / не принят, с комментарием</Check>
           <GroupsEditor groups={st.results.groups} onChange={groups => set("results", { groups })} />
           <EmailTemplateSelect tenantId={exam.tenantId} kind="tested" title="Письмо после теста" value={st.results.emailTemplate || ""} onChange={emailTemplate => set("results", { emailTemplate })} />
-          {admissionExam && (
-            <div className="border-t border-[var(--border-color)] pt-3 space-y-3">
+          <div className="border-t border-[var(--border-color)] pt-3 space-y-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-semibold text-[var(--text-main)]">Результаты приходят</span>
-                {([["email", "Письмом"], ["page", "Страницей по ссылке"]] as const).map(([k, l]) => (
+                {([["email", admissionExam ? "Письмом" : "Как обычно"], ["page", "Страницей по ссылке"]] as const).map(([k, l]) => (
                   <label key={k} className={`flex items-center gap-2 text-sm rounded-lg border px-3 py-1.5 ${st.results.delivery === k ? "border-[var(--accent)]" : "border-[var(--border-color)]"}`}>
                     <input type="radio" disabled={!canEdit} checked={st.results.delivery === k} onChange={() => set("results", { delivery: k })} /> {l}
                   </label>
@@ -353,6 +353,8 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved, 
                   <span className="text-sm font-semibold text-[var(--text-main)]">{st.results.pageId ? (pageRows.find(x => x.id === st.results.pageId)?.name || "Выбрана") : "не выбрана"}</span>
                   {canEdit && <Button className="ml-auto" size="sm" variant="secondary" onClick={() => setEditorOpen(true)}>Открыть редактор</Button>}
                 </div>
+                <div><button type="button" className="text-sm text-[var(--accent)] font-semibold hover:underline" aria-expanded={tune} onClick={() => setTune(v => !v)}>Настроить письмо</button></div>
+                {tune && <>
                 <EmailTemplateSelect tenantId={exam.tenantId} kind="results_ready" title="Письмо «Результаты готовы»" value={st.results.readyEmail || ""} onChange={readyEmail => set("results", { readyEmail })} disabled={!canEdit} />
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm text-[var(--text-main)]">Отправлять письмо</span>
@@ -362,15 +364,15 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved, 
                     </label>
                   ))}
                 </div>
+                </>}
               </>)}
             </div>
-          )}
         </section>
       </div>
 
       {editorOpen && (
         <Suspense fallback={null}>
-          <ResultPageEditor tenantId={exam.tenantId} pageId={st.results.pageId || null} onClose={() => setEditorOpen(false)}
+          <ResultPageEditor tenantId={exam.tenantId} pageId={st.results.pageId || null} {...(admissionExam ? {} : { pageKind: "exam" as const, outcomes: st.results.decisions ? (Object.keys(DECISION_LABEL) as Decision[]).map(id => ({ id, label: DECISION_LABEL[id] })) : [] })} onClose={() => setEditorOpen(false)}
             onBound={(pageId, nm) => { set("results", { pageId }); setPageRows(rows => (rows.some(x => x.id === pageId) ? rows.map(x => (x.id === pageId ? { ...x, name: nm } : x)) : [...rows, { id: pageId, name: nm, updatedAt: Date.now(), outcomes: [] }])); }} />
         </Suspense>
       )}

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Award, Ban, CheckCircle2, ClipboardList, Clock, RefreshCw, Eye, EyeOff, FileText, Loader2, RotateCcw, ShieldAlert, Square, Trash2, Undo2 } from "lucide-react";
+import { Award, Ban, CheckCircle2, ClipboardList, Clock, Mail, RefreshCw, Eye, EyeOff, FileText, Loader2, RotateCcw, ShieldAlert, Square, Trash2, Undo2 } from "lucide-react";
 import { Button, confirmDialog, toast, type ConfirmOptions } from "../../../components/ui";
 import DOMPurify from "dompurify";
 import ProctoringDossier from "../../../components/ProctoringDossier";
@@ -157,6 +157,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
             {a.status === "finished" && (a.published
               ? <button className={btn} disabled={!!busy} onClick={() => act("unpublish")}><EyeOff className="w-4 h-4" /> Снять публикацию</button>
               : <button className={btnPrimary} disabled={!!busy} onClick={() => act("publish")}><Eye className="w-4 h-4" /> Опубликовать</button>)}
+            {a.status === "finished" && !admission && s.results.delivery === "page" && s.results.sendOn === "manual" && (a.published || s.results.showToStudent === "immediately") && <button className={btn} disabled={!!busy} onClick={() => act("send_ready")}>{busy === "send_ready" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />} Отправить «Результаты готовы»</button>}
             {r && admission && canCard && <button className={btn} disabled={!!busy} onClick={openCandidate}>{busy === "candidate" ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />} Анкета кандидата</button>}
             {r && !admission && s.results.certificate && printData && <button className={btn} onClick={() => openPrint(certificateHTML(printData)) || toast.error("Разрешите всплывающие окна")}><Award className="w-4 h-4" /> Сертификат</button>}
             {r && !admission && printData && <button className={btn} onClick={() => openPrint(reportHTML(printData)) || toast.error("Разрешите всплывающие окна")}><FileText className="w-4 h-4" /> Отчёт по темам</button>}

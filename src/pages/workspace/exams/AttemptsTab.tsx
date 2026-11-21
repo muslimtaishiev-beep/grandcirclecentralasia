@@ -123,7 +123,7 @@ export default function AttemptsTab({ exam, api, tenant, canEdit, canReview }: {
         ))}
       </div>
       {error && <div className="text-sm text-rose-600">{error}</div>}
-      <BulkBar api={api} ids={ids} canReview={canReview} canManage={canEdit} onDone={load} onClear={() => setSelected(new Set())} />
+      <BulkBar readyMail={s.results.delivery === "page"} api={api} ids={ids} canReview={canReview} canManage={canEdit} onDone={load} onClear={() => setSelected(new Set())} />
 
       {/* Пусто — отдельной карточкой: внутри широкой таблицы надпись на телефоне уезжала за край. */}
       {!loading && !visible.length && (
@@ -157,7 +157,7 @@ export default function AttemptsTab({ exam, api, tenant, canEdit, canReview }: {
                   <td className="px-3 py-2 whitespace-nowrap">
                     {cur ? <span className="inline-flex items-center gap-1.5 text-emerald-700 text-xs font-medium"><Radio className="w-3.5 h-3.5 animate-pulse" /> {r.current + 1}/{r.sections.length} · {cur.title} · {left(cur.deadline)}<span className="text-[var(--text-muted)] font-normal">· {r.answered}/{r.questionCount}</span></span>
                       : r.status === "annulled" ? <span className="text-xs text-rose-600">аннулирована</span>
-                      : <span className="text-xs text-[var(--text-muted)]">{r.review?.status === "done" ? "проверено" : "сдано"}{r.published ? " · опубл." : ""}</span>}
+                      : <span className="text-xs text-[var(--text-muted)]">{r.review?.status === "done" ? "проверено" : "сдано"}{r.published ? " · опубл." : r.publishAt ? ` · запл. ${new Date(r.publishAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}</span>}
                   </td>
                   {r.result ? partResults(r.result.sections, s.scoring).map(p => <td key={p.id} className="px-3 py-2 text-right tabular-nums font-bold text-[var(--text-main)] whitespace-nowrap">{p.value}</td>) : parts.map(p => <td key={p.id} className="px-3 py-2 text-right">—</td>)}
                   {!hideTotal && <td className="px-3 py-2 text-right tabular-nums font-bold text-[var(--text-main)]">{r.result ? `${r.result.percent}%` : "—"}</td>}

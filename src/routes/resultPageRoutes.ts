@@ -7,6 +7,7 @@ import { actorOf, writeAudit } from "../server/audit.js";
 import { appUrl } from "../server/emailEvents.js";
 import { loadCandidateForm } from "./admissionRoutes.js";
 import { loadPage, pageDoc, readUrl, resultBucket, signVariant } from "../server/resultPages.js";
+import { DECISION_LABEL } from "../shared/examRun.js";
 import { resolveDecisions } from "../shared/formDecisions.js";
 import { MEDIA_UPLOAD, presetVariant, blankVariant, sanitizeResultPage, DEFAULT_VARIANT_KEY, PRESETS } from "../shared/resultPages.js";
 
@@ -33,11 +34,14 @@ async function caller(req: any, res: any) {
   return { t, c };
 }
 
+/** Решения по работе обычного экзамена (принят / резерв / не принят) — тоже исходы страницы. */
+const EXAM_DECISION_IDS = Object.keys(DECISION_LABEL);
+
 /** Исходы страницы: решения анкеты кандидата и состояния форм заявок организации. */
 const outcomeIds = async (t: string) => {
   const forms = await db().collection("custom_forms").where("tenantId", "==", t).get();
   const formIds = forms.docs.flatMap(d => resolveDecisions(d.data()).map(x => x.id));
-  return [...new Set([...(await loadCandidateForm(t)).decisions.map(d => d.id), ...formIds])];
+  return [...new Set([...(await loadCandidateForm(t)).decisions.map(d => d.id), ...formIds, ...EXAM_DECISION_IDS])];
 };
 
 /** Экзамены организации, где страница выбрана. */
