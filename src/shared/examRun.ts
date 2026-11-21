@@ -638,7 +638,11 @@ export interface Attempt {
 export type AttemptRow = Omit<Attempt, "answers" | "result"> & {
   result: Omit<ExamResult, "items"> | null;
   answered: number; questionCount: number;
+  /** Работа поступающего: решение и публикация — в его карточке (анкета кандидата). */
+  card?: AttemptCard | null;
 };
+/** Что карточка поступающего говорит о работе: решение анкеты кандидата и публикация. */
+export interface AttemptCard { decision: string | null; decisionLabel: string; decisionFinal: boolean; published: boolean; publishAt: number | null }
 
 // ── Аналитика ───────────────────────────────────────────────────────────
 

@@ -1363,6 +1363,79 @@ async function publishMany(t: string, c: StaffCaller, list: Applicant[], at: num
   return out;
 }
 
+/** Карточка поступающего для действий из «Экзаменов» (null — карточки нет). */
+export const applicantById = (t: string, id: string) => loadApplicant(t, id);
+
+/**
+ * Решение — только в анкете кандидата: меняет одно поле (прочее сохраняется),
+ * снимает публикацию и таймер при смене, пишет историю и уведомляет.
+ * Общий путь для карточки и для «Экзаменов».
+ */
+export async function setCandidateDecision(t: string, a: Applicant, c: { uid: string; name: string }, decisionId: string | null): Promise<{ error?: [number, string]; candidate?: CandidateInfo }> {
+  const form = await loadCandidateForm(t);
+  if (decisionId !== null && !form.decisions.some(x => x.id === decisionId)) return { error: [400, "Такого решения нет в анкете кандидата"] };
+  const prev = candidateOf(a);
+  const pick = sanitizeCandidate({ decision: decisionId }, form.decisions);
+  if ((prev?.decision || null) === pick.decision && a.candidate) return { candidate: prev! };
+  const same = (prev?.decision || null) === pick.decision;
+  const blank = sanitizeCandidate({}, form.decisions);
+  const base = prev || { ...blank, by: "", at: 0 };
+  const keepPublished = prev?.published && same ? prev.published : null;
+  const keepSchedule = prev?.publishAt && !keepPublished && same && pick.decisionFinal ? prev.publishAt : null;
+  const candidate: CandidateInfo = { ...base, decision: pick.decision, decisionLabel: pick.decisionLabel, decisionFinal: pick.decisionFinal, published: keepPublished, publishAt: keepSchedule, by: c.name, at: Date.now() };
+  await col(t, "applicants").doc(a.id).update({ candidate: deep(candidate), decision: null, updatedAt: Date.now() });
+  if (!same) {
+    const old = form.decisions.find(x => x.id === prev?.decision)?.label || prev?.decisionLabel || "";
+    await audit(t, a.id, c, "candidate", "анкета кандидата", diffRows([["Решение", old, candidate.decisionLabel]]));
+    await audit(t, a.id, c, "decision", candidate.decision ? candidate.decisionLabel : "снято");
+    if (candidate.decision) await notifyAdmission(t, a, "decision", c, { summary: candidate.decisionLabel });
+    if (prev?.published) await audit(t, a.id, c, "unpublished", "решение изменено — опубликуйте заново");
+  }
+  if (prev?.publishAt && !keepSchedule) {
+    await cancelJob(t, pubKey(a.id)).catch(() => false);
+    await audit(t, a.id, c, "publish_cancelled", "решение изменено");
+  }
+  await bumpLive(t, ["admissions"], a.id).catch(() => {});
+  return { candidate };
+}
+
+/** Снять публикацию карточки (результаты по QR закрыты, письмо не отзывается). */
+export async function unpublishCard(t: string, a: Applicant, c: { uid: string; name: string }) {
+  const cand = candidateOf(a);
+  if (!cand?.published) return;
+  await col(t, "applicants").doc(a.id).update({ candidate: deep({ ...cand, published: null }), updatedAt: Date.now() });
+  await audit(t, a.id, c, "unpublished", "");
+  await bumpLive(t, ["admissions"], a.id).catch(() => {});
+}
+
+/** Публикация карточек по их id из «Экзаменов»: те же правила, что у кнопки в карточке. */
+export async function publishCards(t: string, c: { uid: string; name: string }, ids: string[], at: number | null) {
+  const out = { done: 0, scheduled: 0, skipped: [] as (PublishSkip & { code?: string })[] };
+  for (const id of ids) {
+    const a = await loadApplicant(t, id);
+    if (!a) { out.skipped.push({ id, reason: "Карточки нет", code: "missing" }); continue; }
+    try {
+      const r = await publishOrSchedule(t, a, c, at);
+      if (r === "done") out.done++; else if (r === "scheduled") out.scheduled++; else out.skipped.push(r);
+    } catch (e: any) { console.error("[admissions] publish", e?.message || e); out.skipped.push({ id, reason: "Не получилось" }); }
+  }
+  return out;
+}
+
+/** Решение по поступающему — только в анкете кандидата. { decision: id | null } */
+router.post("/:tenantId/applicants/:id/decision", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Решение выносит администрация приёма");
+    const a = await loadApplicant(t, String(req.params.id));
+    if (!a) return fail(res, 404, "Поступающий не найден");
+    const raw = req.body?.decision;
+    const r = await setCandidateDecision(t, a, c, raw === null || raw === "" || raw === undefined ? null : String(raw));
+    if (r.error) return fail(res, r.error[0], r.error[1]);
+    return res.json({ success: true, candidate: r.candidate });
+  } catch (e: any) { return oops(res, e); }
+});
+
 /** Выделенные карточки — опубликовать или запланировать. */
 router.post("/:tenantId/applicants/publish-bulk", ...staff, async (req: any, res: any) => {
   try {

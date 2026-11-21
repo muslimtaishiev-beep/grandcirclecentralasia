@@ -8,6 +8,7 @@ import type { Api, DisciplineRow, SetRow } from "./examApi";
 import QuestionPicker from "./QuestionPicker";
 import GradePartsEditor from "./GradePartsEditor";
 import AdmissionGate from "./AdmissionGate";
+import CandidateDecisionsEditor from "./CandidateDecisionsEditor";
 import EmailTemplateSelect from "../../../components/workspace/EmailTemplateSelect";
 import { rpApi, type PageRow } from "../resultPages/resultPagesApi";
 
@@ -335,7 +336,9 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved, 
           <Check checked={st.results.requireReview} onChange={v => set("results", { requireReview: v })}>Публиковать только проверенные работы</Check>
           <Check checked={st.results.certificate} onChange={v => set("results", { certificate: v })}>Сертификат (печать и PDF, у ученика — после публикации)</Check>
           {st.results.certificate && <input className={`${input} ml-6 !w-96 max-w-full`} value={st.results.certificateTitle} onChange={e => set("results", { certificateTitle: e.target.value })} />}
-          <Check checked={st.results.decisions} onChange={v => set("results", { decisions: v })}>Решение по работе: принят / резерв / не принят, с комментарием</Check>
+          {admissionExam
+            ? <CandidateDecisionsEditor tenantId={exam.tenantId} />
+            : <Check checked={st.results.decisions} onChange={v => set("results", { decisions: v })}>Решение по работе: принят / резерв / не принят, с комментарием</Check>}
           <GroupsEditor groups={st.results.groups} onChange={groups => set("results", { groups })} />
           <EmailTemplateSelect tenantId={exam.tenantId} kind="tested" title="Письмо после теста" value={st.results.emailTemplate || ""} onChange={emailTemplate => set("results", { emailTemplate })} />
           <div className="border-t border-[var(--border-color)] pt-3 space-y-3">

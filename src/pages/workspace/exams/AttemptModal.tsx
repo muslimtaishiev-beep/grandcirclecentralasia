@@ -4,7 +4,7 @@ import { Button, confirmDialog, toast, type ConfirmOptions } from "../../../comp
 import DOMPurify from "dompurify";
 import ProctoringDossier from "../../../components/ProctoringDossier";
 import { TYPE_LABEL, plainText } from "../../../shared/exams";
-import { DECISION_LABEL, REG_PRESETS, partResults, type Attempt, type Decision, type Exam, type FrozenQuestion } from "../../../shared/examRun";
+import { DECISION_LABEL, REG_PRESETS, partResults, type Attempt, type AttemptCard, type Decision, type Exam, type FrozenQuestion } from "../../../shared/examRun";
 import { certificateHTML, openPrint, reportHTML, type PrintData } from "../../../lib/examPrint";
 import { tenantLogos, resolveLegalProfile } from "../../../shared/legal";
 import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui";
@@ -12,9 +12,11 @@ import type { Api } from "./examApi";
 import { useAdmissionApi } from "../admissions/admissionApi";
 import { canAdmissions, resolvePermissions, type PermissionKey } from "../../../shared/permissions";
 import CandidateSheetModal from "../admissions/CandidateSheetModal";
+import { PublishWhenModal, SplitPublishButton, whenShort } from "../admissions/PublishControls";
+import type { CandidateDecisionOption } from "../../../shared/candidateForm";
 import EmailResend from "../../../components/workspace/EmailResend";
 
-type Full = Attempt & { questions: Record<string, FrozenQuestion> };
+type Full = Attempt & { questions: Record<string, FrozenQuestion>; card?: AttemptCard | null };
 
 /** Карточка работы: ответы и ручная проверка, прокторинг, решения. */
 /** Поля «о себе» работы — подписи из настроек экзамена (или готовых полей). */
@@ -36,6 +38,13 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
   const [annulling, setAnnulling] = useState<string | null>(null);
   const rev = canEdit || canReview;
   const admApi = useAdmissionApi(exam.tenantId);
+  const [cardDecisions, setCardDecisions] = useState<CandidateDecisionOption[]>([]);
+  const [pickAt, setPickAt] = useState(false);
+  const hasCard = !!a?.card;
+  useEffect(() => {
+    if (!hasCard) return;
+    admApi("/candidate-form").then(j => setCardDecisions(j.form?.decisions || [])).catch(() => {});
+  }, [hasCard, admApi]);
   /** Вступительный тест: вместо сертификата и отчёта по темам — анкета кандидата. */
   const admission = !!exam.settings.admission?.candidateForm;
   /** Анкета кандидата — всегда окно карточки поступающего (просмотр, правка, история, PDF); работа без карточки привязывается к ней или заводит её. */
@@ -123,7 +132,8 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
               {a.status === "annulled" && <span className="text-xs px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600">Аннулирована</span>}
               {a.superseded && <span className="text-xs px-2 py-0.5 rounded-full bg-slate-500/10 text-[var(--text-muted)]">Заменена пересдачей</span>}
               {a.review?.status === "done" && <span className="text-xs px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-700">Проверено</span>}
-              {a.published && <span className="text-xs px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-700">Опубликовано</span>}
+              {(a.card ? a.card.published : a.published) && <span className="text-xs px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-700">Опубликовано</span>}
+              {a.card && !a.card.published && a.card.publishAt && <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700">Запланировано · {whenShort(a.card.publishAt)}</span>}
               {a.retakeAllowed && <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700">Пересдача разрешена</span>}
             </div>
           </div>
@@ -154,9 +164,11 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
         {/* Действия */}
         {rev && (
           <div className="flex flex-wrap gap-2 p-3 rounded-xl bg-[var(--bg-app)] border border-[var(--border-color)]">
-            {a.status === "finished" && (a.published
+            {a.status === "finished" && ((a.card ? a.card.published : a.published)
               ? <button className={btn} disabled={!!busy} onClick={() => act("unpublish")}><EyeOff className="w-4 h-4" /> Снять публикацию</button>
-              : <button className={btnPrimary} disabled={!!busy} onClick={() => act("publish")}><Eye className="w-4 h-4" /> Опубликовать</button>)}
+              : a.card
+                ? <SplitPublishButton text="Опубликовать" size="md" loading={busy === "publish"} disabled={!!busy} onNow={() => void act("publish")} onSchedule={() => setPickAt(true)} />
+                : <button className={btnPrimary} disabled={!!busy} onClick={() => act("publish")}><Eye className="w-4 h-4" /> Опубликовать</button>)}
             {a.status === "finished" && !admission && s.results.delivery === "page" && s.results.sendOn === "manual" && (a.published || s.results.showToStudent === "immediately") && <button className={btn} disabled={!!busy} onClick={() => act("send_ready")}>{busy === "send_ready" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />} Отправить «Результаты готовы»</button>}
             {r && admission && canCard && <button className={btn} disabled={!!busy} onClick={openCandidate}>{busy === "candidate" ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />} Анкета кандидата</button>}
             {r && !admission && s.results.certificate && printData && <button className={btn} onClick={() => openPrint(certificateHTML(printData)) || toast.error("Разрешите всплывающие окна")}><Award className="w-4 h-4" /> Сертификат</button>}
@@ -174,9 +186,18 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
           </div>
         )}
 
-        {canEdit && a.status === "finished" && (s.results.decisions || s.results.groups.length > 0) && (
+        {a.status === "finished" && ((canEdit && (s.results.decisions || s.results.groups.length > 0)) || (a.card && rev && canCard)) && (
           <div className="grid sm:grid-cols-2 gap-3">
-            {s.results.decisions && (
+            {a.card && canCard ? (
+              <div>
+                <span className={label}>Решение</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {cardDecisions.map(d => (
+                    <button key={d.id} disabled={!!busy} className={`${btn} ${a.card?.decision === d.id ? "!bg-[var(--accent)] !text-white !border-[var(--accent)]" : ""}`} onClick={() => act("decision", { value: a.card?.decision === d.id ? null : d.id })}>{d.label}</button>
+                  ))}
+                </div>
+              </div>
+            ) : s.results.decisions && !a.card && canEdit && (
               <div>
                 <span className={label}>Решение</span>
                 <div className="flex flex-wrap gap-1.5">
@@ -188,7 +209,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
                 {a.decision && <div className="text-[11px] text-[var(--text-muted)] mt-1">{a.decision.by} · {new Date(a.decision.at).toLocaleString("ru-RU")}</div>}
               </div>
             )}
-            {s.results.groups.length > 0 && (
+            {canEdit && s.results.groups.length > 0 && (
               <div>
                 <span className={label}>Группа</span>
                 <select className={input} value={a.group || ""} onChange={e => act("group", { value: e.target.value })}>
@@ -251,6 +272,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
           </div>
         )}
       </div>
+      {pickAt && <PublishWhenModal onClose={() => setPickAt(false)} onPick={async at => { setPickAt(false); await act("publish", { at }); }} />}
       {annulling !== null && (
         <Modal title="Аннулировать работу" onClose={() => setAnnulling(null)}>
           <div className="space-y-3">

@@ -19,6 +19,8 @@ export interface TestSummary {
   topics: { topic: string; percent: number }[];
   levels: { mid: number; high: number };
   studentPhone?: string;
+  /** Решение менеджера из «Экзаменов» (прежнее: Принят / Резерв / Не принят). */
+  decision?: string | null;
 }
 
 /** Итоги работы из экзамена — когда карточки поступающего нет или она недоступна. */

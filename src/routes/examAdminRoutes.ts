@@ -1,6 +1,7 @@
 import { applicantAudit } from "../server/applicantAudit.js";
 import { liveOnWrite } from "../server/live.js";
-import { isAdmissionExam, notifyTested, syncAllReferrals } from "./admissionRoutes.js";
+import { applicantById, isAdmissionExam, notifyTested, publishCards, setCandidateDecision, syncAllReferrals, unpublishCard } from "./admissionRoutes.js";
+import { candidateOf } from "../shared/admissions.js";
 import { emailExamResultsReady, examSendsOnPublish, examUsesPage } from "../server/examResults.js";
 import { registerJobHandler, scheduleJob } from "../server/scheduler.js";
 import { Router } from "express";
@@ -9,7 +10,7 @@ import { randomBytes } from "crypto";
 import { view, review, edit, examLevel } from "./examRoutes.js";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { requireScreen } from "../server/tenantAccess.js";
-import { callerPermissions } from "../server/access.js";
+import { callerPermissions, hasPerm, staffCaller } from "../server/access.js";
 import { hourlyPin } from "../shared/pin.js";
 import type { BankQuestion } from "../shared/exams.js";
 import {
@@ -373,9 +374,26 @@ router.get("/:tenantId/exams/:id/attempts", ...view, checkIds, async (req: any, 
     if (!exam) return fail(res, 404, "Экзамен не найден");
     const list = await examAttempts(t, exam.id, exam);
     const full = req.query.full === "1";
-    return res.json({ success: true, serverNow: Date.now(), attempts: list.map(a => (full ? (({ token: _t, questions: _q, ...rest }: any) => rest)(a) : toRow(a))) });
+    return res.json({ success: true, serverNow: Date.now(), attempts: full ? list.map(a => (({ token: _t, questions: _q, ...rest }: any) => rest)(a)) : await withCards(t, list.map(a => toRow(a))) });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
+
+/** К работам поступающих — решение и публикация из карточки. */
+async function withCards(t: string, rows: AttemptRow[]): Promise<AttemptRow[]> {
+  const ids = [...new Set(rows.map(r => r.applicantId).filter((x): x is string => !!x && SAFE_ID.test(x)))];
+  if (!ids.length) return rows;
+  const found = new Map<string, any>();
+  for (let i = 0; i < ids.length; i += 200) {
+    const snaps = await db().getAll(...ids.slice(i, i + 200).map(id => col(t, "applicants").doc(id)));
+    for (const sn of snaps) if (sn.exists) found.set(sn.id, { ...sn.data(), id: sn.id });
+  }
+  return rows.map(r => {
+    const ap = r.applicantId ? found.get(r.applicantId) : null;
+    if (!ap) return r;
+    const c = candidateOf(ap);
+    return { ...r, card: { decision: c?.decision || null, decisionLabel: c?.decisionLabel || "", decisionFinal: !!c?.decisionFinal, published: !!c?.published, publishAt: c?.publishAt || null } };
+  });
+}
 
 async function loadAttempt(t: string, id: string) {
   const s = await col(t, "exam_attempts").doc(id).get();
@@ -390,7 +408,8 @@ router.get("/:tenantId/attempts/:aid", ...viewOrApplicant("attempt"), checkIds, 
     const { token: _t, ...rest } = a;
     // Ключи ответов — только проверяющим и выше.
     if (!req.canReview && rest.questions) rest.questions = Object.fromEntries(Object.entries(rest.questions).map(([k, q]: any) => [k, { ...q, answer: "" }]));
-    return res.json({ success: true, attempt: rest, canReview: req.canReview, canEdit: req.canEdit });
+    const card = (await withCards(t, [{ applicantId: rest.applicantId } as AttemptRow]))[0]?.card || null;
+    return res.json({ success: true, attempt: { ...rest, card }, canReview: req.canReview, canEdit: req.canEdit });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
@@ -480,15 +499,41 @@ async function unsupersede(t: string, a: Attempt) {
 /** Письмо «Результаты готовы» обычной работе: страница результатов выбрана, экзамен не вступительный. */
 const readyMailApplies = (exam: Exam | null, a: Attempt): exam is Exam => !!exam && !a.applicantId && !isAdmissionExam(exam) && examUsesPage(exam);
 
+const SKIP_NO_DECISION = "Нет окончательного решения в анкете кандидата";
+const cardWho = (req: any) => ({ uid: str(req.user?.uid, 128), name: str(req.user?.name || req.user?.email || "Сотрудник", 120) });
+/** Карточка поступающего у работы; решение и публикация таких работ — в карточке. Нет права приёма — ошибка. */
+async function cardOf(t: string, req: any, a: Attempt): Promise<{ card: NonNullable<Awaited<ReturnType<typeof applicantById>>> | null; error?: [number, string] }> {
+  if (!a.applicantId) return { card: null };
+  const card = await applicantById(t, String(a.applicantId));
+  if (!card) return { card: null };
+  if (!req.system) {
+    const c = await staffCaller(db(), t, req.user);
+    if (!hasPerm(c, "admission:manage")) return { card, error: [403, "Решение и публикацию по поступающему выносит администрация приёма"] };
+  }
+  return { card };
+}
+const skipText = (s: { reason: string; code?: string }) => (s.code === "no_decision" ? SKIP_NO_DECISION : s.reason);
+
 async function applyAction(t: string, req: any, a: Attempt & { questions: Record<string, any>; token: string }, exam: Exam | null, action: string, body: any): Promise<{ error?: [number, string]; deleted?: boolean; recheck?: any; email?: { sent: boolean; reason?: string; skipped?: boolean } }> {
   if (!REVIEW_ACTIONS.has(action) && !req.canEdit) return { error: [403, "Это действие доступно тому, кто управляет экзаменами"] };
   const ref = col(t, "exam_attempts").doc(a.id);
   const now = Date.now();
   let detail = "";
   switch (action) {
-    case "publish":
+    case "publish": {
       if (a.status !== "finished") return { error: [409, "Опубликовать можно только сданную работу"] };
       if (exam?.settings.results.requireReview && a.review?.status !== "done") return { error: [409, "Сначала завершите проверку работы"] };
+      const { card, error } = await cardOf(t, req, a);
+      if (error) return { error };
+      if (card) {
+        const at = Number(body?.at);
+        const r = await publishCards(t, cardWho(req), [card.id], Number.isFinite(at) && at >= Date.now() + 60_000 ? Math.floor(at) : null);
+        if (r.skipped[0]) return { error: [409, skipText(r.skipped[0])] };
+        if (r.done) await ref.update({ published: true, publishedAt: now, publishAt: null });
+        else await ref.update({ publishAt: Math.floor(at) });
+        detail = r.done ? "карточка поступающего" : "по таймеру";
+        break;
+      }
       await ref.update({ published: true, publishedAt: now, publishAt: null });
       // Результаты отдаёт страница — письмо со ссылкой уходит при публикации (или позже кнопкой).
       if (readyMailApplies(exam, a) && examSendsOnPublish(exam)) {
@@ -497,6 +542,7 @@ async function applyAction(t: string, req: any, a: Attempt & { questions: Record
         return { email };
       }
       break;
+    }
     case "send_ready": {
       if (!readyMailApplies(exam, a)) return { error: [409, "У экзамена результаты не страницей по ссылке"] };
       if (!a.published && sanitizeSettings(exam.settings).results.showToStudent !== "immediately") return { error: [409, "Сначала опубликуйте результаты"] };
@@ -505,7 +551,13 @@ async function applyAction(t: string, req: any, a: Attempt & { questions: Record
       detail = email.to || "";
       break;
     }
-    case "unpublish": await ref.update({ published: false, publishedAt: null }); break;
+    case "unpublish": {
+      const { card, error } = await cardOf(t, req, a);
+      if (error) return { error };
+      if (card) await unpublishCard(t, card, cardWho(req));
+      await ref.update({ published: false, publishedAt: null });
+      break;
+    }
     case "annul":
       await ref.update({ status: "annulled", published: false, annulledAt: now, annulledBy: who(req), annulReason: str(body?.reason, 300) });
       await unsupersede(t, a);
@@ -538,6 +590,16 @@ async function applyAction(t: string, req: any, a: Attempt & { questions: Record
       break;
     }
     case "decision": {
+      // Работа поступающего: решение — вариант анкеты кандидата, хранится в карточке.
+      const { card, error } = await cardOf(t, req, a);
+      if (error) return { error };
+      if (card) {
+        const id = body?.value === null || body?.value === "" || body?.value === undefined ? null : String(body.value);
+        const r = await setCandidateDecision(t, card, cardWho(req), id);
+        if (r.error) return { error: r.error };
+        detail = r.candidate?.decision ? r.candidate.decisionLabel : "снято";
+        break;
+      }
       const v = body?.value as Decision | null;
       if (v !== null && !["accepted", "reserve", "rejected"].includes(v)) return { error: [400, "Неизвестное решение"] };
       await ref.update({ decision: v ? { value: v, comment: str(body?.comment, 1000), by: who(req), at: now } : null });
@@ -579,7 +641,7 @@ router.post("/:tenantId/attempts/:aid/action", ...review, checkIds, async (req: 
     if (out.error) return fail(res, out.error[0], out.error[1]);
     if (out.deleted) return res.json({ success: true, deleted: true });
     const fresh = await loadAttempt(t, a.id);
-    return res.json({ success: true, attempt: fresh ? toRow(fresh) : null, ...(out.recheck ? { recheck: out.recheck } : {}) });
+    return res.json({ success: true, attempt: fresh ? (await withCards(t, [toRow(fresh)]))[0] : null, ...(out.recheck ? { recheck: out.recheck } : {}) });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
@@ -596,13 +658,23 @@ router.post("/:tenantId/attempts-bulk", ...review, async (req: any, res: any) =>
     if (action === "publish" && Number.isFinite(at) && at >= Date.now() + 60_000) {
       const key = `exam_pub:${randomBytes(8).toString("hex")}`;
       const by = { uid: str(req.user?.uid, 128), name: str(req.user?.name || req.user?.email || "Сотрудник", 120) };
-      await scheduleJob({ tenantId: t, kind: "exam_publish", key, runAt: at, payload: { ids }, by });
-      let marked = 0; const errors: { id: string; error: string }[] = [];
+      let marked = 0; const errors: { id: string; error: string }[] = []; const plain: string[] = [];
       for (const id of ids) {
         const a = await loadAttempt(t, id);
         if (!a || a.status !== "finished" || a.published) { errors.push({ id, error: !a ? "Работа не найдена" : a.published ? "Уже опубликовано" : "Работа не сдана" }); continue; }
+        // Работа поступающего: таймер — у карточки.
+        const { card, error } = await cardOf(t, req, a);
+        if (error) { errors.push({ id, error: error[1] }); continue; }
+        if (card) {
+          const r = await publishCards(t, by, [card.id], Math.floor(at));
+          if (r.skipped[0]) errors.push({ id, error: skipText(r.skipped[0]) });
+          else { await col(t, "exam_attempts").doc(id).update({ publishAt: Math.floor(at) }); marked++; }
+          continue;
+        }
+        plain.push(id);
         await col(t, "exam_attempts").doc(id).update({ publishAt: Math.floor(at) }); marked++;
       }
+      if (plain.length) await scheduleJob({ tenantId: t, kind: "exam_publish", key, runAt: at, payload: { ids: plain }, by });
       return res.json({ success: true, ok: marked, errors, scheduled: Math.floor(at) });
     }
     const exams = new Map<string, Exam | null>();
@@ -653,7 +725,7 @@ router.get("/:tenantId/attempts", ...view, async (req: any, res: any) => {
     const rows = snap.docs.map(d => toRow({ ...(d.data() as any), id: d.id }))
       .filter(r => !needle || `${r.student?.name || ""} ${r.shortId || ""} ${r.examTitle || ""}`.toLowerCase().includes(needle))
       .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
-    return res.json({ success: true, attempts: rows.slice(0, 1000), total: rows.length, canEdit: req.canEdit, canReview: req.canReview });
+    return res.json({ success: true, attempts: await withCards(t, rows.slice(0, 1000)), total: rows.length, canEdit: req.canEdit, canReview: req.canReview });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
@@ -740,19 +812,35 @@ router.post("/:tenantId/exams/:id/publish-all", ...review, checkIds, async (req:
     if (!exam) return fail(res, 404, "Экзамен не найден");
     const snap = await col(t, "exam_attempts").where("examId", "==", exam.id).where("status", "==", "finished").get();
     const ready = snap.docs.filter(d => !d.data().published && !d.data().superseded && (!exam.settings.results.requireReview || d.data().review?.status === "done"));
-    for (let i = 0; i < ready.length; i += 400) {
+    // Работы поступающих публикует карточка (нужно окончательное решение в анкете кандидата).
+    const cardIds = new Map<string, string>();
+    for (const d of ready) if (d.data().applicantId) cardIds.set(d.id, String(d.data().applicantId));
+    const skipped: { id: string; reason: string }[] = [];
+    const okCards = new Set<string>();
+    if (cardIds.size) {
+      const who_ = cardWho(req);
+      const c = await staffCaller(db(), t, req.user);
+      const may = hasPerm(c, "admission:manage");
+      for (const [aid, cid] of cardIds) {
+        if (!may) { skipped.push({ id: aid, reason: "Нет права приёма" }); continue; }
+        const r = await publishCards(t, who_, [cid], null);
+        if (r.skipped[0] && r.skipped[0].code !== "published") skipped.push({ id: aid, reason: skipText(r.skipped[0]) }); else okCards.add(aid);
+      }
+    }
+    const toMark = ready.filter(d => !cardIds.has(d.id) || okCards.has(d.id));
+    for (let i = 0; i < toMark.length; i += 400) {
       const b = db().batch();
-      for (const d of ready.slice(i, i + 400)) b.update(d.ref, { published: true, publishedAt: Date.now() });
+      for (const d of toMark.slice(i, i + 400)) b.update(d.ref, { published: true, publishedAt: Date.now() });
       await b.commit();
     }
-    if (ready.length) await examHistory(t, req, { examId: exam.id, action: "Опубликованы результаты", detail: `работ: ${ready.length}` });
-    if (ready.length && examSendsOnPublish(exam) && !isAdmissionExam(exam) && examUsesPage(exam)) {
-      for (const d of ready) {
+    if (toMark.length) await examHistory(t, req, { examId: exam.id, action: "Опубликованы результаты", detail: `работ: ${toMark.length}` });
+    if (toMark.length && examSendsOnPublish(exam) && !isAdmissionExam(exam) && examUsesPage(exam)) {
+      for (const d of toMark) {
         const x = { ...(d.data() as Attempt), id: d.id, published: true };
         if (!x.applicantId) await emailExamResultsReady(t, exam, x, { by: who(req) });
       }
     }
-    return res.json({ success: true, count: ready.length, waitingReview: snap.docs.filter(d => !d.data().published && exam.settings.results.requireReview && d.data().review?.status !== "done").length });
+    return res.json({ success: true, count: toMark.length, skipped, waitingReview: snap.docs.filter(d => !d.data().published && exam.settings.results.requireReview && d.data().review?.status !== "done").length });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
 
@@ -760,7 +848,7 @@ router.post("/:tenantId/exams/:id/publish-all", ...review, checkIds, async (req:
 registerJobHandler("exam_publish", async job => {
   const t = job.tenantId;
   const ids: string[] = (Array.isArray(job.payload?.ids) ? job.payload.ids : []).map(String).filter((x: string) => SAFE_ID.test(x));
-  const req = { user: { uid: job.createdBy?.uid || "", name: job.createdBy?.name || "Планировщик" }, canEdit: true };
+  const req = { user: { uid: job.createdBy?.uid || "", name: job.createdBy?.name || "Планировщик" }, canEdit: true, system: true };
   const exams = new Map<string, Exam | null>();
   let ok = 0; let skipped = 0;
   for (const id of ids) {

@@ -3,6 +3,7 @@ import { useLive } from "../../../lib/useLive";
 import { ArrowDown, ArrowUp, Download, Loader2, Radio, RefreshCw, Search, Send, ShieldAlert } from "lucide-react";
 import { confirmDialog, toast } from "../../../components/ui";
 import BulkBar from "./BulkBar";
+import { SkippedModal, type PublishOutcome } from "../admissions/PublishControls";
 import { DECISION_LABEL, partResults, type AttemptRow, type Exam } from "../../../shared/examRun";
 import { btn, btnPrimary, card, input } from "../journals/components/ui";
 import type { Api } from "./examApi";
@@ -15,6 +16,7 @@ import { exportExamXlsx } from "./examExcel";
  */
 export default function AttemptsTab({ exam, api, tenant, canEdit, canReview }: { exam: Exam; api: Api; tenant: any; canEdit: boolean; canReview: boolean }) {
   const [rows, setRows] = useState<AttemptRow[]>([]);
+  const [skipOut, setSkipOut] = useState<PublishOutcome | null>(null);
   const [skew, setSkew] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [loading, setLoading] = useState(true);
@@ -78,7 +80,8 @@ export default function AttemptsTab({ exam, api, tenant, canEdit, canReview }: {
     setBusy(true);
     try {
       const j = await api(`/exams/${exam.id}/publish-all`, { method: "POST" });
-      toast.success(`Опубликовано: ${j.count}${j.waitingReview ? `. Ждут проверки: ${j.waitingReview}` : ""}`);
+      toast.success(`Опубликовано: ${j.count}${j.waitingReview ? `. Ждут проверки: ${j.waitingReview}` : ""}${j.skipped?.length ? `. Пропущено: ${j.skipped.length}` : ""}`);
+      if (j.skipped?.length) setSkipOut({ done: j.count, scheduled: 0, skipped: j.skipped });
       await load();
     } catch (e: any) { toast.error(e.message); }
     finally { setBusy(false); }
@@ -123,7 +126,7 @@ export default function AttemptsTab({ exam, api, tenant, canEdit, canReview }: {
         ))}
       </div>
       {error && <div className="text-sm text-rose-600">{error}</div>}
-      <BulkBar readyMail={s.results.delivery === "page"} api={api} ids={ids} canReview={canReview} canManage={canEdit} onDone={load} onClear={() => setSelected(new Set())} />
+      <BulkBar tenantId={tenant?.id} hasCards={ids.some(id => !!rows?.find(r => r.id === id)?.card)} names={Object.fromEntries((rows || []).map(r => [r.id, r.student.name]))} readyMail={s.results.delivery === "page"} api={api} ids={ids} canReview={canReview} canManage={canEdit} onDone={load} onClear={() => setSelected(new Set())} />
 
       {/* Пусто — отдельной карточкой: внутри широкой таблицы надпись на телефоне уезжала за край. */}
       {!loading && !visible.length && (
@@ -142,7 +145,7 @@ export default function AttemptsTab({ exam, api, tenant, canEdit, canReview }: {
               {exam.sections.map(x => <th key={x.id} className="px-3 py-2.5 text-right whitespace-nowrap">{x.title}</th>)}
               {!hideTotal && (s.scoring.marks.enabled || s.scoring.scale.length > 0) && <th className="px-3 py-2.5 text-left">Оценка</th>}
               {s.proctoring.enabled && <th className="px-3 py-2.5 text-center">Наблюдение</th>}
-              {(s.results.decisions || s.results.groups.length > 0) && <th className="px-3 py-2.5 text-left">Решение</th>}
+              {(s.results.decisions || s.results.groups.length > 0 || rows.some(r => r.card)) && <th className="px-3 py-2.5 text-left">Решение</th>}
             </tr>
           </thead>
           <tbody>
@@ -157,7 +160,7 @@ export default function AttemptsTab({ exam, api, tenant, canEdit, canReview }: {
                   <td className="px-3 py-2 whitespace-nowrap">
                     {cur ? <span className="inline-flex items-center gap-1.5 text-emerald-700 text-xs font-medium"><Radio className="w-3.5 h-3.5 animate-pulse" /> {r.current + 1}/{r.sections.length} · {cur.title} · {left(cur.deadline)}<span className="text-[var(--text-muted)] font-normal">· {r.answered}/{r.questionCount}</span></span>
                       : r.status === "annulled" ? <span className="text-xs text-rose-600">аннулирована</span>
-                      : <span className="text-xs text-[var(--text-muted)]">{r.review?.status === "done" ? "проверено" : "сдано"}{r.published ? " · опубл." : r.publishAt ? ` · запл. ${new Date(r.publishAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}</span>}
+                      : <span className="text-xs text-[var(--text-muted)]">{r.review?.status === "done" ? "проверено" : "сдано"}{(r.card ? r.card.published : r.published) ? " · опубл." : (r.card?.publishAt || r.publishAt) ? ` · запл. ${new Date((r.card?.publishAt || r.publishAt) as number).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}</span>}
                   </td>
                   {r.result ? partResults(r.result.sections, s.scoring).map(p => <td key={p.id} className="px-3 py-2 text-right tabular-nums font-bold text-[var(--text-main)] whitespace-nowrap">{p.value}</td>) : parts.map(p => <td key={p.id} className="px-3 py-2 text-right">—</td>)}
                   {!hideTotal && <td className="px-3 py-2 text-right tabular-nums font-bold text-[var(--text-main)]">{r.result ? `${r.result.percent}%` : "—"}</td>}
@@ -169,13 +172,14 @@ export default function AttemptsTab({ exam, api, tenant, canEdit, canReview }: {
                         : typeof r.proctoring?.honestyIndex === "number" ? <span className={flagged(r) ? "text-rose-600 font-semibold" : "text-[var(--text-muted)]"}>{flagged(r) && <ShieldAlert className="inline w-3.5 h-3.5 -mt-0.5 mr-0.5" />}{r.proctoring.honestyIndex}/100</span> : "—"}
                     </td>
                   )}
-                  {(s.results.decisions || s.results.groups.length > 0) && <td className="px-3 py-2 text-xs">{[r.decision ? DECISION_LABEL[r.decision.value] : "", r.group || ""].filter(Boolean).join(" · ")}</td>}
+                  {(s.results.decisions || s.results.groups.length > 0 || rows.some(x => x.card)) && <td className="px-3 py-2 text-xs">{[r.card ? r.card.decisionLabel : r.decision ? DECISION_LABEL[r.decision.value] : "", r.group || ""].filter(Boolean).join(" · ")}</td>}
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+      {skipOut && <SkippedModal outcome={skipOut} names={Object.fromEntries(rows.map(r => [r.id, r.student.name]))} onClose={() => setSkipOut(null)} />}
       {open && <AttemptModal attemptId={open} exam={exam} api={api} tenant={tenant} canEdit={canEdit} onChanged={load} onClose={() => setOpen(null)} />}
     </div>
   );

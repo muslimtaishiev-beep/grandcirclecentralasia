@@ -10,7 +10,7 @@ import AttemptViewer from "./AttemptViewer";
 
 type SortKey = "name" | "exam" | "status" | "percent" | "date";
 const STATUSES = [["", "Все"], ["in_progress", "Идут"], ["finished", "Сданы"], ["annulled", "Аннулированы"]] as const;
-const statusText = (r: AttemptRow) => r.status === "in_progress" ? "идёт" : r.status === "annulled" ? "аннулирована" : `${r.review?.status === "done" ? "проверена" : "сдана"}${r.published ? " · опубл." : ""}${r.superseded ? " · заменена" : ""}`;
+const statusText = (r: AttemptRow) => r.status === "in_progress" ? "идёт" : r.status === "annulled" ? "аннулирована" : `${r.review?.status === "done" ? "проверена" : "сдана"}${(r.card ? r.card.published : r.published) ? " · опубл." : r.card?.publishAt ? " · запл." : ""}${r.superseded ? " · заменена" : ""}`;
 
 /** Все работы организации в одном списке: поиск, фильтры, сортировка, массовые действия. */
 export default function WorksTab({ api, tenant }: { api: Api; tenant: any }) {
@@ -69,7 +69,7 @@ export default function WorksTab({ api, tenant }: { api: Api; tenant: any }) {
         ))}
       </div>
       {error && <div className="text-sm text-rose-600">{error}</div>}
-      <BulkBar readyMail={exams.some(e => e.pageDelivery)} api={api} ids={ids} canReview={perm.canReview} canManage={perm.canEdit} onDone={load} onClear={() => setSelected(new Set())} />
+      <BulkBar tenantId={tenant?.id} hasCards={ids.some(id => !!rows?.find(r => r.id === id)?.card)} names={Object.fromEntries((rows || []).map(r => [r.id, r.student.name]))} readyMail={exams.some(e => e.pageDelivery)} api={api} ids={ids} canReview={perm.canReview} canManage={perm.canEdit} onDone={load} onClear={() => setSelected(new Set())} />
       {!rows && !error && <div className="py-12 flex justify-center"><Spinner /></div>}
       {rows && !rows.length && <EmptyState title="Работ нет" />}
       {rows && rows.length > 0 && (
