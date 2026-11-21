@@ -39,6 +39,7 @@ interface Data {
   applicant: Applicant; forms: FormDoc[]; attempts: CardAttempt[]; audit: any[];
   templates: QTemplate[]; canFill: Record<string, boolean>; canSee: Record<string, boolean>; me: Me;
   testExam: TestExam | null;
+  resultDelivery?: { delivery: "email" | "page"; sendOn: "publish" | "manual" } | null;
   candidateForm: CandidateFormConfig | null;
 }
 const no = (n: number) => `№ ${String(n).padStart(4, "0")}`;
@@ -421,7 +422,7 @@ function TestTab({ a, d, api, tenant, onSaved, onOpenSheet }: { a: Applicant; d:
         {canManage && !d.testExam && <button className={btn} onClick={() => setPaper({ id: "", title: "Тест на бумаге", rows: [{ subject: "", score: null, max: null }], comment: "", at: 0, byName: "" })}>Внести результаты на бумаге</button>}
       </section>
 
-      <CandidateSummary a={a} cfg={d.candidateForm || NEUTRAL_CANDIDATE_FORM} canManage={canManage} onOpen={onOpenSheet} api={api} onChanged={onSaved} />
+      <CandidateSummary a={a} cfg={d.candidateForm || NEUTRAL_CANDIDATE_FORM} canManage={canManage} onOpen={onOpenSheet} api={api} onChanged={onSaved} resultDelivery={d.resultDelivery || null} />
 
       {result && <AttemptViewer tenant={tenant} attemptId={result.id} examId={result.examId} onClose={() => setResult(null)} onChanged={onSaved} />}
       {paper && <PaperModal p={paper} onClose={() => setPaper(null)} onSave={async x => { await api(`/applicants/${a.id}/paper`, { method: "POST", body: JSON.stringify(x) }); setPaper(null); onSaved(); }} />}
@@ -539,7 +540,7 @@ function PaperTestForm({ exam, prev, onSave }: { exam: TestExam; prev: TestSumma
 }
 
 /** Анкета кандидата — коротко: решение, заключение, обратная связь. Правка — в окне листа. */
-function CandidateSummary({ a, cfg, canManage, onOpen, api, onChanged }: { a: Applicant; cfg: CandidateFormConfig; canManage: boolean; onOpen: () => void; api: Api; onChanged: () => void }) {
+function CandidateSummary({ a, cfg, canManage, onOpen, api, onChanged, resultDelivery }: { a: Applicant; cfg: CandidateFormConfig; canManage: boolean; onOpen: () => void; api: Api; onChanged: () => void; resultDelivery: { delivery: "email" | "page"; sendOn: "publish" | "manual" } | null }) {
   const c = a.candidate;
   const decision = cfg.decisions.find(x => x.id === c?.decision)?.label || c?.decisionLabel || "";
   const final = !!c?.decision && (cfg.decisions.find(x => x.id === c.decision)?.final ?? !!c.decisionFinal);
@@ -552,6 +553,11 @@ function CandidateSummary({ a, cfg, canManage, onOpen, api, onChanged }: { a: Ap
       toast.success(j.email?.sent ? "Опубликовано, письмо отправлено" : `Опубликовано${j.email?.reason ? ` · письмо: ${j.email.reason}` : ""}`);
       onChanged();
     } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
+  };
+  const sendReady = async () => {
+    setBusy(true);
+    try { const j = await api(`/applicants/${a.id}/results-email`, { method: "POST" }); toast.success(`Письмо отправлено${j.to ? `: ${j.to}` : ""}`); onChanged(); }
+    catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
   };
   const unpublish = async () => {
     if (!(await confirmDialog({ title: "Снять публикацию?", message: "Результаты по QR закроются. Отправленное письмо не отзывается.", confirmLabel: "Снять", danger: true }))) return;
@@ -579,7 +585,14 @@ function CandidateSummary({ a, cfg, canManage, onOpen, api, onChanged }: { a: Ap
           ? <Button className="ml-auto" size="sm" variant="secondary" loading={busy} onClick={unpublish}>Снять публикацию</Button>
           : <Button className="ml-auto" size="sm" variant="primary" loading={busy} disabled={!final} onClick={publish}>Опубликовать результаты</Button>)}
       </div>
-      {canManage && c?.published && <EmailResend tenantId={a.tenantId} event="decision" ctx={{ applicantId: a.id }} state={(a as any).decisionEmail} />}
+      {canManage && c?.published && resultDelivery?.delivery === "page"
+        ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {!(a as any).resultsEmail && <Button size="sm" variant="secondary" loading={busy} onClick={sendReady}>Отправить «Результаты готовы»</Button>}
+            <EmailResend tenantId={a.tenantId} event="results_ready" ctx={{ applicantId: a.id }} state={(a as any).resultsEmail} onDone={onChanged} />
+          </div>
+        )
+        : canManage && c?.published && <EmailResend tenantId={a.tenantId} event="decision" ctx={{ applicantId: a.id }} state={(a as any).decisionEmail} />}
     </section>
   );
 }

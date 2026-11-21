@@ -9,6 +9,8 @@ import { appUrl, registerResender, sendTemplated, type SendResult } from "../ser
 import { verifySession } from "../server/session.js";
 import { checkTenantOpen, requireScreen } from "../server/tenantAccess.js";
 import { tenantLogos } from "../shared/legal.js";
+import { buildView } from "../server/resultPages.js";
+import type { ResultData } from "../shared/resultPages.js";
 import { LEGAL_VERSION } from "../shared/legalDocs.js";
 import { DECISION_LABEL, REG_PRESETS, paperResult, partResults, sanitizeSections, sanitizeSettings, type Decision, type Exam, type ExamResult } from "../shared/examRun.js";
 import { NEUTRAL_CANDIDATE_FORM, sanitizeCandidateForm, type CandidateFormConfig } from "../shared/candidateForm.js";
@@ -251,7 +253,7 @@ async function loadTemplates(t: string): Promise<QTemplate[]> {
 }
 
 /** Вид анкеты кандидата организации; не настроен — нейтральный. */
-async function loadCandidateForm(t: string): Promise<CandidateFormConfig> {
+export async function loadCandidateForm(t: string): Promise<CandidateFormConfig> {
   const s = await col(t, "admission_meta").doc("candidate_form").get();
   return s.exists ? (s.data() as CandidateFormConfig) : NEUTRAL_CANDIDATE_FORM;
 }
@@ -480,6 +482,45 @@ registerResender("decision", async (t, ctx, by) => {
   const a = ctx.applicantId ? await loadApplicant(t, ctx.applicantId) : null;
   return a ? emailDecision(t, a, { force: true, by }) : { sent: false, reason: "Нет карточки" };
 });
+
+/** Экзамен поступающего: тест, который он сдал (последний), иначе экзамен направления. */
+async function examOfApplicant(t: string, a: Applicant, doneExamId?: string): Promise<Exam | null> {
+  let examId = doneExamId || "";
+  if (!examId) {
+    const done = (await attemptsOf(t, [a.id])).filter(x => x.status === "finished" && !x.superseded).sort((x, y) => (y.finishedAt || 0) - (x.finishedAt || 0))[0];
+    examId = String(done?.examId || a.referral?.examId || "");
+  }
+  if (!ID.test(examId)) return null;
+  const s = await col(t, "exams").doc(examId).get();
+  return s.exists ? { ...(s.data() as Exam), id: s.id } : null;
+}
+
+/** Письмо «Результаты готовы» со ссылкой на страницу результатов: после публикации, по настройке экзамена или кнопкой. */
+export async function emailResultsReady(t: string, a: Applicant, o: { force?: boolean; by?: string } = {}): Promise<SendResult> {
+  try {
+    const c = candidateOf(a);
+    if (!c?.decision) return { sent: false, reason: "Решения ещё нет" };
+    if (!c.published) return { sent: false, reason: "Результаты ещё не опубликованы" };
+    const exam = await examOfApplicant(t, a);
+    const rs = sanitizeSettings(exam?.settings).results;
+    const token = await referralTokenFor(t, a);
+    const r = await sendTemplated({
+      tenantId: t, templateId: rs.readyEmail || "", to: a.parent.email || "", event: "results_ready", refId: `${t}_${a.id}_${c.decision}`, force: o.force, by: o.by,
+      ctx: { applicantId: a.id, examId: exam?.id, label: `${a.child.name}, ${a.child.grade} класс` },
+      actionUrl: applicantPath(t, a.id, "test"), noRecipient: "Нет почты родителя",
+      mirror: { ref: col(t, "applicants").doc(a.id), field: "resultsEmail" },
+      vars: { имя: a.parent.name, ребёнок: a.child.name, класс: a.child.grade, экзамен: exam?.title || "", ссылка: `${await appUrl()}/a/${token}` },
+    });
+    await auditEmail(t, a.id, "Результаты готовы", r);
+    return r;
+  } catch (e) { console.error("[admissions] results-ready email", e); return { sent: false, reason: "Не удалось отправить" }; }
+}
+registerResender("results_ready", async (t, ctx, by) => {
+  const a = ctx.applicantId ? await loadApplicant(t, ctx.applicantId) : null;
+  return a ? emailResultsReady(t, a, { force: true, by }) : { sent: false, reason: "Нет карточки" };
+});
+
+const ruDate = (iso: string) => (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso.split("-").reverse().join(".") : "");
 
 /** Экзамен сохранили (поменяли классы или этапы) — подставить тест всем, кто его ждёт. */
 export async function syncAllReferrals(t: string) {
@@ -872,6 +913,10 @@ router.get("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
         const e = a.referral?.examId ? (await tenantExams(t)).find(x => x.id === a.referral!.examId) : null;
         return e ? { id: e.id, title: e.title, paper: !!e.settings.paper, sections: e.sections.map(x => ({ id: x.id, title: x.title, tasks: x.tasks || 0 })) } : null;
       })() : null,
+      resultDelivery: academic ? await (async () => {
+        const rs = sanitizeSettings((await examOfApplicant(t, a))?.settings).results;
+        return { delivery: rs.delivery, sendOn: rs.sendOn };
+      })().catch(() => null) : null,
       templates: templates.filter(x => !x.archived), canFill: canFillMap, canSee: canSeeMap,
       me: meOf(c, templates),
     });
@@ -1208,7 +1253,11 @@ router.post("/:tenantId/applicants/:id/publish", ...staff, async (req: any, res:
     const candidate: CandidateInfo = { ...cand, published };
     await col(t, "applicants").doc(a.id).update({ candidate: deep(candidate), updatedAt: Date.now() });
     await audit(t, a.id, c, "published", cand.decisionLabel);
-    const mail = await emailDecision(t, { ...a, candidate }, { by: c.uid });
+    // Экзамен отдаёт результаты страницей — письмо «Результаты готовы» (при публикации или позже кнопкой); иначе — прежнее письмо с решением.
+    const rs = sanitizeSettings((await examOfApplicant(t, a))?.settings).results;
+    const mail = rs.delivery === "page"
+      ? (rs.sendOn === "publish" ? await emailResultsReady(t, { ...a, candidate }, { by: c.uid }) : { sent: false, skipped: true, reason: "Письмо отправляется кнопкой" } as SendResult)
+      : await emailDecision(t, { ...a, candidate }, { by: c.uid });
     await bumpLive(t, ["admissions"], a.id).catch(() => {});
     return res.json({ success: true, published, email: mail });
   } catch (e: any) { return oops(res, e); }
@@ -1493,6 +1542,20 @@ async function resolveLink(token: string) {
 }
 
 
+/** «Результаты готовы» — вручную (экзамен с отправкой «вручную» или повторно); только опубликованным. */
+router.post("/:tenantId/applicants/:id/results-email", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Нет прав");
+    const a = await loadApplicant(t, String(req.params.id));
+    if (!a) return fail(res, 404, "Поступающий не найден");
+    if (!candidateOf(a)?.published) return fail(res, 409, "Сначала опубликуйте результаты");
+    const r = await emailResultsReady(t, a, { force: true, by: c.uid });
+    if (!r.sent) return fail(res, 400, r.reason || "Не отправилось");
+    return res.json({ success: true, to: a.parent.email });
+  } catch (e: any) { return oops(res, e); }
+});
+
 /**
  * Скан QR. Сотрудник этой организации с правами поступающих — в карточку на
  * свою вкладку (специалист — своя анкета, приёмная/администрация — академическая
@@ -1530,8 +1593,24 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
       // Результаты — только после решения и публикации менеджером.
       const cand = candidateOf(a);
       const open = !!done && !!cand?.decision && !!cand.decisionFinal && !!cand.published;
+      // Экзамен отдаёт результаты страницей — и она уже опубликована: вариант по решению, переменные подставлены.
+      let resultPage = null;
+      if (open && cand) {
+        const rs = sanitizeSettings((await examOfApplicant(l.tenantId, a, String(done.examId || "")))?.settings).results;
+        if (rs.delivery === "page" && rs.pageId) {
+          const subjects = done.sections.map((x: any) => { const lv = subjectLevel(x, done.parts, done.levels); return { title: x.title, percent: x.percent, level: lv.own || LEVEL_WORD[lv.band] }; });
+          const trial = cand.trialFrom || cand.trialTo ? { from: ruDate(cand.trialFrom), to: ruDate(cand.trialTo), klass: cand.klass || a.child.grade } : null;
+          const data: ResultData = { child: a.child.name, examTitle: String(done.examTitle || ""), subjects, feedback: cand.feedbackGiven ? cand.feedback : "", trial };
+          const vars: Record<string, string> = {
+            ребёнок: a.child.name, класс: a.child.grade, решение: cand.decisionLabel, организация: org.name,
+            дата: new Date(cand.published?.at || Date.now()).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" }),
+            обратная_связь: data.feedback, пробный_с: trial?.from || "", пробный_по: trial?.to || "", класс_зачисления: cand.klass || a.child.grade,
+          };
+          resultPage = await buildView(l.tenantId, rs.pageId, cand.decision!, vars, data).catch(() => null);
+        }
+      }
       return res.json({
-        success: true, mode: "student", org, signedIn,
+        success: true, mode: "student", org, signedIn, resultPage,
         child: { name: a.child.name, grade: a.child.grade },
         exam: r?.examCode && !exam?.settings.paper ? { code: r.examCode, title: r.examTitle } : null,
         paper: !!exam?.settings.paper,

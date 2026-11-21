@@ -35,9 +35,9 @@ export const EMPTY_EMAIL_TEMPLATE: EmailTemplate = {
 };
 
 /** События, после которых уходят письма. */
-export type EmailEvent = "referral" | "tested" | "form" | "parent_form" | "decision";
+export type EmailEvent = "referral" | "tested" | "form" | "parent_form" | "decision" | "results_ready";
 /** Все события писем — для списков и журнала. */
-export const EMAIL_EVENTS: EmailEvent[] = ["referral", "tested", "form", "parent_form", "decision"];
+export const EMAIL_EVENTS: EmailEvent[] = ["referral", "tested", "form", "parent_form", "decision", "results_ready"];
 export type EmailKind = EmailEvent | "any";
 
 export const EMAIL_KINDS: { id: EmailKind; label: string }[] = [
@@ -46,6 +46,7 @@ export const EMAIL_KINDS: { id: EmailKind; label: string }[] = [
   { id: "form", label: "Заявка" },
   { id: "parent_form", label: "Анкета родителю" },
   { id: "decision", label: "Решение по поступающему" },
+  { id: "results_ready", label: "Результаты готовы" },
   { id: "any", label: "Любое" },
 ];
 
@@ -56,10 +57,10 @@ export const EMAIL_KINDS: { id: EmailKind; label: string }[] = [
 export interface EmailVar { key: string; sample: string; from: Partial<Record<EmailEvent, string>> }
 
 export const EMAIL_VARS: EmailVar[] = [
-  { key: "имя", sample: "Айгуль Асанова", from: { parent_form: "ФИО родителя из карточки", decision: "ФИО родителя из карточки", referral: "ФИО родителя из карточки", tested: "Родитель поступающего или ученик из регистрации", form: "ФИО из заявки" } },
-  { key: "ребёнок", sample: "Асанов Тимур", from: { parent_form: "ФИО ребёнка из карточки", decision: "ФИО ребёнка из карточки", referral: "ФИО ребёнка из карточки", tested: "ФИО ребёнка (поступающие)" } },
-  { key: "класс", sample: "5", from: { parent_form: "Класс поступления", decision: "Класс поступления", referral: "Класс поступления", tested: "Класс поступления (поступающие)" } },
-  { key: "экзамен", sample: "Вступительный экзамен, 5 класс", from: { referral: "Экзамен направления", tested: "Название экзамена" } },
+  { key: "имя", sample: "Айгуль Асанова", from: { results_ready: "ФИО родителя из карточки", parent_form: "ФИО родителя из карточки", decision: "ФИО родителя из карточки", referral: "ФИО родителя из карточки", tested: "Родитель поступающего или ученик из регистрации", form: "ФИО из заявки" } },
+  { key: "ребёнок", sample: "Асанов Тимур", from: { results_ready: "ФИО ребёнка из карточки", parent_form: "ФИО ребёнка из карточки", decision: "ФИО ребёнка из карточки", referral: "ФИО ребёнка из карточки", tested: "ФИО ребёнка (поступающие)" } },
+  { key: "класс", sample: "5", from: { results_ready: "Класс поступления", parent_form: "Класс поступления", decision: "Класс поступления", referral: "Класс поступления", tested: "Класс поступления (поступающие)" } },
+  { key: "экзамен", sample: "Вступительный экзамен, 5 класс", from: { results_ready: "Название экзамена", referral: "Экзамен направления", tested: "Название экзамена" } },
   { key: "код", sample: "482913", from: { referral: "Код входа на экзамен" } },
   { key: "балл", sample: "42 из 50", from: { tested: "Только если результат открыт ученику сразу" } },
   { key: "процент", sample: "84%", from: { tested: "Только если результат открыт ученику сразу" } },
@@ -67,15 +68,24 @@ export const EMAIL_VARS: EmailVar[] = [
   { key: "решение", sample: "Принят", from: { decision: "Решение из анкеты кандидата" } },
   { key: "обратная_связь", sample: "Сильные стороны…", from: { decision: "Обратная связь из анкеты кандидата" } },
   { key: "форма", sample: "Регистрация на форум", from: { form: "Название формы" } },
-  { key: "ссылка", sample: "https://www.studyfreeforum.com/a/demo", from: { parent_form: "Анкета родителя по ссылке", decision: "Направление с результатами (после обратной связи)", referral: "Направление с QR", tested: "Направление (поступающие) или страница результата", form: "Билет с QR (если включён)" } },
-  { key: "организация", sample: "Ваша организация", from: { parent_form: "Название организации", decision: "Название организации", referral: "Название организации", tested: "Название организации", form: "Название организации" } },
+  { key: "ссылка", sample: "https://www.studyfreeforum.com/a/demo", from: { results_ready: "Страница результатов по ссылке", parent_form: "Анкета родителя по ссылке", decision: "Направление с результатами (после обратной связи)", referral: "Направление с QR", tested: "Направление (поступающие) или страница результата", form: "Билет с QR (если включён)" } },
+  { key: "организация", sample: "Ваша организация", from: { results_ready: "Название организации", parent_form: "Название организации", decision: "Название организации", referral: "Название организации", tested: "Название организации", form: "Название организации" } },
 ];
+
+/** Встроенное письмо «Результаты готовы» — уходит, если в экзамене не выбран свой шаблон. */
+export const DEFAULT_RESULTS_READY: EmailTemplate = {
+  ...EMPTY_EMAIL_TEMPLATE, name: "Результаты готовы", kind: "results_ready",
+  subject: "Результаты {{ребёнок}} готовы",
+  title: "Результаты готовы",
+  body: "Здравствуйте, {{имя}}!\n\nРезультаты экзамена **{{ребёнок}}** готовы. Откройте страницу, чтобы посмотреть их.",
+  buttonText: "Открыть результаты", buttonUrl: "{{ссылка}}",
+};
 
 /** Название подстановки на кнопке — по смыслу в этом письме. */
 export function varLabel(key: string, kind: EmailKind): string {
   if (key === "имя") return kind === "referral" ? "Родитель" : kind === "form" ? "ФИО из заявки" : "Имя получателя";
   if (key === "ссылка" && kind === "parent_form") return "Ссылка на анкету";
-  if (key === "ссылка") return kind === "referral" || kind === "decision" ? "Ссылка на направление" : kind === "tested" ? "Ссылка на результат" : kind === "form" ? "Ссылка на билет" : "Ссылка";
+  if (key === "ссылка") return kind === "results_ready" ? "Ссылка на результаты" : kind === "referral" || kind === "decision" ? "Ссылка на направление" : kind === "tested" ? "Ссылка на результат" : kind === "form" ? "Ссылка на билет" : "Ссылка";
   return ({ ребёнок: "Ребёнок", класс: "Класс", экзамен: "Экзамен", код: "Код экзамена", балл: "Балл", процент: "Процент", номер: "Номер работы", форма: "Название формы", организация: "Организация", решение: "Решение", обратная_связь: "Обратная связь" } as Record<string, string>)[key] || key;
 }
 

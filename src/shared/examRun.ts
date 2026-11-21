@@ -142,6 +142,14 @@ export interface ExamSettings {
     groups: string[];
     /** Шаблон письма после теста (email_templates). Пусто — письма нет. */
     emailTemplate?: string;
+    /** Как приходят результаты поступающему: письмом с решением или страницей по ссылке. */
+    delivery: "email" | "page";
+    /** Страница результатов (result_pages), когда delivery = page. */
+    pageId?: string;
+    /** Шаблон письма «Результаты готовы»; пусто — встроенное. */
+    readyEmail?: string;
+    /** Когда уходит письмо «Результаты готовы»: при публикации или отдельной кнопкой. */
+    sendOn: "publish" | "manual";
   };
   display: {
     /** paged — один вопрос на экран, листается прокруткой и кнопками; list — все вопросы раздела лентой. */
@@ -207,6 +215,8 @@ export const DEFAULT_SETTINGS: ExamSettings = {
     certificateTitle: "Сертификат о результатах экзамена",
     decisions: false,
     groups: [],
+    delivery: "email",
+    sendOn: "publish",
   },
   display: { layout: "paged" },
   admission: { referralOnly: false, grades: [], stages: [], levels: { mid: 50, high: 77 }, candidateForm: false },
@@ -323,6 +333,10 @@ export function sanitizeSettings(raw: any): ExamSettings {
       decisions: b(r.results?.decisions, d.results.decisions),
       groups: [...new Set<string>((Array.isArray(r.results?.groups) ? r.results.groups : []).map((x: unknown) => s(x, 30)).filter(Boolean))].slice(0, 60),
       emailTemplate: tplId(r.results?.emailTemplate),
+      delivery: r.results?.delivery === "page" ? "page" : "email",
+      pageId: tplId(r.results?.pageId),
+      readyEmail: tplId(r.results?.readyEmail),
+      sendOn: r.results?.sendOn === "manual" ? "manual" : "publish",
     },
     display: { layout: r.display?.layout === "list" ? "list" : d.display.layout },
     admission: {

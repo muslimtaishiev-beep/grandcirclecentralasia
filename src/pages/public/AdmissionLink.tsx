@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../../lib/firebase";
@@ -6,6 +6,7 @@ import FormFiller from "../../components/admissions/FormFiller";
 import PublicBrand from "../../components/public/PublicBrand";
 import LegalLinks from "../../components/public/LegalLinks";
 import { privacyHref } from "../../shared/legalDocs";
+import type { ResultPageView } from "../../shared/resultPages";
 import { gradeOf, missingFor, type QAnswers, type QTemplate } from "../../shared/questionnaires";
 
 /**
@@ -16,11 +17,13 @@ import { gradeOf, missingFor, type QAnswers, type QTemplate } from "../../shared
  * направлению — его тест; код с листа для сотрудников — предложение войти.
  * Вход на телефоне запоминается — войти достаточно один раз.
  */
+const ResultExperience = lazy(() => import("../../components/resultPage/ResultExperience"));
+
 type Info =
   | { mode: "staff"; url: string; who: string }
   | { mode: "staff_only"; org: Org; signedIn: boolean }
   | { mode: "student"; org: Org; signedIn: boolean; child: { name: string; grade: string }; exam: { code: string; title: string } | null; referred?: boolean;
-      paper?: boolean; tested?: boolean; results?: { examTitle: string; subjects: { title: string; percent: number; level: string }[] } | null }
+      paper?: boolean; tested?: boolean; resultPage?: ResultPageView | null; results?: { examTitle: string; subjects: { title: string; percent: number; level: string }[] } | null }
   | { mode: "parent"; org: Org; signedIn: boolean; locked: boolean; template: QTemplate; answers: QAnswers; done: boolean; grade: string };
 type Org = { id: string; name: string; logoUrl: string | null };
 
@@ -71,6 +74,12 @@ export default function AdmissionLink() {
       </div>
       {info.signedIn && staffBar}
     </Shell>
+  );
+
+  if (info.mode === "student" && info.resultPage) return (
+    <Suspense fallback={<div className="min-h-dvh grid place-items-center text-slate-400 text-sm">Открываем…</div>}>
+      <ResultExperience variant={info.resultPage.variant} data={info.resultPage.data} org={info.org} mode="live" />
+    </Suspense>
   );
 
   if (info.mode === "student") return (

@@ -3,7 +3,7 @@ import { sendMail } from "./mail.js";
 import { notifyEvent } from "./notify.js";
 import { tenantLogos } from "../shared/legal.js";
 import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
-import { emailLogId, renderEmail, sanitizeEmailTemplate, type EmailCtx, type EmailEvent, type EmailTemplate } from "../shared/emailTemplate.js";
+import { DEFAULT_RESULTS_READY, emailLogId, renderEmail, sanitizeEmailTemplate, type EmailCtx, type EmailEvent, type EmailTemplate } from "../shared/emailTemplate.js";
 import type { PermissionKey } from "../shared/permissions.js";
 
 /**
@@ -55,8 +55,9 @@ export const EVENT_PERMS: Record<EmailEvent, PermissionKey[]> = {
   form: ["team:manage", "certificates:issue", "crm:manage"],
   parent_form: ["admission:manage"],
   decision: ["admission:manage"],
+  results_ready: ["admission:manage"],
 };
-const EVENT_TITLE: Record<EmailEvent, string> = { referral: "Направление", tested: "Письмо после теста", form: "Письмо по заявке", parent_form: "Анкета родителю", decision: "Письмо с решением" };
+const EVENT_TITLE: Record<EmailEvent, string> = { referral: "Направление", tested: "Письмо после теста", form: "Письмо по заявке", parent_form: "Анкета родителю", decision: "Письмо с решением", results_ready: "Письмо «Результаты готовы»" };
 
 export interface TemplatedSend {
   tenantId: string;
@@ -100,7 +101,7 @@ export async function sendTemplated(p: TemplatedSend): Promise<SendResult> {
     let r: SendResult;
     if (!EMAIL.test(to)) r = { sent: false, reason: p.noRecipient || "Нет почты получателя" };
     else {
-      const tpl = await loadTemplate(p.tenantId, p.templateId);
+      const tpl = p.templateId ? await loadTemplate(p.tenantId, p.templateId) : p.event === "results_ready" ? DEFAULT_RESULTS_READY : null;
       if (!tpl) r = { sent: false, reason: "Шаблон не найден" };
       else {
         const [m, base] = await Promise.all([orgMail(p.tenantId), appUrl()]);
