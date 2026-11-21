@@ -787,11 +787,11 @@ export type LinkResult = { applicantId: string; refNo: number; created: boolean;
  * тем же ФИО и без различий — ничего не делаем (не плодим дубль).
  * Прошлые данные карточки остаются. Повторный вызов ничего не меняет.
  */
-export async function linkAttempt(t: string, attemptId: string, c: { uid: string; name: string }): Promise<LinkResult> {
+export async function linkAttempt(t: string, attemptId: string, c: { uid: string; name: string }, o: { create?: boolean } = {}): Promise<LinkResult> {
   const aref = col(t, "exam_attempts").doc(attemptId);
   const x: any = (await aref.get()).data();
   if (!x) return null;
-  if (x.applicantId) {
+  if (x.applicantId && !o.create) {
     const cur = await loadApplicant(t, String(x.applicantId));
     if (cur) return { applicantId: cur.id, refNo: cur.refNo, created: false, linked: false };
   }
@@ -802,6 +802,8 @@ export async function linkAttempt(t: string, attemptId: string, c: { uid: string
   if (!key) return null;
   const phones = [extra.parentPhone, extra.studentPhone, x.student?.phone].map(phoneKey).filter(Boolean);
   const all = (await col(t, "applicants").get()).docs.map(d => ({ ...(d.data() as Applicant), id: d.id })).filter(a => !a.archived && nameKey(a.child?.name) === key);
+  // «Это другой ребёнок» — отдельная карточка, без поиска совпадений.
+  if (o.create) all.length = 0;
   const byBirth = birth ? all.filter(a => a.child.birthDate === birth) : [];
   const byPhone = phones.length ? all.filter(a => { const p = phoneKey(a.parent?.phone); return !!p && phones.includes(p); }) : [];
   const noConflict = (a: Applicant) => (!birth || !a.child.birthDate || a.child.birthDate === birth);
