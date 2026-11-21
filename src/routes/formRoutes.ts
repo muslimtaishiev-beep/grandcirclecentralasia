@@ -18,6 +18,10 @@ import { notifyFormWatchers } from "../server/formWatch.js";
 import { sendFormTicketEmail } from "../../emailService.js";
 import { tenantLogos } from "../shared/legal.js";
 import { writeAudit, actorOf } from "../server/audit.js";
+import { DECISION_ID, checkedInId, decisionOf, kindOfStatus, resolveDecisions, sanitizeDecisions, formModeOf } from "../shared/formDecisions.js";
+import { afterStatusChange, cancelPending, sendDecisionEmail, trackPage } from "../server/formNotify.js";
+import { loadTemplate } from "../server/emailEvents.js";
+import { pageDoc } from "../server/resultPages.js";
 
 /** Что о организации можно показать заявителю: название, брендинг, тексты билетов. */
 function publicOrg(t: any) {
@@ -136,7 +140,7 @@ async function upsertSheetRows(form: any, submissions: Array<Record<string, any>
           String(sub.applicantName || ""),
           String(sub.applicantPhone || ""),
           String(sub.applicantEmail || ""),
-          STATUS_LABEL[(STATUSES.includes(sub.status) ? sub.status : "new") as Status] || "",
+          decisionOf(resolveDecisions(form), sub.status).label,
           code,
         ].concat(fields.map((f: any) => String(sub.data?.[f.id] ?? "")));
 
@@ -298,7 +302,8 @@ router.get("/public/:formId/submissions", async (req: any, res: any) => {
       .filter(d => !d.data().deleted)
       .map(d => {
         const sub = d.data();
-        const status: Status = STATUSES.includes(sub.status) ? sub.status : "new";
+        const dec = decisionOf(resolveDecisions(form), sub.status);
+        const status: Status = dec.kind;
 
         const data: Record<string, string> = {};
         for (const id of safeFields) {
@@ -317,7 +322,7 @@ router.get("/public/:formId/submissions", async (req: any, res: any) => {
           code: publicCode(d.id),
           createdAt: sub.createdAt || null,
           status,
-          statusLabel: STATUS_LABEL[status],
+          statusLabel: dec.label,
           data,
           reply: last ? { text: String(last.note), at: last.at || null } : null,
         };
@@ -358,7 +363,8 @@ router.get("/public/:formId/stats", async (req: any, res: any) => {
 
     const snap = await db().collection(SUBS).where("formId", "==", formId).limit(1000).get();
     const alive = snap.docs.filter(d => !d.data().deleted);
-    const resolved = alive.filter(d => ["approved", "paid", "checked_in"].includes(String(d.data().status || "")));
+    const decs = resolveDecisions(formSnap.data());
+    const resolved = alive.filter(d => ["approved", "paid", "checked_in"].includes(kindOfStatus(decs, d.data().status)));
 
     return res.json({ success: true, total: alive.length, resolved: resolved.length });
   } catch (e: any) {
@@ -425,6 +431,9 @@ registerResender("form", async (t, ctx, by) => {
   if (!sub || sub.tenantId !== t || sub.deleted) return { sent: false, reason: "Заявка не найдена" };
   const form = (await db().collection("custom_forms").doc(String(sub.formId)).get()).data();
   if (!form || form.tenantId !== t) return { sent: false, reason: "Форма не найдена" };
+  if (ctx.statusId) {
+    return sendDecisionEmail({ sub: { ...sub, id: ctx.submissionId }, form: { ...form, id: String(sub.formId) }, decision: decisionOf(resolveDecisions(form), ctx.statusId), force: true, by });
+  }
   if (!form.emailTemplateId) return { sent: false, reason: "У формы не выбран шаблон письма" };
   return emailForm({ id: ctx.submissionId, formId: String(sub.formId), applicantName: sub.applicantName, applicantEmail: sub.applicantEmail, qrToken: sub.qrToken }, form, { force: true, by });
 });
@@ -1042,7 +1051,8 @@ router.post("/submissions/search", formsApiLimiter, authenticateFormApi, async (
 
     const submissions = pagedDocs.map(d => {
       const sub = d.data();
-      const status: Status = STATUSES.includes(sub.status) ? sub.status : "new";
+      const dec = decisionOf(resolveDecisions(form), sub.status);
+      const status = dec.id;
       const item = {
         id: d.id,
         submission_id: d.id,
@@ -1051,7 +1061,7 @@ router.post("/submissions/search", formsApiLimiter, authenticateFormApi, async (
         form_id: sub.formId,
         tenant_id: sub.tenantId,
         status,
-        status_label: STATUS_LABEL[status] || status,
+        status_label: dec.label,
         applicant_name: sub.applicantName || "",
         applicant_email: sub.applicantEmail || "",
         applicant_phone: sub.applicantPhone || "",
@@ -1198,7 +1208,7 @@ router.post("/submissions/upsert", formsApiLimiter, authenticateFormApi, async (
       }
     }
 
-    const validStatus = STATUSES.includes(newStatus) ? newStatus : undefined;
+    const validStatus = typeof newStatus === "string" && resolveDecisions(form).some(d => d.id === newStatus) ? newStatus : undefined;
 
     if (existingDocSnap) {
       const existingRef = existingDocSnap.ref;
@@ -1478,14 +1488,18 @@ router.get("/track/:token", async (req: any, res: any) => {
     }
 
     const s = doc0.data();
-    const status: Status = STATUSES.includes(s.status) ? s.status : "new";
-
     // Режим формы нужен трекеру: в билетном режиме страница показывает
     // QR-билет — но только когда заявка одобрена. До того билета нет.
     const formSnap = s.formId ? await db().collection(FORMS).doc(String(s.formId)).get() : null;
-    const mode = formMode(formSnap?.exists ? formSnap.data() : null);
+    const formData: any = formSnap?.exists ? formSnap.data() : null;
+    const mode = formMode(formData);
+    const decs = resolveDecisions(formData);
+    const cur = decisionOf(decs, s.status);
+    const status: Status = cur.kind;
 
-    const org = publicOrg(await loadTenant(String(s.tenantId || "")));
+    const tenant = await loadTenant(String(s.tenantId || ""));
+    const org = publicOrg(tenant);
+    const page = formData ? await trackPage(String(s.tenantId || ""), formData, s, cur, String(tenant?.name || "")) : null;
     return res.json({
       success: true,
       org,
@@ -1496,7 +1510,9 @@ router.get("/track/:token", async (req: any, res: any) => {
         formTitle: (formSnap?.exists ? String(formSnap.data()?.title || "") : "") || s.formTitle || "Заявка",
         applicantName: s.applicantName || "",
         status,
-        statusLabel: STATUS_LABEL[status],
+        statusId: cur.id,
+        statusLabel: cur.label,
+        statusColor: cur.color,
         mode,
         ticketActive: mode === "ticket" && TICKET_ACTIVE.includes(status),
         checkedInAt: s.checkedInAt || null,
@@ -1507,11 +1523,13 @@ router.get("/track/:token", async (req: any, res: any) => {
         // только в кабинете, и человек видел голую смену статуса.
         history: (Array.isArray(s.history) ? s.history : []).map((h: any) => ({
           status: h.status,
-          label: STATUS_LABEL[h.status as Status] || h.status,
+          label: decisionOf(decs, h.status).label,
+          color: decisionOf(decs, h.status).color,
           at: h.at || null,
           note: String(h.note || ""),
         })),
       },
+      page,
     });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
@@ -1583,6 +1601,7 @@ router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
 
     const formSnap = await db().collection(FORMS).doc(String(sub.formId || "")).get();
     const form = formSnap.exists ? formSnap.data()! : null;
+    const decs = resolveDecisions(form);
     mark("форма");
     const guestName = sub.applicantName || "Без имени";
     if (!form || formMode(form) !== "ticket" || String(form.tenantId || "") !== String(sub.tenantId || "")) {
@@ -1597,8 +1616,8 @@ router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
     const outcome = await db().runTransaction(async tx => {
       const fresh = await tx.get(subRef);
       const cur = fresh.data()!;
-      if (cur.deleted) return { result: "inactive" as const, status: (isFormStatus(cur.status) ? cur.status : "new") as Status };
-      const curStatus: Status = isFormStatus(cur.status) ? cur.status : "new";
+      if (cur.deleted) return { result: "inactive" as const, status: kindOfStatus(decs, cur.status) };
+      const curStatus: Status = kindOfStatus(decs, cur.status);
       if (curStatus === "checked_in") {
         // Та же самая попытка, повторённая после обрыва связи: сканер не
         // получил ответ и спрашивает снова с тем же идентификатором.
@@ -1615,20 +1634,27 @@ router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
         return { result: "inactive" as const, status: curStatus };
       }
       const now = admin.firestore.Timestamp.now();
+      const inId = checkedInId(decs);
       tx.update(subRef, {
-        status: "checked_in",
+        status: inId,
         checkedInAt: now,
         checkedInBy: req.user?.email || req.user?.uid || "scanner",
         ...(requestId ? { checkinRequestId: String(requestId).slice(0, 80) } : {}),
         updatedAt: now,
         history: admin.firestore.FieldValue.arrayUnion({
-          status: "checked_in", at: now,
+          status: inId, at: now,
           by: req.user?.email || req.user?.uid || "scanner", note: "",
         }),
       });
       return { result: "ok" as const, status: "checked_in" as Status, checkedInAt: now };
     });
     mark("отметка входа");
+    {
+      const inId = checkedInId(decs);
+      if (outcome.result === "ok" && !("retried" in outcome) && ["auto", "at"].includes(decisionOf(decs, inId).notify.mode)) {
+        await settle(afterStatusChange({ tenantId: String(sub.tenantId), submissionId: subRef.id, form: { ...form, id: formSnap.id }, statusId: inId, by: byOf(req) }));
+      }
+    }
 
     return res.json({
       success: true,
@@ -1636,7 +1662,7 @@ router.post("/checkin", requireFirebaseAuth, async (req: any, res: any) => {
       guest: {
         name: guestName,
         status: outcome.status,
-        statusLabel: STATUS_LABEL[outcome.status],
+        statusLabel: (kindOfStatus(decs, sub.status) === outcome.status ? decisionOf(decs, sub.status) : decs.find(d => d.kind === outcome.status) || decisionOf(decs, outcome.status)).label,
         checkedInAt: "checkedInAt" in outcome ? outcome.checkedInAt : null,
       },
       formTitle: (formSnap.exists ? String(formSnap.data()?.title || "") : "") || sub.formTitle || "",
@@ -1668,12 +1694,103 @@ async function canCheckTickets(user: any, tenantId: string): Promise<boolean> {
   return hasAnyPermission(db(), user, tenantId, ["tickets:check", "team:manage", "certificates:issue", "crm:manage"]);
 }
 
+const byOf = (req: any) => ({ uid: String(req.user?.uid || ""), name: String(req.user?.email || req.user?.name || "") });
+
+/** Заявка и форма организации для действий сотрудника; null — ответ уже отправлен. */
+async function loadOwned(req: any, res: any, tenantId: string, submissionId: string) {
+  if (!tenantId || !submissionId) { res.status(400).json({ success: false, error: "Bad request" }); return null; }
+  if (!(await canManageForms(req.user, tenantId))) { res.status(403).json({ success: false, error: "Нет прав" }); return null; }
+  const snap = await db().collection(SUBS).doc(submissionId).get();
+  if (!snap.exists) { res.status(404).json({ success: false, error: "Заявка не найдена" }); return null; }
+  const sub: any = snap.data();
+  if (sub.tenantId !== tenantId) { res.status(403).json({ success: false, error: "Заявка другой организации" }); return null; }
+  const fs = await db().collection(FORMS).doc(String(sub.formId || "")).get();
+  if (!fs.exists || fs.data()?.tenantId !== tenantId) { res.status(404).json({ success: false, error: "Форма не найдена" }); return null; }
+  return { sub: { ...sub, id: snap.id }, form: { ...fs.data(), id: fs.id } };
+}
+
+/**
+ * POST /api/forms/notify — отправить письмо о текущем состоянии (после
+ * подтверждения «вручную»). Одна заявка или пачка (submissionIds, до 200).
+ */
+router.post("/notify", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
+  try {
+    const { tenantId, submissionId, submissionIds } = req.body || {};
+    const ids: string[] = Array.isArray(submissionIds) ? [...new Set(submissionIds.map((x: unknown) => str(x, 200)).filter(Boolean))].slice(0, 200) as string[] : [str(submissionId, 200)];
+    let sent = 0;
+    const failed: Array<{ id: string; reason: string }> = [];
+    for (const id of ids) {
+      const o = await loadOwned(req, res, String(tenantId || ""), id);
+      if (!o) return;
+      if (o.sub.deleted) { failed.push({ id, reason: "Заявка удалена" }); continue; }
+      const decision = decisionOf(resolveDecisions(o.form), o.sub.status);
+      // Ручная отправка заменяет отложенную: второго письма не будет.
+      await cancelPending(tenantId, id);
+      const r = await sendDecisionEmail({ sub: o.sub, form: o.form, decision, force: true, by: req.user?.email || "" });
+      if (r.sent) sent++; else failed.push({ id, reason: r.reason || "Не отправлено" });
+    }
+    if (ids.length === 1 && !sent) return res.status(422).json({ success: false, error: failed[0]?.reason || "Не отправлено" });
+    return res.json({ success: true, sent, failed });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/** POST /api/forms/notify-cancel — отменить отложенное письмо заявки. */
+router.post("/notify-cancel", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
+  try {
+    const { tenantId, submissionId } = req.body || {};
+    const o = await loadOwned(req, res, String(tenantId || ""), str(submissionId, 200));
+    if (!o) return;
+    const was = await cancelPending(tenantId, o.sub.id);
+    return res.json({ success: true, cancelled: was });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * PUT /api/forms/decisions — сохранить состояния формы. Очищаются на сервере;
+ * состояние, в котором есть заявки, удалить нельзя; шаблон и страница — только
+ * этой организации.
+ */
+router.put("/decisions", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
+  try {
+    const { tenantId, formId } = req.body || {};
+    if (!tenantId || !formId) return res.status(400).json({ success: false, error: "Bad request" });
+    if (!(await canManageForms(req.user, tenantId))) return res.status(403).json({ success: false, error: "Нет прав" });
+    const ref = db().collection(FORMS).doc(String(formId));
+    const fs = await ref.get();
+    if (!fs.exists) return res.status(404).json({ success: false, error: "Форма не найдена" });
+    const form: any = fs.data();
+    if (form.tenantId !== tenantId) return res.status(403).json({ success: false, error: "Форма другой организации" });
+
+    const next = sanitizeDecisions(req.body.decisions, formModeOf(form));
+    for (const d of next) {
+      if (d.notify.emailTemplateId && !(await loadTemplate(tenantId, d.notify.emailTemplateId))) delete d.notify.emailTemplateId;
+      if (d.notify.pageId && !(await pageDoc(tenantId, d.notify.pageId).get()).exists) delete d.notify.pageId;
+    }
+    const prev = resolveDecisions(form);
+    const gone = prev.filter(p => !next.some(n => n.id === p.id));
+    if (gone.length) {
+      const subs = (await db().collection(SUBS).where("formId", "==", String(formId)).get()).docs.map(d => d.data()).filter(x => !x.deleted);
+      const used = gone.map(g => ({ id: g.id, label: g.label, count: subs.filter(x => String(x.status || "new") === g.id).length })).filter(u => u.count);
+      if (used.length) return res.status(409).json({ success: false, error: `В состоянии «${used[0].label}» есть заявки`, used });
+    }
+    await ref.set({ decisions: next, updatedAt: admin.firestore.Timestamp.now() }, { merge: true });
+    await writeAudit(db(), tenantId, { actor: actorOf(req.user), action: "form.decisions", section: "settings", target: { kind: "form", id: String(formId), name: String(form.title || "") }, detail: next.map(d => d.label).join(", ").slice(0, 300) }).catch(() => {});
+    return res.json({ success: true, decisions: next });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 /** POST /api/forms/status — смена статуса заявки сотрудником. */
 router.post("/status", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
   try {
     const { tenantId, submissionId, status, note } = req.body || {};
     if (!tenantId || !submissionId) return res.status(400).json({ success: false, error: "Bad request" });
-    if (!isFormStatus(status)) {
+    if (typeof status !== "string" || !DECISION_ID.test(status)) {
       return res.status(400).json({ success: false, error: "Неизвестный статус" });
     }
     if (!(await canManageForms(req.user, tenantId))) {
@@ -1690,12 +1807,9 @@ router.post("/status", requireFirebaseAuth, requireScreen("forms"), async (req: 
     // Статус должен существовать в режиме этой формы: «Гость пришёл» у заявки
     // на поступление — бессмыслица, которая потом путает всю статистику.
     const subFormSnap = await db().collection(FORMS).doc(String(snap.data()!.formId || "")).get();
-    const allowed = MODE_STATUSES[formMode(subFormSnap.exists ? subFormSnap.data() : null)];
-    if (!allowed.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        error: `Статус «${STATUS_LABEL[status]}» недоступен для этой формы`,
-      });
+    const decs = resolveDecisions(subFormSnap.exists ? subFormSnap.data() : null);
+    if (!decs.some(d => d.id === status)) {
+      return res.status(400).json({ success: false, error: "Этого состояния нет у формы" });
     }
 
     await ref.update({
@@ -1710,7 +1824,10 @@ router.post("/status", requireFirebaseAuth, requireScreen("forms"), async (req: 
     if (subFormSnap.exists) {
       await settle(upsertSheetRows({ ...subFormSnap.data(), id: subFormSnap.id }, [{ ...snap.data(), status }]));
     }
-    return res.json({ success: true, status, statusLabel: STATUS_LABEL[status as Status] });
+    const plan = subFormSnap.exists
+      ? await afterStatusChange({ tenantId, submissionId: String(submissionId), form: { ...subFormSnap.data(), id: subFormSnap.id }, statusId: status, by: byOf(req) }).catch(() => null)
+      : null;
+    return res.json({ success: true, status, statusLabel: decisionOf(decs, status).label, notify: plan, ...(plan?.needConfirm ? { needConfirm: { label: plan.label || "" } } : {}) });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }
@@ -1877,7 +1994,7 @@ router.post("/sheet/resync", requireFirebaseAuth, requireScreen("forms"), async 
         String(sub.applicantName || ""),
         String(sub.applicantPhone || ""),
         String(sub.applicantEmail || ""),
-        STATUS_LABEL[(STATUSES.includes(sub.status) ? sub.status : "new") as Status] || "",
+        decisionOf(resolveDecisions(form), sub.status).label,
         String(sub.qrToken || ""),
       ].concat(fields.map((f: any) => String(sub.data?.[f.id] ?? ""))));
     });
@@ -2148,7 +2265,7 @@ router.post("/bulk", requireFirebaseAuth, requireScreen("forms"), async (req: an
     const ids = [...new Set(submissionIds.map((x: unknown) => str(x, 200)).filter(Boolean))] as string[];
     if (ids.length > 500) return res.status(400).json({ success: false, error: "За раз — не больше 500 заявок" });
     if (action !== "status" && action !== "field") return res.status(400).json({ success: false, error: "Неизвестное действие" });
-    if (action === "status" && !isFormStatus(status)) return res.status(400).json({ success: false, error: "Неизвестный статус" });
+    if (action === "status" && !(typeof status === "string" && DECISION_ID.test(status))) return res.status(400).json({ success: false, error: "Неизвестный статус" });
     if (action === "field" && !fieldId) return res.status(400).json({ success: false, error: "Не выбрано поле" });
     if (!(await canManageForms(req.user, tenantId))) {
       return res.status(403).json({ success: false, error: "Нет прав" });
@@ -2178,8 +2295,8 @@ router.post("/bulk", requireFirebaseAuth, requireScreen("forms"), async (req: an
         if (!form) { skipped.push({ id: snap.id, name, reason: "Анкета удалена" }); continue; }
 
         if (action === "status") {
-          if (!MODE_STATUSES[formMode(form)].includes(status)) {
-            skipped.push({ id: snap.id, name, reason: `«${STATUS_LABEL[status as Status]}» недоступен для анкеты «${form.title || ""}»` });
+          if (!resolveDecisions(form).some(d => d.id === status)) {
+            skipped.push({ id: snap.id, name, reason: `Состояния «${status}» нет у анкеты «${form.title || ""}»` });
             continue;
           }
           if (sub.status === status && !str(note, 300)) { skipped.push({ id: snap.id, name, reason: "Уже в этом статусе" }); continue; }
@@ -2217,7 +2334,17 @@ router.post("/bulk", requireFirebaseAuth, requireScreen("forms"), async (req: an
     updates.forEach(u => byForm.set(u.formId, [...(byForm.get(u.formId) || []), u.after]));
     await settle(Promise.all([...byForm.entries()].map(([fid, subs]) => upsertSheetRows(forms.get(fid), subs))), 8000);
 
-    return res.json({ success: true, updated: updates.length, skipped });
+    // Письма по состоянию: «через N минут» и «в заданное время» ставятся здесь,
+    // «вручную» — клиент спросит подтверждение одной фразой на всех.
+    const confirmIds: string[] = [];
+    let confirmLabel = "";
+    if (action === "status") {
+      await settle(Promise.all(updates.slice(0, 200).map(async u => {
+        const plan = await afterStatusChange({ tenantId, submissionId: u.ref.id, form: forms.get(u.formId), statusId: status, by: byOf(req) }).catch(() => null);
+        if (plan?.needConfirm) { confirmIds.push(u.ref.id); confirmLabel = plan.label || ""; }
+      })), 8000);
+    }
+    return res.json({ success: true, updated: updates.length, skipped, ...(confirmIds.length ? { needConfirm: { ids: confirmIds, label: confirmLabel } } : {}) });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }
@@ -2387,14 +2514,15 @@ router.get("/stats", requireFirebaseAuth, requireScreen("forms"), async (req: an
     const perForm = formsSnap.docs.map(d => {
       const f = d.data();
       const mine = subs.filter(s => s.formId === d.id);
+      const decs = resolveDecisions(f);
       const byStatus: Record<string, number> = {};
-      for (const st of STATUSES) byStatus[st] = mine.filter(s => s.status === st).length;
+      for (const st of STATUSES) byStatus[st] = mine.filter(s => kindOfStatus(decs, s.status) === st).length;
 
       // Среднее время до первого решения: сколько заявка ждала, прежде чем
       // её сдвинули с «новой». Пока никто не сдвинул — не считаем.
       const decided = mine
         .map(s => {
-          const moved = (Array.isArray(s.history) ? s.history : []).find((h: any) => h.status !== "new");
+          const moved = (Array.isArray(s.history) ? s.history : []).find((h: any) => kindOfStatus(decs, h.status) !== "new");
           return moved ? ms(moved.at) - ms(s.createdAt) : null;
         })
         .filter((n): n is number => typeof n === "number" && n > 0);
@@ -2422,7 +2550,8 @@ router.get("/stats", requireFirebaseAuth, requireScreen("forms"), async (req: an
     }).sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
 
     const byStatusAll: Record<string, number> = {};
-    for (const st of STATUSES) byStatusAll[st] = subs.filter(s => s.status === st).length;
+    const decsOf = new Map(formsSnap.docs.map(d => [d.id, resolveDecisions(d.data())] as const));
+    for (const st of STATUSES) byStatusAll[st] = subs.filter(s => kindOfStatus(decsOf.get(s.formId) || resolveDecisions(null), s.status) === st).length;
 
     return res.json({
       success: true,

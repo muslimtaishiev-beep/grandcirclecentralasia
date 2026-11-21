@@ -3,6 +3,7 @@ import admin from "firebase-admin";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { hasPerm, staffCaller, type StaffCaller } from "../server/access.js";
 import { deliver, PREFS, prefsId } from "../server/notify.js";
+import { fmtIn, orgTimeZone } from "../server/orgTime.js";
 import { NOTIFY_EVENTS, NOTIFY_SECTIONS, sanitizePrefs, wantsEvent } from "../shared/notifyEvents.js";
 
 /**
@@ -65,7 +66,7 @@ router.post("/:t/test", requireFirebaseAuth, async (req: any, res: any) => {
     lastTest.set(key, Date.now());
     const to = await deliver({
       tenantId: x.t, event: "system.test", uids: [x.c.uid], type: "system",
-      title: "Проверка уведомлений", body: `Всё работает · ${new Date().toLocaleTimeString("ru-RU", { timeZone: "Asia/Bishkek", hour: "2-digit", minute: "2-digit", second: "2-digit" })}`,
+      title: "Проверка уведомлений", body: `Всё работает · ${fmtIn(await orgTimeZone(x.t), Date.now(), { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`,
       url: `/workspace/${x.t}/profile`, docId: u => `test_${u}`,
     });
     const tg = (await db().collection("user_telegram").doc(x.c.uid).get()).data()?.chatId;

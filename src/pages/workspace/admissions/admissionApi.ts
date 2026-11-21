@@ -29,6 +29,7 @@ export interface Row {
   createdAt: number; updatedAt: number;
   archived?: { at: number; byName: string } | null;
   referralBlocked?: boolean;
+  published?: boolean; scheduled?: number | null;
 }
 /**
  * admission — администрация приёма; conduct — проводит анкеты (по праву или по праву анкеты);

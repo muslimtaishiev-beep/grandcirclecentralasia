@@ -56,6 +56,8 @@ export interface CandidateInfo {
    * снимает только сервер; смена решения снимает публикацию.
    */
   published?: { at: number; by: string; byName: string } | null;
+  /** Публикация запланирована на это время (мс). Ставит и снимает только сервер. */
+  publishAt?: number | null;
   by: string; at: number;
 }
 const LEGACY_DECISION: Record<Decision, { label: string; final: boolean }> = {
@@ -234,3 +236,9 @@ export function subjectLevel(
 }
 
 export const refLabel = (n: number) => `№ ${String(n).padStart(4, "0")}`;
+
+/** Вступительный экзамен: работы попадают в «Поступающие». */
+export const isAdmissionExam = (e: { settings?: { admission?: any } } | null | undefined) => {
+  const ad: any = e?.settings?.admission || {};
+  return !!(ad.candidateForm || ad.referralOnly || (ad.grades || []).length || (ad.stages || []).length);
+};

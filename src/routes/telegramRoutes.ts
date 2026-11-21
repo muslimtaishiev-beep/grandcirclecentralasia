@@ -118,7 +118,7 @@ async function onCallback(cq: any) {
     const email = (await admin.auth().getUser(uid)).email;
     if (email) resetUrl = await admin.auth().generatePasswordResetLink(email);
   } catch (e) { console.error("[telegram] reset link:", e); }
-  await sendTelegram(chatId, "Все сеансы завершены 🔒", `Вход ${ev.device} · IP ${ev.ip || "—"} · ${timeText(ev.at)} отклонён. На всех устройствах нужно войти заново.${resetUrl ? " Смените пароль по кнопке ниже." : " Смените пароль: на странице входа → «Забыли пароль»."}`, "/login", resetUrl ? [[{ text: "Сменить пароль", url: resetUrl }]] : []);
+  await sendTelegram(chatId, "Все сеансы завершены 🔒", `Вход ${ev.device} · IP ${ev.ip || "—"} · ${await timeText(ev.at, String(ev.uid || ""))} отклонён. На всех устройствах нужно войти заново.${resetUrl ? " Смените пароль по кнопке ниже." : " Смените пароль: на странице входа → «Забыли пароль»."}`, "/login", resetUrl ? [[{ text: "Сменить пароль", url: resetUrl }]] : []);
 }
 
 export default router;

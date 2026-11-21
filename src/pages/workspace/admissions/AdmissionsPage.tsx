@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLive } from "../../../lib/useLive";
 import { useOutletContext, useSearchParams } from "react-router-dom";
-import { ArchiveRestore, ArrowDown, ArrowUp, Archive, Download, FileDown, History, Loader2, Mail, QrCode, Search, Trash2, UserPlus, Users } from "lucide-react";
+import { ArchiveRestore, ArrowDown, ArrowUp, Archive, CalendarClock, Download, FileDown, History, Loader2, Mail, QrCode, Search, Send, Trash2, UserPlus, Users } from "lucide-react";
 import { STAGE_LABEL, type Stage } from "../../../shared/admissions";
 import { gradeOf } from "../../../shared/questionnaires";
 import { Button, EmptyState, Spinner, Table, Tabs, confirmDialog, toast, useUrlTab } from "../../../components/ui";
@@ -14,6 +14,7 @@ import QrScanModal from "./QrScanModal";
 import TemplatesTab from "./TemplatesTab";
 import HistoryModal from "./HistoryModal";
 import { downloadSessionById } from "./sessionPdf";
+import { PublishWhenModal, SkippedModal, outcomeText, type PublishOutcome } from "./PublishControls";
 
 /**
  * «Поступающие»: список с поиском по ФИО и №, фильтры по классу и этапу,
@@ -149,6 +150,20 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
       setPicked(new Set()); await load();
     } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
   };
+  const [pubPick, setPubPick] = useState(false);
+  const [pubOut, setPubOut] = useState<PublishOutcome | null>(null);
+  const publishBulk = async (at?: number) => {
+    const ids = [...picked];
+    if (!ids.length) return;
+    if (!at && !(await confirmDialog({ title: `Опубликовать результаты: ${ids.length}`, message: "Результаты откроются по QR, родителям уйдут письма. Без окончательного решения — пропустим.", confirmLabel: "Опубликовать" }))) return;
+    setBusy(true);
+    try {
+      const j: PublishOutcome = await api("/applicants/publish-bulk", { method: "POST", body: JSON.stringify({ ids, ...(at ? { at } : {}) }) });
+      toast.success(outcomeText(j));
+      if (j.skipped.length) setPubOut(j);
+      setPubPick(false); setPicked(new Set()); await load();
+    } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
+  };
   const purge = async (r: Row) => {
     if (!(await confirmDialog({ title: `Удалить навсегда: ${r.child.name}`, message: "Анкеты, ссылки, работы и история будут стёрты.", confirmLabel: "Удалить навсегда", danger: true }))) return;
     try { await api(`/applicants/${r.id}?purge=1`, { method: "DELETE" }); toast.success("Удалено"); await load(); } catch (e: any) { toast.error(e.message); }
@@ -214,6 +229,10 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
                 ? <Button loading={busy} onClick={() => bulk("restore")} icon={<ArchiveRestore className="w-4 h-4" />}>Вернуть</Button>
                 : <>
                     <Button loading={busy} onClick={() => bulk("parent_email")} icon={<Mail className="w-4 h-4" />}>Анкета родителям на почту</Button>
+                    {me.academic && <>
+                      <Button loading={busy} onClick={() => publishBulk()} icon={<Send className="w-4 h-4" />}>Опубликовать</Button>
+                      <Button loading={busy} onClick={() => setPubPick(true)} icon={<CalendarClock className="w-4 h-4" />}>Запланировать публикацию…</Button>
+                    </>}
                     <Button loading={busy} onClick={() => bulk("archive")} icon={<Archive className="w-4 h-4" />}>В архив</Button>
                   </>}
               <Button variant="ghost" className="ml-auto" onClick={() => setPicked(new Set())}>Снять выбор</Button>
@@ -292,6 +311,8 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
         // Сразу QR анкеты для родителя — сканирует на месте, печать по желанию.
         const p = new URLSearchParams(params); p.set("open", id); p.set("ctab", "profile"); p.set("qr", "parent"); setParams(p, { replace: true });
       }} />}
+      {pubPick && <PublishWhenModal onClose={() => setPubPick(false)} onPick={at => publishBulk(at)} />}
+      {pubOut && <SkippedModal outcome={pubOut} names={Object.fromEntries(rows.map(r => [r.id, r.child.name]))} onClose={() => setPubOut(null)} />}
       {scan && <QrScanModal onClose={() => setScan(false)} />}
       {sectionHistory && <HistoryModal api={api} scope="section" onClose={() => setSectionHistory(false)} />}
       {result && <AttemptViewer tenant={activeTenant} attemptId={result.id} examId={result.examId} onClose={() => setResult(null)} onChanged={load} />}

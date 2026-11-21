@@ -1,5 +1,6 @@
 import admin from "firebase-admin";
 import { chatOf, sendTelegram } from "./telegram.js";
+import { fmtIn, userTimeZone } from "./orgTime.js";
 import { sendMail } from "./mail.js";
 
 /**
@@ -22,7 +23,8 @@ export function deviceOf(ua: string): string {
 }
 
 export const ipOf = (req: any) => String(req.headers?.["x-forwarded-for"] || "").split(",")[0].trim() || String(req.ip || "");
-export const timeText = (ms: number) => new Date(ms).toLocaleString("ru-RU", { timeZone: "Asia/Bishkek", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+/** Время входа — в часовом поясе организации человека (из её настроек), иначе UTC. */
+export const timeText = async (ms: number, uid: string) => fmtIn(await userTimeZone(uid), ms, { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 
 export async function recordLogin(req: any, uid: string, user: { loginAlerts?: boolean }) {
   const authTime = Number(req.user?.auth_time) || 0;
@@ -47,11 +49,11 @@ export async function recordLogin(req: any, uid: string, user: { loginAlerts?: b
     const esc = (v: string) => v.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
     await sendMail({
       to: email, fromName: "StudyFree", subject: "Вход в ваш аккаунт с нового устройства",
-      html: `<div style="font-family:Arial,sans-serif;font-size:15px;color:#111"><p>В ваш аккаунт StudyFree вошли:</p><p><b>${esc(ev.device)}</b><br>IP ${esc(ev.ip || "—")} · ${esc(timeText(ev.at))}</p><p>Если это были не вы — откройте сайт, профиль → «Выйти на всех устройствах» и смените пароль.</p></div>`,
+      html: `<div style="font-family:Arial,sans-serif;font-size:15px;color:#111"><p>В ваш аккаунт StudyFree вошли:</p><p><b>${esc(ev.device)}</b><br>IP ${esc(ev.ip || "—")} · ${esc(await timeText(ev.at, uid))}</p><p>Если это были не вы — откройте сайт, профиль → «Выйти на всех устройствах» и смените пароль.</p></div>`,
     });
     return;
   }
-  await sendTelegram(chat, "Вход в аккаунт", `${ev.device}\nIP ${ev.ip || "—"} · ${timeText(ev.at)}`, undefined, [[
+  await sendTelegram(chat, "Вход в аккаунт", `${ev.device}\nIP ${ev.ip || "—"} · ${await timeText(ev.at, uid)}`, undefined, [[
     { text: "Это я", data: `lg:ok:${authTime}` },
     { text: "Это не я — выйти везде", data: `lg:no:${authTime}` },
   ]]);

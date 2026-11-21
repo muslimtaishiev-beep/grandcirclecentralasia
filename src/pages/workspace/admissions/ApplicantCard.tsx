@@ -19,6 +19,7 @@ import { useExamApi } from "../exams/examApi";
 import { latestTest, type TestSummary } from "./candidateForm";
 import CandidateSheetModal from "./CandidateSheetModal";
 import HistoryModal from "./HistoryModal";
+import { PublishWhenModal, SplitPublishButton, whenShort } from "./PublishControls";
 
 /**
  * Карточка поступающего. Вкладки — по правам: тот, кто проводит анкеты, открывает
@@ -545,14 +546,21 @@ function CandidateSummary({ a, cfg, canManage, onOpen, api, onChanged, resultDel
   const decision = cfg.decisions.find(x => x.id === c?.decision)?.label || c?.decisionLabel || "";
   const final = !!c?.decision && (cfg.decisions.find(x => x.id === c.decision)?.final ?? !!c.decisionFinal);
   const [busy, setBusy] = useState(false);
-  const publish = async () => {
-    if (!(await confirmDialog({ title: `Опубликовать результаты: ${decision}`, message: "Результаты откроются по QR направления, родителю уйдёт письмо с решением.", confirmLabel: "Опубликовать" }))) return;
+  const [picking, setPicking] = useState(false);
+  const publish = async (at?: number) => {
+    if (!at && !(await confirmDialog({ title: `Опубликовать результаты: ${decision}`, message: "Результаты откроются по QR направления, родителю уйдёт письмо с решением.", confirmLabel: "Опубликовать" }))) return;
     setBusy(true);
     try {
-      const j = await api(`/applicants/${a.id}/publish`, { method: "POST" });
-      toast.success(j.email?.sent ? "Опубликовано, письмо отправлено" : `Опубликовано${j.email?.reason ? ` · письмо: ${j.email.reason}` : ""}`);
-      onChanged();
+      const j = await api(`/applicants/${a.id}/publish`, { method: "POST", body: JSON.stringify(at ? { at } : {}) });
+      if (j.scheduled) toast.success(`Публикация запланирована на ${whenShort(j.scheduled)}`);
+      else toast.success(j.email?.sent ? "Опубликовано, письмо отправлено" : `Опубликовано${j.email?.reason ? ` · письмо: ${j.email.reason}` : ""}`);
+      setPicking(false); onChanged();
     } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
+  };
+  const cancelSchedule = async () => {
+    setBusy(true);
+    try { await api(`/applicants/${a.id}/publish/cancel`, { method: "POST" }); toast.success("Публикация отменена"); onChanged(); }
+    catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
   };
   const sendReady = async () => {
     setBusy(true);
@@ -580,10 +588,15 @@ function CandidateSummary({ a, cfg, canManage, onOpen, api, onChanged, resultDel
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border-color)] p-2.5">
         {c?.published
           ? <span className="text-sm text-emerald-700 dark:text-emerald-400 font-medium">Результаты опубликованы · {c.published.byName}, {new Date(c.published.at).toLocaleString("ru-RU")}</span>
+          : c?.publishAt ? <span className="text-sm text-sky-700 dark:text-sky-400 font-medium">Публикация · {whenShort(c.publishAt)}</span>
           : <span className="text-sm text-[var(--text-muted)]">{final ? "Результаты не опубликованы" : "Результаты закрыты до окончательного решения"}</span>}
         {canManage && !a.archived && (c?.published
           ? <Button className="ml-auto" size="sm" variant="secondary" loading={busy} onClick={unpublish}>Снять публикацию</Button>
-          : <Button className="ml-auto" size="sm" variant="primary" loading={busy} disabled={!final} onClick={publish}>Опубликовать результаты</Button>)}
+          : <span className="ml-auto inline-flex items-center gap-2">
+              {c?.publishAt && <Button size="sm" variant="secondary" loading={busy} onClick={cancelSchedule}>Отменить</Button>}
+              <SplitPublishButton loading={busy} disabled={!final} onNow={() => void publish()} onSchedule={() => setPicking(true)} />
+            </span>)}
+        {picking && <PublishWhenModal onClose={() => setPicking(false)} onPick={at => publish(at)} />}
       </div>
       {canManage && c?.published && resultDelivery?.delivery === "page"
         ? (

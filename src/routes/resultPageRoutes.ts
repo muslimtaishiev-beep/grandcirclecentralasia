@@ -7,6 +7,7 @@ import { actorOf, writeAudit } from "../server/audit.js";
 import { appUrl } from "../server/emailEvents.js";
 import { loadCandidateForm } from "./admissionRoutes.js";
 import { loadPage, pageDoc, readUrl, resultBucket, signVariant } from "../server/resultPages.js";
+import { resolveDecisions } from "../shared/formDecisions.js";
 import { MEDIA_UPLOAD, presetVariant, blankVariant, sanitizeResultPage, DEFAULT_VARIANT_KEY, PRESETS } from "../shared/resultPages.js";
 
 /**
@@ -32,12 +33,21 @@ async function caller(req: any, res: any) {
   return { t, c };
 }
 
-const outcomeIds = async (t: string) => (await loadCandidateForm(t)).decisions.map(d => d.id);
+/** Исходы страницы: решения анкеты кандидата и состояния форм заявок организации. */
+const outcomeIds = async (t: string) => {
+  const forms = await db().collection("custom_forms").where("tenantId", "==", t).get();
+  const formIds = forms.docs.flatMap(d => resolveDecisions(d.data()).map(x => x.id));
+  return [...new Set([...(await loadCandidateForm(t)).decisions.map(d => d.id), ...formIds])];
+};
 
 /** Экзамены организации, где страница выбрана. */
 async function usages(t: string, id: string): Promise<string[]> {
   const exams = await db().collection("tenants").doc(t).collection("exams").get();
-  return exams.docs.filter(d => d.data().settings?.results?.pageId === id).map(d => `Экзамен «${d.data().title || d.id}»`);
+  const forms = await db().collection("custom_forms").where("tenantId", "==", t).get();
+  return [
+    ...exams.docs.filter(d => d.data().settings?.results?.pageId === id).map(d => `Экзамен «${d.data().title || d.id}»`),
+    ...forms.docs.filter(d => resolveDecisions(d.data()).some(x => x.notify.pageId === id)).map(d => `Форма «${d.data().title || d.id}»`),
+  ];
 }
 
 /** Исходы организации — решения анкеты кандидата, для вкладок редактора. */

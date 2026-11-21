@@ -53,6 +53,18 @@ export default function WorkspaceLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { orgId } = useParams();
+  // Страховка планировщика: открытый кабинет раз в минуту будит отложенные задачи (письма, публикации).
+  useEffect(() => {
+    const poke = () => {
+      if (document.hidden) return;
+      import("../../lib/firebase").then(({ auth }) => auth.currentUser?.getIdToken())
+        .then(t => t && fetch("/api/cron/poke", { method: "POST", headers: { Authorization: `Bearer ${t}` } }))
+        .catch(() => { /* следующая попытка через минуту */ });
+    };
+    const id = setInterval(poke, 60_000);
+    poke();
+    return () => clearInterval(id);
+  }, []);
 
   const [tenants, setTenants] = useState<any[]>([]);
   const [activeTenant, setActiveTenant] = useState<any>(null);

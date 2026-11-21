@@ -3,7 +3,7 @@ import { sendMail } from "./mail.js";
 import { notifyEvent } from "./notify.js";
 import { tenantLogos } from "../shared/legal.js";
 import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
-import { DEFAULT_RESULTS_READY, emailLogId, renderEmail, sanitizeEmailTemplate, type EmailCtx, type EmailEvent, type EmailTemplate } from "../shared/emailTemplate.js";
+import { DEFAULT_FORM_STATUS, DEFAULT_RESULTS_READY, emailLogId, renderEmail, sanitizeEmailTemplate, type EmailCtx, type EmailEvent, type EmailTemplate } from "../shared/emailTemplate.js";
 import type { PermissionKey } from "../shared/permissions.js";
 
 /**
@@ -101,7 +101,7 @@ export async function sendTemplated(p: TemplatedSend): Promise<SendResult> {
     let r: SendResult;
     if (!EMAIL.test(to)) r = { sent: false, reason: p.noRecipient || "Нет почты получателя" };
     else {
-      const tpl = p.templateId ? await loadTemplate(p.tenantId, p.templateId) : p.event === "results_ready" ? DEFAULT_RESULTS_READY : null;
+      const tpl = p.templateId ? await loadTemplate(p.tenantId, p.templateId) : p.event === "results_ready" ? DEFAULT_RESULTS_READY : p.event === "form" && p.ctx.statusId ? DEFAULT_FORM_STATUS : null;
       if (!tpl) r = { sent: false, reason: "Шаблон не найден" };
       else {
         const [m, base] = await Promise.all([orgMail(p.tenantId), appUrl()]);

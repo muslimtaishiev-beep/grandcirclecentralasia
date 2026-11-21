@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   FileCheck2, 
@@ -21,11 +21,14 @@ import {
   ChevronUp,
   ChevronDown,
   Bell,
+  Settings,
 } from 'lucide-react';
 import { collection, query, where, onSnapshot, doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
 import FancyQr, { QR_THEMES, QrThemePicker, downloadQr, type QrTheme } from '../../../components/forms/FancyQr';
-import { STATUS_LABEL, STATUS_COLOR, MODE_STATUSES, type FormMode } from '../../../shared/formStatuses';
+import { STATUS_LABEL, type FormMode } from '../../../shared/formStatuses';
+import { decisionOf, resolveDecisions, type Decision } from '../../../shared/formDecisions';
+import FormSettingsModal from './FormSettingsModal';
 import { auth } from '../../../lib/firebase';
 import FileViewer, { type ViewerFile } from './FileViewer';
 import { isFileValue, fileLabel, fileInfo } from '../../../shared/uploads';
@@ -47,6 +50,22 @@ const humanError = (e: any): string =>
   /load failed|failed to fetch|networkerror|network request failed/i.test(String(e?.message || e))
     ? 'нет связи с сервером — проверьте интернет и повторите'
     : String(e?.message || e);
+
+/** Плашка у заявки: письмо уйдёт в такое-то время, можно отменить. */
+function PendingNotice({ sub, onCancel }: { sub: any; onCancel: () => void }) {
+  const p = sub?.pendingNotify;
+  if (!p || !p.runAt) return null;
+  const d = new Date(p.runAt);
+  const sameDay = d.toDateString() === new Date().toDateString();
+  const when = sameDay ? d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return (
+    <div className="mt-1.5 inline-flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 px-2 py-1 text-[11px] text-amber-600 dark:text-amber-400">
+      <Bell className="w-3 h-3" />
+      <span>Письмо уйдёт в {when}</span>
+      <button type="button" onClick={onCancel} className="font-bold underline cursor-pointer">Отменить</button>
+    </div>
+  );
+}
 
 /** Поле анкеты, которое можно править из кабинета (файлы — нет). */
 const editableField = (f: any) => f && f.type !== 'file' && f.type !== 'multi' && f.type !== 'section';
@@ -139,6 +158,10 @@ export default function FormBuilder() {
   const { user } = useAuth();
 
   const [forms, setForms] = useState<any[]>([]);
+  // Состояния заявок по формам: у формы без настроек — статусы её режима.
+  const decsMap = useMemo(() => new Map(forms.map(f => [f.id, resolveDecisions(f)] as const)), [forms]);
+  const decOf = (formId: string, status: unknown): Decision => decisionOf(decsMap.get(formId) || resolveDecisions(null), status);
+  const [settingsForm, setSettingsForm] = useState<any | null>(null);
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useUrlTab('tab', ['forms', 'submissions'] as const, 'forms');
@@ -179,17 +202,20 @@ export default function FormBuilder() {
   /** Сводка по одной форме: сколько заявок и в каких они статусах. */
   const statsFor = (formId: string) => {
     const mine = submissions.filter((s: any) => s.formId === formId);
+    const decs = decsMap.get(formId) || resolveDecisions(null);
     const byStatus: Record<string, number> = {};
-    for (const k of Object.keys(STATUS_LABEL)) byStatus[k] = mine.filter((s: any) => (s.status || 'new') === k).length;
+    for (const d of decs) byStatus[d.id] = mine.filter((s: any) => (s.status || 'new') === d.id).length;
+    const ofKind = (k: string) => mine.filter((s: any) => decisionOf(decs, s.status).kind === k).length;
     const ms = (t: any) => t?.toMillis?.() ?? (t?.seconds ? t.seconds * 1000 : 0);
     const week = Date.now() - 7 * 86400000;
-    const closed = byStatus.approved + byStatus.rejected;
+    const closed = ofKind('approved') + ofKind('rejected');
     return {
       total: mine.length,
       byStatus,
-      pending: byStatus.new + byStatus.review,
+      decs,
+      pending: ofKind('new') + ofKind('review'),
       last7: mine.filter((s: any) => ms(s.createdAt) > week).length,
-      conversion: closed ? Math.round((byStatus.approved / closed) * 100) : null,
+      conversion: closed ? Math.round((ofKind('approved') / closed) * 100) : null,
     };
   };
 
@@ -374,6 +400,13 @@ export default function FormBuilder() {
 
   /** Название формы заявки — текущее: форму могли переименовать после подачи. */
   const formTitleOf = (sub: any, fallback = 'Форма') => forms.find(f => f.id === sub?.formId)?.title || sub?.formTitle || fallback;
+  /** Фильтр по статусу: состояния выбранной формы, иначе — все состояния всех форм. */
+  const filterOptions: { id: string; label: string }[] = (() => {
+    if (filterFormId) return (decsMap.get(filterFormId) || []).map(d => ({ id: d.id, label: d.label }));
+    const m = new Map<string, string>();
+    for (const list of decsMap.values()) for (const d of list) if (!m.has(d.id)) m.set(d.id, d.label);
+    return [...m].map(([id, label]) => ({ id, label }));
+  })();
   const visibleSubs = submissions.filter((sub: any) => {
     if (showDeleted !== Boolean(sub.deleted)) return false;
     if (filterFormId && sub.formId !== filterFormId) return false;
@@ -575,7 +608,7 @@ export default function FormBuilder() {
       const when = r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toLocaleString('ru-RU') : '';
       lines.push([
         when, r.applicantName || '', r.applicantPhone || '', r.applicantEmail || '',
-        STATUS_LABEL[(r.status || 'new') as keyof typeof STATUS_LABEL] || r.status || '', r.qrToken || '',
+        decOf(r.formId, r.status).label, r.qrToken || '',
       ].concat(fields.filter((f: any) => f.type !== 'section').map((f: any) => asText(r.data?.[f.id]) ?? '')).map(esc).join(';'));
     }
 
@@ -623,7 +656,7 @@ export default function FormBuilder() {
         table.push([
           r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toLocaleString('ru-RU') : '',
           r.applicantName || '', r.applicantPhone || '', r.applicantEmail || '',
-          STATUS_LABEL[(r.status || 'new') as keyof typeof STATUS_LABEL] || '', r.qrToken || '',
+          decOf(r.formId, r.status).label, r.qrToken || '',
         ].concat(fields.filter((f: any) => f.type !== 'section').map((f: any) => String(asText(r.data?.[f.id]) ?? ''))));
       }
 
@@ -986,6 +1019,31 @@ export default function FormBuilder() {
     );
   };
 
+  const authedPost = async (path: string, body: object) => {
+    const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+    return r.json().catch(() => ({ success: false, error: 'Ошибка ответа сервера' }));
+  };
+  const sendNotify = async (ids: string[]) => {
+    try {
+      const j = await authedPost('/api/forms/notify', ids.length === 1 ? { tenantId: currentOrgId, submissionId: ids[0] } : { tenantId: currentOrgId, submissionIds: ids });
+      if (!j.success) { toast.error(j.error || 'Письмо не отправлено'); return; }
+      toast.success(j.failed?.length ? `Отправлено: ${j.sent}, не ушло: ${j.failed.length}` : `Отправлено: ${j.sent}`);
+    } catch (e: any) { toast.error(`Не удалось отправить: ${humanError(e)}`); }
+  };
+  const cancelNotify = async (sub: any) => {
+    try {
+      const j = await authedPost('/api/forms/notify-cancel', { tenantId: currentOrgId, submissionId: sub.id });
+      if (!j.success) toast.error(j.error || 'Не удалось отменить');
+    } catch (e: any) { toast.error(`Не удалось отменить: ${humanError(e)}`); }
+  };
+  /** Варианты в окне смены статуса: у одной формы — её состояния, у разных — системные. */
+  const bulkOptions = (list: any[]): { id: string; label: string }[] => {
+    const ids = [...new Set(list.map((x: any) => x.formId))];
+    if (ids.length === 1) return (decsMap.get(ids[0]) || []).map(d => ({ id: d.id, label: d.label }));
+    return Object.entries(STATUS_LABEL).map(([id, label]) => ({ id, label }));
+  };
+
   const askStatusChange = (sub: any, newStatus: string) => {
     if ((sub.status || 'new') === newStatus) return;
     setStatusDraft({ subs: [sub], status: newStatus, note: '', withNote: true });
@@ -1018,6 +1076,16 @@ export default function FormBuilder() {
       if (!data.success) { toast.error(data.error || 'Не удалось сменить статус'); return; }
       setStatusDraft(null);
       if (!single) { reportBulk(data); setSelected(new Set()); }
+      // «Вручную при смене»: письмо уходит только после подтверждения.
+      const ask = single ? (data.needConfirm ? { ids: [subs[0].id], label: data.needConfirm.label } : null) : data.needConfirm;
+      if (ask?.ids?.length) {
+        const ok = await confirmDialog({
+          title: `Отправить письмо «${ask.label}»?`,
+          message: ask.ids.length > 1 ? `Получателей: ${ask.ids.length}` : undefined,
+          confirmLabel: 'Отправить',
+        });
+        if (ok) await sendNotify(ask.ids);
+      }
       // onSnapshot сам подтянет обновление — локально ничего не трогаем.
     } catch(e: any) {
       toast.error(`Не удалось сменить статус: ${humanError(e)}`);
@@ -1108,6 +1176,10 @@ export default function FormBuilder() {
                   <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 text-[10px] font-mono font-bold flex items-center gap-1">
                     <QrCode className="w-3 h-3" /> QR Активен
                   </span>
+                  <button type="button" onClick={() => setSettingsForm(form)} title="Настройки формы" aria-label="Настройки формы"
+                    className="ml-2 p-1.5 rounded-lg text-[var(--text-muted)] hover:text-emerald-500 hover:bg-[var(--bg-surface-hover)] cursor-pointer">
+                    <Settings className="w-4 h-4" />
+                  </button>
                   {form.active === false && !form.archived && (
                     <span className="ml-2 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[10px] font-bold">Приём закрыт</span>
                   )}
@@ -1154,17 +1226,17 @@ export default function FormBuilder() {
                       {st.total > 0 && (
                         <>
                           <div className="flex h-2 rounded-full overflow-hidden bg-[var(--bg-surface)]">
-                            {Object.keys(STATUS_LABEL).map(k => st.byStatus[k] > 0 && (
-                              <div key={k} className={STATUS_COLOR[k]}
-                                style={{ width: `${(st.byStatus[k] / st.total) * 100}%` }}
-                                title={`${STATUS_LABEL[k]}: ${st.byStatus[k]}`} />
+                            {st.decs.map(d => st.byStatus[d.id] > 0 && (
+                              <div key={d.id}
+                                style={{ width: `${(st.byStatus[d.id] / st.total) * 100}%`, background: d.color }}
+                                title={`${d.label}: ${st.byStatus[d.id]}`} />
                             ))}
                           </div>
                           <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
-                            {Object.keys(STATUS_LABEL).map(k => st.byStatus[k] > 0 && (
-                              <span key={k} className="flex items-center gap-1.5 text-[var(--text-muted)]">
-                                <span className={`w-2 h-2 rounded-full ${STATUS_COLOR[k]}`} />
-                                {STATUS_LABEL[k]}: <b className="text-[var(--text-main)]">{st.byStatus[k]}</b>
+                            {st.decs.map(d => st.byStatus[d.id] > 0 && (
+                              <span key={d.id} className="flex items-center gap-1.5 text-[var(--text-muted)]">
+                                <span className="w-2 h-2 rounded-full" style={{ background: d.color }} />
+                                {d.label}: <b className="text-[var(--text-main)]">{st.byStatus[d.id]}</b>
                               </span>
                             ))}
                           </div>
@@ -1250,7 +1322,7 @@ export default function FormBuilder() {
             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
               className="px-3 py-1.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-lg text-xs">
               <option value="">Любой статус</option>
-              {Object.entries(STATUS_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+              {filterOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
             </select>
 
             <input value={search} onChange={e => setSearch(e.target.value)}
@@ -1553,7 +1625,7 @@ export default function FormBuilder() {
                           все статусы выглядели одинаково, и отличить новую
                           заявку от отклонённой в списке было нельзя. */}
                       <div className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_COLOR[(sub.status || 'new') as keyof typeof STATUS_COLOR]}`} />
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: decOf(sub.formId, sub.status).color }} />
                       <select 
                         value={sub.status || 'new'}
                         onChange={(e) => askStatusChange(sub, e.target.value)}
@@ -1561,12 +1633,15 @@ export default function FormBuilder() {
                       >
                         {/* Набор статусов зависит от режима формы: у билета
                             есть «Оплачено» и «Гость пришёл», у заявки — нет. */}
-                        {MODE_STATUSES[(forms.find(f => f.id === sub.formId)?.mode === 'ticket' ? 'ticket' : 'application') as FormMode]
-                          .map(st => (
-                            <option key={st} value={st}>{STATUS_LABEL[st]}</option>
-                          ))}
+                        {(decsMap.get(sub.formId) || []).map(d => (
+                          <option key={d.id} value={d.id}>{d.label}</option>
+                        ))}
+                        {!(decsMap.get(sub.formId) || []).some(d => d.id === (sub.status || 'new')) && (
+                          <option value={sub.status || 'new'}>{decOf(sub.formId, sub.status).label}</option>
+                        )}
                       </select>
                       </div>
+                      <PendingNotice sub={sub} onCancel={() => void cancelNotify(sub)} />
                     </td>
                     <td className="px-5 py-3.5 text-[11px] font-mono text-[var(--text-muted)]">
                       {sub.createdAt ? new Date(sub.createdAt.seconds ? sub.createdAt.seconds * 1000 : sub.createdAt).toLocaleDateString() : 'Сегодня'}
@@ -1725,11 +1800,11 @@ export default function FormBuilder() {
 
             {statusDraft.subs.length === 1 ? (
               <div className="flex items-center gap-2 text-sm">
-                <span className={`w-2 h-2 rounded-full ${STATUS_COLOR[(statusDraft.subs[0].status || 'new') as keyof typeof STATUS_COLOR]}`} />
-                <span className="text-[var(--text-muted)]">{STATUS_LABEL[(statusDraft.subs[0].status || 'new') as keyof typeof STATUS_LABEL]}</span>
+                <span className="w-2 h-2 rounded-full" style={{ background: decOf(statusDraft.subs[0].formId, statusDraft.subs[0].status).color }} />
+                <span className="text-[var(--text-muted)]">{decOf(statusDraft.subs[0].formId, statusDraft.subs[0].status).label}</span>
                 <span className="text-[var(--text-muted)]">→</span>
-                <span className={`w-2 h-2 rounded-full ${STATUS_COLOR[statusDraft.status as keyof typeof STATUS_COLOR]}`} />
-                <span className="font-bold">{STATUS_LABEL[statusDraft.status as keyof typeof STATUS_LABEL]}</span>
+                <span className="w-2 h-2 rounded-full" style={{ background: decOf(statusDraft.subs[0].formId, statusDraft.status).color }} />
+                <span className="font-bold">{decOf(statusDraft.subs[0].formId, statusDraft.status).label}</span>
               </div>
             ) : (
               <div className="space-y-1">
@@ -1738,7 +1813,7 @@ export default function FormBuilder() {
                   value={statusDraft.status}
                   onChange={e => setStatusDraft({ ...statusDraft, status: e.target.value })}
                   className="w-full px-2.5 py-1.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-lg text-sm">
-                  {Object.entries(STATUS_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                  {bulkOptions(statusDraft.subs).map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                 </select>
               </div>
             )}
@@ -1864,10 +1939,11 @@ export default function FormBuilder() {
             </div>
 
             <div className="flex items-center gap-2 text-xs">
-              <span className={`w-2 h-2 rounded-full ${STATUS_COLOR[(liveSub.status || 'new') as keyof typeof STATUS_COLOR]}`} />
-              <span className="font-bold">{STATUS_LABEL[(liveSub.status || 'new') as keyof typeof STATUS_LABEL]}</span>
+              <span className="w-2 h-2 rounded-full" style={{ background: decOf(liveSub.formId, liveSub.status).color }} />
+              <span className="font-bold">{decOf(liveSub.formId, liveSub.status).label}</span>
               {liveSub.qrToken && <span className="ml-auto font-mono text-[var(--text-muted)]">{liveSub.qrToken}</span>}
             </div>
+            <PendingNotice sub={liveSub} onCancel={() => void cancelNotify(liveSub)} />
 
             {(liveSub.applicantPhone || liveSub.applicantEmail) && (
               <div className="text-xs text-[var(--text-muted)]">
@@ -1970,8 +2046,8 @@ export default function FormBuilder() {
                       <div className="flex items-center justify-between gap-2">
                         {it.kind === 'status' ? (
                           <span className="inline-flex items-center gap-1.5">
-                            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_COLOR[it.h.status as keyof typeof STATUS_COLOR] || 'bg-slate-400'}`} />
-                            <span className="font-semibold">{STATUS_LABEL[it.h.status as keyof typeof STATUS_LABEL] || it.h.status}</span>
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ background: decOf(liveSub.formId, it.h.status).color }} />
+                            <span className="font-semibold">{decOf(liveSub.formId, it.h.status).label}</span>
                           </span>
                         ) : (
                           <span className="min-w-0">
@@ -2231,6 +2307,7 @@ export default function FormBuilder() {
       )}
 
       {/* Просмотр приложенных файлов: картинки, PDF, текст и медиа — на странице, остальное — скачать. */}
+      {settingsForm && currentOrgId && <FormSettingsModal tenantId={currentOrgId} form={forms.find(f => f.id === settingsForm.id) || settingsForm} subs={submissions} onClose={() => setSettingsForm(null)} />}
       {docView && <FileViewer title={docView.title} files={docView.files} onClose={() => setDocView(null)} />}
 
       {/* QR на саму форму — его печатают и вешают на стенд, чтобы люди
@@ -2306,7 +2383,7 @@ export default function FormBuilder() {
 
             <div className="bg-[var(--bg-panel)] p-3 rounded-xl border border-[var(--border-color)] text-xs space-y-1">
               <div className="text-[11px] text-[var(--text-muted)] font-mono">Текущий статус:</div>
-              <div className="font-bold text-emerald-400 uppercase font-mono">{selectedSubmissionForQr.status || 'В обработке'}</div>
+              <div className="font-bold text-emerald-400 uppercase font-mono">{decOf(selectedSubmissionForQr.formId, selectedSubmissionForQr.status).label}</div>
             </div>
 
             <a 

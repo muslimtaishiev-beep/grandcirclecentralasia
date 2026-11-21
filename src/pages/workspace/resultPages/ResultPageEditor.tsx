@@ -29,8 +29,12 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
  * Полноэкранный редактор страницы результатов: слева шаги и блоки, по центру
  * живое письмо, справа свойства выбранного и оформление.
  */
-export default function ResultPageEditor({ tenantId, pageId, onClose, onBound }: {
+export default function ResultPageEditor({ tenantId, pageId, onClose, onBound, outcomes: outcomesProp, pageKind }: {
   tenantId: string; pageId?: string | null; onClose: () => void; onBound: (pageId: string, name: string) => void;
+  /** Свои исходы (вкладки вариантов) вместо исходов анкеты кандидата — например, состояния формы заявок. */
+  outcomes?: { id: string; label: string }[];
+  /** "form": страница заявки — в предпросмотре подставляются имя, форма и статус. */
+  pageKind?: "form";
 }) {
   const narrow = useNarrow();
   const [pid, setPid] = useState<string | null>(pageId || null);
@@ -53,9 +57,13 @@ export default function ResultPageEditor({ tenantId, pageId, onClose, onBound }:
   const [box, setBox] = useState({ w: 800, h: 600 });
 
   useEffect(() => {
-    rpApi(tenantId, "/outcomes").then(j => setOutcomes(j.outcomes || [])).catch(() => {});
+    if (!outcomesProp) rpApi(tenantId, "/outcomes").then(j => setOutcomes(j.outcomes || [])).catch(() => {});
     emailApi(tenantId).then(j => setOrg({ name: String(j.org?.name || ""), logoUrl: j.org?.logoUrl || null })).catch(() => {});
-  }, [tenantId]);
+  }, [tenantId, !!outcomesProp]);
+  useEffect(() => {
+    if (outcomesProp) setOutcomes(outcomesProp.map(o => ({ id: o.id, label: o.label, final: false, trial: false })));
+  }, [outcomesProp]);
+  const sampleVars = useMemo(() => (pageKind === "form" ? { ...resultSampleVars(), имя: "Асанов Тимур", форма: "Регистрация на форум", статус: "Одобрено" } : resultSampleVars()), [pageKind]);
 
   const open = useCallback(async (id: string) => {
     setLoading(true);
@@ -84,7 +92,7 @@ export default function ResultPageEditor({ tenantId, pageId, onClose, onBound }:
   const variant: Variant | undefined = variants[key];
   const dirty = !!pid && snap(name, variants) !== saved;
   const patch: Patch = useCallback(fn => setVariants(vs => (vs[key] ? { ...vs, [key]: fn(vs[key]) } : vs)), [key]);
-  const filled = useMemo(() => (variant ? fillVariant(variant, resultSampleVars()) : null), [variant]);
+  const filled = useMemo(() => (variant ? fillVariant(variant, sampleVars) : null), [variant, sampleVars]);
   const stepId = variant && viewStep && variant.steps.some(s => s.id === viewStep) ? viewStep : variant ? letterOf(variant).id : undefined;
 
   const pickKey = (k: string) => {
@@ -147,7 +155,7 @@ export default function ResultPageEditor({ tenantId, pageId, onClose, onBound }:
   const scale = device === "phone" ? Math.min(1, availH / 820, availW / 390) : Math.min(1, availW / 1000);
   const frameH = device === "phone" ? 820 : Math.round(availH / scale);
 
-  const leftEl = variant ? <LeftPanel variant={variant} sel={sel} onSelect={selectFromLeft} patch={patch} /> : null;
+  const leftEl = variant ? <LeftPanel variant={variant} sel={sel} onSelect={selectFromLeft} patch={patch} pageKind={pageKind} /> : null;
   const rightEl = variant ? <RightPanel tenantId={tenantId} variant={variant} sel={sel} onSelect={selectFromRight} patch={patch} org={org} /> : null;
   const asideBase = "bg-[var(--bg-surface)] overflow-y-auto";
 

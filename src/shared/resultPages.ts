@@ -104,6 +104,15 @@ export const RESULT_VARS: ResultVar[] = [
   { key: "класс_зачисления", label: "Класс зачисления", sample: "5" },
 ];
 
+/** Переменные страницы отслеживания заявки (формы). */
+export const FORM_RESULT_VARS: ResultVar[] = [
+  { key: "имя", label: "Имя", sample: "Асанов Тимур" },
+  { key: "форма", label: "Форма", sample: "Регистрация на форум" },
+  { key: "статус", label: "Статус", sample: "Одобрено" },
+  { key: "организация", label: "Организация", sample: "Ваша организация" },
+  { key: "дата", label: "Дата", sample: "21 ноября 2026 г." },
+];
+
 /** Примерные значения для предпросмотра в редакторе. */
 export const resultSampleVars = (): Record<string, string> => Object.fromEntries(RESULT_VARS.map(v => [v.key, v.sample]));
 

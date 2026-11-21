@@ -68,6 +68,7 @@ export const EMAIL_VARS: EmailVar[] = [
   { key: "решение", sample: "Принят", from: { decision: "Решение из анкеты кандидата" } },
   { key: "обратная_связь", sample: "Сильные стороны…", from: { decision: "Обратная связь из анкеты кандидата" } },
   { key: "форма", sample: "Регистрация на форум", from: { form: "Название формы" } },
+  { key: "статус", sample: "Одобрено", from: { form: "Новое состояние заявки" } },
   { key: "ссылка", sample: "https://www.studyfreeforum.com/a/demo", from: { results_ready: "Страница результатов по ссылке", parent_form: "Анкета родителя по ссылке", decision: "Направление с результатами (после обратной связи)", referral: "Направление с QR", tested: "Направление (поступающие) или страница результата", form: "Билет с QR (если включён)" } },
   { key: "организация", sample: "Ваша организация", from: { results_ready: "Название организации", parent_form: "Название организации", decision: "Название организации", referral: "Название организации", tested: "Название организации", form: "Название организации" } },
 ];
@@ -79,6 +80,15 @@ export const DEFAULT_RESULTS_READY: EmailTemplate = {
   title: "Результаты готовы",
   body: "Здравствуйте, {{имя}}!\n\nРезультаты экзамена **{{ребёнок}}** готовы. Откройте страницу, чтобы посмотреть их.",
   buttonText: "Открыть результаты", buttonUrl: "{{ссылка}}",
+};
+
+/** Встроенное письмо о смене состояния заявки — уходит, если у состояния не выбран свой шаблон. */
+export const DEFAULT_FORM_STATUS: EmailTemplate = {
+  ...EMPTY_EMAIL_TEMPLATE, name: "Состояние заявки", kind: "form",
+  subject: "{{форма}}: {{статус}}",
+  title: "{{статус}}",
+  body: "Здравствуйте, {{имя}}!\n\nПо вашей заявке **{{форма}}** новое состояние: **{{статус}}**.",
+  buttonText: "Открыть заявку", buttonUrl: "{{ссылка}}",
 };
 
 /** Название подстановки на кнопке — по смыслу в этом письме. */
@@ -102,7 +112,7 @@ export function unknownVars(tpl: Pick<EmailTemplate, "subject" | "title" | "body
 export const sampleVars = (): Record<string, string> => Object.fromEntries(EMAIL_VARS.map(v => [v.key, v.sample]));
 
 /** О чём письмо — по этим полям его переотправляют. */
-export interface EmailCtx { applicantId?: string; attemptId?: string; examId?: string; submissionId?: string; formId?: string; label?: string }
+export interface EmailCtx { applicantId?: string; attemptId?: string; examId?: string; submissionId?: string; formId?: string; statusId?: string; label?: string }
 
 /** Запись журнала отправок события. */
 export const emailLogId = (event: EmailEvent, refId: string) => `${event}_${refId}`.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 300);

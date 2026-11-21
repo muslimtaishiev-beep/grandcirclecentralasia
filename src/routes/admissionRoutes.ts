@@ -1,4 +1,5 @@
 import { bumpLive, liveOnWrite } from "../server/live.js";
+import { fmtIn, orgTimeZone } from "../server/orgTime.js";
 import { deliver } from "../server/notify.js";
 import { Router } from "express";
 import admin from "firebase-admin";
@@ -20,9 +21,10 @@ import {
 } from "../shared/questionnaires.js";
 import { applicantAudit, diffRows, STUDENT, SYSTEM, type AuditChange, type AuditWho } from "../server/applicantAudit.js";
 import {
-  admitted, admittedByStages, applicantPath, candidateOf, examForApplicant, sanitizeCandidate, stageOf, subjectLevel,
+  admitted, admittedByStages, isAdmissionExam, applicantPath, candidateOf, examForApplicant, sanitizeCandidate, stageOf, subjectLevel,
   type Applicant, type ApplicantForm, type CandidateInfo, type LinkPurpose, type StageSummary,
 } from "../shared/admissions.js";
+import { cancelJob, registerJobHandler, scheduleJob } from "../server/scheduler.js";
 import { isPermissionKey, type PermissionKey } from "../shared/permissions.js";
 
 /**
@@ -103,7 +105,7 @@ const LEVEL_WORD = ["Низкий", "Средний", "Отличный"] as con
 
 // ── Уведомления администрации ───────────────────────────────────────────
 
-type AdmissionEvent = "new" | "parent" | "session" | "done" | "test_start" | "section" | "tested" | "results" | "decision";
+type AdmissionEvent = "new" | "parent" | "session" | "done" | "test_start" | "section" | "tested" | "results" | "decision" | "publish_failed";
 type Audience = "admin" | "staff";
 /**
  * Кому и с каким заголовком. Администрация (право приёма) — обо всём ходе
@@ -121,6 +123,7 @@ const EVENT_PLAN: Record<AdmissionEvent, Partial<Record<Audience, string>>> = {
   tested: { admin: "Тест сдан" },
   results: { admin: "Результаты теста внесены" },
   decision: { admin: "Решение по кандидату" },
+  publish_failed: { admin: "Публикация по таймеру не выполнена" },
 };
 const AUDIENCE_PERMS: Record<Audience, PermissionKey[]> = { admin: ["admission:manage"], staff: ["psych:conduct"] };
 /**
@@ -136,9 +139,9 @@ export async function notifyAdmission(t: string, a: Applicant, ev: AdmissionEven
     const plan = EVENT_PLAN[ev];
     const who = `${a.child.name}, ${a.child.grade} класс`;
     const body = ev === "done" ? [who, o.outcome, o.referral ? "направление готово" : ""].filter(Boolean).join(" · ")
-      : ev === "tested" || ev === "results" || ev === "section" || ev === "decision" ? [who, o.summary, ev === "results" || ev === "decision" ? c.name : ""].filter(Boolean).join(" · ")
+      : ev === "tested" || ev === "results" || ev === "section" || ev === "decision" || ev === "publish_failed" ? [who, o.summary, ev === "results" || ev === "decision" ? c.name : ""].filter(Boolean).join(" · ")
       : [who, c.name].filter(Boolean).join(" · ");
-    const adminTab = ev === "new" ? "profile" : ev === "parent" ? "parent" : ["test_start", "section", "tested", "results", "decision"].includes(ev) ? "test" : o.tid || "own";
+    const adminTab = ev === "new" ? "profile" : ev === "parent" ? "parent" : ["test_start", "section", "tested", "results", "decision", "publish_failed"].includes(ev) ? "test" : o.tid || "own";
     const sent = new Set<string>([c.uid]);
     const adminUrl = plan.admin ? await adminCardUrl(t, a, adminTab) : "";
     for (const aud of ["admin", "staff"] as Audience[]) {
@@ -581,6 +584,7 @@ function row(a: Applicant, attempts: any[], academic: boolean) {
     referral: a.referral ? { examTitle: a.referral.examTitle, manual: a.referral.manual, issuedAt: a.referral.issuedAt } : null,
     attempt: mine[0] || null, paperResults: a.paperResults.length,
     decision: candidateOf(a)?.decisionLabel || null,
+    published: !!candidateOf(a)?.published, scheduled: candidateOf(a)?.publishAt || null,
     stage: stageOf(a, mine[0] || null), createdAt: a.createdAt, updatedAt: a.updatedAt,
   };
 }
@@ -772,11 +776,7 @@ router.get("/:tenantId/by-no/:n", ...staff, async (req: any, res: any) => {
 const nameKey = (v: unknown) => String(v || "").toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9\s]/g, " ").split(/\s+/).filter(Boolean).sort().join(" ");
 const phoneKey = (v: unknown) => { const d = String(v || "").replace(/\D/g, ""); return d.length >= 7 ? d.slice(-9) : ""; };
 
-/** Вступительный экзамен: работы попадают в «Поступающие». */
-export const isAdmissionExam = (e: Exam | null | undefined) => {
-  const ad: any = e?.settings?.admission || {};
-  return !!(ad.candidateForm || ad.referralOnly || (ad.grades || []).length || (ad.stages || []).length);
-};
+export { isAdmissionExam };
 
 export type LinkResult = { applicantId: string; refNo: number; created: boolean; linked: boolean } | { ambiguous: number } | null;
 
@@ -1235,31 +1235,167 @@ router.post("/:tenantId/applicants/:id/parent-form/reset", ...staff, async (req:
   } catch (e: any) { return oops(res, e); }
 });
 
+const pubKey = (id: string) => `publish:${id}`;
+const whenText = async (t: string, at: number) => fmtIn(await orgTimeZone(t), at, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+/** Минимальный запас, с которого публикация считается запланированной; ближе — публикуем сразу. */
+const MIN_AHEAD = 60_000;
+/** at из тела: число в будущем (≥ now+60 с) → запланировать; иначе null — публиковать сразу. */
+const futureAt = (v: unknown): number | null => { const n = Number(v); return Number.isFinite(n) && n >= Date.now() + MIN_AHEAD ? Math.floor(n) : null; };
+
+/** Почему карточку нельзя опубликовать сейчас; null — можно. */
+function publishBlock(a: Applicant): { code: "archived" | "no_decision" | "published"; reason: string } | null {
+  if (a.archived) return { code: "archived", reason: "Карточка в архиве" };
+  const cand = candidateOf(a);
+  if (!cand?.decision || !cand.decisionFinal) return { code: "no_decision", reason: "Нет окончательного решения" };
+  if (cand.published) return { code: "published", reason: "Уже опубликовано" };
+  return null;
+}
+
 /**
- * Опубликовать результаты: только при окончательном решении в анкете
- * кандидата. Открывает результаты по QR и отправляет письмо с решением.
+ * Опубликовать результаты (проверки — в publishBlock): открывает результаты
+ * по QR и отправляет письмо — «Результаты готовы» или с решением, по настройке экзамена.
  */
+async function publishApplicant(t: string, a: Applicant, c: { uid: string; name: string }) {
+  const cand = candidateOf(a)!;
+  const published = { at: Date.now(), by: c.uid, byName: c.name };
+  const { publishAt: _drop, ...rest } = cand;
+  const candidate: CandidateInfo = { ...rest, published, publishAt: null };
+  await col(t, "applicants").doc(a.id).update({ candidate: deep(candidate), updatedAt: Date.now() });
+  await cancelJob(t, pubKey(a.id)).catch(() => false);
+  await audit(t, a.id, c, "published", cand.decisionLabel);
+  // Экзамен отдаёт результаты страницей — письмо «Результаты готовы» (при публикации или позже кнопкой); иначе — прежнее письмо с решением.
+  const rs = sanitizeSettings((await examOfApplicant(t, a))?.settings).results;
+  const mail = rs.delivery === "page"
+    ? (rs.sendOn === "publish" ? await emailResultsReady(t, { ...a, candidate }, { by: c.uid }) : { sent: false, skipped: true, reason: "Письмо отправляется кнопкой" } as SendResult)
+    : await emailDecision(t, { ...a, candidate }, { by: c.uid });
+  await bumpLive(t, ["admissions"], a.id).catch(() => {});
+  return { published, email: mail };
+}
+
+/** Запланировать публикацию на момент at (заменяет прежнюю). */
+async function schedulePublish(t: string, a: Applicant, c: { uid: string; name: string }, at: number) {
+  await scheduleJob({ tenantId: t, kind: "admission_publish", key: pubKey(a.id), runAt: at, payload: { applicantId: a.id }, by: { uid: c.uid, name: c.name } });
+  const candidate: CandidateInfo = { ...candidateOf(a)!, publishAt: at };
+  await col(t, "applicants").doc(a.id).update({ candidate: deep(candidate), updatedAt: Date.now() });
+  await audit(t, a.id, c, "publish_scheduled", `на ${await whenText(t, at)}`);
+  await bumpLive(t, ["admissions"], a.id).catch(() => {});
+}
+
+/** Снять запланированную публикацию: задача отменена, отметка в карточке снята. */
+async function clearScheduled(t: string, a: Applicant, c: { uid: string; name: string } | null, why = "") {
+  const cand = candidateOf(a);
+  await cancelJob(t, pubKey(a.id)).catch(() => false);
+  if (!cand?.publishAt) return false;
+  await col(t, "applicants").doc(a.id).update({ candidate: deep({ ...cand, publishAt: null }), updatedAt: Date.now() });
+  await audit(t, a.id, c || SYSTEM, "publish_cancelled", why);
+  await bumpLive(t, ["admissions"], a.id).catch(() => {});
+  return true;
+}
+
+type PublishSkip = { id: string; reason: string };
+/** Одну карточку — опубликовать или запланировать (at — уже проверенное будущее время или null). */
+async function publishOrSchedule(t: string, a: Applicant, c: { uid: string; name: string }, at: number | null): Promise<"done" | "scheduled" | PublishSkip & { code: string }> {
+  const b = publishBlock(a);
+  if (b) return { id: a.id, reason: b.reason, code: b.code };
+  if (at) { await schedulePublish(t, a, c, at); return "scheduled"; }
+  await publishApplicant(t, a, c);
+  return "done";
+}
+
+registerJobHandler("admission_publish", async job => {
+  const t = job.tenantId; const id = String(job.payload?.applicantId || "");
+  const a = await loadApplicant(t, id);
+  const fail_ = async (reason: string) => {
+    if (a) {
+      await clearScheduled(t, a, SYSTEM, `не выполнена: ${reason}`).catch(() => {});
+      await notifyAdmission(t, a, "publish_failed", { uid: "", name: "" }, { summary: reason });
+    }
+    throw new Error(reason);
+  };
+  if (!a) throw new Error("Карточки нет");
+  const b = publishBlock(a);
+  if (b) return fail_(b.code === "published" ? "Результаты уже опубликованы" : b.reason);
+  const r = await publishApplicant(t, a, { uid: job.createdBy?.uid || "", name: job.createdBy?.name || "Планировщик" });
+  return `Опубликовано${r.email?.sent ? ", письмо отправлено" : ""}`;
+});
+
 router.post("/:tenantId/applicants/:id/publish", ...staff, async (req: any, res: any) => {
   try {
     const t = req.params.tenantId; const c: StaffCaller = req.caller;
     if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Нет прав");
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
-    if (a.archived) return fail(res, 409, "Карточка в архиве");
-    const cand = candidateOf(a);
-    if (!cand?.decision || !cand.decisionFinal) return fail(res, 409, "Сначала вынесите окончательное решение в анкете кандидата");
-    if (cand.published) return res.json({ success: true, published: cand.published });
-    const published = { at: Date.now(), by: c.uid, byName: c.name };
-    const candidate: CandidateInfo = { ...cand, published };
-    await col(t, "applicants").doc(a.id).update({ candidate: deep(candidate), updatedAt: Date.now() });
-    await audit(t, a.id, c, "published", cand.decisionLabel);
-    // Экзамен отдаёт результаты страницей — письмо «Результаты готовы» (при публикации или позже кнопкой); иначе — прежнее письмо с решением.
-    const rs = sanitizeSettings((await examOfApplicant(t, a))?.settings).results;
-    const mail = rs.delivery === "page"
-      ? (rs.sendOn === "publish" ? await emailResultsReady(t, { ...a, candidate }, { by: c.uid }) : { sent: false, skipped: true, reason: "Письмо отправляется кнопкой" } as SendResult)
-      : await emailDecision(t, { ...a, candidate }, { by: c.uid });
-    await bumpLive(t, ["admissions"], a.id).catch(() => {});
-    return res.json({ success: true, published, email: mail });
+    const b = publishBlock(a);
+    if (b?.code === "published") return res.json({ success: true, published: candidateOf(a)!.published });
+    if (b) return fail(res, 409, b.code === "no_decision" ? "Сначала вынесите окончательное решение в анкете кандидата" : b.reason);
+    const at = futureAt(req.body?.at);
+    if (at) { await schedulePublish(t, a, c, at); return res.json({ success: true, scheduled: at }); }
+    const r = await publishApplicant(t, a, c);
+    return res.json({ success: true, published: r.published, email: r.email });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** Отменить запланированную публикацию. */
+router.post("/:tenantId/applicants/:id/publish/cancel", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Нет прав");
+    const a = await loadApplicant(t, String(req.params.id));
+    if (!a) return fail(res, 404, "Поступающий не найден");
+    await clearScheduled(t, a, c);
+    return res.json({ success: true });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** Применить публикацию/планирование к набору карточек; итог — по каждой. */
+async function publishMany(t: string, c: StaffCaller, list: Applicant[], at: number | null) {
+  const out = { done: 0, scheduled: 0, skipped: [] as PublishSkip[] };
+  for (const a of list) {
+    try {
+      const r = await publishOrSchedule(t, a, c, at);
+      if (r === "done") out.done++; else if (r === "scheduled") out.scheduled++; else out.skipped.push({ id: r.id, reason: r.reason });
+    } catch (e: any) { console.error("[admissions] publish", e?.message || e); out.skipped.push({ id: a.id, reason: "Не получилось" }); }
+  }
+  return out;
+}
+
+/** Выделенные карточки — опубликовать или запланировать. */
+router.post("/:tenantId/applicants/publish-bulk", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Нет прав");
+    const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(String).filter((x: string) => ID.test(x)))].slice(0, 300) as string[];
+    if (!ids.length) return fail(res, 400, "Выберите поступающих");
+    const found = await Promise.all(ids.map(id => loadApplicant(t, id)));
+    const list = found.filter((x): x is Applicant => !!x);
+    const out = await publishMany(t, c, list, futureAt(req.body?.at));
+    for (const id of ids) if (!list.some(x => x.id === id)) out.skipped.push({ id, reason: "Карточки нет" });
+    return res.json({ success: true, ...out });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** Весь экзамен: все не опубликованные карточки с окончательным решением. */
+router.post("/:tenantId/exams/:examId/publish-all", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Нет прав");
+    const examId = String(req.params.examId);
+    if (!ID.test(examId)) return fail(res, 400, "Неверный экзамен");
+    const [snap, attempts] = await Promise.all([col(t, "applicants").get(), attemptsOf(t)]);
+    const list: Applicant[] = []; let noDecision = 0;
+    for (const d of snap.docs) {
+      const a = { ...(d.data() as Applicant), id: d.id };
+      if (a.archived) continue;
+      const done = attempts.filter(x => x.applicantId === a.id && x.status === "finished" && !x.superseded).sort((x, y) => (y.finishedAt || 0) - (x.finishedAt || 0))[0];
+      if (String(done?.examId || a.referral?.examId || "") !== examId) continue;
+      const b = publishBlock(a);
+      if (b?.code === "published") continue;
+      if (b?.code === "no_decision") { noDecision++; continue; }
+      list.push(a);
+    }
+    if (req.body?.dry) return res.json({ success: true, count: list.length, noDecision });
+    const out = await publishMany(t, c, list, futureAt(req.body?.at));
+    return res.json({ success: true, ...out, noDecision });
   } catch (e: any) { return oops(res, e); }
 });
 
@@ -1425,7 +1561,9 @@ router.put("/:tenantId/applicants/:id/candidate", ...staff, async (req: any, res
 
     // Публикация — только кнопкой; другое решение — публикация снимается.
     const keepPublished = prev?.published && (prev.decision || null) === base.decision ? prev.published : null;
-    const candidate: CandidateInfo = { ...base, ...(Object.keys(overrides).length ? { overrides } : {}), published: keepPublished, by: c.name, at: Date.now() };
+    // Запланированная публикация живёт, пока решение то же и окончательное.
+    const keepSchedule = prev?.publishAt && !keepPublished && (prev.decision || null) === base.decision && base.decisionFinal ? prev.publishAt : null;
+    const candidate: CandidateInfo = { ...base, ...(Object.keys(overrides).length ? { overrides } : {}), published: keepPublished, publishAt: keepSchedule, by: c.name, at: Date.now() };
     await col(t, "applicants").doc(a.id).update({ ...patch, candidate, decision: null, updatedAt: Date.now() });
     const label = (d: string | null | undefined) => form.decisions.find(x => x.id === d)?.label || "";
     const changes = [...profileChanges, ...fieldChanges, ...diffRows([
@@ -1441,6 +1579,10 @@ router.put("/:tenantId/applicants/:id/candidate", ...staff, async (req: any, res
       await audit(t, a.id, c, "decision", candidate.decision ? candidate.decisionLabel : "снято");
       if (candidate.decision) await notifyAdmission(t, a, "decision", c, { summary: candidate.decisionLabel });
       if (prev?.published) await audit(t, a.id, c, "unpublished", "решение изменено — опубликуйте заново");
+    }
+    if (prev?.publishAt && !keepSchedule) {
+      await cancelJob(t, pubKey(a.id)).catch(() => false);
+      await audit(t, a.id, c, "publish_cancelled", "решение изменено");
     }
     if (!!prev?.feedbackGiven !== candidate.feedbackGiven) await audit(t, a.id, c, "feedback", candidate.feedbackGiven ? "дана" : "снята");
     if (patch.child && (patch.child as any).grade !== a.child.grade) await syncReferral(t, { ...a, ...patch } as any, await loadTemplates(t));

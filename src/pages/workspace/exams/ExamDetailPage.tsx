@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
-import { ArchiveRestore, ArrowLeft, Copy, Download, KeyRound, Loader2, QrCode, Trash2, UserPlus } from "lucide-react";
+import { ArchiveRestore, ArrowLeft, Copy, Download, KeyRound, Loader2, QrCode, Send, Trash2, UserPlus } from "lucide-react";
 import { Button, Tabs, confirmDialog, toast, useUrlTab } from "../../../components/ui";
 import HistoryTab from "./HistoryTab";
 import FancyQr, { QR_THEMES, downloadQr } from "../../../components/forms/FancyQr";
@@ -16,6 +16,8 @@ import NewApplicantModal from "../admissions/NewApplicantModal";
 import { useAdmissionApi } from "../admissions/admissionApi";
 import { canAdmissions, resolvePermissions, type PermissionKey } from "../../../shared/permissions";
 import AdmissionsPage from "../admissions/AdmissionsPage";
+import { PublishWhenModal, SkippedModal, outcomeText, type PublishOutcome } from "../admissions/PublishControls";
+import { isAdmissionExam } from "../../../shared/admissions";
 
 /** Один экзамен: работы, аналитика, конструктор; сверху — ссылка, QR и PIN. */
 export default function ExamDetailPage() {
@@ -40,6 +42,9 @@ export default function ExamDetailPage() {
     const [busy, setBusy] = useState(false);
   const [openAttempt, setOpenAttempt] = useState<string | null>(null);
   const [newApplicant, setNewApplicant] = useState(false);
+  const [pubPick, setPubPick] = useState(false);
+  const [pubMenu, setPubMenu] = useState(false);
+  const [pubOut, setPubOut] = useState<PublishOutcome | null>(null);
   const admApi = useAdmissionApi(tenantId);
   const granted = useMemo(() => (Array.isArray(activeTenant?.effectivePermissions)
     ? new Set<PermissionKey>(activeTenant.effectivePermissions)
@@ -102,6 +107,23 @@ export default function ExamDetailPage() {
     if (await confirmDialog({ title: "Несохранённые правки будут потеряны", confirmLabel: "Уйти без сохранения", danger: true })) { dirtyRef.current = { dirty: false, save: async () => true }; navigate(`/workspace/${tenantId}/exams`); }
   };
 
+  const publishAll = async (at?: number) => {
+    if (!exam) return;
+    setBusy(true);
+    try {
+      const d = await admApi(`/exams/${exam.id}/publish-all`, { method: "POST", body: JSON.stringify({ dry: true }) });
+      setBusy(false);
+      if (!d.count) { toast.error(d.noDecision ? `Нет окончательных решений (без решения: ${d.noDecision})` : "Некого публиковать"); return; }
+      if (!(await confirmDialog({ title: `${at ? "Запланировать публикацию" : "Опубликовать результаты"}: ${d.count}`, message: d.noDecision ? `Без окончательного решения пропустим: ${d.noDecision}` : undefined, confirmLabel: at ? "Запланировать" : "Опубликовать" }))) return;
+    } catch (e: any) { setBusy(false); toast.error(e.message); return; }
+    setBusy(true);
+    try {
+      const j: PublishOutcome = await admApi(`/exams/${exam.id}/publish-all`, { method: "POST", body: JSON.stringify(at ? { at } : {}) });
+      toast.success(outcomeText(j));
+      if (j.skipped.length || j.noDecision) setPubOut(j);
+      setPubPick(false);
+    } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
+  };
   if (error && !exam) return <div className="p-6 text-center space-y-3"><p className="text-rose-600">{error}</p><Link className={btn} to={`/workspace/${tenantId}/exams`}><ArrowLeft className="w-4 h-4" /> К экзаменам</Link></div>;
   if (!exam) return <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--text-muted)]" /></div>;
 
@@ -128,6 +150,17 @@ export default function ExamDetailPage() {
         )}
         {!archived && reception && !!exam.settings.admission?.grades?.length && (
           <button className={btnPrimary} onClick={() => setNewApplicant(true)}><UserPlus className="w-4 h-4" /> Поступающий{exam.settings.admission.grades.length === 1 ? ` в ${exam.settings.admission.grades[0]} класс` : ""}</button>
+        )}
+        {!archived && reception && isAdmissionExam(exam) && (
+          <div className="relative">
+            <button className={btn} disabled={busy} onClick={() => setPubMenu(m => !m)}><Send className="w-4 h-4" /> Опубликовать результаты всех…</button>
+            {pubMenu && (
+              <div className="absolute right-0 top-full mt-1 z-20 min-w-[190px] rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] shadow-lg p-1" onMouseLeave={() => setPubMenu(false)}>
+                <button type="button" className="w-full text-left px-3 py-2 text-sm rounded-lg text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]" onClick={() => { setPubMenu(false); void publishAll(); }}>Сейчас</button>
+                <button type="button" className="w-full text-left px-3 py-2 text-sm rounded-lg text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]" onClick={() => { setPubMenu(false); setPubPick(true); }}>Запланировать…</button>
+              </div>
+            )}
+          </div>
         )}
         {canEdit && !archived && <button className={btn} onClick={remove} title="Удалить"><Trash2 className="w-4 h-4" /></button>}
       </div>
@@ -167,6 +200,8 @@ export default function ExamDetailPage() {
           onClose={() => setNewApplicant(false)}
           onDone={id => { setNewApplicant(false); setParams({ open: id, ctab: "profile", qr: "parent" }, { replace: true }); }} />
       )}
+      {pubPick && <PublishWhenModal title="Запланировать публикацию всем" onClose={() => setPubPick(false)} onPick={at => publishAll(at)} />}
+      {pubOut && <SkippedModal outcome={pubOut} names={{}} onClose={() => setPubOut(null)} />}
       {openAttempt && <AttemptModal attemptId={openAttempt} exam={exam} api={api} tenant={activeTenant} canEdit={canManage} onChanged={() => {}} onClose={() => setOpenAttempt(null)} />}
       {qr && (
         <Modal title={exam.title} onClose={() => setQr(false)}>
