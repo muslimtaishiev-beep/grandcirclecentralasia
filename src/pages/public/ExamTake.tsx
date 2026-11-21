@@ -90,7 +90,9 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   const scroller = useRef<HTMLDivElement | null>(null);
 
   const post = useCallback(async (path: string, body: object) => {
-    const r = await fetch(`/api/exam-public/${C}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    // Обрыв связи браузер сообщает по-английски («Load failed», «Failed to fetch») — ученику нужен понятный текст.
+    const r = await fetch(`/api/exam-public/${C}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      .catch(() => { throw new Error("Нет связи с интернетом — проверьте подключение и нажмите ещё раз"); });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.success === false) throw Object.assign(new Error(j.error || `Ошибка ${r.status}`), { reset: j.reset });
     return j;
