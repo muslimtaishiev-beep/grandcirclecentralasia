@@ -11,6 +11,7 @@ import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui"
 import type { Api } from "./examApi";
 import { useAdmissionApi } from "../admissions/admissionApi";
 import { canAdmissions, resolvePermissions, type PermissionKey } from "../../../shared/permissions";
+import { isAdmissionExam } from "../../../shared/admissions";
 import CandidateSheetModal from "../admissions/CandidateSheetModal";
 import { PublishWhenModal, SplitPublishButton, whenShort } from "../admissions/PublishControls";
 import type { CandidateDecisionOption } from "../../../shared/candidateForm";
@@ -41,12 +42,12 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
   const [cardDecisions, setCardDecisions] = useState<CandidateDecisionOption[]>([]);
   const [pickAt, setPickAt] = useState(false);
   const hasCard = !!a?.card;
-  useEffect(() => {
-    if (!hasCard) return;
-    admApi("/candidate-form").then(j => setCardDecisions(j.form?.decisions || [])).catch(() => {});
-  }, [hasCard, admApi]);
   /** Вступительный тест: вместо сертификата и отчёта по темам — анкета кандидата. */
-  const admission = !!exam.settings.admission?.candidateForm;
+  const admission = !!exam.settings.admission?.candidateForm || isAdmissionExam(exam);
+  useEffect(() => {
+    if (!hasCard && !admission) return;
+    admApi("/candidate-form").then(j => setCardDecisions(j.form?.decisions || [])).catch(() => {});
+  }, [hasCard, admission, admApi]);
   /** Анкета кандидата — всегда окно карточки поступающего (просмотр, правка, история, PDF); работа без карточки привязывается к ней или заводит её. */
   const [sheetId, setSheetId] = useState<string | null>(null);
   const granted = useMemo(() => (Array.isArray(tenant?.effectivePermissions)
@@ -186,18 +187,19 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
           </div>
         )}
 
-        {a.status === "finished" && ((canEdit && (s.results.decisions || s.results.groups.length > 0)) || (a.card && rev && canCard)) && (
+        {a.status === "finished" && ((canEdit && ((s.results.decisions && !admission) || s.results.groups.length > 0)) || ((a.card || admission) && rev && canCard)) && (
           <div className="grid sm:grid-cols-2 gap-3">
-            {a.card && canCard ? (
+            {(a.card || admission) && canCard ? (
               <div>
                 <span className={label}>Решение</span>
                 <div className="flex flex-wrap gap-1.5">
-                  {cardDecisions.map(d => (
-                    <button key={d.id} disabled={!!busy} className={`${btn} ${a.card?.decision === d.id ? "!bg-[var(--accent)] !text-white !border-[var(--accent)]" : ""}`} onClick={() => act("decision", { value: a.card?.decision === d.id ? null : d.id })}>{d.label}</button>
-                  ))}
+                  {cardDecisions.map(d => {
+                    const on = a.card?.decision === d.id;
+                    return <button key={d.id} type="button" role="checkbox" aria-checked={on} disabled={!!busy} className={`px-3 py-1.5 rounded-full text-sm font-medium border ${on ? "bg-[var(--accent)] border-[var(--accent)] text-white" : "border-[var(--border-color)] text-[var(--text-main)]"}`} onClick={() => act("decision", { value: on ? null : d.id })}>{on ? "☑" : "☐"} {d.label}</button>;
+                  })}
                 </div>
               </div>
-            ) : s.results.decisions && !a.card && canEdit && (
+            ) : s.results.decisions && !admission && !a.card && canEdit && (
               <div>
                 <span className={label}>Решение</span>
                 <div className="flex flex-wrap gap-1.5">

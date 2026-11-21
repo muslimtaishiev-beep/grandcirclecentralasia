@@ -29,7 +29,7 @@ import { PublishWhenModal, SplitPublishButton, whenShort } from "./PublishContro
 interface FormDoc { id: string; templateId: string; status: "draft" | "done"; outcome: string | null; outcomeLabel?: string; full: boolean; template: QTemplate; answers?: QAnswers; grade?: number | null; filledBy?: { kind: string; name: string }; doneAt?: number | null; consent?: unknown }
 /** Работа в карточке: итог — всем, анкета с экзамена и прокторинг — только с правом на экзамены (examAccess). */
 interface CardAttempt extends TestSummary {
-  id: string; examId: string; shortId: string; decision: string | null; startedAt?: number;
+  id: string; examId: string; shortId: string; startedAt?: number;
   examAccess?: boolean; levelLabel?: string; earned?: number | null; max?: number | null; reviewDone?: boolean; published?: boolean;
   student?: { name: string; level: string; phone: string; email: string };
   extraRows?: { label: string; value: string }[];
@@ -456,7 +456,6 @@ function AttemptBlock({ x, tenantId, onOpen }: { x: CardAttempt; tenantId: strin
         {state && <span className="text-xs px-2 py-0.5 rounded-full bg-slate-500/10 text-[var(--text-muted)]">{state}</span>}
         {x.reviewDone && <span className="text-xs px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-700">Проверено</span>}
         {x.published && <span className="text-xs px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-700">Опубликовано</span>}
-        {x.decision && <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)]">{x.decision}</span>}
       </div>
       {x.examAccess && (info.length > 0 || (x.extraRows?.length || 0) > 0) && (
         <div className="rounded-lg bg-[var(--bg-surface-hover)] p-2.5 space-y-1">

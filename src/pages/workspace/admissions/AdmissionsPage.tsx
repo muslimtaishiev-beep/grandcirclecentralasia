@@ -128,7 +128,7 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
     for (const r of visible) ws.addRow([no(r.refNo), r.child.name, r.child.grade, r.child.birthDate, r.parent.name, r.parent.phone, r.parentForm.status === "done" ? "да" : "",
       Object.values(r.stages).map(s => `${s.title}: ${s.status === "done" ? s.outcomeLabel : "идёт"}`).join("; "),
       ...(acad ? [r.attempt?.examTitle || r.referral?.examTitle || (r.paperResults ? "на бумаге" : ""), r.attempt?.parts.map(p => `${p.title}: ${p.value}`).join("; ") || (r.attempt?.percent != null ? `${r.attempt.percent}%` : ""),
-        r.decision || attemptDecision(r)] : []), STAGE_LABEL[r.stage]]);
+        r.decision] : []), STAGE_LABEL[r.stage]]);
     ws.getRow(1).font = { bold: true }; ws.columns.forEach(c => { c.width = 18; });
     const buf = await wb.xlsx.writeBuffer();
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([buf])); a.download = `Поступающие ${new Date().toLocaleDateString("ru-RU")}.xlsx`; a.click();
@@ -274,7 +274,7 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
                           <button className="mt-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20" onClick={e => { e.stopPropagation(); setResult({ id: r.attempt!.id, examId: r.attempt!.examId }); }}>Результаты</button></>
                           : r.referral ? <span className="text-sky-700 dark:text-sky-400">направлен{r.referral.manual ? " (вручную)" : ""}</span> : r.referralBlocked ? <span className="text-amber-700 dark:text-amber-400">снято</span> : r.paperResults ? "на бумаге" : <span className="text-[var(--text-muted)]">—</span>}
                       </td>}
-                      {acad && <td className="text-xs">{r.decision || attemptDecision(r) || "—"}</td>}
+                      {acad && <td className="text-xs">{r.decision || "—"}</td>}
                       <td className="text-xs whitespace-nowrap text-[var(--text-muted)]">{STAGE_LABEL[mode === "staff" && ACADEMIC_STAGES.has(r.stage) ? "referred" : r.stage]}</td>
                       {view === "archive" && <td className="text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
                         <Button size="sm" onClick={() => restore(r)} icon={<ArchiveRestore className="w-3.5 h-3.5" />}>Вернуть</Button>
@@ -320,7 +320,6 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
   );
 }
 
-const attemptDecision = (r: Row) => r.attempt?.decision || "";
 /** Этапы после направления — академическая часть, исполнителям анкет не показываются. */
 const ACADEMIC_STAGES = new Set<Stage>(["testing", "tested", "decided"]);
 

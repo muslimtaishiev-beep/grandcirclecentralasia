@@ -14,7 +14,7 @@ import { buildView } from "../server/resultPages.js";
 import { resendExamResultsReady } from "../server/examResults.js";
 import type { ResultData } from "../shared/resultPages.js";
 import { LEGAL_VERSION } from "../shared/legalDocs.js";
-import { DECISION_LABEL, REG_PRESETS, paperResult, partResults, sanitizeSections, sanitizeSettings, type Decision, type Exam, type ExamResult } from "../shared/examRun.js";
+import { REG_PRESETS, paperResult, partResults, sanitizeSections, sanitizeSettings, type Exam, type ExamResult } from "../shared/examRun.js";
 import { NEUTRAL_CANDIDATE_FORM, sanitizeCandidateForm, type CandidateFormConfig } from "../shared/candidateForm.js";
 import {
   answerText, dropHidden, gradeOf, missingFor, outcomeOf, sanitizeAnswers, sanitizeTemplate,
@@ -557,7 +557,6 @@ async function attemptsOf(t: string, applicantIds?: string[], detail?: { exams: 
       topics: (x.result?.topics || []).filter((q: any) => q.topic && q.topic !== "—").map((q: any) => ({ topic: q.topic, percent: q.percent })),
       levels: e?.settings.admission?.levels || { mid: 50, high: 77 },
       studentPhone: x.student?.extra?.studentPhone || x.student?.phone || "",
-      decision: x.decision ? DECISION_LABEL[x.decision.value as Decision] : null,
       // Всё, что видно в экзамене: анкета при входе, итог, проверка, прокторинг — анкета и прокторинг только с правом на экзамены.
       ...(detail ? {
         examAccess: detail.exams,

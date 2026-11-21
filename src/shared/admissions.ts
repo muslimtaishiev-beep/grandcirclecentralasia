@@ -60,9 +60,6 @@ export interface CandidateInfo {
   publishAt?: number | null;
   by: string; at: number;
 }
-const LEGACY_DECISION: Record<Decision, { label: string; final: boolean }> = {
-  accepted: { label: "Принят", final: true }, reserve: { label: "Резерв", final: false }, rejected: { label: "Не принят", final: true },
-};
 const txt = (v: unknown, max: number) => String(v ?? "").replace(/\r/g, "").trim().slice(0, max);
 const day = (v: unknown) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v ?? "")) ? String(v) : "");
 
@@ -82,14 +79,13 @@ export function sanitizeCandidate(raw: any, decisions: { id: string; label: stri
     nextContact: txt(raw?.nextContact, 200),
   };
 }
-/** Анкета кандидата карточки; решение, принятое до анкеты, переносится в неё. */
+/** Анкета кандидата карточки; прежнее решение «Принят / Резерв / Не принят» решением кандидата не становится — только заключение из комментария. */
 export function candidateOf(a: Pick<Applicant, "candidate" | "decision">): CandidateInfo | null {
   if (a.candidate) return a.candidate;
   if (!a.decision) return null;
-  const l = LEGACY_DECISION[a.decision.value];
   return {
     responsible: "", conclusion: a.decision.comment || "", feedback: "", feedbackGiven: false,
-    decision: a.decision.value, decisionLabel: l?.label || "", decisionFinal: !!l?.final,
+    decision: null, decisionLabel: "", decisionFinal: false,
     trialFrom: "", trialTo: "", klass: "", reviewDate: "", parentNotified: null, nextContact: "",
     by: a.decision.by, at: a.decision.at,
   };

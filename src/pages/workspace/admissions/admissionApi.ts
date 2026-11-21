@@ -22,7 +22,7 @@ export interface Row {
   parentForm: { status: "none" | "done"; at: number | null; by: string | null };
   stages: Record<string, StageSummary>;
   referral: { examTitle: string; manual: boolean; issuedAt: number } | null;
-  attempt: { id: string; examId: string; examTitle: string; status: string; shortId: string; parts: { title: string; value: string }[]; percent: number | null; decision: string | null } | null;
+  attempt: { id: string; examId: string; examTitle: string; status: string; shortId: string; parts: { title: string; value: string }[]; percent: number | null } | null;
   paperResults: number;
   decision: string | null;
   stage: Stage;

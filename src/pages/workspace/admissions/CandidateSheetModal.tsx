@@ -247,9 +247,6 @@ function EditForm({ fields, vals, setVals, draft, setDraft, cfg, test }: {
       <label className="flex items-center gap-2 text-sm text-[var(--text-main)]"><input type="checkbox" checked={draft.feedbackGiven} onChange={e => set({ feedbackGiven: e.target.checked })} /> Обратная связь дана</label>
 
       {h("Решение по кандидату")}
-      {!draft.decision && test?.decision && (
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-[var(--text-main)]">В экзамене стоит «{test.decision}» — выберите вариант решения</div>
-      )}
       <div className="flex flex-wrap gap-1.5">{cfg.decisions.map(v => <button key={v.id} type="button" role="checkbox" aria-checked={draft.decision === v.id} className={chip(draft.decision === v.id)} onClick={() => set({ decision: draft.decision === v.id ? null : v.id })}>{draft.decision === v.id ? "☑" : "☐"} {v.label}</button>)}</div>
       <div className="grid sm:grid-cols-2 gap-3">
         {trial && <>

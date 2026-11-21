@@ -1,6 +1,6 @@
 import { applicantAudit } from "../server/applicantAudit.js";
 import { liveOnWrite } from "../server/live.js";
-import { applicantById, isAdmissionExam, notifyTested, publishCards, setCandidateDecision, syncAllReferrals, unpublishCard } from "./admissionRoutes.js";
+import { applicantById, isAdmissionExam, linkAttempt, notifyTested, publishCards, setCandidateDecision, syncAllReferrals, unpublishCard } from "./admissionRoutes.js";
 import { candidateOf } from "../shared/admissions.js";
 import { emailExamResultsReady, examSendsOnPublish, examUsesPage } from "../server/examResults.js";
 import { registerJobHandler, scheduleJob } from "../server/scheduler.js";
@@ -502,13 +502,21 @@ const readyMailApplies = (exam: Exam | null, a: Attempt): exam is Exam => !!exam
 const SKIP_NO_DECISION = "Нет окончательного решения в анкете кандидата";
 const cardWho = (req: any) => ({ uid: str(req.user?.uid, 128), name: str(req.user?.name || req.user?.email || "Сотрудник", 120) });
 /** Карточка поступающего у работы; решение и публикация таких работ — в карточке. Нет права приёма — ошибка. */
-async function cardOf(t: string, req: any, a: Attempt): Promise<{ card: NonNullable<Awaited<ReturnType<typeof applicantById>>> | null; error?: [number, string] }> {
-  if (!a.applicantId) return { card: null };
-  const card = await applicantById(t, String(a.applicantId));
-  if (!card) return { card: null };
+async function cardOf(t: string, req: any, a: Attempt, exam?: Exam | null): Promise<{ card: NonNullable<Awaited<ReturnType<typeof applicantById>>> | null; error?: [number, string] }> {
+  const admission = !!exam && isAdmissionExam(exam);
+  if (!a.applicantId && !admission) return { card: null };
   if (!req.system) {
     const c = await staffCaller(db(), t, req.user);
-    if (!hasPerm(c, "admission:manage")) return { card, error: [403, "Решение и публикацию по поступающему выносит администрация приёма"] };
+    if (!hasPerm(c, "admission:manage")) return { card: null, error: [403, "Решение и публикацию по поступающему выносит администрация приёма"] };
+  }
+  let card = a.applicantId ? await applicantById(t, String(a.applicantId)) : null;
+  if (!card && admission) {
+    // Вступительная работа без карточки (или карточку удалили): находим или заводим сами.
+    const r = await linkAttempt(t, a.id, cardWho(req));
+    if (!r) return { card: null, error: [409, "Не удалось завести карточку поступающего: у работы нет ФИО"] };
+    if ("ambiguous" in r) return { card: null, error: [409, "Найдено несколько карточек с таким именем — откройте «Приём»"] };
+    (a as any).applicantId = r.applicantId;
+    card = await applicantById(t, r.applicantId);
   }
   return { card };
 }
@@ -523,7 +531,7 @@ async function applyAction(t: string, req: any, a: Attempt & { questions: Record
     case "publish": {
       if (a.status !== "finished") return { error: [409, "Опубликовать можно только сданную работу"] };
       if (exam?.settings.results.requireReview && a.review?.status !== "done") return { error: [409, "Сначала завершите проверку работы"] };
-      const { card, error } = await cardOf(t, req, a);
+      const { card, error } = await cardOf(t, req, a, exam);
       if (error) return { error };
       if (card) {
         const at = Number(body?.at);
@@ -591,7 +599,8 @@ async function applyAction(t: string, req: any, a: Attempt & { questions: Record
     }
     case "decision": {
       // Работа поступающего: решение — вариант анкеты кандидата, хранится в карточке.
-      const { card, error } = await cardOf(t, req, a);
+      if (exam && isAdmissionExam(exam) && ["accepted", "reserve", "rejected"].includes(String(body?.value))) return { error: [400, "У вступительного экзамена решение — вариант из анкеты кандидата"] };
+      const { card, error } = await cardOf(t, req, a, exam);
       if (error) return { error };
       if (card) {
         const id = body?.value === null || body?.value === "" || body?.value === undefined ? null : String(body.value);
@@ -600,6 +609,7 @@ async function applyAction(t: string, req: any, a: Attempt & { questions: Record
         detail = r.candidate?.decision ? r.candidate.decisionLabel : "снято";
         break;
       }
+      if (exam && isAdmissionExam(exam)) return { error: [400, "У вступительного экзамена решение — вариант из анкеты кандидата"] };
       const v = body?.value as Decision | null;
       if (v !== null && !["accepted", "reserve", "rejected"].includes(v)) return { error: [400, "Неизвестное решение"] };
       await ref.update({ decision: v ? { value: v, comment: str(body?.comment, 1000), by: who(req), at: now } : null });
@@ -663,7 +673,7 @@ router.post("/:tenantId/attempts-bulk", ...review, async (req: any, res: any) =>
         const a = await loadAttempt(t, id);
         if (!a || a.status !== "finished" || a.published) { errors.push({ id, error: !a ? "Работа не найдена" : a.published ? "Уже опубликовано" : "Работа не сдана" }); continue; }
         // Работа поступающего: таймер — у карточки.
-        const { card, error } = await cardOf(t, req, a);
+        const { card, error } = await cardOf(t, req, a, await loadExam(t, a.examId));
         if (error) { errors.push({ id, error: error[1] }); continue; }
         if (card) {
           const r = await publishCards(t, by, [card.id], Math.floor(at));

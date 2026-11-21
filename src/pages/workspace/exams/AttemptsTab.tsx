@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLive } from "../../../lib/useLive";
-import { ArrowDown, ArrowUp, Download, Loader2, Radio, RefreshCw, Search, Send, ShieldAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, Download, Loader2, Radio, RefreshCw, Search, ShieldAlert } from "lucide-react";
 import { confirmDialog, toast } from "../../../components/ui";
 import BulkBar from "./BulkBar";
-import { SkippedModal, type PublishOutcome } from "../admissions/PublishControls";
 import { DECISION_LABEL, partResults, type AttemptRow, type Exam } from "../../../shared/examRun";
 import { btn, btnPrimary, card, input } from "../journals/components/ui";
 import type { Api } from "./examApi";
 import AttemptModal from "./AttemptModal";
+import { isAdmissionExam } from "../../../shared/admissions";
 import { exportExamXlsx } from "./examExcel";
 
 /**
@@ -16,7 +16,6 @@ import { exportExamXlsx } from "./examExcel";
  */
 export default function AttemptsTab({ exam, api, tenant, canEdit, canReview }: { exam: Exam; api: Api; tenant: any; canEdit: boolean; canReview: boolean }) {
   const [rows, setRows] = useState<AttemptRow[]>([]);
-  const [skipOut, setSkipOut] = useState<PublishOutcome | null>(null);
   const [skew, setSkew] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [loading, setLoading] = useState(true);
@@ -76,16 +75,6 @@ export default function AttemptsTab({ exam, api, tenant, canEdit, canReview }: {
     return `${m}:${String(sec).padStart(2, "0")}`;
   };
 
-  const publishAll = async () => {
-    setBusy(true);
-    try {
-      const j = await api(`/exams/${exam.id}/publish-all`, { method: "POST" });
-      toast.success(`Опубликовано: ${j.count}${j.waitingReview ? `. Ждут проверки: ${j.waitingReview}` : ""}${j.skipped?.length ? `. Пропущено: ${j.skipped.length}` : ""}`);
-      if (j.skipped?.length) setSkipOut({ done: j.count, scheduled: 0, skipped: j.skipped });
-      await load();
-    } catch (e: any) { toast.error(e.message); }
-    finally { setBusy(false); }
-  };
   const recheckAll = async () => {
     if (!(await confirmDialog({ title: "Перепроверить все сданные работы?", message: "Ключи — из банка сейчас, ручные оценки сохранятся", confirmLabel: "Перепроверить" }))) return;
     setBusy(true);
@@ -115,7 +104,6 @@ export default function AttemptsTab({ exam, api, tenant, canEdit, canReview }: {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
           <input className={`${input} pl-9`} placeholder="ФИО, номер работы или поступающего, телефон" value={q} onChange={e => setQ(e.target.value)} />
         </div>
-        {canReview && s.results.showToStudent === "after_publish" && <button className={btnPrimary} disabled={busy} onClick={publishAll}><Send className="w-4 h-4" /> Опубликовать готовые</button>}
         {canReview && <button className={btn} disabled={busy || !done} onClick={recheckAll}><RefreshCw className="w-4 h-4" /> Перепроверить все</button>}
         <button className={btn} disabled={busy || !rows.length} onClick={excel}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Excel</button>
         <button className={btn} onClick={load} title="Обновить"><RefreshCw className="w-4 h-4" /></button>
@@ -126,7 +114,7 @@ export default function AttemptsTab({ exam, api, tenant, canEdit, canReview }: {
         ))}
       </div>
       {error && <div className="text-sm text-rose-600">{error}</div>}
-      <BulkBar tenantId={tenant?.id} hasCards={ids.some(id => !!rows?.find(r => r.id === id)?.card)} names={Object.fromEntries((rows || []).map(r => [r.id, r.student.name]))} readyMail={s.results.delivery === "page"} api={api} ids={ids} canReview={canReview} canManage={canEdit} onDone={load} onClear={() => setSelected(new Set())} />
+      <BulkBar tenantId={tenant?.id} hasCards={isAdmissionExam(exam) || ids.some(id => !!rows?.find(r => r.id === id)?.card)} names={Object.fromEntries((rows || []).map(r => [r.id, r.student.name]))} readyMail={s.results.delivery === "page"} api={api} ids={ids} canReview={canReview} canManage={canEdit} onDone={load} onClear={() => setSelected(new Set())} />
 
       {/* Пусто — отдельной карточкой: внутри широкой таблицы надпись на телефоне уезжала за край. */}
       {!loading && !visible.length && (
@@ -172,14 +160,13 @@ export default function AttemptsTab({ exam, api, tenant, canEdit, canReview }: {
                         : typeof r.proctoring?.honestyIndex === "number" ? <span className={flagged(r) ? "text-rose-600 font-semibold" : "text-[var(--text-muted)]"}>{flagged(r) && <ShieldAlert className="inline w-3.5 h-3.5 -mt-0.5 mr-0.5" />}{r.proctoring.honestyIndex}/100</span> : "—"}
                     </td>
                   )}
-                  {(s.results.decisions || s.results.groups.length > 0 || rows.some(x => x.card)) && <td className="px-3 py-2 text-xs">{[r.card ? r.card.decisionLabel : r.decision ? DECISION_LABEL[r.decision.value] : "", r.group || ""].filter(Boolean).join(" · ")}</td>}
+                  {((s.results.decisions && !isAdmissionExam(exam)) || s.results.groups.length > 0 || rows.some(x => x.card) || isAdmissionExam(exam)) && <td className="px-3 py-2 text-xs">{[r.card ? r.card.decisionLabel : isAdmissionExam(exam) ? "" : r.decision ? DECISION_LABEL[r.decision.value] : "", r.group || ""].filter(Boolean).join(" · ")}</td>}
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
-      {skipOut && <SkippedModal outcome={skipOut} names={Object.fromEntries(rows.map(r => [r.id, r.student.name]))} onClose={() => setSkipOut(null)} />}
       {open && <AttemptModal attemptId={open} exam={exam} api={api} tenant={tenant} canEdit={canEdit} onChanged={load} onClose={() => setOpen(null)} />}
     </div>
   );
