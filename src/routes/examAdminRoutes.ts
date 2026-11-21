@@ -461,6 +461,7 @@ router.post("/:tenantId/attempts/:aid/review", ...review, checkIds, async (req: 
     const a = await loadAttempt(t, req.params.aid);
     if (!a) return fail(res, 404, "Работа не найдена");
     if (a.status !== "finished") return fail(res, 409, "Проверять можно только сданную работу");
+    if (await publishedNow(t, a)) return fail(res, 409, LOCKED_MSG);
     const exam = await loadExam(t, a.examId);
     const settings = exam?.settings || DEFAULT_SETTINGS;
     const overrides: Record<string, number> = { ...(a.review?.overrides || {}) };
@@ -481,6 +482,21 @@ router.post("/:tenantId/attempts/:aid/review", ...review, checkIds, async (req: 
     return res.json({ success: true, result, review });
   } catch (e: any) { return fail(res, 500, e.message); }
 });
+
+/**
+ * Опубликованное заморожено: решение, баллы, заметки, перепроверка, группа,
+ * аннулирование и удаление — только после «Снять публикацию». Случайное
+ * нажатие не меняет то, что уже видит семья.
+ */
+const LOCKED_MSG = "Результаты опубликованы — сначала снимите публикацию";
+const LOCKED_ACTIONS = new Set(["decision", "recheck", "annul", "delete", "group"]);
+async function publishedNow(t: string, a: Attempt): Promise<boolean> {
+  if (a.applicantId) {
+    const card = await applicantById(t, String(a.applicantId));
+    if (card) return !!candidateOf(card)?.published;
+  }
+  return !!a.published;
+}
 
 /** Что может проверяющий; остальное — только тот, кто управляет экзаменами. */
 const REVIEW_ACTIONS = new Set(["publish", "unpublish", "finish", "recheck", "extend", "group", "send_ready"]);
@@ -524,6 +540,7 @@ const skipText = (s: { reason: string; code?: string }) => (s.code === "no_decis
 
 async function applyAction(t: string, req: any, a: Attempt & { questions: Record<string, any>; token: string }, exam: Exam | null, action: string, body: any): Promise<{ error?: [number, string]; deleted?: boolean; recheck?: any; email?: { sent: boolean; reason?: string; skipped?: boolean } }> {
   if (!REVIEW_ACTIONS.has(action) && !req.canEdit) return { error: [403, "Это действие доступно тому, кто управляет экзаменами"] };
+  if (LOCKED_ACTIONS.has(action) && await publishedNow(t, a)) return { error: [409, LOCKED_MSG] };
   const ref = col(t, "exam_attempts").doc(a.id);
   const now = Date.now();
   let detail = "";

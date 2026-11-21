@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Download, History, Loader2, Pencil, RotateCcw, X } from "lucide-react";
+import { Download, History, Loader2, Lock, Pencil, RotateCcw, X } from "lucide-react";
 import { useLive } from "../../../lib/useLive";
 import { candidateOf, type Applicant, type CandidateInfo } from "../../../shared/admissions";
 import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
@@ -155,7 +155,7 @@ export default function CandidateSheetModal({ applicantId, api, tenant, startEdi
         <div className={editing ? "grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 items-start" : ""}>
           {editing && draft && (
             <div className={pane === "sheet" ? "hidden lg:block" : ""}>
-              <EditForm fields={fields} vals={vals} setVals={setVals} draft={draft} setDraft={setDraft} cfg={cfg} test={test} />
+              <EditForm fields={fields} vals={vals} setVals={setVals} draft={draft} setDraft={setDraft} cfg={cfg} test={test} locked={!!candidateOf(a)?.published} />
             </div>
           )}
           <div className={editing && pane === "form" ? "hidden lg:block" : ""}>
@@ -194,7 +194,8 @@ function Sheet({ html }: { html: string }) {
 
 const chip = (on: boolean) => `px-3 py-1.5 rounded-full text-sm font-medium border ${on ? "bg-[var(--accent)] border-[var(--accent)] text-white" : "border-[var(--border-color)] text-[var(--text-main)]"}`;
 
-function EditForm({ fields, vals, setVals, draft, setDraft, cfg, test }: {
+function EditForm({ fields, vals, setVals, draft, setDraft, cfg, test, locked }: {
+  /** Результаты опубликованы: то, что видит семья, не меняется, пока публикацию не снимут. */ locked?: boolean;
   fields: SheetField[]; vals: Vals; setVals: React.Dispatch<React.SetStateAction<Vals>>;
   draft: Draft; setDraft: React.Dispatch<React.SetStateAction<Draft | null>>; cfg: CandidateFormConfig; test: TestSummary | null;
 }) {
@@ -235,7 +236,8 @@ function EditForm({ fields, vals, setVals, draft, setDraft, cfg, test }: {
         })}
       </div>
 
-      {h("Результат")}
+      <div className="flex items-center gap-2">{h("Результат")}{locked && <span className="inline-flex items-center gap-1 text-xs text-[var(--text-muted)]"><Lock className="w-3.5 h-3.5" /> Опубликовано — правки закрыты</span>}</div>
+      <fieldset disabled={locked} className="space-y-3 disabled:opacity-60 min-w-0">
       <div className="grid sm:grid-cols-2 gap-3">
         {!fields.some(own) && <div><span className={label}>Ответственный</span><input className={input} value={draft.responsible} onChange={e => set({ responsible: e.target.value })} /></div>}
         <div><span className={label}>Общий результат / заключение</span><input className={input} value={draft.conclusion} onChange={e => set({ conclusion: e.target.value })} placeholder={test ? test.parts.map(p => `${p.title}: ${p.value}`).join(", ") || `${test.percent ?? ""}%` : ""} /></div>
@@ -257,6 +259,9 @@ function EditForm({ fields, vals, setVals, draft, setDraft, cfg, test }: {
           <div><span className={label}>по</span><input type="date" className={input} value={draft.trialTo} onChange={e => set({ trialTo: e.target.value })} /></div>
         </>}
         {cfg.extras.klass && <div><span className={label}>Класс</span><input className={input} value={draft.klass} onChange={e => set({ klass: e.target.value })} /></div>}
+      </div>
+      </fieldset>
+      <div className="grid sm:grid-cols-2 gap-3">
         {cfg.extras.reviewDate && <div><span className={label}>Повторное рассмотрение</span><input type="date" className={input} value={draft.reviewDate} onChange={e => set({ reviewDate: e.target.value })} /></div>}
         {cfg.extras.parentNotified && <div>
           <span className={label}>Родитель уведомлён об условиях</span>

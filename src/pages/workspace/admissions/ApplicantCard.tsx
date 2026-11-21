@@ -13,7 +13,7 @@ import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui"
 import { Button, confirmDialog, toast } from "../../../components/ui";
 import { TONE, type Api, type Me } from "./admissionApi";
 import { saveSessions, sessionsOf } from "./sessionPdf";
-import AttemptViewer from "../exams/AttemptViewer";
+import AttemptViewer, { AttemptInline } from "../exams/AttemptViewer";
 import ProctoringDossier from "../../../components/ProctoringDossier";
 import { useExamApi } from "../exams/examApi";
 import { latestTest, type TestSummary } from "./candidateForm";
@@ -384,6 +384,8 @@ function TestTab({ a, d, api, tenant, onSaved, onOpenSheet }: { a: Applicant; d:
   const test = latestTest(d.attempts);
   const act = async (fn: () => Promise<unknown>) => { try { await fn(); onSaved(); } catch (e: any) { toast.error(e.message); } };
   const [revoke, setRevoke] = useState(false);
+  /** Работа, которая идёт в зачёт (или пишется сейчас), — у кого есть доступ к экзаменам, видит её целиком прямо здесь. */
+  const main = d.attempts.find(x => x.examAccess && !x.paper && !x.superseded && x.status !== "annulled") || null;
   const blocked = a.referralBlocked;
   return (
     <div className="space-y-5">
@@ -411,7 +413,10 @@ function TestTab({ a, d, api, tenant, onSaved, onOpenSheet }: { a: Applicant; d:
 
       <section className="space-y-2">
         <h3 className="font-bold text-[var(--text-main)]">Тест</h3>
-        {d.attempts.length ? d.attempts.map(x => <AttemptBlock key={x.id} x={x} tenantId={t} onOpen={() => setResult({ id: x.id, examId: x.examId })} />) : <p className="text-sm text-[var(--text-muted)]">{d.testExam?.paper ? "Тест пишут на бумаге в школе — внесите результаты ниже." : "Онлайн-теста ещё не было."}</p>}
+        {/* Текущая работа — тем же экраном, что в «Экзаменах»: действия, решение, ответы, досье. Прежние и бумажные — кратко. */}
+        {d.attempts.length ? d.attempts.map(x => (x.id === main?.id
+          ? <AttemptInline key={x.id} tenant={tenant} attemptId={x.id} examId={x.examId} onChanged={onSaved} refreshKey={a.updatedAt} />
+          : <AttemptBlock key={x.id} x={x} tenantId={t} onOpen={() => setResult({ id: x.id, examId: x.examId })} />)) : <p className="text-sm text-[var(--text-muted)]">{d.testExam?.paper ? "Тест пишут на бумаге в школе — внесите результаты ниже." : "Онлайн-теста ещё не было."}</p>}
         {d.testExam?.paper && canManage && <PaperTestForm key={d.testExam.id + (test?.finishedAt || 0)} exam={d.testExam} prev={d.attempts.find(x => x.paper && x.examId === d.testExam!.id) || null}
           onSave={(rows, photo) => act(() => api(`/applicants/${a.id}/paper-test`, { method: "POST", body: JSON.stringify({ examId: d.testExam!.id, rows, ...(photo ? { photo } : {}) }) }))} />}
         {a.paperResults.map(p => (
@@ -426,7 +431,7 @@ function TestTab({ a, d, api, tenant, onSaved, onOpenSheet }: { a: Applicant; d:
         {canManage && !d.testExam && <button className={btn} onClick={() => setPaper({ id: "", title: "Тест на бумаге", rows: [{ subject: "", score: null, max: null }], comment: "", at: 0, byName: "" })}>Внести результаты на бумаге</button>}
       </section>
 
-      <CandidateSummary a={a} cfg={d.candidateForm || NEUTRAL_CANDIDATE_FORM} canManage={canManage} onOpen={onOpenSheet} api={api} onChanged={onSaved} resultDelivery={d.resultDelivery || null} />
+      <CandidateSummary a={a} cfg={d.candidateForm || NEUTRAL_CANDIDATE_FORM} canManage={canManage} onOpen={onOpenSheet} api={api} onChanged={onSaved} resultDelivery={d.resultDelivery || null} compact={!!main && main.status === "finished"} />
 
       {result && <AttemptViewer tenant={tenant} attemptId={result.id} examId={result.examId} onClose={() => setResult(null)} onChanged={onSaved} />}
       {paper && <PaperModal p={paper} onClose={() => setPaper(null)} onSave={async x => { await api(`/applicants/${a.id}/paper`, { method: "POST", body: JSON.stringify(x) }); setPaper(null); onSaved(); }} />}
@@ -543,7 +548,8 @@ function PaperTestForm({ exam, prev, onSave }: { exam: TestExam; prev: TestSumma
 }
 
 /** Анкета кандидата — коротко: решение, заключение, обратная связь. Правка — в окне листа. */
-function CandidateSummary({ a, cfg, canManage, onOpen, api, onChanged, resultDelivery }: { a: Applicant; cfg: CandidateFormConfig; canManage: boolean; onOpen: () => void; api: Api; onChanged: () => void; resultDelivery: { delivery: "email" | "page"; sendOn: "publish" | "manual" } | null }) {
+function CandidateSummary({ a, cfg, canManage, onOpen, api, onChanged, resultDelivery, compact }: { a: Applicant; cfg: CandidateFormConfig; canManage: boolean; onOpen: () => void; api: Api; onChanged: () => void; resultDelivery: { delivery: "email" | "page"; sendOn: "publish" | "manual" } | null;
+  /** Работа показана выше целиком — публикация, решение и анкета уже там, здесь остаётся только сводка. */ compact?: boolean }) {
   const c = a.candidate;
   const decision = cfg.decisions.find(x => x.id === c?.decision)?.label || c?.decisionLabel || "";
   const final = !!c?.decision && (cfg.decisions.find(x => x.id === c.decision)?.final ?? !!c.decisionFinal);
@@ -579,7 +585,7 @@ function CandidateSummary({ a, cfg, canManage, onOpen, api, onChanged, resultDel
     <section className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="font-bold text-[var(--text-main)]">Анкета кандидата</h3>
-        <button className={`${canManage ? btnPrimary : btn} ml-auto`} onClick={onOpen}><ClipboardList className="w-4 h-4" /> {canManage ? "Открыть и редактировать" : "Открыть"}</button>
+        {!compact && <button className={`${canManage ? btnPrimary : btn} ml-auto`} onClick={onOpen}><ClipboardList className="w-4 h-4" /> {canManage ? "Открыть и редактировать" : "Открыть"}</button>}
       </div>
       <dl className="grid sm:grid-cols-3 gap-2 text-sm">
         <div className="rounded-xl border border-[var(--border-color)] p-2.5"><dt className="text-[11px] text-[var(--text-muted)]">Решение</dt><dd className="font-semibold text-[var(--text-main)]">{decision || "—"}</dd></div>
@@ -587,7 +593,7 @@ function CandidateSummary({ a, cfg, canManage, onOpen, api, onChanged, resultDel
         <div className="rounded-xl border border-[var(--border-color)] p-2.5"><dt className="text-[11px] text-[var(--text-muted)]">Обратная связь</dt><dd className="text-[var(--text-main)]">{c?.feedbackGiven ? "дана" : "не дана"}</dd></div>
       </dl>
       {c?.at ? <div className="text-xs text-[var(--text-muted)]">{c.by} · {new Date(c.at).toLocaleString("ru-RU")}</div> : null}
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border-color)] p-2.5">
+      {!compact && <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border-color)] p-2.5">
         {c?.published
           ? <span className="text-sm text-emerald-700 dark:text-emerald-400 font-medium">Результаты опубликованы · {c.published.byName}, {new Date(c.published.at).toLocaleString("ru-RU")}</span>
           : c?.publishAt ? <span className="text-sm text-sky-700 dark:text-sky-400 font-medium">Публикация · {whenShort(c.publishAt)}</span>
@@ -599,7 +605,7 @@ function CandidateSummary({ a, cfg, canManage, onOpen, api, onChanged, resultDel
               <SplitPublishButton loading={busy} disabled={!final} onNow={() => void publish()} onSchedule={() => setPicking(true)} />
             </span>)}
         {picking && <PublishWhenModal onClose={() => setPicking(false)} onPick={at => publish(at)} />}
-      </div>
+      </div>}
       {canManage && c?.published && resultDelivery?.delivery === "page"
         ? (
           <div className="flex flex-wrap items-center gap-2">

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Award, Ban, CheckCircle2, ClipboardList, Clock, Mail, RefreshCw, Eye, EyeOff, FileText, Loader2, RotateCcw, ShieldAlert, Square, Trash2, Undo2 } from "lucide-react";
+import { Award, Ban, CheckCircle2, ClipboardList, Clock, Lock, Mail, RefreshCw, Eye, EyeOff, FileText, Loader2, RotateCcw, ShieldAlert, Square, Trash2, Undo2 } from "lucide-react";
 import { Button, confirmDialog, toast, type ConfirmOptions } from "../../../components/ui";
 import DOMPurify from "dompurify";
 import ProctoringDossier from "../../../components/ProctoringDossier";
@@ -24,8 +24,23 @@ type Full = Attempt & { questions: Record<string, FrozenQuestion>; card?: Attemp
 export const extraRowsOf = (a: Attempt, exam: Exam) => a.intake?.rows?.length ? a.intake.rows : Object.entries(a.student.extra || {})
   .map(([id, value]) => ({ label: (exam.settings.registration.extra || []).find(f => f.id === id)?.label || REG_PRESETS.find(f => f.id === id)?.label || id, value: id === "birthDate" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value).toLocaleDateString("ru-RU") : value }));
 
-export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, onChanged, onClose }: {
-  attemptId: string; exam: Exam; api: Api; tenant: any; canEdit: boolean; onChanged: () => void; onClose: () => void;
+/** Работа в окне — из «Экзаменов». */
+export default function AttemptModal(p: { attemptId: string; exam: Exam; api: Api; tenant: any; canEdit: boolean; onChanged: () => void; onClose: () => void }) {
+  return <AttemptPanel {...p} />;
+}
+
+const LOCK_HINT = "Сначала снимите публикацию";
+
+/**
+ * Работа ученика — один экран на всё: в окне в «Экзаменах» и прямо во
+ * вкладке «Тест и решение» карточки поступающего (embedded). Действия,
+ * решение, ответы с проверкой, досье прокторинга — одни и те же.
+ * Опубликовано — правки закрыты, пока публикацию не снимут.
+ */
+export function AttemptPanel({ attemptId, exam, api, tenant, canEdit, onChanged, onClose, embedded, refreshKey }: {
+  attemptId: string; exam: Exam; api: Api; tenant: any; canEdit: boolean; onChanged: () => void; onClose?: () => void;
+  /** Внутри карточки поступающего: без окна; refreshKey — перечитать, когда карточка изменилась. */
+  embedded?: boolean; refreshKey?: unknown;
 }) {
   const [a, setA] = useState<Full | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +89,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
     try { const j = await api(`/attempts/${attemptId}`); setA(j.attempt); setCanReview(!!j.canReview); setComment(j.attempt.decision?.comment || ""); }
     catch (e: any) { setError(e.message); }
   }, [api, attemptId]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); }, [load, refreshKey]);
   useEffect(() => { if (a?.hasPhoto) api(`/attempts/${attemptId}/photo`).then(j => setPhoto(j.photo)).catch(() => {}); }, [a?.hasPhoto, api, attemptId]);
 
   const act = async (action: string, extra: Record<string, unknown> = {}, ask?: ConfirmOptions) => {
@@ -83,7 +98,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
     try {
       const j = await api(`/attempts/${attemptId}/action`, { method: "POST", body: JSON.stringify({ action, ...extra }) });
       onChanged();
-      if (j.deleted) { toast.success("Работа в корзине"); onClose(); return; }
+      if (j.deleted) { toast.success("Работа в корзине"); onClose?.(); return; }
       if (j.recheck) toast.success(j.recheck.keys ? `Изменились ключи: ${j.recheck.keys} вопр. Было ${j.recheck.before}%, стало ${j.recheck.after}%` : `Ключи не менялись — результат прежний: ${j.recheck.after}%`);
       await load();
     } catch (e: any) { setError(e.message); }
@@ -109,7 +124,8 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
     };
   }, [a, exam, tenant, photo]);
 
-  if (!a) return <Modal title="Работа" onClose={onClose} xwide>{error ? <div className="text-rose-600 text-sm">{error}</div> : <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--text-muted)]" /></div>}</Modal>;
+  const frame = (title: string, body: React.ReactNode) => (embedded ? <div className="rounded-xl border border-[var(--border-color)] p-3 sm:p-4">{body}</div> : <Modal title={title} onClose={() => onClose?.()} xwide>{body}</Modal>);
+  if (!a) return frame("Работа", error ? <div className="text-rose-600 text-sm">{error}</div> : <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--text-muted)]" /></div>);
 
   const r = a.result;
   const items = new Map((r?.items || []).map(i => [i.qid, i]));
@@ -117,16 +133,23 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
   const parts = r ? partResults(r.sections, s.scoring) : [];
   const hideTotal = parts.length > 0 && !!s.scoring.hideTotal;
   const pr = a.proctoring || { enabled: false };
+  /** Опубликовано: решение, баллы, заметки и остальное закрыты, пока публикацию не снимут. */
+  const locked = !!(a.card ? a.card.published : a.published);
+  const cancelTimer = async () => {
+    setBusy("timer"); setError(null);
+    try { await admApi(`/applicants/${a.applicantId}/publish/cancel`, { method: "POST" }); toast.success("Публикация отменена"); onChanged(); await load(); }
+    catch (e: any) { setError(e.message); } finally { setBusy(null); }
+  };
 
-  return (
-    <Modal title={`${a.student.name} · № ${a.shortId}`} onClose={onClose} xwide>
+  return frame(`${a.student.name} · № ${a.shortId}`, <>
       <div className="space-y-4">
+        {embedded && <div className="flex flex-wrap items-baseline gap-2 text-sm"><b className="text-[var(--text-main)]">{a.examTitle}</b><span className="text-[var(--text-muted)]">№ работы {a.shortId}</span></div>}
         <div className="flex flex-wrap gap-4 items-start">
           {photo && <img src={photo} alt="" className="w-20 h-24 object-cover rounded-lg border border-[var(--border-color)]" />}
           <div className="flex-1 min-w-[220px] text-sm space-y-0.5">
             <div className="text-[var(--text-muted)]">{[a.student.level && `${s.registration.levelLabel}: ${a.student.level}`, a.student.phone, a.student.email].filter(Boolean).join(" · ")}</div>
             {extraRowsOf(a, exam).length > 0 && <div className="text-xs text-[var(--text-muted)]">{extraRowsOf(a, exam).map(x => `${x.label}: ${x.value}`).join(" · ")}</div>}
-            {a.applicantId && canCard && <a href={`/workspace/${exam.tenantId}/admissions?open=${a.applicantId}&ctab=test`} className="text-xs text-[var(--accent)] hover:underline">Поступающий{a.refNo ? ` № ${String(a.refNo).padStart(4, "0")}` : ""} — карточка</a>}
+            {!embedded && a.applicantId && canCard && <a href={`/workspace/${exam.tenantId}/admissions?open=${a.applicantId}&ctab=test`} className="text-xs text-[var(--accent)] hover:underline">Поступающий{a.refNo ? ` № ${String(a.refNo).padStart(4, "0")}` : ""} — карточка</a>}
             <div className="text-[var(--text-muted)]">Начал {new Date(a.startedAt).toLocaleString("ru-RU")}{a.finishedAt ? ` · сдал ${new Date(a.finishedAt).toLocaleString("ru-RU")} (${Math.round((a.finishedAt - a.startedAt) / 60000)} мин)` : ""}</div>
             <div className="flex flex-wrap gap-1.5 pt-1">
               {a.status === "in_progress" && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700">Сдаёт: {a.sections[a.current]?.title}</span>}
@@ -166,11 +189,15 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
         {rev && (
           <div className="flex flex-wrap gap-2 p-3 rounded-xl bg-[var(--bg-app)] border border-[var(--border-color)]">
             {a.status === "finished" && ((a.card ? a.card.published : a.published)
-              ? <button className={btn} disabled={!!busy} onClick={() => act("unpublish")}><EyeOff className="w-4 h-4" /> Снять публикацию</button>
+              ? <>
+                  <button className={btn} disabled={!!busy} onClick={() => act("unpublish", {}, { title: "Снять публикацию?", message: "Результаты закроются. Отправленное письмо не отзывается.", confirmLabel: "Снять", danger: true })}><EyeOff className="w-4 h-4" /> Снять публикацию</button>
+                  <span className="inline-flex items-center gap-1 text-xs text-[var(--text-muted)]"><Lock className="w-3.5 h-3.5" /> Правки закрыты</span>
+                </>
               : a.card
                 ? <SplitPublishButton text="Опубликовать" size="md" loading={busy === "publish"} disabled={!!busy} onNow={() => void act("publish")} onSchedule={() => setPickAt(true)} />
                 : <button className={btnPrimary} disabled={!!busy} onClick={() => act("publish")}><Eye className="w-4 h-4" /> Опубликовать</button>)}
             {a.status === "finished" && !admission && s.results.delivery === "page" && s.results.sendOn === "manual" && (a.published || s.results.showToStudent === "immediately") && <button className={btn} disabled={!!busy} onClick={() => act("send_ready")}>{busy === "send_ready" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />} Отправить «Результаты готовы»</button>}
+            {a.card && !locked && a.card.publishAt && canCard && <button className={btn} disabled={!!busy} onClick={cancelTimer}>Отменить таймер</button>}
             {r && admission && canCard && <button className={btn} disabled={!!busy} onClick={openCandidate}>{busy === "candidate" ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />} Анкета кандидата</button>}
             {r && !admission && s.results.certificate && printData && <button className={btn} onClick={() => openPrint(certificateHTML(printData)) || toast.error("Разрешите всплывающие окна")}><Award className="w-4 h-4" /> Сертификат</button>}
             {r && !admission && printData && <button className={btn} onClick={() => openPrint(reportHTML(printData)) || toast.error("Разрешите всплывающие окна")}><FileText className="w-4 h-4" /> Отчёт по темам</button>}
@@ -178,12 +205,12 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
             {a.status === "finished" && s.results.emailTemplate && <EmailResend tenantId={exam.tenantId} event="tested" ctx={{ attemptId: a.id }} state={(a as any).resultEmail} />}
             {a.status === "in_progress" && <button className={btn} disabled={!!busy} onClick={() => act("finish", {}, { title: "Завершить работу сейчас?", message: "Результат посчитается по текущим ответам", confirmLabel: "Завершить" })}><Square className="w-4 h-4" /> Завершить сейчас</button>}
             {a.status === "in_progress" && !!a.sections[a.current]?.deadline && [5, 10].map(m => <button key={m} className={btn} disabled={!!busy} onClick={() => act("extend", { minutes: m })}><Clock className="w-4 h-4" /> +{m} мин</button>)}
-            {a.status === "finished" && !(a as any).paper && <button className={btn} disabled={!!busy} onClick={() => act("recheck")}>{busy === "recheck" ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Перепроверить</button>}
+            {a.status === "finished" && !(a as any).paper && <button className={btn} disabled={!!busy || locked} title={locked ? LOCK_HINT : undefined} onClick={() => act("recheck")}>{busy === "recheck" ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Перепроверить</button>}
             {canEdit && !a.retakeAllowed && a.status === "finished" && !a.superseded && <button className={btn} disabled={!!busy} onClick={() => act("allow_retake", {}, { title: "Разрешить пересдачу?", message: "Новая сданная работа заменит эту", confirmLabel: "Разрешить" })}><RotateCcw className="w-4 h-4" /> Разрешить пересдачу</button>}
             {canEdit && (a.status !== "annulled"
-              ? <button className={`${btn} text-rose-600`} disabled={!!busy} onClick={() => setAnnulling("")}><Ban className="w-4 h-4" /> Аннулировать</button>
+              ? <button className={`${btn} text-rose-600`} disabled={!!busy || locked} title={locked ? LOCK_HINT : undefined} onClick={() => setAnnulling("")}><Ban className="w-4 h-4" /> Аннулировать</button>
               : <button className={btn} disabled={!!busy} onClick={() => act("restore")}><Undo2 className="w-4 h-4" /> Восстановить</button>)}
-            {canEdit && <button className={`${btn} text-rose-600 ml-auto`} title="В корзину" disabled={!!busy} onClick={() => act("delete", {}, { title: "Убрать работу в корзину?", message: "Её можно вернуть из корзины", confirmLabel: "В корзину", danger: true })}><Trash2 className="w-4 h-4" /></button>}
+            {canEdit && <button className={`${btn} text-rose-600 ml-auto`} title={locked ? LOCK_HINT : "В корзину"} disabled={!!busy || locked} onClick={() => act("delete", {}, { title: "Убрать работу в корзину?", message: "Её можно вернуть из корзины", confirmLabel: "В корзину", danger: true })}><Trash2 className="w-4 h-4" /></button>}
           </div>
         )}
 
@@ -195,7 +222,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
                 <div className="flex flex-wrap gap-1.5">
                   {cardDecisions.map(d => {
                     const on = a.card?.decision === d.id;
-                    return <button key={d.id} type="button" role="checkbox" aria-checked={on} disabled={!!busy} className={`px-3 py-1.5 rounded-full text-sm font-medium border ${on ? "bg-[var(--accent)] border-[var(--accent)] text-white" : "border-[var(--border-color)] text-[var(--text-main)]"}`} onClick={() => act("decision", { value: on ? null : d.id })}>{on ? "☑" : "☐"} {d.label}</button>;
+                    return <button key={d.id} type="button" role="checkbox" aria-checked={on} disabled={!!busy || locked} title={locked ? LOCK_HINT : undefined} className={`px-3 py-1.5 rounded-full text-sm font-medium border disabled:cursor-not-allowed ${locked && !on ? "opacity-50 " : ""}${on ? "bg-[var(--accent)] border-[var(--accent)] text-white" : "border-[var(--border-color)] text-[var(--text-main)]"}`} onClick={() => act("decision", { value: on ? null : d.id })}>{on ? "☑" : "☐"} {d.label}</button>;
                   })}
                 </div>
               </div>
@@ -204,17 +231,17 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
                 <span className={label}>Решение</span>
                 <div className="flex flex-wrap gap-1.5">
                   {(Object.keys(DECISION_LABEL) as Decision[]).map(d => (
-                    <button key={d} disabled={!!busy} className={`${btn} ${a.decision?.value === d ? "!bg-[var(--accent)] !text-white !border-[var(--accent)]" : ""}`} onClick={() => act("decision", { value: a.decision?.value === d ? null : d, comment })}>{DECISION_LABEL[d]}</button>
+                    <button key={d} disabled={!!busy || locked} title={locked ? LOCK_HINT : undefined} className={`${btn} ${a.decision?.value === d ? "!bg-[var(--accent)] !text-white !border-[var(--accent)]" : ""}`} onClick={() => act("decision", { value: a.decision?.value === d ? null : d, comment })}>{DECISION_LABEL[d]}</button>
                   ))}
                 </div>
-                <input className={`${input} mt-2`} value={comment} onChange={e => setComment(e.target.value)} onBlur={() => a.decision && comment !== a.decision.comment && act("decision", { value: a.decision.value, comment })} placeholder="Комментарий к решению" />
+                <input className={`${input} mt-2`} disabled={locked} value={comment} onChange={e => setComment(e.target.value)} onBlur={() => a.decision && comment !== a.decision.comment && act("decision", { value: a.decision.value, comment })} placeholder="Комментарий к решению" />
                 {a.decision && <div className="text-[11px] text-[var(--text-muted)] mt-1">{a.decision.by} · {new Date(a.decision.at).toLocaleString("ru-RU")}</div>}
               </div>
             )}
             {canEdit && s.results.groups.length > 0 && (
               <div>
                 <span className={label}>Группа</span>
-                <select className={input} value={a.group || ""} onChange={e => act("group", { value: e.target.value })}>
+                <select className={input} disabled={locked} title={locked ? LOCK_HINT : undefined} value={a.group || ""} onChange={e => act("group", { value: e.target.value })}>
                   <option value="">— не распределён —</option>
                   {s.results.groups.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
@@ -232,7 +259,7 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
               <h3 className="font-bold text-[var(--text-main)]">Ответы</h3>
               <div className="flex items-center gap-3">
                 <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={onlyWrong} onChange={e => setOnlyWrong(e.target.checked)} /> Только неверные</label>
-                {rev && a.review?.status !== "done" && <button className={btnPrimary} disabled={!!busy} onClick={() => review({}, {}, true)}><CheckCircle2 className="w-4 h-4" /> Проверка завершена</button>}
+                {rev && !locked && a.review?.status !== "done" && <button className={btnPrimary} disabled={!!busy} onClick={() => review({}, {}, true)}><CheckCircle2 className="w-4 h-4" /> Проверка завершена</button>}
               </div>
             </div>
             {a.sections.flatMap(s => (s.blocks?.length ? s.blocks : [s])).map(sec => (
@@ -259,11 +286,11 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
                         <div className="flex flex-wrap items-center gap-1.5 mt-2">
                           <span className="text-xs text-[var(--text-muted)]">Баллы: <b className="text-[var(--text-main)]">{it.earned}</b> из {it.points}</span>
                           {rev && [0, q.points / 2, q.points].map(v => (
-                            <button key={v} disabled={!!busy} onClick={() => review({ [qid]: v })}
+                            <button key={v} disabled={!!busy || locked} title={locked ? LOCK_HINT : undefined} onClick={() => review({ [qid]: v })}
                               className={`px-2 py-0.5 rounded border text-xs ${it.overridden && it.earned === v ? "bg-[var(--accent)] text-white border-[var(--accent)]" : "border-[var(--border-color)]"}`}>{v === 0 ? "0" : v === q.points ? "полный" : "½"}</button>
                           ))}
-                          {rev && it.overridden && <button className="text-xs text-[var(--accent)] hover:underline" onClick={() => review({ [qid]: null })}>как в автопроверке ({it.auto})</button>}
-                          {rev && <NoteInput value={a.review?.notes?.[qid] || ""} onSave={v => review({}, { [qid]: v })} />}
+                          {rev && !locked && it.overridden && <button className="text-xs text-[var(--accent)] hover:underline" onClick={() => review({ [qid]: null })}>как в автопроверке ({it.auto})</button>}
+                          {rev && <NoteInput value={a.review?.notes?.[qid] || ""} disabled={locked} onSave={v => review({}, { [qid]: v })} />}
                         </div>
                       </li>
                     );
@@ -292,9 +319,8 @@ export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, on
           loadSnapshots={async () => (await api(`/attempts/${attemptId}/evidence`)).snapshots}
           onClose={() => setDossier(false)} />
       )}
-      {sheetId && <CandidateSheetModal applicantId={sheetId} api={admApi} tenant={tenant} onClose={() => setSheetId(null)} onChanged={onChanged} />}
-    </Modal>
-  );
+      {sheetId && <CandidateSheetModal applicantId={sheetId} api={admApi} tenant={tenant} onClose={() => { setSheetId(null); void load(); }} onChanged={onChanged} />}
+  </>);
 }
 
 const fmt = (n: number) => Number(n).toLocaleString("ru-RU", { maximumFractionDigits: 1 });
@@ -309,8 +335,8 @@ function Stat({ t, v, sub }: { t: string; v: string; sub?: string }) {
   );
 }
 
-function NoteInput({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+function NoteInput({ value, onSave, disabled }: { value: string; onSave: (v: string) => void; disabled?: boolean }) {
   const [v, setV] = useState(value);
   useEffect(() => setV(value), [value]);
-  return <input className={`${input} !py-1 !text-xs flex-1 min-w-[160px]`} value={v} onChange={e => setV(e.target.value)} onBlur={() => v !== value && onSave(v)} placeholder="Заметка проверяющего" />;
+  return <input className={`${input} !py-1 !text-xs flex-1 min-w-[160px]`} disabled={disabled} title={disabled ? LOCK_HINT : undefined} value={v} onChange={e => setV(e.target.value)} onBlur={() => v !== value && onSave(v)} placeholder="Заметка проверяющего" />;
 }

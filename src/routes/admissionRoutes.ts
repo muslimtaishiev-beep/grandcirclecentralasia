@@ -1498,12 +1498,15 @@ export const applicantById = (t: string, id: string) => loadApplicant(t, id);
  * снимает публикацию и таймер при смене, пишет историю и уведомляет.
  * Общий путь для карточки и для «Экзаменов».
  */
+/** Опубликованное заморожено: менять решение и то, что видит семья, можно только после «Снять публикацию». */
+export const PUBLISHED_LOCK = "Результаты опубликованы — сначала снимите публикацию";
 export async function setCandidateDecision(t: string, a: Applicant, c: { uid: string; name: string }, decisionId: string | null): Promise<{ error?: [number, string]; candidate?: CandidateInfo }> {
   const form = await loadCandidateForm(t);
   if (decisionId !== null && !form.decisions.some(x => x.id === decisionId)) return { error: [400, "Такого решения нет в анкете кандидата"] };
   const prev = candidateOf(a);
   const pick = sanitizeCandidate({ decision: decisionId }, form.decisions);
   if ((prev?.decision || null) === pick.decision && a.candidate) return { candidate: prev! };
+  if (prev?.published) return { error: [409, PUBLISHED_LOCK] };
   const same = (prev?.decision || null) === pick.decision;
   const blank = sanitizeCandidate({}, form.decisions);
   const base = prev || { ...blank, by: "", at: 0 };
@@ -1668,6 +1671,7 @@ router.post("/:tenantId/applicants/:id/paper", ...staff, async (req: any, res: a
     if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Вносить результаты может приёмная");
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
+    if (candidateOf(a)?.published) return fail(res, 409, PUBLISHED_LOCK);
     const n = (v: unknown) => (v === "" || v === null || v === undefined || !Number.isFinite(Number(v)) ? null : Math.max(0, Number(v)));
     const rows = (Array.isArray(req.body?.rows) ? req.body.rows : []).slice(0, 20)
       .map((r: any) => ({ subject: str(r?.subject, 80), score: n(r?.score), max: n(r?.max) })).filter((r: any) => r.subject);
@@ -1687,6 +1691,7 @@ router.delete("/:tenantId/applicants/:id/paper/:pid", ...staff, async (req: any,
     if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Нет прав");
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
+    if (candidateOf(a)?.published) return fail(res, 409, PUBLISHED_LOCK);
     const gone = a.paperResults.find(p => p.id === String(req.params.pid));
     const paperResults = a.paperResults.filter(p => p.id !== String(req.params.pid));
     await col(t, "applicants").doc(a.id).update({ paperResults, updatedAt: Date.now() });
@@ -1723,6 +1728,13 @@ router.put("/:tenantId/applicants/:id/candidate", ...staff, async (req: any, res
     const prev = candidateOf(a);
     const form = await loadCandidateForm(t);
     const base = sanitizeCandidate(req.body, form.decisions);
+    // Опубликовано — то, что видит семья (решение, заключение, обратная связь, пробный период, класс), не меняется.
+    if (prev?.published) {
+      if ((["decision", "conclusion", "feedback", "feedbackGiven", "trialFrom", "trialTo"] as const).some(k => (prev[k] ?? "") !== (base[k] ?? ""))) return fail(res, 409, PUBLISHED_LOCK);
+      // Класс в окне по умолчанию подставляется из карточки — это не правка.
+      if (base.klass !== (prev.klass || "") && base.klass !== (a.child.grade || "")) return fail(res, 409, PUBLISHED_LOCK);
+      base.klass = prev.klass || "";
+    }
 
     // «Сведения об ученике»: поля карточки — прямо в карточку, остальное — правкой поверх анкеты.
     const overrides: Record<string, string | string[]> = { ...(prev?.overrides || {}) };
@@ -1805,6 +1817,7 @@ router.post("/:tenantId/applicants/:id/paper-test", ...staff, async (req: any, r
     if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Результаты вносит администрация");
     const a = await loadApplicant(t, String(req.params.id));
     if (!a) return fail(res, 404, "Поступающий не найден");
+    if (candidateOf(a)?.published) return fail(res, 409, PUBLISHED_LOCK);
     const examId = str(req.body?.examId, 60) || a.referral?.examId || "";
     const exam = (await tenantExams(t)).find(e => e.id === examId);
     if (!exam || !exam.settings.paper) return fail(res, 400, "Это не тест на бумаге");
