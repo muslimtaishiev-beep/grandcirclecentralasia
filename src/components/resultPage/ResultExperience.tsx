@@ -151,34 +151,78 @@ function Splash({ step, theme, compact, inert, selected, onSelect, onOpen }: { s
   );
 }
 
+/**
+ * Видео — как заставка в кино, а не плеер: без кнопок и полосы прокрутки,
+ * само начинается и само переходит дальше. Кадр виден целиком на любом
+ * экране (телефон вертикально — тоже), поля заполняет размытый кадр того же видео.
+ * Касание — пауза и продолжение. В редакторе (preview) — с кнопками, чтобы проверить ролик.
+ */
 function VideoLayer({ step, preview, selected, onSelect, onDone }: { step: VideoStep; preview: boolean; selected: boolean; onSelect?: (id: string) => void; onDone: () => void }) {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  /** Браузер не дал начать со звуком сам или зритель поставил на паузу — ждём касания. */
+  const [paused, setPaused] = useState(false);
+  const vref = useRef<HTMLVideoElement>(null);
+  const cref = useRef<HTMLCanvasElement>(null);
   const src = mediaUrl(step.media);
+
+  // Размытый фон: маленький холст, на который рисуется текущий кадр.
+  useEffect(() => {
+    const v = vref.current; const c = cref.current;
+    const ctx = c?.getContext("2d");
+    if (!v || !c || !ctx) return;
+    let raf = 0; let last = -1;
+    const draw = () => {
+      if (v.readyState >= 2 && v.currentTime !== last) {
+        last = v.currentTime;
+        if (v.videoWidth && c.width !== 64) { c.width = 64; c.height = Math.max(1, Math.round(64 * v.videoHeight / v.videoWidth)); }
+        try { ctx.drawImage(v, 0, 0, c.width, c.height); } catch { /* кадр ещё не готов */ }
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [src]);
+
+  const play = () => { const v = vref.current; if (!v) return; v.play().then(() => setPaused(false)).catch(() => setPaused(true)); };
+  // Начинаем сразу: зритель только что нажал «Открыть», браузер разрешает звук. Не разрешил — покажем кнопку.
+  useEffect(() => { if (!preview && src) play(); }, [src]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggle = () => { const v = vref.current; if (!v || preview || failed) return; if (v.paused) play(); else { v.pause(); setPaused(true); } };
+
   return (
-    <div onClick={() => onSelect?.(step.id)} style={{ position: "absolute", inset: 0, background: "#000", display: "grid", placeItems: "center", outline: selected ? `3px solid ${SELECT_COLOR}` : "none", outlineOffset: -3 }}>
+    <div onClick={() => { onSelect?.(step.id); toggle(); }} onContextMenu={e => { if (!preview) e.preventDefault(); }}
+      style={{ position: "absolute", inset: 0, background: "#000", display: "grid", placeItems: "center", overflow: "hidden", outline: selected ? `3px solid ${SELECT_COLOR}` : "none", outlineOffset: -3 }}>
       {src && !failed ? (
         <>
-          {loading && !preview && (
-            <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
+          <canvas ref={cref} aria-hidden style={{ position: "absolute", left: "-10%", top: "-10%", width: "120%", height: "120%", objectFit: "cover", filter: "blur(36px) brightness(.5) saturate(1.2)", pointerEvents: "none" }} />
+          <video
+            ref={vref} src={src} playsInline preload={preview ? "metadata" : "auto"} controls={preview}
+            controlsList="nodownload noplaybackrate noremoteplayback nofullscreen" disablePictureInPicture disableRemotePlayback
+            onCanPlay={() => { setLoading(false); if (!preview && vref.current?.paused && !paused) play(); }}
+            onPlaying={() => { setLoading(false); setPaused(false); }} onWaiting={() => setLoading(true)}
+            onEnded={() => { if (!preview) onDone(); }} onError={() => { setFailed(true); setLoading(false); }}
+            style={{ position: "relative", width: "100%", height: "100%", objectFit: "contain", background: "transparent", pointerEvents: preview ? "auto" : "none" }}
+          />
+          {loading && !preview && !paused && (
+            <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, pointerEvents: "none" }}>
               <Spinner />
-              <p style={{ color: "rgba(255,255,255,.6)", fontFamily: "monospace", fontSize: 13, letterSpacing: ".15em", textTransform: "uppercase", margin: 0 }}>Загрузка…</p>
             </div>
           )}
-          <video
-            src={src} autoPlay={!preview} playsInline controls preload={preview ? "metadata" : "auto"}
-            onCanPlay={() => setLoading(false)} onPlaying={() => setLoading(false)} onWaiting={() => setLoading(true)}
-            onEnded={() => { if (!preview) onDone(); }} onError={() => { setFailed(true); setLoading(false); }}
-            style={{ width: "100%", height: "100%", objectFit: "cover", background: "#000" }}
-          />
+          {paused && !preview && (
+            <div aria-label="Продолжить" style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", background: "rgba(0,0,0,.35)", cursor: "pointer" }}>
+              <div style={{ width: 84, height: 84, borderRadius: 999, border: "1px solid rgba(255,255,255,.7)", background: "rgba(255,255,255,.12)", backdropFilter: "blur(6px)", display: "grid", placeItems: "center" }}>
+                <div style={{ width: 0, height: 0, borderTop: "14px solid transparent", borderBottom: "14px solid transparent", borderLeft: "22px solid #fff", marginLeft: 6 }} />
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <p style={{ color: "rgba(255,255,255,.6)", fontSize: 14, textAlign: "center", padding: 24 }}>{failed ? "Видео не загрузилось" : "Видео не выбрано"}</p>
       )}
-      {step.caption && <div style={{ position: "absolute", left: 20, bottom: 56, right: 20, color: "#fff", textShadow: "0 1px 6px rgba(0,0,0,.8)", fontSize: 15, pointerEvents: "none" }}>{step.caption}</div>}
+      {step.caption && <div style={{ position: "absolute", left: 20, bottom: 28, right: 20, color: "#fff", textShadow: "0 1px 6px rgba(0,0,0,.8)", fontSize: 15, textAlign: "center", pointerEvents: "none" }}>{step.caption}</div>}
       {(step.skippable || failed || !src) && !preview && (
         <button type="button" onClick={e => { e.stopPropagation(); onDone(); }}
-          style={{ position: "absolute", right: 24, top: 20, zIndex: 10, color: "rgba(255,255,255,.8)", background: "rgba(0,0,0,.35)", border: "1px solid rgba(255,255,255,.35)", borderRadius: 999, padding: "8px 18px", fontSize: 13, letterSpacing: ".1em", textTransform: "uppercase", cursor: "pointer" }}>
+          style={{ position: "absolute", right: 20, top: "max(16px, env(safe-area-inset-top))", zIndex: 10, color: "rgba(255,255,255,.75)", background: "rgba(0,0,0,.3)", border: "1px solid rgba(255,255,255,.3)", borderRadius: 999, padding: "7px 16px", fontSize: 12, letterSpacing: ".1em", textTransform: "uppercase", cursor: "pointer" }}>
           Пропустить
         </button>
       )}
