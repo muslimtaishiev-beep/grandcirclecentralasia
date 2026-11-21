@@ -555,7 +555,7 @@ registerResender("parent_form", async (t, ctx, by) => {
   return a ? emailParentForm(t, a, { force: true, by }) : { sent: false, reason: "Нет карточки" };
 });
 
-/** Решение — письмом родителю: одно на каждое окончательное решение. */
+/** Решение — письмом семье: одно на каждую публикацию (сняли и опубликовали заново — уходит снова). */
 export async function emailDecision(t: string, a: Applicant, o: { force?: boolean; by?: string } = {}): Promise<SendResult> {
   try {
     const c = candidateOf(a);
@@ -565,7 +565,7 @@ export async function emailDecision(t: string, a: Applicant, o: { force?: boolea
     if (!templateId) return { sent: false, skipped: !o.force, reason: "В настройках анкет не выбрано письмо «Решение»" };
     const token = await referralTokenFor(t, a);
     const r = await sendTemplated({
-      tenantId: t, templateId, to: familyEmails(a), event: "decision", refId: `${t}_${a.id}_${c.decision}`, force: o.force, by: o.by,
+      tenantId: t, templateId, to: familyEmails(a), event: "decision", refId: `${t}_${a.id}_${c.decision}_${c.published.at}`, force: o.force, by: o.by,
       ctx: { applicantId: a.id, label: `${a.child.name}, ${a.child.grade} класс` },
       actionUrl: applicantPath(t, a.id, "test"), noRecipient: "Нет почты родителя и ученика",
       mirror: { ref: col(t, "applicants").doc(a.id), field: "decisionEmail" },
@@ -605,7 +605,7 @@ export async function emailResultsReady(t: string, a: Applicant, o: { force?: bo
     const rs = sanitizeSettings(exam?.settings).results;
     const token = await referralTokenFor(t, a);
     const r = await sendTemplated({
-      tenantId: t, templateId: rs.readyEmail || "", to: familyEmails(a), event: "results_ready", refId: `${t}_${a.id}_${c.decision}`, force: o.force, by: o.by,
+      tenantId: t, templateId: rs.readyEmail || "", to: familyEmails(a), event: "results_ready", refId: `${t}_${a.id}_${c.decision}_${c.published.at}`, force: o.force, by: o.by,
       ctx: { applicantId: a.id, examId: exam?.id, label: `${a.child.name}, ${a.child.grade} класс` },
       actionUrl: applicantPath(t, a.id, "test"), noRecipient: "Нет почты родителя и ученика",
       mirror: { ref: col(t, "applicants").doc(a.id), field: "resultsEmail" },
