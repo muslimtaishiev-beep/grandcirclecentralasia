@@ -14,7 +14,7 @@ import QrScanModal from "./QrScanModal";
 import TemplatesTab from "./TemplatesTab";
 import HistoryModal from "./HistoryModal";
 import { downloadSessionById } from "./sessionPdf";
-import { PublishWhenModal, SkippedModal, outcomeText, type PublishOutcome } from "./PublishControls";
+import { PublishWhenModal, SkippedModal, SplitPublishButton, outcomeText, type PublishOutcome } from "./PublishControls";
 
 /**
  * «Поступающие»: список с поиском по ФИО и №, фильтры по классу и этапу,
@@ -230,8 +230,7 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
                 : <>
                     <Button loading={busy} onClick={() => bulk("parent_email")} icon={<Mail className="w-4 h-4" />}>Анкета родителям на почту</Button>
                     {me.academic && <>
-                      <Button loading={busy} onClick={() => publishBulk()} icon={<Send className="w-4 h-4" />}>Опубликовать</Button>
-                      <Button loading={busy} onClick={() => setPubPick(true)} icon={<CalendarClock className="w-4 h-4" />}>Запланировать публикацию…</Button>
+                      <SplitPublishButton text="Опубликовать" size="md" loading={busy} onNow={() => publishBulk()} onSchedule={() => setPubPick(true)} />
                     </>}
                     <Button loading={busy} onClick={() => bulk("archive")} icon={<Archive className="w-4 h-4" />}>В архив</Button>
                   </>}

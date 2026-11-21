@@ -16,7 +16,7 @@ import NewApplicantModal from "../admissions/NewApplicantModal";
 import { useAdmissionApi } from "../admissions/admissionApi";
 import { canAdmissions, resolvePermissions, type PermissionKey } from "../../../shared/permissions";
 import AdmissionsPage from "../admissions/AdmissionsPage";
-import { PublishWhenModal, SkippedModal, outcomeText, type PublishOutcome } from "../admissions/PublishControls";
+import { PublishWhenModal, SkippedModal, SplitPublishButton, outcomeText, type PublishOutcome } from "../admissions/PublishControls";
 import { isAdmissionExam } from "../../../shared/admissions";
 
 /** Один экзамен: работы, аналитика, конструктор; сверху — ссылка, QR и PIN. */
@@ -43,7 +43,6 @@ export default function ExamDetailPage() {
   const [openAttempt, setOpenAttempt] = useState<string | null>(null);
   const [newApplicant, setNewApplicant] = useState(false);
   const [pubPick, setPubPick] = useState(false);
-  const [pubMenu, setPubMenu] = useState(false);
   const [pubOut, setPubOut] = useState<PublishOutcome | null>(null);
   const admApi = useAdmissionApi(tenantId);
   const granted = useMemo(() => (Array.isArray(activeTenant?.effectivePermissions)
@@ -152,15 +151,7 @@ export default function ExamDetailPage() {
           <button className={btnPrimary} onClick={() => setNewApplicant(true)}><UserPlus className="w-4 h-4" /> Поступающий{exam.settings.admission.grades.length === 1 ? ` в ${exam.settings.admission.grades[0]} класс` : ""}</button>
         )}
         {!archived && reception && isAdmissionExam(exam) && (
-          <div className="relative">
-            <button className={btn} disabled={busy} onClick={() => setPubMenu(m => !m)}><Send className="w-4 h-4" /> Опубликовать результаты всех…</button>
-            {pubMenu && (
-              <div className="absolute right-0 top-full mt-1 z-20 min-w-[190px] rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] shadow-lg p-1" onMouseLeave={() => setPubMenu(false)}>
-                <button type="button" className="w-full text-left px-3 py-2 text-sm rounded-lg text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]" onClick={() => { setPubMenu(false); void publishAll(); }}>Сейчас</button>
-                <button type="button" className="w-full text-left px-3 py-2 text-sm rounded-lg text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]" onClick={() => { setPubMenu(false); setPubPick(true); }}>Запланировать…</button>
-              </div>
-            )}
-          </div>
+          <SplitPublishButton text="Опубликовать результаты всех" size="md" loading={busy} onNow={() => void publishAll()} onSchedule={() => setPubPick(true)} />
         )}
         {canEdit && !archived && <button className={btn} onClick={remove} title="Удалить"><Trash2 className="w-4 h-4" /></button>}
       </div>

@@ -40,6 +40,15 @@ export default function FormSettingsModal({ tenantId, form, subs, onClose }: {
 }) {
   const [tab, setTab] = useState("decisions");
   const [list, setList] = useState<Decision[]>(() => resolveDecisions(form));
+  /** Настройки уведомления открываются по «Настроить» — обычно они не нужны. */
+  const [openNotify, setOpenNotify] = useState<Set<string>>(() => new Set());
+  const notifySummary = (d: Decision) => {
+    const n = d.notify;
+    if (n.mode === "auto") return `через ${n.delayMin} мин`;
+    if (n.mode === "at") return n.at ? `в ${new Date(n.at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "в заданное время";
+    if (n.mode === "manual") return "вручную при смене";
+    return "не отправлять";
+  };
   const [saved, setSaved] = useState(() => snap(resolveDecisions(form)));
   const [saving, setSaving] = useState(false);
   const [templates, setTemplates] = useState<{ id: string; name: string; kind: string }[]>([]);
@@ -115,8 +124,15 @@ export default function FormSettingsModal({ tenantId, form, subs, onClose }: {
                     </div>
                   </div>
 
+                  {!openNotify.has(d.id) ? (
+                    <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-color)] pt-2 text-sm">
+                      <span className="text-[var(--text-muted)]">Уведомление: {notifySummary(d)}{d.notify.pageId ? ` · страница: ${pageName(d.notify.pageId)}` : ""}</span>
+                      <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setOpenNotify(o => new Set(o).add(d.id))}>Настроить</Button>
+                    </div>
+                  ) : (
                   <div className="space-y-2 border-t border-[var(--border-color)] pt-3">
-                    <div className="text-xs font-semibold text-[var(--text-muted)]">Уведомление</div>
+                    <div className="flex items-center"><div className="text-xs font-semibold text-[var(--text-muted)]">Уведомление</div>
+                      <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setOpenNotify(o => { const n = new Set(o); n.delete(d.id); return n; })}>Свернуть</Button></div>
                     <div className="flex flex-wrap gap-1.5">
                       {NOTIFY_MODES.map(m => (
                         <button key={m.id} type="button" onClick={() => patchNotify(d.id, { mode: m.id as NotifyMode })}
@@ -152,6 +168,7 @@ export default function FormSettingsModal({ tenantId, form, subs, onClose }: {
                       {d.notify.pageId && <Button size="sm" variant="ghost" onClick={() => patchNotify(d.id, { pageId: undefined })}>Убрать</Button>}
                     </div>
                   </div>
+                  )}
                 </div>
               );
             })}
