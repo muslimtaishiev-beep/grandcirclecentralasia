@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
-import { FileText, Plus, Search, Folder, MoreVertical, Lock, Eye, Edit3, ShieldAlert } from 'lucide-react';
+import { FileText, Plus, Search, Folder, MoreVertical, Lock, Eye, Edit3, ShieldAlert, ScanText } from 'lucide-react';
 import { documentService } from '../../../services/collab/documentService';
 import { WorkspaceDocument } from '../../../types/collab';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -56,6 +56,12 @@ export default function DocumentsListPage() {
               className="w-full bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl pl-10 pr-4 py-2 text-sm text-[var(--text-main)] focus:outline-none focus:border-[var(--accent)] shadow-sm"
             />
           </div>
+          <button
+            onClick={() => navigate(`/workspace/${activeTenant?.id}/digitize`)}
+            className="px-4 py-2 bg-[var(--bg-surface)] border border-[var(--border-color)] hover:bg-[var(--bg-surface-hover)] text-[var(--text-main)] font-bold rounded-xl transition flex items-center gap-2 shrink-0 cursor-pointer text-sm"
+          >
+            <ScanText className="w-4 h-4" /> Оцифровать
+          </button>
           <button 
             onClick={handleCreate}
             data-tooltip="Создать приватный документ"

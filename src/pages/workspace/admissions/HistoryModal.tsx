@@ -8,7 +8,7 @@ import type { Api } from "./admissionApi";
 export const AUDIT: Record<string, string> = {
   created: "Карточка создана", edited: "Изменена карточка", deleted: "Карточка удалена навсегда", archived: "Карточка убрана в архив", restored: "Карточка возвращена из архива",
   viewed: "Открыл анкеты с данными о здоровье",
-  parent_form_started: "Начата анкета родителя", parent_form: "Родитель заполнил анкету", parent_form_reset: "Анкета родителя очищена и выдана заново",
+  parent_form_started: "Начата анкета родителя", parent_form: "Родитель заполнил анкету", parent_form_reset: "Анкета родителя очищена и выдана заново", published: "Результаты опубликованы", unpublished: "Публикация результатов снята",
   form_started: "Начата анкета", form_done: "Анкета завершена", form_reopened: "Анкета открыта для правки", form_edited: "Изменена завершённая анкета", form_reset: "Анкета сброшена",
   referral_issued: "Направлен на тест", referral_changed: "Направление изменено", referral_manual: "Направление выдано вручную", referral_revoked: "Направление снято", referral_restored: "Направление возвращено",
   referral_emailed: "Направление отправлено на почту", email_sent: "Письмо отправлено", email_failed: "Письмо не ушло",

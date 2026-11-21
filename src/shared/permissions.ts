@@ -198,8 +198,10 @@ export const ROLE_PRESETS: { name: string; description: string; permissions: Per
  * navKey совпадает с ключом NAV_PERMISSION — выключение здесь убирает и пункт
  * меню, и доступ к странице (RequirePermission смотрит сюда же).
  */
+// Один экран может держать несколько пунктов меню («Оцифровка» живёт на экране «Документы») — в списке он один.
 export const WORKSPACE_SCREENS: { key: string; label: string; group: string }[] = NAV_GROUPS.flatMap(g =>
-  g.items.filter(i => i.screen).map(i => ({ key: i.screen as string, label: i.label, group: g.label })));
+  g.items.filter(i => i.screen).map(i => ({ key: i.screen as string, label: i.label, group: g.label })))
+  .filter((s, i, all) => all.findIndex(x => x.key === s.key) === i);
 
 /**
  * Экраны, которые нельзя выключать: без них воркспейс становится тупиком.

@@ -179,7 +179,7 @@ export default function WorkspaceLayout() {
     if (!activeTenant) return [];
     const base = `/workspace/${activeTenant.id}`;
     const acts: SpotlightEntry[] = [
-      ["docs", "Новый документ", "/docs/new", "docs"], ["sheets", "Новая таблица", "/sheets/new", "sheets"],
+      ["docs", "Новый документ", "/docs/new", "docs"], ["sheets", "Новая таблица", "/sheets/new", "sheets"], ["docs", "Оцифровать", "/digitize", "docs"],
       ["crm", "Сделки", "/crm/deals", "crm"], ["schedule", "Назначить занятие", "/edu/schedule", "schedule"],
     ].filter(([k]) => navGroups.some(g => g.items.some(i => i.screen === k)))
       .map(([, t, p, ic]) => ({ title: t, path: base + p, icon: NAV_ICONS[ic as keyof typeof NAV_ICONS], category: "Действия" }));

@@ -52,6 +52,7 @@ const QrTracker = lazy(() => import("./pages/public/QrTracker"));
 const PublicForm = lazy(() => import("./pages/public/PublicForm"));
 const DocumentsListPage = lazy(() => import("./pages/workspace/docs/DocumentsListPage"));
 const DocumentEditorPage = lazy(() => import("./pages/workspace/docs/DocumentEditorPage"));
+const DigitizePage = lazy(() => import("./pages/workspace/digitize/DigitizePage"));
 const SheetsListPage = lazy(() => import("./pages/workspace/sheets/SheetsListPage"));
 const SheetSpreadsheetPage = lazy(() => import("./pages/workspace/sheets/SheetSpreadsheetPage"));
 const CrmContacts = lazy(() => import("./pages/workspace/crm/ContactsDirectoryPage"));
@@ -348,6 +349,7 @@ export default function App() {
             <Route path=":orgId/docs" element={<RequirePermission navKey="docs"><GracefulErrorBoundary fallbackTitle="Ошибка Документов"><Suspense fallback={<DocsSkeleton />}><DocumentsListPage /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/docs/new" element={<RequirePermission navKey="docs"><GracefulErrorBoundary fallbackTitle="Ошибка Редактора Документов"><Suspense fallback={<DocsSkeleton />}><DocumentEditorPage /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/docs/:id" element={<RequirePermission navKey="docs"><GracefulErrorBoundary fallbackTitle="Ошибка Редактора Документов"><Suspense fallback={<DocsSkeleton />}><DocumentEditorPage /></Suspense></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/digitize" element={<RequirePermission navKey="docs"><GracefulErrorBoundary fallbackTitle="Ошибка Оцифровки"><Suspense fallback={<DocsSkeleton />}><DigitizePage /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/sheets" element={<RequirePermission navKey="sheets"><GracefulErrorBoundary fallbackTitle="Ошибка Таблиц"><Suspense fallback={<SheetsSkeleton />}><SheetsListPage /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/sheets/new" element={<RequirePermission navKey="sheets"><GracefulErrorBoundary fallbackTitle="Ошибка Редактора Таблиц"><Suspense fallback={<SheetsSkeleton />}><SheetSpreadsheetPage /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/sheets/:sheetId" element={<RequirePermission navKey="sheets"><GracefulErrorBoundary fallbackTitle="Ошибка Редактора Таблиц"><Suspense fallback={<SheetsSkeleton />}><SheetSpreadsheetPage /></Suspense></GracefulErrorBoundary></RequirePermission>} />

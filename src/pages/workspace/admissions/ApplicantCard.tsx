@@ -421,7 +421,7 @@ function TestTab({ a, d, api, tenant, onSaved, onOpenSheet }: { a: Applicant; d:
         {canManage && !d.testExam && <button className={btn} onClick={() => setPaper({ id: "", title: "Тест на бумаге", rows: [{ subject: "", score: null, max: null }], comment: "", at: 0, byName: "" })}>Внести результаты на бумаге</button>}
       </section>
 
-      <CandidateSummary a={a} cfg={d.candidateForm || NEUTRAL_CANDIDATE_FORM} canManage={canManage} onOpen={onOpenSheet} />
+      <CandidateSummary a={a} cfg={d.candidateForm || NEUTRAL_CANDIDATE_FORM} canManage={canManage} onOpen={onOpenSheet} api={api} onChanged={onSaved} />
 
       {result && <AttemptViewer tenant={tenant} attemptId={result.id} examId={result.examId} onClose={() => setResult(null)} onChanged={onSaved} />}
       {paper && <PaperModal p={paper} onClose={() => setPaper(null)} onSave={async x => { await api(`/applicants/${a.id}/paper`, { method: "POST", body: JSON.stringify(x) }); setPaper(null); onSaved(); }} />}
@@ -539,9 +539,26 @@ function PaperTestForm({ exam, prev, onSave }: { exam: TestExam; prev: TestSumma
 }
 
 /** Анкета кандидата — коротко: решение, заключение, обратная связь. Правка — в окне листа. */
-function CandidateSummary({ a, cfg, canManage, onOpen }: { a: Applicant; cfg: CandidateFormConfig; canManage: boolean; onOpen: () => void }) {
+function CandidateSummary({ a, cfg, canManage, onOpen, api, onChanged }: { a: Applicant; cfg: CandidateFormConfig; canManage: boolean; onOpen: () => void; api: Api; onChanged: () => void }) {
   const c = a.candidate;
   const decision = cfg.decisions.find(x => x.id === c?.decision)?.label || c?.decisionLabel || "";
+  const final = !!c?.decision && (cfg.decisions.find(x => x.id === c.decision)?.final ?? !!c.decisionFinal);
+  const [busy, setBusy] = useState(false);
+  const publish = async () => {
+    if (!(await confirmDialog({ title: `Опубликовать результаты: ${decision}`, message: "Результаты откроются по QR направления, родителю уйдёт письмо с решением.", confirmLabel: "Опубликовать" }))) return;
+    setBusy(true);
+    try {
+      const j = await api(`/applicants/${a.id}/publish`, { method: "POST" });
+      toast.success(j.email?.sent ? "Опубликовано, письмо отправлено" : `Опубликовано${j.email?.reason ? ` · письмо: ${j.email.reason}` : ""}`);
+      onChanged();
+    } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
+  };
+  const unpublish = async () => {
+    if (!(await confirmDialog({ title: "Снять публикацию?", message: "Результаты по QR закроются. Отправленное письмо не отзывается.", confirmLabel: "Снять", danger: true }))) return;
+    setBusy(true);
+    try { await api(`/applicants/${a.id}/unpublish`, { method: "POST" }); toast.success("Публикация снята"); onChanged(); }
+    catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
+  };
   return (
     <section className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -554,7 +571,15 @@ function CandidateSummary({ a, cfg, canManage, onOpen }: { a: Applicant; cfg: Ca
         <div className="rounded-xl border border-[var(--border-color)] p-2.5"><dt className="text-[11px] text-[var(--text-muted)]">Обратная связь</dt><dd className="text-[var(--text-main)]">{c?.feedbackGiven ? "дана" : "не дана"}</dd></div>
       </dl>
       {c?.at ? <div className="text-xs text-[var(--text-muted)]">{c.by} · {new Date(c.at).toLocaleString("ru-RU")}</div> : null}
-      {canManage && c?.decision && <EmailResend tenantId={a.tenantId} event="decision" ctx={{ applicantId: a.id }} state={(a as any).decisionEmail} />}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border-color)] p-2.5">
+        {c?.published
+          ? <span className="text-sm text-emerald-700 dark:text-emerald-400 font-medium">Результаты опубликованы · {c.published.byName}, {new Date(c.published.at).toLocaleString("ru-RU")}</span>
+          : <span className="text-sm text-[var(--text-muted)]">{final ? "Результаты не опубликованы" : "Результаты закрыты до окончательного решения"}</span>}
+        {canManage && !a.archived && (c?.published
+          ? <Button className="ml-auto" size="sm" variant="secondary" loading={busy} onClick={unpublish}>Снять публикацию</Button>
+          : <Button className="ml-auto" size="sm" variant="primary" loading={busy} disabled={!final} onClick={publish}>Опубликовать результаты</Button>)}
+      </div>
+      {canManage && c?.published && <EmailResend tenantId={a.tenantId} event="decision" ctx={{ applicantId: a.id }} state={(a as any).decisionEmail} />}
     </section>
   );
 }

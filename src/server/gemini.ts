@@ -8,7 +8,7 @@
  */
 
 const API = "https://generativelanguage.googleapis.com/v1beta/models";
-const DEFAULT_MODELS = ["gemini-3.8-flash", "gemini-3-flash-preview", "gemini-3.5-flash"];
+const DEFAULT_MODELS = ["gemini-3-flash-preview", "gemini-3.8-flash", "gemini-3.5-flash"];
 const ATTEMPT_TIMEOUT_MS = 90_000;
 /** На этих ответах есть смысл попробовать другую модель. */
 const RETRYABLE = new Set([404, 408, 429, 500, 502, 503, 504]);

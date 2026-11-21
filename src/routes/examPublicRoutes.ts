@@ -1,5 +1,5 @@
 import { bumpLive } from "../server/live.js";
-import { notifyApplicantStep, notifyTested, syncReferral } from "./admissionRoutes.js";
+import { isAdmissionExam, notifyApplicantStep, notifyTested, syncReferral } from "./admissionRoutes.js";
 import { notifyEvent } from "../server/notify.js";
 import type { PermissionKey } from "../shared/permissions.js";
 import { Router } from "express";
@@ -594,7 +594,7 @@ router.post("/:code/result", async (req: any, res: any) => {
     if (a.status === "annulled") return res.json({ success: true, state: "annulled" });
     if (a.status !== "finished") return res.json({ success: true, state: "in_progress" });
     // Работа по направлению: результаты — по QR после обратной связи администрации.
-    if (a.applicantId) return res.json({ success: true, state: "pending" });
+    if (a.applicantId || isAdmissionExam(exam)) return res.json({ success: true, state: "pending" });
     const mode = exam.settings.results.showToStudent;
     if (mode === "never") return res.json({ success: true, state: "hidden" });
     if (mode === "after_publish" && !a.published) return res.json({ success: true, state: "pending" });

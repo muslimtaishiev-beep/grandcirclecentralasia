@@ -13,7 +13,7 @@ import type { PermissionKey } from "./permissions.js";
 
 export type NavIcon =
   | "home" | "admissions" | "exams" | "schedule" | "journals" | "subscriptions" | "presentations"
-  | "crm" | "forms" | "tickets" | "intake" | "chat" | "tasks" | "docs" | "sheets" | "payroll"
+  | "crm" | "forms" | "tickets" | "intake" | "chat" | "tasks" | "docs" | "sheets" | "digitize" | "payroll"
   | "team" | "audit" | "integrations" | "departments" | "workspace" | "emails" | "automations" | "sites" | "functions" | "billing" | "builder";
 
 export interface NavSub { label: string; path: string; keywords?: string }
@@ -90,6 +90,8 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       { screen: "docs", label: "Документы", path: "/docs", icon: "docs", sub: [{ label: "Новый документ", path: "/docs/new" }] },
       { screen: "sheets", label: "Таблицы", path: "/sheets", icon: "sheets", sub: [{ label: "Новая таблица", path: "/sheets/new" }] },
+      // Тот же экран «Документы»: включается и выключается вместе с ним, отдельного права нет.
+      { screen: "docs", label: "Оцифровка", path: "/digitize", icon: "digitize", sub: [{ label: "Оцифровка", path: "/digitize", keywords: "скан фото рукопись распознать бумага" }] },
     ],
   },
   {

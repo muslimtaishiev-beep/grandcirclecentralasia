@@ -50,6 +50,12 @@ export interface CandidateInfo {
    * id поля анкеты → текст или выбранные варианты. Ответы родителя не меняются.
    */
   overrides?: Record<string, string | string[]>;
+  /**
+   * Результаты опубликованы менеджером (кнопкой). До этого ничего не уходит:
+   * ни результаты по QR и коду экзамена, ни письмо с решением. Ставит и
+   * снимает только сервер; смена решения снимает публикацию.
+   */
+  published?: { at: number; by: string; byName: string } | null;
   by: string; at: number;
 }
 const LEGACY_DECISION: Record<Decision, { label: string; final: boolean }> = {

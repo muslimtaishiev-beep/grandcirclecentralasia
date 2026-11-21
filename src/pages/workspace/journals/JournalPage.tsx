@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import {
-  ArrowLeft, Upload, RotateCcw, Plus, Search, SlidersHorizontal, Download, Loader2, QrCode, ShieldCheck, Trash2, X, Image as ImageIcon, AlertTriangle, RefreshCw,
+  ArrowLeft, Upload, RotateCcw, Plus, Search, SlidersHorizontal, Download, Loader2, QrCode, ShieldCheck, Trash2, X, Image as ImageIcon, AlertTriangle, RefreshCw, Camera,
 } from "lucide-react";
 import {
   displayValue, entryStatus, isFilled, roleAtLeast, STATUS_LABEL, todayIso,
@@ -9,6 +9,7 @@ import {
 } from "../../../shared/journals";
 import { useJournalApi } from "./journalApi";
 import { useUrlTab, toast, confirmDialog, Button } from "../../../components/ui";
+import DigitizeWizard from "../../../components/digitize/DigitizeWizard";
 import ImportModal from "./components/ImportModal";
 import { exportEntriesXlsx } from "./journalExcel";
 import { tenantLogos } from "../../../shared/legal";
@@ -46,6 +47,7 @@ export default function JournalPage() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useUrlTab<"entries" | "stats" | "trash" | "settings">("tab", ["entries", "stats", "trash", "settings"], "entries");
   const [importing, setImporting] = useState(false);
+  const [photoImport, setPhotoImport] = useState(false);
   const [trash, setTrash] = useState<JournalEntry[] | null>(null);
 
   const [search, setSearch] = useState("");
@@ -244,6 +246,7 @@ export default function JournalPage() {
               <SlidersHorizontal className="w-4 h-4" /> Фильтры{activeFilters ? ` (${activeFilters})` : ""}
             </button>
             {canEdit && <button className={btn} onClick={() => setImporting(true)} title="Загрузить записи из Excel"><Upload className="w-4 h-4" /> Загрузить</button>}
+            {canEdit && <button className={btn} onClick={() => setPhotoImport(true)}><Camera className="w-4 h-4" /> С фото</button>}
             <button className={btn} onClick={exportXlsx} disabled={exporting || !visible.length} title="Скачать в Excel то, что сейчас отобрано">
               {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Excel
             </button>
@@ -359,6 +362,7 @@ export default function JournalPage() {
           onSaved={merge} onClose={() => setEditing(null)}
           onShowQr={(entry, column) => { setEditing(null); setQr({ entry, column }); }} />
       )}
+      {photoImport && <DigitizeWizard tenantId={tenantId} journal={journal} onClose={() => setPhotoImport(false)} onSaved={({ entries: added }) => { if (added) merge(added); }} />}
       {importing && <ImportModal journal={journal} api={api} onDone={merge} onClose={() => setImporting(false)} />}
       {qr && <SignQrModal journal={journal} entry={qr.entry} column={qr.column} api={api} onSigned={onSigned} onClose={() => setQr(null)} logo={tenantLogos(activeTenant).markUrl} />}
       {bulk && (

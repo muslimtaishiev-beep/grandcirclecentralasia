@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
-import { Table, Plus, Search, MoreVertical, Copy, Archive, ArchiveRestore, Trash2, Pencil } from 'lucide-react';
+import { Table, Plus, Search, MoreVertical, Copy, Archive, ArchiveRestore, Trash2, Pencil, ScanText } from 'lucide-react';
 import { sheetService } from '../../../services/collab/sheetService';
 import { WorkspaceSpreadsheet } from '../../../types/collab';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -79,6 +79,7 @@ export default function SheetsListPage() {
           {archivedCount > 0 && (
             <Button variant="secondary" onClick={() => setShowArchive(v => !v)}>{showArchive ? 'Таблицы' : `Архив · ${archivedCount}`}</Button>
           )}
+          {canCreate && <Button variant="secondary" icon={<ScanText className="w-4 h-4" />} onClick={() => navigate(`/workspace/${activeTenant.id}/digitize`)}>Оцифровать</Button>}
           {canCreate && <Button icon={<Plus className="w-4 h-4" />} onClick={() => void handleCreate()}>Создать</Button>}
         </div>
       </div>

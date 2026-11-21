@@ -458,6 +458,7 @@ export async function emailDecision(t: string, a: Applicant, o: { force?: boolea
   try {
     const c = candidateOf(a);
     if (!c?.decision) return { sent: false, reason: "Решения ещё нет" };
+    if (!c.published) return { sent: false, reason: "Результаты ещё не опубликованы" };
     const templateId = (await admissionSettings(t)).decisionEmail || "";
     if (!templateId) return { sent: false, skipped: !o.force, reason: "В настройках анкет не выбрано письмо «Решение»" };
     const token = await referralTokenFor(t, a);
@@ -1189,6 +1190,46 @@ router.post("/:tenantId/applicants/:id/parent-form/reset", ...staff, async (req:
   } catch (e: any) { return oops(res, e); }
 });
 
+/**
+ * Опубликовать результаты: только при окончательном решении в анкете
+ * кандидата. Открывает результаты по QR и отправляет письмо с решением.
+ */
+router.post("/:tenantId/applicants/:id/publish", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Нет прав");
+    const a = await loadApplicant(t, String(req.params.id));
+    if (!a) return fail(res, 404, "Поступающий не найден");
+    if (a.archived) return fail(res, 409, "Карточка в архиве");
+    const cand = candidateOf(a);
+    if (!cand?.decision || !cand.decisionFinal) return fail(res, 409, "Сначала вынесите окончательное решение в анкете кандидата");
+    if (cand.published) return res.json({ success: true, published: cand.published });
+    const published = { at: Date.now(), by: c.uid, byName: c.name };
+    const candidate: CandidateInfo = { ...cand, published };
+    await col(t, "applicants").doc(a.id).update({ candidate: deep(candidate), updatedAt: Date.now() });
+    await audit(t, a.id, c, "published", cand.decisionLabel);
+    const mail = await emailDecision(t, { ...a, candidate }, { by: c.uid });
+    await bumpLive(t, ["admissions"], a.id).catch(() => {});
+    return res.json({ success: true, published, email: mail });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** Снять публикацию: результаты по QR снова закрыты (отправленное письмо не отзывается). */
+router.post("/:tenantId/applicants/:id/unpublish", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Нет прав");
+    const a = await loadApplicant(t, String(req.params.id));
+    if (!a) return fail(res, 404, "Поступающий не найден");
+    const cand = candidateOf(a);
+    if (!cand?.published) return res.json({ success: true });
+    await col(t, "applicants").doc(a.id).update({ candidate: deep({ ...cand, published: null }), updatedAt: Date.now() });
+    await audit(t, a.id, c, "unpublished", "");
+    await bumpLive(t, ["admissions"], a.id).catch(() => {});
+    return res.json({ success: true });
+  } catch (e: any) { return oops(res, e); }
+});
+
 /** Письмо с решением — повторно, вручную. */
 router.post("/:tenantId/applicants/:id/decision-email", ...staff, async (req: any, res: any) => {
   try {
@@ -1333,7 +1374,9 @@ router.put("/:tenantId/applicants/:id/candidate", ...staff, async (req: any, res
       patch.child = ch; patch.parent = sanitizeParent(parent);
     }
 
-    const candidate: CandidateInfo = { ...base, ...(Object.keys(overrides).length ? { overrides } : {}), by: c.name, at: Date.now() };
+    // Публикация — только кнопкой; другое решение — публикация снимается.
+    const keepPublished = prev?.published && (prev.decision || null) === base.decision ? prev.published : null;
+    const candidate: CandidateInfo = { ...base, ...(Object.keys(overrides).length ? { overrides } : {}), published: keepPublished, by: c.name, at: Date.now() };
     await col(t, "applicants").doc(a.id).update({ ...patch, candidate, decision: null, updatedAt: Date.now() });
     const label = (d: string | null | undefined) => form.decisions.find(x => x.id === d)?.label || "";
     const changes = [...profileChanges, ...fieldChanges, ...diffRows([
@@ -1348,9 +1391,9 @@ router.put("/:tenantId/applicants/:id/candidate", ...staff, async (req: any, res
     if ((prev?.decision || null) !== candidate.decision) {
       await audit(t, a.id, c, "decision", candidate.decision ? candidate.decisionLabel : "снято");
       if (candidate.decision) await notifyAdmission(t, a, "decision", c, { summary: candidate.decisionLabel });
-      if (candidate.decision && candidate.decisionFinal) await emailDecision(t, { ...a, ...(patch as any), candidate }, { by: c.uid });
+      if (prev?.published) await audit(t, a.id, c, "unpublished", "решение изменено — опубликуйте заново");
     }
-    if (!!prev?.feedbackGiven !== candidate.feedbackGiven) await audit(t, a.id, c, "feedback", candidate.feedbackGiven ? "дана — ученик видит результаты по QR" : "снята");
+    if (!!prev?.feedbackGiven !== candidate.feedbackGiven) await audit(t, a.id, c, "feedback", candidate.feedbackGiven ? "дана" : "снята");
     if (patch.child && (patch.child as any).grade !== a.child.grade) await syncReferral(t, { ...a, ...patch } as any, await loadTemplates(t));
     return res.json({ success: true, candidate });
   } catch (e: any) { return oops(res, e); }
@@ -1484,7 +1527,9 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
       // Сдал — по этому же QR смотрит результаты, но только после обратной связи администрации.
       const done = (await attemptsOf(l.tenantId, [a.id])).filter(x => x.status === "finished" && !x.superseded)
         .sort((x, y) => (y.finishedAt || 0) - (x.finishedAt || 0))[0];
-      const open = !!done && !!candidateOf(a)?.feedbackGiven;
+      // Результаты — только после решения и публикации менеджером.
+      const cand = candidateOf(a);
+      const open = !!done && !!cand?.decision && !!cand.decisionFinal && !!cand.published;
       return res.json({
         success: true, mode: "student", org, signedIn,
         child: { name: a.child.name, grade: a.child.grade },
