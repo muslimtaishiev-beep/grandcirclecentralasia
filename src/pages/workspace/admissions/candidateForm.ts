@@ -2,6 +2,7 @@ import { candidateOf, subjectLevel, type Applicant } from "../../../shared/admis
 import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
 import { partResults, type Attempt, type Exam } from "../../../shared/examRun";
 import { answerText, gradeOf, visibleItemIds, type QAnswers, type QTemplate } from "../../../shared/questionnaires";
+import { SOURCE_SLOT, cardValue } from "../../../shared/candidateIntake";
 import { candidateSheet, downloadPdf, linkUrl, type CandidateDoc, type PrintOrg } from "../../../lib/admissionPrint";
 
 /**
@@ -49,7 +50,8 @@ export function topicFeedback(topics: TestSummary["topics"], th: CandidateFormCo
   return [strong.length ? `Сильные стороны: ${f(strong)}.` : "", weak.length ? `Зона роста: ${f(weak)}.` : ""].filter(Boolean).join("\n");
 }
 
-type ParentForm = { template: QTemplate; answers?: QAnswers } | null | undefined;
+/** Ответы на вопросы анкеты родителя для анкеты кандидата — сервер собирает их из всех источников (sheet). */
+export type ParentForm = { template: Pick<QTemplate, "sections">; answers?: QAnswers } | null | undefined;
 
 /**
  * Поля «Сведений об ученике», которые показываются этому ребёнку: по классу
@@ -73,7 +75,6 @@ export interface SheetField {
   value: string;
   options: { id: string; label: string; on: boolean }[];
 }
-const CARD_FIELDS = new Set(["child.name", "child.birthDate", "child.grade", "child.school", "parent.name", "parent.phone"]);
 
 /** Все заполняемые поля «Сведений об ученике» — из настроек анкеты организации, для любых будущих полей. */
 export function sheetFields(o: { form: CandidateFormConfig; applicant: Applicant; parentForm?: ParentForm; test: TestSummary | null }): SheetField[] {
@@ -83,10 +84,10 @@ export function sheetFields(o: { form: CandidateFormConfig; applicant: Applicant
   const over = candidateOf(a)?.overrides || {};
   return visibleFields(o.form, gradeOf(a.child.grade), o.parentForm).map((f, i) => {
     const shown = doc.fields[i];
-    const card = CARD_FIELDS.has(f.source);
+    const card = !!SOURCE_SLOT[f.source];
     const item = f.source.startsWith("answer:") ? items.find(x => x.id === f.source.slice(7)) : undefined;
     const choice = item && (item.kind === "choice" || item.kind === "multi");
-    const raw = card ? String(f.source.startsWith("child.") ? (a.child as any)[f.source.slice(6)] ?? "" : (a.parent as any)[f.source.slice(7)] ?? "") : shown?.value || "";
+    const raw = card ? cardValue(a, SOURCE_SLOT[f.source].join(".")) || (f.source === "student.phone" ? o.test?.studentPhone || "" : "") : shown?.value || "";
     return {
       id: f.id, label: f.label, source: f.source, half: f.half, card,
       kind: f.source === "child.birthDate" ? "date" : choice ? (item!.kind as "choice" | "multi") : "text",
@@ -134,7 +135,8 @@ export function candidateDoc(o: {
       case "child.school": return { value: a?.child.school || f?.school || "" };
       case "parent.name": return { value: a?.parent.name || f?.parentName || "" };
       case "parent.phone": return { value: a?.parent.phone || f?.parentPhone || "" };
-      case "student.phone": return { value: t?.studentPhone || f?.studentPhone || "" };
+      case "student.phone": return { value: a?.child.phone || t?.studentPhone || f?.studentPhone || "" };
+      case "student.email": return { value: a?.child.email || "" };
       default: return { value: "" };
     }
   };

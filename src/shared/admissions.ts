@@ -98,8 +98,15 @@ export interface Applicant {
   tenantId: string;
   /** Сквозной номер в организации — его пишут на бумаге и вводят в поиск. */
   refNo: number;
-  child: { name: string; birthDate: string; grade: string; school?: string };
+  child: { name: string; birthDate: string; grade: string; school?: string; phone?: string; email?: string };
   parent: { name: string; phone: string; email?: string };
+  /**
+   * Ответы ученика перед тестом на вопросы анкеты родителя (по id её пунктов):
+   * то, чего в анкете ещё не было. Анкета родителя, когда её заполнят, главнее.
+   */
+  intake?: QAnswers;
+  /** Поля карточки, заполненные анкетой родителя или учеником (не сотрудником): родитель может их уточнить. */
+  autoFilled?: string[];
   note: string;
   /** Анкета родителя: сдана ли (содержимое — в applicant_forms). */
   parentForm: { status: "none" | "done"; at: number | null; by: "parent" | "staff" | null };

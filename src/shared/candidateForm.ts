@@ -12,7 +12,7 @@
 export type CandidateSource =
   | "date" | "responsible"
   | "child.name" | "child.birthDate" | "child.grade" | "child.school"
-  | "parent.name" | "parent.phone" | "student.phone"
+  | "parent.name" | "parent.phone" | "student.phone" | "student.email"
   | `answer:${string}`;
 
 export const CARD_SOURCES: { id: CandidateSource; label: string }[] = [
@@ -24,7 +24,8 @@ export const CARD_SOURCES: { id: CandidateSource; label: string }[] = [
   { id: "child.school", label: "Школа" },
   { id: "parent.name", label: "ФИО родителя" },
   { id: "parent.phone", label: "Телефон родителя" },
-  { id: "student.phone", label: "Телефон ученика (из регистрации на тест)" },
+  { id: "student.phone", label: "Телефон ученика" },
+  { id: "student.email", label: "Почта ученика" },
 ];
 
 export interface CandidateField {

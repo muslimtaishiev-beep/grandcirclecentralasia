@@ -9,7 +9,8 @@ import { candidateSheet, sheetDocument } from "../../../lib/admissionPrint";
 import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui";
 import { confirmDialog } from "../../../components/ui";
 import type { Api } from "./admissionApi";
-import { candidateDoc, latestTest, saveCandidate, sheetFields, topicFeedback, type SheetField, type TestSummary } from "./candidateForm";
+import { candidateDoc, latestTest, saveCandidate, sheetFields, topicFeedback, type ParentForm, type SheetField, type TestSummary } from "./candidateForm";
+import { SOURCE_SLOT } from "../../../shared/candidateIntake";
 import HistoryModal from "./HistoryModal";
 
 /**
@@ -24,6 +25,8 @@ interface Data {
   applicant: Applicant; forms: FormDoc[]; attempts: TestSummary[]; audit: any[];
   me: { admission: boolean; academic: boolean; name?: string };
   candidateForm: CandidateFormConfig | null;
+  /** Ответы для «Сведений об ученике» из всех источников: родитель, ученик перед тестом, карточка. */
+  sheet?: ParentForm;
 }
 type Draft = Omit<CandidateInfo, "by" | "at" | "decisionLabel" | "decisionFinal" | "overrides">;
 type Vals = Record<string, string | string[] | null>;
@@ -67,7 +70,7 @@ export default function CandidateSheetModal({ applicantId, api, tenant, startEdi
   }, [load, api, applicantId]);
 
   const cfg = d?.candidateForm || NEUTRAL_CANDIDATE_FORM;
-  const parentForm = d?.forms.find(f => f.full && f.template.audience === "parent") || null;
+  const parentForm: ParentForm = d?.sheet || null;
   const test = d ? latestTest(d.attempts) : null;
   const fields = useMemo(() => (d ? sheetFields({ form: cfg, applicant: d.applicant, parentForm, test }) : []), [d, cfg, parentForm, test]);
   const canEdit = !!d?.me.admission;
@@ -90,8 +93,8 @@ export default function CandidateSheetModal({ applicantId, api, tenant, startEdi
       if (own(f)) continue;
       const v = vals[f.id];
       if (f.card) {
-        const [obj, key] = f.source.startsWith("child.") ? [child, f.source.slice(6)] : [parent, f.source.slice(7)];
-        (obj as any)[key] = String(v ?? "");
+        const [k, key] = SOURCE_SLOT[f.source];
+        ((k === "child" ? child : parent) as any)[key] = String(v ?? "");
       } else if (v === null) delete overrides[f.id];
       else if (!same(v, valsOf([f])[f.id])) overrides[f.id] = v as string | string[];
     }

@@ -85,7 +85,9 @@ export type SendResult = { sent: boolean; reason?: string; skipped?: boolean; to
 export async function sendTemplated(p: TemplatedSend): Promise<SendResult> {
   const logId = emailLogId(p.event, p.refId);
   const ref = db().collection("email_log").doc(logId);
-  const to = String(p.to || "").trim().toLowerCase();
+  // Несколько адресов через запятую (родитель и ученик) — одно письмо обоим.
+  const list = [...new Set(String(p.to || "").toLowerCase().split(/[,;\s]+/).filter(x => EMAIL.test(x)))].slice(0, 5);
+  const to = list.join(", ");
   try {
     // Захват события: второй вызов за то же событие ничего не шлёт.
     const claimed = await db().runTransaction(async tx => {
@@ -99,14 +101,14 @@ export async function sendTemplated(p: TemplatedSend): Promise<SendResult> {
     });
     if (!claimed) return { sent: false, skipped: true, reason: "Уже отправлено" };
     let r: SendResult;
-    if (!EMAIL.test(to)) r = { sent: false, reason: p.noRecipient || "Нет почты получателя" };
+    if (!list.length) r = { sent: false, reason: p.noRecipient || "Нет почты получателя" };
     else {
       const tpl = p.templateId ? await loadTemplate(p.tenantId, p.templateId) : p.event === "results_ready" ? DEFAULT_RESULTS_READY : p.event === "form" && p.ctx.statusId ? DEFAULT_FORM_STATUS : null;
       if (!tpl) r = { sent: false, reason: "Шаблон не найден" };
       else {
         const [m, base] = await Promise.all([orgMail(p.tenantId), appUrl()]);
         const { subject, html } = renderEmail(tpl, p.vars, m.org, base);
-        r = await sendMail({ to, subject, html, fromName: m.fromName, replyTo: m.replyTo, tenantId: p.tenantId });
+        r = await sendMail({ to: list, subject, html, fromName: m.fromName, replyTo: m.replyTo, tenantId: p.tenantId });
         await ref.set({ subject }, { merge: true });
       }
     }

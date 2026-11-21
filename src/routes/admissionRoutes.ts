@@ -17,7 +17,7 @@ import { LEGAL_VERSION } from "../shared/legalDocs.js";
 import { REG_PRESETS, paperResult, partResults, sanitizeSections, sanitizeSettings, type Exam, type ExamResult } from "../shared/examRun.js";
 import { NEUTRAL_CANDIDATE_FORM, sanitizeCandidateForm, type CandidateFormConfig } from "../shared/candidateForm.js";
 import {
-  answerText, dropHidden, gradeOf, missingFor, outcomeOf, sanitizeAnswers, sanitizeTemplate,
+  answerText, dropHidden, gradeOf, missingFor, outcomeOf, sanitizeAnswers, sanitizeTemplate, visibleItemIds,
   type QAnswers, type QBind, type QTemplate,
 } from "../shared/questionnaires.js";
 import { applicantAudit, diffRows, STUDENT, SYSTEM, type AuditChange, type AuditWho } from "../server/applicantAudit.js";
@@ -26,6 +26,7 @@ import {
   type Applicant, type ApplicantForm, type CandidateInfo, type LinkPurpose, type StageSummary,
 } from "../shared/admissions.js";
 import { cancelJob, registerJobHandler, scheduleJob } from "../server/scheduler.js";
+import { SOURCE_SLOT, answered, cardValue, intakeTemplate, profileAnswers, splitIntake } from "../shared/candidateIntake.js";
 import { isPermissionKey, type PermissionKey } from "../shared/permissions.js";
 
 /**
@@ -206,7 +207,7 @@ async function emailTested(t: string, x: TestedAttempt, exam: Exam, a: Applicant
   const vars: Record<string, string> = { экзамен: exam.title || "", номер: x.shortId || "" };
   let to = "";
   if (a) {
-    to = a.parent.email || "";
+    to = familyEmails(a);
     Object.assign(vars, { имя: a.parent.name, ребёнок: a.child.name, класс: a.child.grade, ссылка: `${base}/a/${await referralTokenFor(t, a)}` });
   } else {
     to = String(x.student?.email || "");
@@ -269,6 +270,88 @@ async function parentAnswers(t: string, applicantId: string): Promise<QAnswers |
   const snap = await col(t, "applicant_forms").where("applicantId", "==", applicantId).get();
   const f = snap.docs.map(d => d.data() as ApplicantForm).find(x => x.template?.audience === "parent");
   return f?.answers || {};
+}
+
+/**
+ * Откуда анкета кандидата берёт ответы на вопросы анкеты родителя: только
+ * пункты, вынесенные в анкету кандидата и видимые этому ребёнку, с ответами
+ * из всех источников. Остальное содержимое анкеты родителя сюда не попадает.
+ */
+function sheetSource(a: Applicant, form: CandidateFormConfig, tpl: QTemplate | null, parent?: QAnswers | null): { template: Pick<QTemplate, "sections">; answers: QAnswers } | null {
+  if (!tpl) return null;
+  const all = profileAnswers(a, tpl, parent);
+  const shown = visibleItemIds(tpl, gradeOf(a.child.grade), { answers: all });
+  const want = new Set(form.fields.filter(f => f.source.startsWith("answer:")).map(f => f.source.slice(7)));
+  const items = tpl.sections.flatMap(x => x.items).filter(i => want.has(i.id) && shown.has(i.id)).map(({ when: _w, ...i }) => i);
+  // Ни один вопрос не виден — пустой пункт-заглушка, чтобы скрытые условием поля не показались пустыми строками.
+  return { template: { sections: [{ id: "sheet", title: "", items: items.length ? items : [{ id: "_", kind: "note", label: "" }] }] }, answers: Object.fromEntries(items.map(i => [i.id, all[i.id]]).filter(([, v]) => v)) };
+}
+
+/** Анкета родителя поступающего: её запись (черновик или отправленная) и шаблон. */
+async function parentDocOf(t: string, applicantId: string): Promise<ApplicantForm | null> {
+  const snap = await col(t, "applicant_forms").where("applicantId", "==", applicantId).get();
+  return snap.docs.map(d => d.data() as ApplicantForm).find(f => f.template?.audience === "parent") || null;
+}
+
+/**
+ * Вопросы ученику перед вступительным тестом — из анкеты кандидата
+ * организации. По направлению (a — карточка) — только то, чего ещё нет;
+ * без направления — всё, кроме того, что спрашивает сама регистрация.
+ */
+export async function intakeFor(t: string, exam: Exam, a: Applicant | null): Promise<QTemplate | null> {
+  if (!isAdmissionExam(exam)) return null;
+  const [form, templates] = await Promise.all([loadCandidateForm(t), loadTemplates(t)]);
+  if (a) {
+    const pd = await parentDocOf(t, a.id);
+    return intakeTemplate({ form, parentTpl: pd?.template || parentTemplate(templates), grade: gradeOf(a.child.grade), card: a, parentAnswers: pd?.answers });
+  }
+  const reg = exam.settings.registration; const grades = exam.settings.admission?.grades || [];
+  const skip: QBind[] = ["child.name", ...(reg.phone ? ["child.phone" as const] : []), ...(reg.email ? ["child.email" as const] : [])];
+  return intakeTemplate({ form, parentTpl: parentTemplate(templates), grade: grades.length === 1 ? grades[0] : null, skip });
+}
+
+export interface IntakeRead { answers: QAnswers; error: string | null; rows: { label: string; value: string }[]; extra: Record<string, string>; email: string }
+const INTAKE_EXTRA: Partial<Record<QBind, string>> = { "child.birthDate": "birthDate", "child.school": "school", "child.phone": "studentPhone", "parent.name": "parentName", "parent.phone": "parentPhone", "parent.email": "parentEmail" };
+/** Ответы ученика на вопросы перед тестом: проверка и вид для работы (строки «о себе»). */
+export function readIntake(tpl: QTemplate | null, raw: unknown, grade: number | null, legacy?: Record<string, unknown> | null): IntakeRead {
+  const out: IntakeRead = { answers: {}, error: null, rows: [], extra: {}, email: "" };
+  if (!tpl) return out;
+  const items = tpl.sections.flatMap(x => x.items);
+  // Страница, открытая до обновления, присылает прежние поля «о себе» — принимаем их как ответы на те же вопросы.
+  const old: Record<string, unknown> = {};
+  for (const i of items) { const k = i.bind ? INTAKE_EXTRA[i.bind] : undefined; if (k && legacy?.[k]) old[i.id] = { value: legacy[k] }; }
+  const answers = dropHidden(tpl, sanitizeAnswers(tpl, { ...old, ...(raw && typeof raw === "object" ? raw : {}) }), grade);
+  for (const i of items) {
+    const v = String(answers[i.id]?.value ?? "");
+    if (!v || Array.isArray(answers[i.id]?.value)) continue;
+    if (i.kind === "phone" && v.replace(/\D/g, "").length < 9) delete answers[i.id];
+    if (i.kind === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(v)) delete answers[i.id];
+    if ((i.bind === "child.email" || i.bind === "parent.email") && !cleanEmail(v)) { out.error = `Проверьте: ${i.label}`; return out; }
+  }
+  const miss = missingFor(tpl, answers, grade, null);
+  if (miss.length) { out.error = `Заполните: ${miss.slice(0, 4).join(", ")}`; return out; }
+  out.answers = answers;
+  for (const i of items) {
+    if (!answered(answers[i.id])) continue;
+    const text = answerText(i, answers[i.id]);
+    out.rows.push({ label: i.label, value: i.kind === "date" ? ruDate(text) || text : text });
+    if (i.bind === "child.email") out.email = cleanEmail(text);
+    const k = i.bind ? INTAKE_EXTRA[i.bind] : undefined;
+    if (k) out.extra[k] = text;
+  }
+  return out;
+}
+
+/** Ответы ученика — в карточку: её пустые поля и ответы на вопросы анкеты (то, что уже есть, не трогаем). */
+export async function applyIntake(t: string, a: Applicant, tpl: Pick<QTemplate, "sections"> | null, answers: QAnswers): Promise<void> {
+  if (!tpl || !Object.keys(answers).length) return;
+  const bound = bindToCard(a, tpl, answers, false);
+  const { free } = splitIntake(tpl, answers);
+  const intake = { ...free, ...Object.fromEntries(Object.entries(a.intake || {}).filter(([, v]) => answered(v))) };
+  await col(t, "applicants").doc(a.id).update(deep({ ...bound, intake, updatedAt: Date.now() }));
+  const items = tpl.sections.flatMap(x => x.items);
+  const changes = diffRows(items.filter(i => answered(answers[i.id])).map(i => [i.label, i.bind ? cardValue(a, i.bind) : answerText(i, a.intake?.[i.id]), i.bind ? cardValue(bound, i.bind) : answerText(i, intake[i.id])] as [string, unknown, unknown]));
+  if (changes.length) await audit(t, a.id, STUDENT(a.child.name), "intake", "", changes);
 }
 
 async function loadApplicant(t: string, id: string): Promise<Applicant | null> {
@@ -338,18 +421,31 @@ async function makeLink(t: string, applicantId: string, purpose: LinkPurpose): P
   return token;
 }
 
-/** Ответы, привязанные к карточке, заполняют её пустые поля. */
-function bindToCard(a: Applicant, tpl: QTemplate, answers: QAnswers, overwrite: boolean): Partial<Applicant> {
+/**
+ * Ответы, привязанные к карточке, заполняют её поля: пустые — всегда;
+ * заполненные сами (анкетой или учеником, autoFilled) — только анкета
+ * родителя (refine); то, что вписал сотрудник, не трогается.
+ */
+export function bindToCard(a: Applicant, tpl: Pick<QTemplate, "sections">, answers: QAnswers, refine: boolean): Pick<Applicant, "child" | "parent" | "autoFilled"> {
   const patch: any = { child: { ...a.child }, parent: { ...a.parent } };
+  const auto = new Set(a.autoFilled || []);
   const set = (b: QBind, v: string) => {
     const [k, f] = b.split(".") as ["child" | "parent", string];
     if (b === "child.birthDate" && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; // в карточку — только настоящая дата
-    if (b === "parent.email") v = cleanEmail(v);
-    if (v && (overwrite || !patch[k][f])) patch[k][f] = v;
+    if (b === "parent.email" || b === "child.email") v = cleanEmail(v);
+    if (!v || patch[k][f] === v) return;
+    if (!patch[k][f] || (refine && auto.has(b))) { patch[k][f] = v; auto.add(b); }
   };
   for (const i of tpl.sections.flatMap(s => s.items)) if (i.bind) set(i.bind, str(answers[i.id]?.value, 120));
+  patch.autoFilled = [...auto];
   return patch;
 }
+/** Сотрудник поправил поле карточки — оно больше не «заполнено само»: анкета его не перезапишет. */
+function keepAuto(a: Applicant, child: Applicant["child"], parent: Applicant["parent"]): string[] {
+  return (a.autoFilled || []).filter(b => cardValue(a, b) === cardValue({ child, parent }, b));
+}
+/** Почты семьи — письмо о результатах уходит и родителю, и ученику. */
+const familyEmails = (a: Applicant) => [...new Set([a.parent?.email, a.child?.email].map(cleanEmail).filter(Boolean))].join(", ");
 
 async function tenantExams(t: string): Promise<Exam[]> {
   const snap = await col(t, "exams").get();
@@ -469,9 +565,9 @@ export async function emailDecision(t: string, a: Applicant, o: { force?: boolea
     if (!templateId) return { sent: false, skipped: !o.force, reason: "В настройках анкет не выбрано письмо «Решение»" };
     const token = await referralTokenFor(t, a);
     const r = await sendTemplated({
-      tenantId: t, templateId, to: a.parent.email || "", event: "decision", refId: `${t}_${a.id}_${c.decision}`, force: o.force, by: o.by,
+      tenantId: t, templateId, to: familyEmails(a), event: "decision", refId: `${t}_${a.id}_${c.decision}`, force: o.force, by: o.by,
       ctx: { applicantId: a.id, label: `${a.child.name}, ${a.child.grade} класс` },
-      actionUrl: applicantPath(t, a.id, "test"), noRecipient: "Нет почты родителя",
+      actionUrl: applicantPath(t, a.id, "test"), noRecipient: "Нет почты родителя и ученика",
       mirror: { ref: col(t, "applicants").doc(a.id), field: "decisionEmail" },
       vars: {
         имя: a.parent.name, ребёнок: a.child.name, класс: a.child.grade, решение: c.decisionLabel,
@@ -509,9 +605,9 @@ export async function emailResultsReady(t: string, a: Applicant, o: { force?: bo
     const rs = sanitizeSettings(exam?.settings).results;
     const token = await referralTokenFor(t, a);
     const r = await sendTemplated({
-      tenantId: t, templateId: rs.readyEmail || "", to: a.parent.email || "", event: "results_ready", refId: `${t}_${a.id}_${c.decision}`, force: o.force, by: o.by,
+      tenantId: t, templateId: rs.readyEmail || "", to: familyEmails(a), event: "results_ready", refId: `${t}_${a.id}_${c.decision}`, force: o.force, by: o.by,
       ctx: { applicantId: a.id, examId: exam?.id, label: `${a.child.name}, ${a.child.grade} класс` },
-      actionUrl: applicantPath(t, a.id, "test"), noRecipient: "Нет почты родителя",
+      actionUrl: applicantPath(t, a.id, "test"), noRecipient: "Нет почты родителя и ученика",
       mirror: { ref: col(t, "applicants").doc(a.id), field: "resultsEmail" },
       vars: { имя: a.parent.name, ребёнок: a.child.name, класс: a.child.grade, экзамен: exam?.title || "", ссылка: `${await appUrl()}/a/${token}` },
     });
@@ -565,10 +661,12 @@ async function attemptsOf(t: string, applicantIds?: string[], detail?: { exams: 
         reviewDone: x.review?.status === "done", published: !!x.published,
         ...(detail.exams ? {
           student: { name: x.student?.name || "", level: x.student?.level || "", phone: x.student?.phone || "", email: x.student?.email || "" },
-          extraRows: Object.entries((x.student?.extra || {}) as Record<string, string>).filter(([, v]) => String(v || "").trim()).map(([id, value]) => ({
-            label: (e?.settings.registration.extra || []).find(f => f.id === id)?.label || REG_PRESETS.find(f => f.id === id)?.label || id,
-            value: id === "birthDate" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value).toLocaleDateString("ru-RU") : String(value),
-          })),
+          // Что ученик ответил перед тестом: вопросы анкеты кандидата (intake) или прежние поля «о себе».
+          extraRows: Array.isArray(x.intake?.rows) && x.intake.rows.length ? x.intake.rows.map((r: any) => ({ label: String(r.label || ""), value: String(r.value || "") }))
+            : Object.entries((x.student?.extra || {}) as Record<string, string>).filter(([, v]) => String(v || "").trim()).map(([id, value]) => ({
+              label: (e?.settings.registration.extra || []).find(f => f.id === id)?.label || REG_PRESETS.find(f => f.id === id)?.label || id,
+              value: id === "birthDate" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value).toLocaleDateString("ru-RU") : String(value),
+            })),
           proctoring: { enabled: !!x.proctoring?.enabled, totalViolations: Number(x.proctoring?.totalViolations) || 0 },
         } : {}),
       } : {}),
@@ -590,8 +688,11 @@ function row(a: Applicant, attempts: any[], academic: boolean) {
   };
 }
 
-const sanitizeChild = (b: any) => ({ name: str(b?.name, 120), birthDate: /^\d{4}-\d{2}-\d{2}$/.test(String(b?.birthDate)) ? String(b.birthDate) : "", grade: str(b?.grade, 20), school: str(b?.school, 160) });
-const cleanEmail = (v: unknown) => { const e = str(v, 120).toLowerCase(); return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : ""; };
+const sanitizeChild = (b: any) => ({
+  name: str(b?.name, 120), birthDate: /^\d{4}-\d{2}-\d{2}$/.test(String(b?.birthDate)) ? String(b.birthDate) : "", grade: str(b?.grade, 20), school: str(b?.school, 160),
+  phone: str(b?.phone, 30), email: cleanEmail(b?.email),
+});
+function cleanEmail(v: unknown) { const e = str(v, 120).toLowerCase(); return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : ""; }
 const sanitizeParent = (b: any) => ({ name: str(b?.name, 120), phone: str(b?.phone, 30), email: cleanEmail(b?.email) });
 
 // ── Шаблоны анкет ───────────────────────────────────────────────────────
@@ -798,6 +899,13 @@ export async function linkAttempt(t: string, attemptId: string, c: { uid: string
   }
   const examTitle = str(x.examTitle, 200);
   const extra: Record<string, string> = x.student?.extra || {};
+  // Класс: из регистрации, иначе — единственный класс вступительного экзамена.
+  const examGrades: number[] = x.student?.level ? [] : ((await col(t, "exams").doc(String(x.examId || "_")).get()).data()?.settings?.admission?.grades || []);
+  const fromAttempt = {
+    child: sanitizeChild({ name: x.student?.name, birthDate: extra.birthDate, grade: x.student?.level || (examGrades.length === 1 ? String(examGrades[0]) : ""), school: extra.school, phone: extra.studentPhone || x.student?.phone, email: x.student?.email }),
+    parent: sanitizeParent({ name: extra.parentName, phone: extra.parentPhone, email: extra.parentEmail }),
+  };
+  const intake: QAnswers = x.intake?.free && typeof x.intake.free === "object" ? x.intake.free : {};
   const birth = /^\d{4}-\d{2}-\d{2}$/.test(String(extra.birthDate || "")) ? String(extra.birthDate) : "";
   const key = nameKey(x.student?.name);
   if (!key) return null;
@@ -812,19 +920,30 @@ export async function linkAttempt(t: string, attemptId: string, c: { uid: string
     : all.length === 1 && noConflict(all[0]) ? all[0] : undefined;
   if (!found && all.length > 1) return { ambiguous: all.length };
   let id: string; let refNo: number; let created = false;
-  if (found) { id = found.id; refNo = found.refNo; }
-  else {
+  if (found) {
+    id = found.id; refNo = found.refNo;
+    // Та же карточка: пустые поля заполняются из работы, заполненные не трогаются.
+    const child: any = { ...found.child }; const parent: any = { ...found.parent }; const auto = new Set(found.autoFilled || []);
+    for (const [k, src, dst] of [["child", fromAttempt.child, child], ["parent", fromAttempt.parent, parent]] as const) {
+      for (const [f, v] of Object.entries(src)) if (v && !dst[f] && f !== "name") { dst[f] = v; auto.add(`${k}.${f}`); }
+    }
+    await col(t, "applicants").doc(id).update(deep({
+      child, parent, autoFilled: [...auto], updatedAt: Date.now(),
+      intake: { ...intake, ...Object.fromEntries(Object.entries(found.intake || {}).filter(([, v]) => answered(v))) },
+    }));
+  } else {
     const ref = col(t, "applicants").doc(); id = ref.id;
     const [n, parentT, cardT] = await Promise.all([nextRefNo(t), makeLink(t, id, "parent"), makeLink(t, id, "card")]);
     refNo = n; created = true;
     const now = Date.now();
     const a: Applicant = {
-      id, tenantId: t, refNo, child: sanitizeChild({ name: x.student?.name, birthDate: birth, grade: x.student?.level, school: extra.school }),
-      parent: sanitizeParent({ name: extra.parentName, phone: extra.parentPhone, email: extra.parentEmail }), note: "",
+      id, tenantId: t, refNo, child: fromAttempt.child, parent: fromAttempt.parent, note: "",
+      ...(Object.keys(intake).length ? { intake } : {}),
+      autoFilled: [...Object.entries(fromAttempt.child).filter(([f, v]) => v && f !== "name").map(([f]) => `child.${f}`), ...Object.entries(fromAttempt.parent).filter(([, v]) => v).map(([f]) => `parent.${f}`)],
       parentForm: { status: "none", at: null, by: null }, stages: {}, referral: null, paperResults: [], decision: null,
       tokens: { parent: parentT, card: cardT }, createdAt: now, updatedAt: now, createdBy: c.uid, createdByName: c.name,
     };
-    await ref.create(a);
+    await ref.create(deep(a));
   }
   await aref.update({ applicantId: id, refNo });
   const what = `${examTitle ? `«${examTitle}» ` : ""}№ ${str(x.shortId, 20)}`;
@@ -907,11 +1026,17 @@ router.get("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
     const auditLog = hasPerm(c, "admission:manage") ? (await historyPage(t, a.id, c, templates, {})).items : [];
     const canFillMap = Object.fromEntries(templates.map(x => [x.id, canFill(c, x)]));
     const canSeeMap = Object.fromEntries(templates.map(x => [x.id, canSee(c, x)]));
+    const parentDoc = formsSnap.docs.map(d => d.data() as ApplicantForm).find(f => f.template?.audience === "parent") || null;
+    const candidateForm = academic ? await loadCandidateForm(t) : null;
     return res.json({
       success: true, applicant: { ...(academic ? { ...a, candidate: candidateOf(a) } : withoutAcademic(a)), tokens: hasPerm(c, "admission:manage") ? a.tokens : { card: a.tokens.card, parent: "" } },
       forms, attempts, audit: auditLog,
       // Тест ребёнка по направлению: если на бумаге — администрация вносит правильные ответы.
-      candidateForm: academic ? await loadCandidateForm(t) : null,
+      candidateForm,
+      // «Сведения об ученике» анкеты кандидата — из всех источников сразу (родитель, ученик перед тестом, карточка).
+      sheet: candidateForm ? sheetSource(a, candidateForm, parentDoc?.template || parentTemplate(templates), parentDoc?.answers) : null,
+      // Анкету родителя ещё не начинали — сотруднику она открывается с тем, что уже известно (карточка, ответы ученика).
+      parentPrefill: !parentDoc && parentTemplate(templates) && (canFillMap[parentTemplate(templates)!.id] || canSeeMap[parentTemplate(templates)!.id]) ? profileAnswers(a, parentTemplate(templates), null) : null,
       testExam: academic ? await (async () => {
         const e = a.referral?.examId ? (await tenantExams(t)).find(x => x.id === a.referral!.examId) : null;
         return e ? { id: e.id, title: e.title, paper: !!e.settings.paper, sections: e.sections.map(x => ({ id: x.id, title: x.title, tasks: x.tasks || 0 })) } : null;
@@ -941,10 +1066,12 @@ router.put("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
     }
     if (req.body?.parent) patch.parent = sanitizeParent({ ...a.parent, ...req.body.parent });
     if (req.body?.note !== undefined) patch.note = str(req.body.note, 1000);
-    await col(t, "applicants").doc(a.id).update(patch);
     const ch = patch.child || a.child; const pa = patch.parent || a.parent;
+    if (a.autoFilled?.length) patch.autoFilled = keepAuto(a, ch, pa);
+    await col(t, "applicants").doc(a.id).update(patch);
     const changes = diffRows([
       ["ФИО ученика", a.child.name, ch.name], ["Дата рождения", a.child.birthDate, ch.birthDate], ["Класс", a.child.grade, ch.grade], ["Школа", a.child.school, ch.school],
+      ["Телефон ученика", a.child.phone, ch.phone], ["Почта ученика", a.child.email, ch.email],
       ["ФИО родителя", a.parent.name, pa.name], ["Телефон родителя", a.parent.phone, pa.phone], ["Почта родителя", a.parent.email, pa.email],
       ["Заметка", a.note, patch.note ?? a.note],
     ]);
@@ -1129,7 +1256,7 @@ router.put("/:tenantId/applicants/:id/forms/:tid", ...staff, async (req: any, re
     const patch: any = { updatedAt: now };
     if (tpl.audience === "parent") {
       patch.parentForm = { status: status === "done" ? "done" : "none", at: now, by: "staff" };
-      Object.assign(patch, bindToCard(a, tpl, answers, false));
+      Object.assign(patch, bindToCard(a, tpl, answers, true));
     } else {
       const o = outcomeOf(tpl, outcome);
       const summary: StageSummary = { templateId: tid, title: tpl.title, status, outcome, outcomeLabel: o?.label || "", tone: o?.tone || null, allowsTest: !!o?.allowsTest, by: c.uid, byName: c.name, at: now };
@@ -1500,7 +1627,7 @@ router.post("/:tenantId/applicants/:id/decision-email", ...staff, async (req: an
     if (!a) return fail(res, 404, "Поступающий не найден");
     const r = await emailDecision(t, a, { force: true, by: c.uid });
     if (!r.sent) return fail(res, 400, r.reason || "Не отправилось");
-    return res.json({ success: true, to: a.parent.email });
+    return res.json({ success: true, to: r.to || familyEmails(a) });
   } catch (e: any) { return oops(res, e); }
 });
 
@@ -1606,11 +1733,8 @@ router.put("/:tenantId/applicants/:id/candidate", ...staff, async (req: any, res
     for (const [fid, v] of Object.entries(raw).slice(0, 40)) {
       const f = form.fields.find(x => x.id === fid);
       if (!f) continue;
-      const card: Record<string, [typeof child | typeof parent, string]> = {
-        "child.name": [child, "name"], "child.birthDate": [child, "birthDate"], "child.grade": [child, "grade"], "child.school": [child, "school"],
-        "parent.name": [parent, "name"], "parent.phone": [parent, "phone"],
-      };
-      if (card[f.source]) { const [obj, key] = card[f.source]; (obj as any)[key] = str(v, 200); continue; }
+      const slot = SOURCE_SLOT[f.source];
+      if (slot) { ((slot[0] === "child" ? child : parent) as any)[slot[1]] = str(v, 200); continue; }
       const before = overrides[fid];
       if (v === null) delete overrides[fid];
       else if (Array.isArray(v)) {
@@ -1626,6 +1750,7 @@ router.put("/:tenantId/applicants/:id/candidate", ...staff, async (req: any, res
     const patch: Record<string, unknown> = {};
     const profileChanges = diffRows([
       ["ФИО ученика", a.child.name, child.name], ["Дата рождения", a.child.birthDate, child.birthDate], ["Класс", a.child.grade, child.grade], ["Школа", a.child.school, child.school],
+      ["Телефон ученика", a.child.phone, child.phone], ["Почта ученика", a.child.email, child.email],
       ["ФИО родителя", a.parent.name, parent.name], ["Телефон родителя", a.parent.phone, parent.phone],
     ]);
     if (profileChanges.length) {
@@ -1633,6 +1758,7 @@ router.put("/:tenantId/applicants/:id/candidate", ...staff, async (req: any, res
       if (ch.name.split(/\s+/).filter(Boolean).length < 2) return fail(res, 400, "Укажите фамилию и имя ребёнка");
       if (gradeOf(ch.grade) === null) return fail(res, 400, "Укажите класс");
       patch.child = ch; patch.parent = sanitizeParent(parent);
+      if (a.autoFilled?.length) patch.autoFilled = keepAuto(a, ch, patch.parent as Applicant["parent"]);
     }
 
     // Публикация — только кнопкой; другое решение — публикация снимается.
@@ -1770,7 +1896,7 @@ router.post("/:tenantId/applicants/:id/results-email", ...staff, async (req: any
     if (!candidateOf(a)?.published) return fail(res, 409, "Сначала опубликуйте результаты");
     const r = await emailResultsReady(t, a, { force: true, by: c.uid });
     if (!r.sent) return fail(res, 400, r.reason || "Не отправилось");
-    return res.json({ success: true, to: a.parent.email });
+    return res.json({ success: true, to: r.to || familyEmails(a) });
   } catch (e: any) { return oops(res, e); }
 });
 
@@ -1852,16 +1978,12 @@ router.get("/link/:token", auth, async (req: any, res: any) => {
     if (!tpl) return fail(res, 404, "Анкета для родителей не настроена");
     // Закрыта только отправленная анкета: до отправки родитель доделывает её в любое время — и после встречи, и после теста.
     const locked = prev?.status === "done";
-    const prefill: QAnswers = {};
-    for (const i of tpl.sections.flatMap(s => s.items)) {
-      if (!i.bind) continue;
-      const [k, f] = i.bind.split(".") as ["child" | "parent", string];
-      const v = (a as any)[k]?.[f]; if (v) prefill[i.id] = { value: String(v) };
-    }
+    // Что уже известно (карточка, ответы ученика перед тестом) — подставлено, родитель проверяет и дополняет.
+    const prefill = profileAnswers(a, tpl, null);
     // Отправленные ответы по ссылке (её могли переслать или сфотографировать) не показываем — только статус.
     return res.json({
       success: true, mode: "parent", org, signedIn, locked, template: locked ? { ...tpl, sections: [] } : tpl,
-      answers: locked ? {} : { ...prefill, ...(prev?.answers || {}) }, done: prev?.status === "done", grade: a.child.grade,
+      answers: locked ? {} : { ...prefill, ...Object.fromEntries(Object.entries(prev?.answers || {}).filter(([, v]) => answered(v) || v?.rating || v?.comment)) }, done: prev?.status === "done", grade: a.child.grade,
     });
   } catch (e: any) { return oops(res, e); }
 });
@@ -1898,6 +2020,9 @@ router.post("/link/:token/parent/draft", async (req: any, res: any) => {
       id: fref.id, applicantId: a.id, templateId: tpl.id, template: tpl, grade: gradeOf(a.child.grade), answers, outcome: null, status: "draft",
       filledBy: { kind: "parent", name: "Родитель" }, createdAt: prev?.createdAt || now, updatedAt: now,
     }), { merge: true });
+    // Черновик уже виден в карточке и анкете кандидата: поля карточки заполняются сразу, родитель их ещё уточнит.
+    await col(p.t, "applicants").doc(a.id).update({ updatedAt: now, ...bindToCard(a, tpl, dropHidden(tpl, answers, gradeOf(a.child.grade)), true) });
+    await bumpLive(p.t, ["admissions"], a.id).catch(() => {});
     return res.json({ success: true, savedAt: now });
   } catch (e: any) { return oops(res, e); }
 });
@@ -1922,7 +2047,7 @@ router.post("/link/:token/parent", async (req: any, res: any) => {
       createdAt: prev?.createdAt || now, updatedAt: now, doneAt: now,
     };
     await fref.set(deep(form));
-    await col(t, "applicants").doc(a.id).update({ parentForm: { status: "done", at: now, by: "parent" }, updatedAt: now, ...bindToCard(a, tpl, answers, false) });
+    await col(t, "applicants").doc(a.id).update({ parentForm: { status: "done", at: now, by: "parent" }, updatedAt: now, ...bindToCard(a, tpl, answers, true) });
     await audit(t, a.id, null, "parent_form", "родитель заполнил анкету");
     await notifyAdmission(t, a, "parent", { uid: "", name: "заполнил родитель" });
     return res.json({ success: true });

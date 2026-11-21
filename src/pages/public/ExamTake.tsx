@@ -4,6 +4,8 @@ import QuestionFactory from "../../components/tests/QuestionFactory";
 import ProctoringWarningOverlay from "../../components/ProctoringWarningOverlay";
 import PublicBrand from "../../components/public/PublicBrand";
 import LegalLinks from "../../components/public/LegalLinks";
+import FormFiller from "../../components/admissions/FormFiller";
+import { missingFor, type QAnswers, type QTemplate } from "../../shared/questionnaires";
 import { GUARDIAN_NOTE, examConsentText, privacyHref, termsHref } from "../../shared/legalDocs";
 import { useProctoringEngine } from "../../lib/useProctoringEngine";
 import { certificateHTML, openPrint, reportHTML, type PrintData } from "../../lib/examPrint";
@@ -22,6 +24,8 @@ type Info = {
   org: { id?: string; name: string; logoUrl: string | null; markUrl: string | null; consentText?: string };
   exam: {
     title: string; description: string; open: boolean; status: string; opensAt: number | null; closesAt: number | null; needPin: boolean;
+    /** Вступительный экзамен: вопросы из анкеты кандидата, которых ещё нет в карточке. */
+    intake?: QTemplate | null;
     registration: { phone: boolean; email: boolean; level: boolean; levelLabel: string; photo: boolean; extra?: { id: string; label: string; kind: "text" | "date" | "phone"; required: boolean }[] };
     proctoring: { enabled: boolean; detectors: Record<string, boolean>; tabSwitch: boolean };
     sections: { title: string; minutes: number }[];
@@ -59,6 +63,7 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   const [form, setForm] = useState({ name: "", phone: "", email: "", level: "", pin: "" });
   /** Поля «о себе» из настроек экзамена; по направлению — заполнены из карточки. */
   const [extra, setExtra] = useState<Record<string, string>>({});
+  const [intake, setIntake] = useState<QAnswers>({});
   /** По направлению: согласие уже дал родитель в анкете; поля, известные из карточки, — строкой, без ввода. */
   const [refConsented, setRefConsented] = useState(false);
   const [known, setKnown] = useState<Set<string>>(new Set());
@@ -113,7 +118,7 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch(`/api/exam-public/${C}`); const j = await r.json();
+        const r = await fetch(`/api/exam-public/${C}${ref ? `?ref=${encodeURIComponent(ref)}` : ""}`); const j = await r.json();
         if (!j.success) { setError(j.error); setPhase("login"); return; }
         setInfo(j);
         if (resultMode) { setPhase("final"); return; }
@@ -341,9 +346,11 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
   }, [ref]);
 
   const start = async () => {
+    const miss = info?.exam.intake ? missingFor(info.exam.intake, intake, null, null) : [];
+    if (miss.length) { setError(`Заполните: ${miss.slice(0, 4).join(", ")}`); return; }
     setBusy(true); setError(null);
     try {
-      const j = ref ? await post("/start-referral", { ref, device, pin: form.pin, consent: consent || refConsented, extra }) : await post("/start", { ...form, device, consent, extra });
+      const j = ref ? await post("/start-referral", { ref, device, pin: form.pin, consent: consent || refConsented, extra, intake }) : await post("/start", { ...form, device, consent, extra, intake });
       localStorage.setItem(storeKey, JSON.stringify({ token: j.token, shortId: j.shortId }));
       setToken(j.token);
       if (j.state.waitingStart) { setState(j.state); setPhase("photo"); }
@@ -427,6 +434,7 @@ export default function ExamTake({ resultMode = false }: { resultMode?: boolean 
                     value={extra[f.id] || ""} onChange={e => setExtra({ ...extra, [f.id]: e.target.value })} placeholder={f.kind === "phone" ? "+996 …" : undefined} />
                 </Field>
               ))}
+              {info.exam.intake && <FormFiller template={info.exam.intake} grade={null} answers={intake} onChange={setIntake} />}
               {info.exam.needPin && <Field l="PIN аудитории"><input className={`${inp} text-center text-2xl tracking-[0.4em] font-mono`} inputMode="numeric" value={form.pin} onChange={e => setForm({ ...form, pin: e.target.value.replace(/\D/g, "").slice(0, 8) })} placeholder="••••" /></Field>}
               {info.exam.proctoring.enabled && <p className="text-xs text-slate-500 bg-slate-50 rounded-xl p-3">Во время экзамена ведётся наблюдение через камеру: браузер попросит доступ. Нарушения фиксируются со временем и снимком.</p>}
               {!(ref && refConsented) && <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/50">

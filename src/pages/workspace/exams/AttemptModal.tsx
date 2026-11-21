@@ -21,7 +21,7 @@ type Full = Attempt & { questions: Record<string, FrozenQuestion>; card?: Attemp
 
 /** Карточка работы: ответы и ручная проверка, прокторинг, решения. */
 /** Поля «о себе» работы — подписи из настроек экзамена (или готовых полей). */
-export const extraRowsOf = (a: Attempt, exam: Exam) => Object.entries(a.student.extra || {})
+export const extraRowsOf = (a: Attempt, exam: Exam) => a.intake?.rows?.length ? a.intake.rows : Object.entries(a.student.extra || {})
   .map(([id, value]) => ({ label: (exam.settings.registration.extra || []).find(f => f.id === id)?.label || REG_PRESETS.find(f => f.id === id)?.label || id, value: id === "birthDate" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value).toLocaleDateString("ru-RU") : value }));
 
 export default function AttemptModal({ attemptId, exam, api, tenant, canEdit, onChanged, onClose }: {

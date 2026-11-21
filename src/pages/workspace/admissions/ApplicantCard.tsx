@@ -42,6 +42,7 @@ interface Data {
   testExam: TestExam | null;
   resultDelivery?: { delivery: "email" | "page"; sendOn: "publish" | "manual" } | null;
   candidateForm: CandidateFormConfig | null;
+  parentPrefill?: QAnswers | null;
 }
 const no = (n: number) => `№ ${String(n).padStart(4, "0")}`;
 
@@ -169,7 +170,7 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
         )}
         {tab === "profile" && <ProfileTab a={a} api={api} me={d.me} dirtyRef={profileDirty} onSaved={changed} onArchived={() => { onChanged(); onClose(); }} />}
         {tab === "parent" && parentTpl && (
-          <FormTab key="parent" api={api} a={a} tpl={parentForm?.template || parentTpl} form={parentForm} canFill={!!d.canFill[parentTpl.id]} canSee={!!d.canSee[parentTpl.id] || !!parentForm?.full}
+          <FormTab key="parent" api={api} a={a} tpl={parentForm?.template || parentTpl} form={parentForm} prefill={d.parentPrefill} canFill={!!d.canFill[parentTpl.id]} canSee={!!d.canSee[parentTpl.id] || !!parentForm?.full}
             grade={grade} onSaved={changed} onMaterial={material(parentTpl)}
             note={parentForm?.status === "done" ? (parentForm.filledBy?.kind === "parent" ? "Заполнил родитель по ссылке" : `Внесено с бумаги: ${parentForm.filledBy?.name || ""}`) : "Родитель ещё не заполнил. Анкету с QR можно распечатать кнопкой «Анкета родителю»."} />
         )}
@@ -218,16 +219,16 @@ function QrModal({ title, sub, url, mark, onPrint, email, onClose }: { title: st
 }
 
 function ProfileTab({ a, api, me, dirtyRef, onSaved, onArchived }: { a: Applicant; api: Api; me: Me; dirtyRef: React.MutableRefObject<boolean>; onSaved: () => void; onArchived: () => void }) {
-  const [f, setF] = useState({ name: a.child.name, birthDate: a.child.birthDate, grade: a.child.grade, school: a.child.school || "", parentName: a.parent.name, phone: a.parent.phone, email: a.parent.email || "", note: a.note });
+  const [f, setF] = useState({ name: a.child.name, birthDate: a.child.birthDate, grade: a.child.grade, school: a.child.school || "", childPhone: a.child.phone || "", childEmail: a.child.email || "", parentName: a.parent.name, phone: a.parent.phone, email: a.parent.email || "", note: a.note });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const canEdit = me.admission && !a.archived;
-  const dirty = f.name !== a.child.name || f.birthDate !== a.child.birthDate || f.grade !== a.child.grade || f.school !== (a.child.school || "") || f.parentName !== a.parent.name || f.phone !== a.parent.phone || f.email !== (a.parent.email || "") || f.note !== a.note;
+  const dirty = f.name !== a.child.name || f.birthDate !== a.child.birthDate || f.grade !== a.child.grade || f.school !== (a.child.school || "") || f.childPhone !== (a.child.phone || "") || f.childEmail !== (a.child.email || "") || f.parentName !== a.parent.name || f.phone !== a.parent.phone || f.email !== (a.parent.email || "") || f.note !== a.note;
   dirtyRef.current = canEdit && dirty;
   useEffect(() => () => { dirtyRef.current = false; }, [dirtyRef]);
   const save = async () => {
     setBusy(true); setMsg(null);
-    try { await api(`/applicants/${a.id}`, { method: "PUT", body: JSON.stringify({ child: { name: f.name, birthDate: f.birthDate, grade: f.grade, school: f.school }, parent: { name: f.parentName, phone: f.phone, email: f.email }, note: f.note }) }); toast.success("Сохранено"); onSaved(); }
+    try { await api(`/applicants/${a.id}`, { method: "PUT", body: JSON.stringify({ child: { name: f.name, birthDate: f.birthDate, grade: f.grade, school: f.school, phone: f.childPhone, email: f.childEmail }, parent: { name: f.parentName, phone: f.phone, email: f.email }, note: f.note }) }); toast.success("Сохранено"); onSaved(); }
     catch (e: any) { setMsg(e.message); } finally { setBusy(false); }
   };
   const archive = async () => {
@@ -245,6 +246,8 @@ function ProfileTab({ a, api, me, dirtyRef, onSaved, onArchived }: { a: Applican
       <div><span className={label}>Поступает в класс</span><input className={input} value={f.grade} onChange={set("grade")} /></div>
       <div><span className={label}>Дата рождения</span><input type="date" className={input} value={f.birthDate} onChange={set("birthDate")} /></div>
       <div className="sm:col-span-2"><span className={label}>Школа, из которой переходит</span><input className={input} value={f.school} onChange={set("school")} /></div>
+      <div><span className={label}>Телефон ученика</span><input className={input} value={f.childPhone} onChange={set("childPhone")} /></div>
+      <div><span className={label}>Почта ученика</span><input className={input} type="email" value={f.childEmail} onChange={set("childEmail")} /></div>
       <div><span className={label}>ФИО родителя</span><input className={input} value={f.parentName} onChange={set("parentName")} /></div>
       <div><span className={label}>Телефон родителя</span><input className={input} value={f.phone} onChange={set("phone")} /></div>
       <div><span className={label}>Почта родителя</span><input className={input} type="email" value={f.email} onChange={set("email")} /></div>
@@ -262,14 +265,14 @@ function ProfileTab({ a, api, me, dirtyRef, onSaved, onArchived }: { a: Applican
 }
 
 /** Анкета ребёнка: автосохранение черновика, «Завершить», «Изменить». */
-function FormTab({ api, a, tpl, form, canFill, canSee, grade, onSaved, onMaterial, staff, parent, note, onPrintBlank, onPrintSheets, referral }: {
-  api: Api; a: Applicant; tpl: QTemplate; form?: FormDoc; canFill: boolean; canSee: boolean; grade: number | null; onSaved: () => void;
+function FormTab({ api, a, tpl, form, prefill, canFill, canSee, grade, onSaved, onMaterial, staff, parent, note, onPrintBlank, onPrintSheets, referral }: {
+  api: Api; a: Applicant; tpl: QTemplate; form?: FormDoc; /** Что уже известно, пока анкету не начинали. */ prefill?: QAnswers | null; canFill: boolean; canSee: boolean; grade: number | null; onSaved: () => void;
   onMaterial: (m: QAttachment) => void; staff?: boolean; parent?: { template: QTemplate; answers: QAnswers } | null; note?: string;
   onPrintBlank?: () => void; onPrintSheets?: () => void;
   /** Направление после заключения — печать прямо под бланком, без прокрутки наверх. */
   referral?: { title: string; print?: () => void } | null;
 }) {
-  const [answers, setAnswers] = useState<QAnswers>(form?.answers || {});
+  const [answers, setAnswers] = useState<QAnswers>(form?.answers || prefill || {});
   const [outcome, setOutcome] = useState<string | null>(form?.outcome || null);
   const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);

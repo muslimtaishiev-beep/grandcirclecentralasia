@@ -289,7 +289,8 @@ export default function ExamSettingsTab({ exam, api, bankApi, canEdit, onSaved, 
           <Check checked={st.registration.level} onChange={v => set("registration", { level: v })}>Спросить уровень</Check>
           {st.registration.level && <input className={`${input} ml-6 !w-60`} value={st.registration.levelLabel} onChange={e => set("registration", { levelLabel: e.target.value })} placeholder="Класс" />}
           <Check checked={st.registration.photo} onChange={v => set("registration", { photo: v })}>Фото с камеры перед началом (для сертификата и сверки личности)</Check>
-          <RegFields value={st.registration.extra || []} onChange={extra => set("registration", { extra })} />
+          {/* Вступительный экзамен: вопросы «о себе» задаёт анкета кандидата — готовые поля здесь не дублируются. */}
+          {(!admissionExam || (st.registration.extra || []).length > 0) && <RegFields value={st.registration.extra || []} onChange={extra => set("registration", { extra })} />}
         </section>
 
         <section className={`${card} p-4 space-y-2`}>

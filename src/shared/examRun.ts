@@ -610,6 +610,8 @@ export interface Attempt {
   examTitle: string;
   shortId: string;
   student: { name: string; phone: string; email: string; level: string; extra?: Record<string, string> };
+  /** Ответы ученика перед вступительным тестом на вопросы анкеты кандидата: строки для показа. */
+  intake?: { rows: { label: string; value: string }[] };
   status: "in_progress" | "finished" | "annulled";
   startedAt: number;
   finishedAt: number | null;

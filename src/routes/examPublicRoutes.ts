@@ -1,5 +1,8 @@
 import { bumpLive } from "../server/live.js";
-import { isAdmissionExam, notifyApplicantStep, notifyTested, syncReferral } from "./admissionRoutes.js";
+import { applyIntake, intakeFor, isAdmissionExam, notifyApplicantStep, notifyTested, readIntake, syncReferral } from "./admissionRoutes.js";
+import { splitIntake } from "../shared/candidateIntake.js";
+import { gradeOf } from "../shared/questionnaires.js";
+import type { Applicant } from "../shared/admissions.js";
 import { notifyEvent } from "../server/notify.js";
 import type { PermissionKey } from "../shared/permissions.js";
 import { Router } from "express";
@@ -223,15 +226,19 @@ router.get("/:code", async (req: any, res: any) => {
     if ("error" in r) return fail(res, r.status, r.error);
     const { exam, tenant } = r;
     const now = Date.now();
+    // Вступительный экзамен: вопросы ученику — из анкеты кандидата; по направлению — только недостающее.
+    const ap = req.query.ref ? await referralApplicant(exam.tenantId, str(req.query.ref, 80)) : null;
+    const intake = await intakeFor(exam.tenantId, exam, ap).catch(e => { console.warn("[exam] intake", e?.message); return null; });
     return res.json({
       success: true,
       org: orgView(tenant),
       exam: {
+        intake,
         title: exam.title, description: exam.description,
         open: isWindowOpen(exam, now), status: exam.status,
         opensAt: exam.settings.access.opensAt, closesAt: exam.settings.access.closesAt,
         needPin: exam.settings.access.pinMode !== "none",
-        registration: exam.settings.registration,
+        registration: { ...exam.settings.registration, extra: extraFields(exam, !!intake) },
         proctoring: { enabled: exam.settings.proctoring.enabled, detectors: exam.settings.proctoring.detectors, tabSwitch: exam.settings.proctoring.tabSwitch },
         sections: exam.sections.map(s => ({ title: s.title, minutes: s.minutes })),
         resultsMode: exam.settings.results.showToStudent,
@@ -241,6 +248,19 @@ router.get("/:code", async (req: any, res: any) => {
     });
   } catch (e: any) { return oops(res, e); }
 });
+
+/** Карточка поступающего по токену направления (null — не направление этой организации). */
+async function referralApplicant(t: string, token: string): Promise<Applicant | null> {
+  if (!/^[\w-]{20,60}$/.test(token)) return null;
+  const l = (await db().collection("applicant_links").doc(token).get()).data() as { tenantId: string; applicantId: string; purpose: string } | undefined;
+  if (!l || l.purpose !== "referral" || l.tenantId !== t) return null;
+  const as = await col(t, "applicants").doc(l.applicantId).get();
+  const ap: any = as.exists ? as.data() : null;
+  return ap && ap.tokens?.referral === token && !ap.archived ? { ...ap, id: as.id } : null;
+}
+/** Поля «о себе» экзамена. Когда вопросы идут из анкеты кандидата, готовые поля (дата рождения, школа, родитель) не дублируются. */
+const PRESET_IDS = new Set(["birthDate", "school", "studentPhone", "parentName", "parentPhone"]);
+const extraFields = (exam: Exam, intake: boolean) => (exam.settings.registration.extra || []).filter(f => !intake || !PRESET_IDS.has(f.id));
 
 /**
  * PIN аудитории. false — ответ уже отправлен (неверный PIN или перебор).
@@ -365,11 +385,19 @@ router.post("/:code/start", async (req: any, res: any) => {
     if (reg.phone && digits(student.phone).length < 9) return fail(res, 400, "Укажите номер телефона");
     if (reg.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(student.email)) return fail(res, 400, "Укажите почту");
     if (reg.level && !student.level) return fail(res, 400, `Укажите: ${reg.levelLabel.toLowerCase()}`);
-    const extra = readExtra(reg.extra || [], req.body?.extra);
+    const intakeTpl = await intakeFor(exam.tenantId, exam, null);
+    const extra = readExtra(extraFields(exam, !!intakeTpl), req.body?.extra);
     if (extra.missing.length) return fail(res, 400, `Заполните: ${extra.missing.join(", ")}`);
+    const grades = exam.settings.admission?.grades || [];
+    const intake = readIntake(intakeTpl, req.body?.intake, grades.length === 1 ? grades[0] : null, req.body?.extra);
+    if (intake.error) return fail(res, 400, intake.error);
     if (req.body?.consent !== true) return fail(res, 400, "Нужно согласие на обработку персональных данных");
     if (!pinOk(exam, req, res)) return;
-    const made = await createAttempt(exam, tenant, { ...student, ...(Object.keys(extra.values).length ? { extra: extra.values } : {}) }, identityKey(student), req);
+    const about = { ...extra.values, ...intake.extra };
+    if (!student.email && intake.email) student.email = intake.email;
+    // Ответы на вопросы анкеты кандидата едут в работе и попадут в карточку, когда работа привяжется к поступающему.
+    const made = await createAttempt(exam, tenant, { ...student, ...(Object.keys(about).length ? { extra: about } : {}) }, identityKey(student), req,
+      intakeTpl && intake.rows.length ? { intake: { rows: intake.rows, free: splitIntake(intakeTpl, intake.answers).free } } : {});
     if ("error" in made) return fail(res, made.status, made.error);
     return res.json({ success: true, token: made.attempt.token, shortId: made.attempt.shortId, org: orgView(tenant), state: studentState(exam, made.attempt) });
   } catch (e: any) { return oops(res, e); }
@@ -406,18 +434,28 @@ router.post("/:code/start-referral", async (req: any, res: any) => {
     const forms = await col(t, "applicant_forms").where("applicantId", "==", as.id).get();
     const parentConsent = forms.docs.map(d => d.data()).find((f: any) => f.consent);
     if (!parentConsent && req.body?.consent !== true) return fail(res, 400, "Нужно согласие на обработку персональных данных");
-    const extra = readExtra(exam.settings.registration.extra || [], req.body?.extra);
+    const card: Applicant = { ...ap, id: as.id };
+    const intakeTpl = await intakeFor(t, exam, card);
+    const extra = readExtra(extraFields(exam, !!intakeTpl), req.body?.extra);
     if (extra.missing.length) return fail(res, 400, `Заполните: ${extra.missing.join(", ")}`);
-    const student = { name: str(ap.child?.name, 120), phone: str(ap.parent?.phone, 30), email: "", level: str(ap.child?.grade, 30), ...(Object.keys(extra.values).length ? { extra: extra.values } : {}) };
-    const made = await createAttempt(exam, tenant, student, `a:${as.id}`, req, { applicantId: as.id, refNo: Number(ap.refNo) || null });
+    const intake = readIntake(intakeTpl, req.body?.intake, gradeOf(ap.child?.grade), req.body?.extra);
+    if (intake.error) return fail(res, 400, intake.error);
+    const about = { ...extra.values, ...intake.extra };
+    const student = {
+      name: str(ap.child?.name, 120), phone: str(ap.child?.phone || intake.extra.studentPhone || ap.parent?.phone, 30), email: str(ap.child?.email || intake.email, 120),
+      level: str(ap.child?.grade, 30), ...(Object.keys(about).length ? { extra: about } : {}),
+    };
+    const made = await createAttempt(exam, tenant, student, `a:${as.id}`, req, { applicantId: as.id, refNo: Number(ap.refNo) || null, ...(intake.rows.length ? { intake: { rows: intake.rows } } : {}) });
     if ("error" in made) return fail(res, made.status, made.error);
-    // Ученик дописал о себе — пустые поля карточки заполняются (заполненные не трогаем).
-    const v = extra.values; const patch: Record<string, unknown> = { updatedAt: Date.now() };
+    // Ученик дописал о себе — пустые поля карточки и ответы анкеты заполняются (заполненное не трогаем).
+    await applyIntake(t, card, intakeTpl, intake.answers).catch(e => console.warn("[exam] intake", e?.message));
+    // Прежние поля «о себе» экзамена (если остались) — так же, только в пустые поля карточки.
+    const v = extra.values; const patch: Record<string, unknown> = {};
     if (v.birthDate && !ap.child?.birthDate) patch["child.birthDate"] = v.birthDate;
     if (v.parentName && !ap.parent?.name) patch["parent.name"] = v.parentName;
     if (v.parentPhone && !ap.parent?.phone) patch["parent.phone"] = v.parentPhone;
     if (v.school && !ap.child?.school) patch["child.school"] = v.school;
-    await col(t, "applicants").doc(as.id).update(patch).catch(() => {});
+    if (Object.keys(patch).length) await col(t, "applicants").doc(as.id).update({ ...patch, updatedAt: Date.now() }).catch(() => {});
     return res.json({ success: true, token: made.attempt.token, shortId: made.attempt.shortId, org: orgView(tenant), state: studentState(exam, made.attempt) });
   } catch (e: any) { return oops(res, e); }
 });
