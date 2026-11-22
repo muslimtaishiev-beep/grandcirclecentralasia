@@ -4,7 +4,7 @@ import { flowFields, type FlowStep } from "../../../shared/formFlow";
 import { describeWhen } from "../../../shared/conditions";
 import { resolveDecisions } from "../../../shared/formDecisions";
 
-const STATE_W = 200, STATE_H = 56, CARD_W = 240, CARD_H = 112, GAP = 90, ROW = 136, PAD = 32;
+const STATE_W = 200, STATE_H = 56, CARD_W = 240, CARD_H = 112, GAP = 170, ROW = 136, PAD = 32;
 
 interface Box { x: number; y: number; w: number; h: number }
 interface Edge { from: Box; to: Box; label: string }
@@ -45,7 +45,9 @@ export default function FlowCanvas({ form, steps, selectedId, templateName, onSe
       const to = L.stepBox.get(s.id);
       const from = s.after.kind === "status" ? L.stateBox.get(s.after.id) : L.stepBox.get(s.after.id);
       if (!to || !from) continue;
-      out.push({ from, to, label: s.when ? describeWhen(s.when, flowFields(form, steps, s.id)) : "всегда" });
+      // На стрелке от родителя его название лишнее: «Отметки» вместо «Отметки: Распределение…».
+      const fields = flowFields(form, steps, s.id).map(f => (s.after.kind === "step" && f.id === `m:${s.after.id}` ? { ...f, label: "Отметки" } : s.after.kind === "step" && f.id === `p:${s.after.id}` ? { ...f, label: "Опубликован" } : f));
+      out.push({ from, to, label: s.when ? describeWhen(s.when, fields) : "всегда" });
     }
     return out;
   }, [L, steps, form]);
@@ -67,7 +69,7 @@ export default function FlowCanvas({ form, steps, selectedId, templateName, onSe
         {edges.map((e, i) => {
           const mx = (e.from.x + e.from.w + e.to.x) / 2, my = ((e.from.y + e.from.h / 2) + (e.to.y + e.to.h / 2)) / 2;
           return (
-            <div key={i} className="absolute -translate-x-1/2 -translate-y-1/2 max-w-[120px] truncate px-2 py-0.5 rounded-full text-[11px] border border-[var(--border-color)] bg-[var(--bg-surface)] text-[var(--text-muted)]"
+            <div key={i} className="absolute -translate-x-1/2 -translate-y-1/2 max-w-[150px] line-clamp-2 text-center leading-tight px-2 py-0.5 rounded-lg text-[11px] border border-[var(--border-color)] bg-[var(--bg-surface)] text-[var(--text-muted)]"
               style={{ left: mx, top: my }} title={e.label}>{e.label}</div>
           );
         })}
