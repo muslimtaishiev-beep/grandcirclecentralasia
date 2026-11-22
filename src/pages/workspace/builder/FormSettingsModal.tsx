@@ -10,6 +10,8 @@ import {
 } from "../../../shared/formDecisions";
 import ResultPageEditor from "../resultPages/ResultPageEditor";
 import FormGeneralTab from "./FormGeneralTab";
+import FlowEditor from "./FlowEditor";
+import { resolveFlow, type FormFlow } from "../../../shared/formFlow";
 import { rpApi, type PageRow } from "../resultPages/resultPagesApi";
 
 const field = "bg-[var(--bg-app)] border border-[var(--border-color)] rounded-lg px-2 py-1.5 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]";
@@ -40,6 +42,8 @@ export default function FormSettingsModal({ tenantId, form, subs, qrLogo, onClos
   tenantId: string; form: any; subs: any[]; qrLogo?: string; onClose: () => void;
 }) {
   const [tab, setTab] = useState("general");
+  const [flow, setFlow] = useState<FormFlow>(() => resolveFlow(form));
+  const [flowOpen, setFlowOpen] = useState(false);
   const [list, setList] = useState<Decision[]>(() => resolveDecisions(form));
   /** Настройки уведомления открываются по «Настроить» — обычно они не нужны. */
   const [openNotify, setOpenNotify] = useState<Set<string>>(() => new Set());
@@ -100,9 +104,20 @@ export default function FormSettingsModal({ tenantId, form, subs, qrLogo, onClos
     <>
       <Modal title={`Настройки формы · ${form.title || ""}`} onClose={onClose} wide>
         <div className="space-y-4">
-          <Tabs tabs={[{ id: "general", label: "Общее" }, { id: "decisions", label: "Решения" }]} value={tab} onChange={setTab} />
+          <Tabs tabs={[{ id: "general", label: "Общее" }, { id: "decisions", label: "Решения" }, { id: "flow", label: "Этапы" }]} value={tab} onChange={setTab} />
           <div className={tab === "general" ? "" : "hidden"}>
             <FormGeneralTab tenantId={tenantId} form={form} qrLogo={qrLogo} onClose={onClose} />
+          </div>
+          <div className={`space-y-3 ${tab === "flow" ? "" : "hidden"}`}>
+            {flow.steps.length > 0 && (
+              <ul className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] divide-y divide-[var(--border-color)]">
+                {flow.steps.map(s => <li key={s.id} className="px-3 py-2 text-sm truncate">{s.title}</li>)}
+              </ul>
+            )}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm text-[var(--text-muted)]">Этапов: {flow.steps.length}</span>
+              <Button variant="primary" onClick={() => setFlowOpen(true)}>Открыть конструктор</Button>
+            </div>
           </div>
           <div className={`space-y-3 ${tab === "decisions" ? "" : "hidden"}`}>
             {list.map((d, i) => {
@@ -186,6 +201,7 @@ export default function FormSettingsModal({ tenantId, form, subs, qrLogo, onClos
           </div>
         </div>
       </Modal>
+      {flowOpen && <FlowEditor tenantId={tenantId} form={{ ...form, flow }} onClose={() => setFlowOpen(false)} onSaved={setFlow} />}
       {editor && (
         <ResultPageEditor tenantId={tenantId} pageId={editor.pageId} pageKind="form"
           outcomes={list.map(d => ({ id: d.id, label: d.label }))}

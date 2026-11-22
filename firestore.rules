@@ -401,9 +401,9 @@ service cloud.firestore {
     match /custom_forms/{docId} {
       allow read: if permRead(FORMS_VIEW());
       allow create: if permCreate(FORMS_EDIT());
-      // Закрытие, архив и удаление — только через сервер (/api/forms/form-state, журнал).
+      // Закрытие, архив, удаление и этапы — только через сервер (/api/forms/form-state, /api/forms/flow, журнал).
       allow update: if permUpdate(FORMS_EDIT())
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['active', 'archived', 'archivedAt', 'archivedBy']);
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['active', 'archived', 'archivedAt', 'archivedBy', 'flow']);
       allow delete: if false;
     }
     // Заявки читает кабинет (onSnapshot), но пишет ТОЛЬКО сервер: смена

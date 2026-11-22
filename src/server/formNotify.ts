@@ -5,6 +5,7 @@ import { loadTenant } from "./tenantAccess.js";
 import { buildView } from "./resultPages.js";
 import { decisionOf, notifyJobKey, notifyRunAt, resolveDecisions, type Decision } from "../shared/formDecisions.js";
 import type { ResultData, ResultPageView } from "../shared/resultPages.js";
+import { canPublish, flowJobKey, markLabels, resolveFlow, stepActive, type FlowStep, type StepState } from "../shared/formFlow.js";
 
 /**
  * Письма и страницы по состояниям заявки. Устроено как письмо о результатах
@@ -109,4 +110,76 @@ export async function trackPage(tenantId: string, form: any, sub: any, d: Decisi
   };
   const data: ResultData = { child: nameOf(sub), examTitle: title, subjects: [], feedback: note, trial: null };
   try { return await buildView(tenantId, pageId, d.id, vars, data); } catch (e: any) { console.error("[track] page:", e?.message || e); return null; }
+}
+
+// ── Этапы заявки ────────────────────────────────────────────────────────
+
+/** Письмо этапа: отметки и комментарий организаторов. Каждая публикация — своё письмо. */
+export async function sendFlowEmail(p: { sub: any & { id: string }; form: any; step: FlowStep; st: StepState; by?: string; force?: boolean }): Promise<SendResult> {
+  const { sub, form, step, st } = p;
+  const t = String(form.tenantId || "");
+  if (!step.emailTemplateId) return { sent: false, skipped: true, reason: "У этапа не выбрано письмо" };
+  const org = await loadTenant(t);
+  const r = await sendTemplated({
+    tenantId: t, templateId: step.emailTemplateId, to: String(sub.applicantEmail || ""), event: "form",
+    refId: `${sub.id}__step_${step.id}_${st.published?.at || 0}`, force: p.force, by: p.by,
+    ctx: { submissionId: sub.id, formId: String(sub.formId || form.id || ""), stepId: step.id, label: `${nameOf(sub) || "Без имени"} · ${step.title}` },
+    actionUrl: `/workspace/${t}/builder/forms`, noRecipient: "В заявке нет почты",
+    vars: {
+      имя: nameOf(sub), форма: String(form.title || ""), организация: String(org?.name || ""),
+      этап: step.title, отметки: markLabels(step, st).join(", "), комментарий: String(st.comment || "").trim(),
+      статус: decisionOf(resolveDecisions(form), sub.status).label,
+    },
+  });
+  await subRef(sub.id).update({ [`flow.${step.id}.email`]: { status: r.sent ? "sent" : r.skipped ? "skipped" : "failed", reason: r.reason || "", at: Date.now(), to: r.to || "" } }).catch(() => {});
+  return r;
+}
+
+/**
+ * Опубликовать этап заявки: отметка «опубликовано», запись в историю и
+ * письмо. Проверки — у вызывающего (этап виден, отметок хватает).
+ */
+export async function publishStep(p: { sub: any & { id: string }; form: any; step: FlowStep; by: { uid: string; name: string } }): Promise<{ st: StepState; email: SendResult }> {
+  const { sub, form, step } = p;
+  const now = Date.now();
+  const prev: StepState = sub.flow?.[step.id] || { marks: [], comment: "", published: null, by: "", byName: "", at: 0 };
+  const st: StepState = { ...prev, published: { at: now, by: p.by.uid, byName: p.by.name }, publishAt: null };
+  await subRef(sub.id).update({
+    [`flow.${step.id}`]: JSON.parse(JSON.stringify(st)), updatedAt: admin.firestore.Timestamp.now(),
+    history: admin.firestore.FieldValue.arrayUnion({ status: String(sub.status || "new"), at: admin.firestore.Timestamp.now(), by: p.by.name, note: `Этап «${step.title}» опубликован${markLabels(step, st).length ? `: ${markLabels(step, st).join(", ")}` : ""}` }),
+  });
+  await cancelJob(String(form.tenantId), flowJobKey(sub.id, step.id)).catch(() => false);
+  const email = await sendFlowEmail({ sub, form, step, st, by: p.by.uid });
+  return { st, email };
+}
+
+/** Публикация этапа по таймеру. */
+registerJobHandler("form_flow_publish", async job => {
+  const { submissionId, stepId } = (job.payload || {}) as { submissionId?: string; stepId?: string };
+  if (!submissionId || !stepId) return "Нет заявки";
+  const s = await subRef(submissionId).get();
+  const sub: any = s.data();
+  if (!sub || sub.tenantId !== job.tenantId || sub.deleted) return "Заявка не найдена";
+  const f = await db().collection(FORMS).doc(String(sub.formId || "")).get();
+  const form: any = f.data();
+  if (!form || form.tenantId !== job.tenantId) return "Форма не найдена";
+  const flow = resolveFlow(form);
+  const step = flow.steps.find(x => x.id === stepId);
+  const st: StepState | undefined = sub.flow?.[stepId];
+  const clear = () => subRef(submissionId).update({ [`flow.${stepId}.publishAt`]: null }).catch(() => {});
+  if (!step || !stepActive(form, sub, flow.steps, step)) { await clear(); return "Этап у заявки больше не виден — не опубликовано"; }
+  if (st?.published) { await clear(); return "Уже опубликовано"; }
+  if (!canPublish(step, st)) { await clear(); return "Не хватает отметок — не опубликовано"; }
+  const r = await publishStep({ sub: { ...sub, id: submissionId }, form: { ...form, id: f.id }, step, by: job.createdBy });
+  return r.email.sent ? `Опубликовано, письмо: ${r.email.to || ""}` : `Опубликовано${r.email.reason ? ` · письмо: ${r.email.reason}` : ""}`;
+});
+
+/** Запланировать публикацию этапа (заменяет прежнюю). */
+export async function scheduleStep(tenantId: string, submissionId: string, stepId: string, at: number, by: { uid: string; name: string }) {
+  await scheduleJob({ tenantId, kind: "form_flow_publish", key: flowJobKey(submissionId, stepId), runAt: at, payload: { submissionId, stepId }, by });
+  await subRef(submissionId).update({ [`flow.${stepId}.publishAt`]: at });
+}
+export async function cancelStepSchedule(tenantId: string, submissionId: string, stepId: string) {
+  await cancelJob(tenantId, flowJobKey(submissionId, stepId)).catch(() => false);
+  await subRef(submissionId).update({ [`flow.${stepId}.publishAt`]: null }).catch(() => {});
 }

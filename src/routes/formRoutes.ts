@@ -19,7 +19,8 @@ import { sendFormTicketEmail } from "../../emailService.js";
 import { tenantLogos } from "../shared/legal.js";
 import { writeAudit, actorOf } from "../server/audit.js";
 import { DECISION_ID, checkedInId, decisionOf, kindOfStatus, resolveDecisions, sanitizeDecisions, formModeOf } from "../shared/formDecisions.js";
-import { afterStatusChange, cancelPending, sendDecisionEmail, trackPage } from "../server/formNotify.js";
+import { afterStatusChange, cancelPending, cancelStepSchedule, publishStep, scheduleStep, sendDecisionEmail, sendFlowEmail, trackPage } from "../server/formNotify.js";
+import { canPublish, resolveFlow, sanitizeFlow, stepActive, STEP_ID, type StepState } from "../shared/formFlow.js";
 import { loadTemplate } from "../server/emailEvents.js";
 import { pageDoc } from "../server/resultPages.js";
 
@@ -431,6 +432,12 @@ registerResender("form", async (t, ctx, by) => {
   if (!sub || sub.tenantId !== t || sub.deleted) return { sent: false, reason: "Заявка не найдена" };
   const form = (await db().collection("custom_forms").doc(String(sub.formId)).get()).data();
   if (!form || form.tenantId !== t) return { sent: false, reason: "Форма не найдена" };
+  if (ctx.stepId) {
+    const step = resolveFlow(form).steps.find(x => x.id === ctx.stepId);
+    const st: StepState | undefined = sub.flow?.[ctx.stepId];
+    if (!step || !st?.published) return { sent: false, reason: "Этап не опубликован" };
+    return sendFlowEmail({ sub: { ...sub, id: ctx.submissionId }, form: { ...form, id: String(sub.formId) }, step, st, force: true, by });
+  }
   if (ctx.statusId) {
     return sendDecisionEmail({ sub: { ...sub, id: ctx.submissionId }, form: { ...form, id: String(sub.formId) }, decision: decisionOf(resolveDecisions(form), ctx.statusId), force: true, by });
   }
@@ -1780,6 +1787,90 @@ router.put("/decisions", requireFirebaseAuth, requireScreen("forms"), async (req
     await ref.set({ decisions: next, updatedAt: admin.firestore.Timestamp.now() }, { merge: true });
     await writeAudit(db(), tenantId, { actor: actorOf(req.user), action: "form.decisions", section: "settings", target: { kind: "form", id: String(formId), name: String(form.title || "") }, detail: next.map(d => d.label).join(", ").slice(0, 300) }).catch(() => {});
     return res.json({ success: true, decisions: next });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * PUT /api/forms/flow — этапы формы (что делают организаторы после смены
+ * состояния). Очищаются на сервере; шаблон — только этой организации.
+ */
+router.put("/flow", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
+  try {
+    const { tenantId, formId } = req.body || {};
+    if (!tenantId || !formId) return res.status(400).json({ success: false, error: "Bad request" });
+    if (!(await canManageForms(req.user, tenantId))) return res.status(403).json({ success: false, error: "Нет прав" });
+    const ref = db().collection(FORMS).doc(String(formId));
+    const fs = await ref.get();
+    if (!fs.exists) return res.status(404).json({ success: false, error: "Форма не найдена" });
+    const form: any = fs.data();
+    if (form.tenantId !== tenantId) return res.status(403).json({ success: false, error: "Форма другой организации" });
+    const flow = sanitizeFlow(req.body.flow, form);
+    for (const st of flow.steps) if (st.emailTemplateId && !(await loadTemplate(tenantId, st.emailTemplateId))) delete st.emailTemplateId;
+    await ref.set({ flow, updatedAt: admin.firestore.Timestamp.now() }, { merge: true });
+    await writeAudit(db(), tenantId, { actor: actorOf(req.user), action: "form.flow", section: "settings", target: { kind: "form", id: String(formId), name: String(form.title || "") }, detail: flow.steps.map(x => x.title).join(", ").slice(0, 300) || "без этапов" });
+    return res.json({ success: true, flow });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * POST /api/forms/flow-step — этап у заявки: отметки и комментарий (save),
+ * «Опубликовать» (publish, сразу или at), «Снять» (unpublish), отмена таймера.
+ * Опубликованное не меняется, пока публикацию не снимут.
+ */
+router.post("/flow-step", requireFirebaseAuth, requireScreen("forms"), async (req: any, res: any) => {
+  try {
+    const { tenantId, submissionId, stepId, action } = req.body || {};
+    const o = await loadOwned(req, res, String(tenantId || ""), str(submissionId, 200));
+    if (!o) return;
+    if (o.sub.deleted) return res.status(409).json({ success: false, error: "Заявка в корзине" });
+    if (!STEP_ID.test(String(stepId || ""))) return res.status(400).json({ success: false, error: "Неизвестный этап" });
+    const flow = resolveFlow(o.form);
+    const step = flow.steps.find(x => x.id === stepId);
+    if (!step) return res.status(404).json({ success: false, error: "Этапа нет у формы" });
+    const prev: StepState = o.sub.flow?.[step.id] || { marks: [], comment: "", published: null, by: "", byName: "", at: 0 };
+    const by = byOf(req);
+    const ref = db().collection(SUBS).doc(o.sub.id);
+    const fresh = async () => ((await ref.get()).data()?.flow || {})[step.id] || null;
+
+    if (action === "unpublish") {
+      if (!prev.published) return res.json({ success: true, state: prev });
+      await ref.update({
+        [`flow.${step.id}.published`]: null, updatedAt: admin.firestore.Timestamp.now(),
+        history: admin.firestore.FieldValue.arrayUnion({ status: String(o.sub.status || "new"), at: admin.firestore.Timestamp.now(), by: by.name, note: `Публикация этапа «${step.title}» снята` }),
+      });
+      return res.json({ success: true, state: await fresh() });
+    }
+    if (prev.published) return res.status(409).json({ success: false, error: "Этап опубликован — сначала снимите публикацию" });
+    if (!stepActive(o.form, o.sub, flow.steps, step)) return res.status(409).json({ success: false, error: "У этой заявки этап сейчас недоступен" });
+
+    if (action === "save") {
+      const marks = Array.isArray(req.body.marks) ? [...new Set(req.body.marks.map(String))].filter(id => step.marks.some(m => m.id === id)) as string[] : prev.marks;
+      const comment = step.comment && req.body.comment !== undefined ? String(req.body.comment ?? "").replace(/\r/g, "").trim().slice(0, 2000) : prev.comment;
+      const st: StepState = { ...prev, marks, comment, by: by.uid, byName: by.name, at: Date.now() };
+      // Отметок стало меньше нужного — таймер публикации снимается.
+      if (st.publishAt && !canPublish(step, st)) { await cancelStepSchedule(String(tenantId), o.sub.id, step.id); st.publishAt = null; }
+      await ref.update({ [`flow.${step.id}`]: JSON.parse(JSON.stringify(st)), updatedAt: admin.firestore.Timestamp.now() });
+      return res.json({ success: true, state: st });
+    }
+    if (action === "cancel") {
+      await cancelStepSchedule(String(tenantId), o.sub.id, step.id);
+      return res.json({ success: true, state: await fresh() });
+    }
+    if (action === "publish") {
+      if (!canPublish(step, prev)) return res.status(409).json({ success: false, error: step.minMarks > 1 ? `Отметьте хотя бы ${step.minMarks}` : "Отметьте хотя бы одну кнопку" });
+      const at = Number(req.body.at);
+      if (Number.isFinite(at) && at >= Date.now() + 60_000) {
+        await scheduleStep(String(tenantId), o.sub.id, step.id, Math.floor(at), by);
+        return res.json({ success: true, scheduled: Math.floor(at), state: await fresh() });
+      }
+      const r = await publishStep({ sub: o.sub, form: o.form, step, by });
+      return res.json({ success: true, state: await fresh(), email: { sent: r.email.sent, reason: r.email.reason || "", to: r.email.to || "", skipped: !!r.email.skipped } });
+    }
+    return res.status(400).json({ success: false, error: "Неизвестное действие" });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }

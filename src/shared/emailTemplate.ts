@@ -69,6 +69,9 @@ export const EMAIL_VARS: EmailVar[] = [
   { key: "обратная_связь", sample: "Сильные стороны…", from: { decision: "Обратная связь из анкеты кандидата" } },
   { key: "форма", sample: "Регистрация на форум", from: { form: "Название формы" } },
   { key: "статус", sample: "Одобрено", from: { form: "Новое состояние заявки" } },
+  { key: "этап", sample: "Распределение по форумам", from: { form: "Этап заявки, который опубликовали" } },
+  { key: "отметки", sample: "Первый форум, Второй форум", from: { form: "Отметки организаторов на этапе" } },
+  { key: "комментарий", sample: "Ждём вас на встрече в пятницу.", from: { form: "Комментарий организаторов на этапе (пусто — абзац не показывается)" } },
   { key: "ссылка", sample: "https://www.studyfreeforum.com/a/demo", from: { results_ready: "Страница результатов по ссылке", parent_form: "Анкета родителя по ссылке", decision: "Направление с результатами (после обратной связи)", referral: "Направление с QR", tested: "Направление (поступающие) или страница результата", form: "Билет с QR (если включён)" } },
   { key: "организация", sample: "Ваша организация", from: { results_ready: "Название организации", parent_form: "Название организации", decision: "Название организации", referral: "Название организации", tested: "Название организации", form: "Название организации" } },
 ];
@@ -96,7 +99,7 @@ export function varLabel(key: string, kind: EmailKind): string {
   if (key === "имя") return kind === "referral" ? "Родитель" : kind === "form" ? "ФИО из заявки" : "Имя получателя";
   if (key === "ссылка" && kind === "parent_form") return "Ссылка на анкету";
   if (key === "ссылка") return kind === "results_ready" ? "Ссылка на результаты" : kind === "referral" || kind === "decision" ? "Ссылка на направление" : kind === "tested" ? "Ссылка на результат" : kind === "form" ? "Ссылка на билет" : "Ссылка";
-  return ({ ребёнок: "Ребёнок", класс: "Класс", экзамен: "Экзамен", код: "Код экзамена", балл: "Балл", процент: "Процент", номер: "Номер работы", форма: "Название формы", организация: "Организация", решение: "Решение", обратная_связь: "Обратная связь" } as Record<string, string>)[key] || key;
+  return ({ ребёнок: "Ребёнок", класс: "Класс", экзамен: "Экзамен", код: "Код экзамена", балл: "Балл", процент: "Процент", номер: "Номер работы", форма: "Название формы", организация: "Организация", решение: "Решение", обратная_связь: "Обратная связь", этап: "Этап", отметки: "Отметки организаторов", комментарий: "Комментарий организаторов" } as Record<string, string>)[key] || key;
 }
 
 /** Подстановки, которые сработают в письме этого типа. */
@@ -112,7 +115,7 @@ export function unknownVars(tpl: Pick<EmailTemplate, "subject" | "title" | "body
 export const sampleVars = (): Record<string, string> => Object.fromEntries(EMAIL_VARS.map(v => [v.key, v.sample]));
 
 /** О чём письмо — по этим полям его переотправляют. */
-export interface EmailCtx { applicantId?: string; attemptId?: string; examId?: string; submissionId?: string; formId?: string; statusId?: string; label?: string }
+export interface EmailCtx { applicantId?: string; attemptId?: string; examId?: string; submissionId?: string; formId?: string; statusId?: string; stepId?: string; label?: string }
 
 /** Запись журнала отправок события. */
 export const emailLogId = (event: EmailEvent, refId: string) => `${event}_${refId}`.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 300);
@@ -163,9 +166,20 @@ export function fillVars(text: string, vars: Record<string, string>): string {
   return text.replace(/\{\{\s*([^{}]{1,30}?)\s*\}\}/g, (_, k: string) => vars[k] ?? "");
 }
 
+/**
+ * Абзац, где есть подстановки и все они пустые, не выводится: строка
+ * «Комментарий организаторов: {{комментарий}}» исчезает, когда комментария нет.
+ */
+export function dropEmptyParagraphs(text: string, vars: Record<string, string>): string {
+  return text.split(/\n{2,}/).filter(p => {
+    const keys = [...p.matchAll(/\{\{\s*([^{}]{1,30}?)\s*\}\}/g)].map(m => m[1]);
+    return !keys.length || keys.some(k => String(vars[k] ?? "").trim());
+  }).join("\n\n");
+}
+
 /** Текст → безопасный HTML: экранирование, подстановки, **жирный**, абзацы. */
 function richText(text: string, vars: Record<string, string>, style: string): string {
-  const html = esc(fillVars(text, vars)).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
+  const html = esc(fillVars(dropEmptyParagraphs(text, vars), vars)).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
   return html.split(/\n{2,}/).map(p => p.trim()).filter(Boolean)
     .map(p => `<p style="${style}">${p.replace(/\n/g, "<br>")}</p>`).join("");
 }

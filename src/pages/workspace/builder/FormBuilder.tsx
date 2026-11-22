@@ -37,6 +37,7 @@ import { tenantLogos } from '../../../shared/legal';
 import FormSummary, { WhoModal, type WhoList } from './FormSummary';
 import EmailResend from '../../../components/workspace/EmailResend';
 import FormNotifyModal from './FormNotifyModal';
+import FlowStepBar from './FlowStepBar';
 import { toast, confirmDialog, useUrlTab, Spinner, EmptyState } from '../../../components/ui';
 import { emailApi } from '../../../lib/emailTemplatesApi';
 
@@ -157,6 +158,14 @@ export default function FormBuilder() {
   const { user } = useAuth();
 
   const [forms, setForms] = useState<any[]>([]);
+  // Названия шаблонов писем — для подтверждения публикации этапа заявки.
+  const [tplNames, setTplNames] = useState<Record<string, string>>({});
+  const anyFlow = forms.some((f: any) => f?.flow?.steps?.length);
+  useEffect(() => {
+    if (!currentOrgId || !anyFlow) return;
+    emailApi(currentOrgId).then(j => setTplNames(Object.fromEntries((j.templates || []).map((t: any) => [t.id, t.name])))).catch(() => {});
+  }, [currentOrgId, anyFlow]);
+  const tplName = (id?: string) => (id && tplNames[id]) || 'письмо этапа';
   // Состояния заявок по формам: у формы без настроек — статусы её режима.
   const decsMap = useMemo(() => new Map(forms.map(f => [f.id, resolveDecisions(f)] as const)), [forms]);
   const decOf = (formId: string, status: unknown): Decision => decisionOf(decsMap.get(formId) || resolveDecisions(null), status);
@@ -1638,6 +1647,7 @@ export default function FormBuilder() {
                       </select>
                       </div>
                       <PendingNotice sub={sub} onCancel={() => void cancelNotify(sub)} />
+                      {(() => { const f = forms.find(x => x.id === sub.formId); return f?.flow?.steps?.length ? <FlowStepBar tenantId={currentOrgId} form={f} sub={sub} templateName={tplName} /> : null; })()}
                     </td>
                     <td className="px-5 py-3.5 text-[11px] font-mono text-[var(--text-muted)]">
                       {sub.createdAt ? new Date(sub.createdAt.seconds ? sub.createdAt.seconds * 1000 : sub.createdAt).toLocaleDateString() : 'Сегодня'}
