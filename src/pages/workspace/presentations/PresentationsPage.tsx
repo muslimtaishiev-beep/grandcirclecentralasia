@@ -270,11 +270,12 @@ function UploadModal({ api, onClose, onDone }: { api: ReturnType<typeof usePresA
   return (
     <Modal title="Загрузить презентацию" onClose={busy ? () => {} : onClose} wide>
       <div className="space-y-4">
-        <label className={`flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-6 text-center cursor-pointer ${deck ? "border-emerald-500/50 bg-emerald-500/5" : "border-[var(--border-color)] hover:border-[var(--accent)]"}`}>
+        {/* Поле файла — по id: подсказка «?» внутри — тоже кнопка, и без htmlFor нажатие уходило ей, окно выбора не открывалось. */}
+        <label htmlFor="deck-file" className={`flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-6 text-center cursor-pointer ${deck ? "border-emerald-500/50 bg-emerald-500/5" : "border-[var(--border-color)] hover:border-[var(--accent)]"}`}>
           <Upload className="w-7 h-7 text-[var(--text-muted)]" />
           <span className="text-sm font-semibold text-[var(--text-main)]">{fileName || "Выберите .zip колоды или .html-файл"} <InfoHint>В чате Claude, где сделана презентация, попросите собрать zip: project/deck.json, папку project/slides и все файлы _blob. Подойдёт и страница, сохранённая одним .html.</InfoHint></span>
           {deck && <span className="text-xs text-emerald-700">{deck.kind === "slides" ? `${deck.slides.length} слайдов · ${Object.keys(deck.files).length} файлов · ${mb(total)} МБ` : "HTML-страница"}</span>}
-          <input type="file" accept=".zip,.html,.htm" className="hidden" disabled={busy} onChange={e => { void pick(e.target.files?.[0]); e.target.value = ""; }} />
+          <input id="deck-file" type="file" accept=".zip,.html,.htm" className="hidden" disabled={busy} onChange={e => { void pick(e.target.files?.[0]); e.target.value = ""; }} />
         </label>
         {deck?.missing.length ? <div className="text-sm text-rose-600">В архиве нет {deck.missing.length} файлов, на которые ссылаются слайды (видео или картинки). Соберите архив заново со всеми файлами из _blob.</div> : null}
 
