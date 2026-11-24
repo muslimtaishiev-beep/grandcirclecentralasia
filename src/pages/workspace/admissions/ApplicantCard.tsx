@@ -120,7 +120,7 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
   const sessions = sessionsOf(d.forms);
   const downloadSession = async () => {
     setSaving(true);
-    try { await saveSessions(org, a, sessions); } catch (e: any) { toast.error(e.message); } finally { setSaving(false); }
+    try { await saveSessions(org, a, sessions, d.forms); } catch (e: any) { toast.error(e.message); } finally { setSaving(false); }
   };
   // Несохранённая правка профиля: закрыть окно — только после вопроса. Черновики анкет сохраняются сами.
   const guardedClose = async () => {

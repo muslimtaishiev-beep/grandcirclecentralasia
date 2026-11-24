@@ -3,9 +3,9 @@ import { Download, History, Loader2, Lock, Pencil, RotateCcw, X } from "lucide-r
 import { useLive } from "../../../lib/useLive";
 import { candidateOf, type Applicant, type CandidateInfo } from "../../../shared/admissions";
 import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
-import type { QAnswers, QTemplate } from "../../../shared/questionnaires";
 import { tenantLogos } from "../../../shared/legal";
 import { candidateSheet, sheetDocument } from "../../../lib/admissionPrint";
+import { sessionSheets, sessionsOf, type SessionForm } from "./sessionPdf";
 import { Modal, btn, btnPrimary, input, label } from "../journals/components/ui";
 import { confirmDialog } from "../../../components/ui";
 import type { Api } from "./admissionApi";
@@ -20,7 +20,7 @@ import HistoryModal from "./HistoryModal";
  * карточке, остальные — правкой поверх анкеты родителя; каждая правка
  * пишется в историю (кнопка «История»).
  */
-interface FormDoc { templateId: string; full: boolean; template: QTemplate; answers?: QAnswers }
+type FormDoc = SessionForm;
 interface Data {
   applicant: Applicant; forms: FormDoc[]; attempts: TestSummary[]; audit: any[];
   me: { admission: boolean; academic: boolean; name?: string };
@@ -71,6 +71,8 @@ export default function CandidateSheetModal({ applicantId, api, tenant, startEdi
 
   const cfg = d?.candidateForm || NEUTRAL_CANDIDATE_FORM;
   const parentForm: ParentForm = d?.sheet || null;
+  /** Вторая страница и дальше — заполненные бланки специалистов (психолог), если они видны этому сотруднику. */
+  const sessions = useMemo(() => (d ? sessionsOf(d.forms) : []), [d]);
   const test = d ? latestTest(d.attempts) : null;
   const fields = useMemo(() => (d ? sheetFields({ form: cfg, applicant: d.applicant, parentForm, test }) : []), [d, cfg, parentForm, test]);
   const canEdit = !!d?.me.admission;
@@ -108,10 +110,11 @@ export default function CandidateSheetModal({ applicantId, api, tenant, startEdi
     let stop = false;
     const t = setTimeout(async () => {
       const sheet = await candidateSheet(org, candidateDoc({ form: cfg, orgName: org.name, applicant: preview, parentForm, test, photo }));
-      if (!stop) setHtml(sheetDocument(sheet));
+      const extra = d && sessions.length ? await sessionSheets(org, d.applicant, sessions, d.forms) : "";
+      if (!stop) setHtml(sheetDocument(sheet + extra));
     }, 200);
     return () => { stop = true; clearTimeout(t); };
-  }, [preview, org, cfg, parentForm, test, photo]);
+  }, [preview, org, cfg, parentForm, test, photo, d, sessions]);
 
   const save = async () => {
     if (!d || !draft) return;
@@ -126,7 +129,10 @@ export default function CandidateSheetModal({ applicantId, api, tenant, startEdi
   const pdf = async () => {
     if (!d) return;
     setBusy("pdf");
-    try { await saveCandidate(org, candidateDoc({ form: cfg, orgName: org.name, applicant: d.applicant, parentForm, test, photo }), d.applicant.child.name); }
+    try {
+      const extra = sessions.length ? await sessionSheets(org, d.applicant, sessions, d.forms) : "";
+      await saveCandidate(org, candidateDoc({ form: cfg, orgName: org.name, applicant: d.applicant, parentForm, test, photo }), d.applicant.child.name, extra);
+    }
     catch (e: any) { setError(e.message); } finally { setBusy(""); }
   };
   const close = async () => { if (dirty && !(await confirmDialog({ title: "Закрыть без сохранения?", message: "Правки анкеты кандидата не сохранены.", confirmLabel: "Закрыть", danger: true }))) return; onClose(); };

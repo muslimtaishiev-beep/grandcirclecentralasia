@@ -176,7 +176,8 @@ export function candidateDoc(o: {
   };
 }
 
-export async function saveCandidate(org: PrintOrg, doc: CandidateDoc, childName: string): Promise<void> {
+/** PDF анкеты кандидата; after — следующие листы (заполненные бланки специалистов). */
+export async function saveCandidate(org: PrintOrg, doc: CandidateDoc, childName: string, after = ""): Promise<void> {
   const name = `${doc.title} — ${childName || "ученик"}${doc.refNo ? ` — № ${String(doc.refNo).padStart(4, "0")}` : ""}.pdf`.replace(/[\\/:*?"<>|]/g, " ");
-  await downloadPdf(await candidateSheet(org, doc), name);
+  await downloadPdf(await candidateSheet(org, doc) + after, name);
 }

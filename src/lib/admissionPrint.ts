@@ -123,8 +123,18 @@ export async function staffBlankHTML(org: PrintOrg, c: PrintChild, o: { cardToke
  * отметками, цифрами проб, комментариями и заключением. Его скачивает
  * администрация, чтобы не просить специалиста печатать.
  */
-export async function sessionSheet(org: PrintOrg, c: PrintChild, o: { cardToken: string; template: QTemplate; grade: number | null; answers: QAnswers; outcome: string | null; byName: string; at: number | null }) {
+export async function sessionSheet(org: PrintOrg, c: PrintChild, o: {
+  cardToken: string; template: QTemplate; grade: number | null; answers: QAnswers; outcome: string | null; byName: string; at: number | null;
+  /** Анкета родителя: у пунктов «опроса родителей» (showParent) печатаются его ответы — как на экране у специалиста. */
+  parent?: { template: Pick<QTemplate, "sections">; answers: QAnswers } | null;
+}) {
   const t = o.template;
+  const parentItems = new Map((o.parent?.template.sections || []).flatMap(s => s.items).map(i => [i.id, i]));
+  const fromParent = (i: QItem) => (i.showParent || []).map(pid => {
+    const pi = parentItems.get(pid); const pa = o.parent?.answers?.[pid];
+    const v = pi ? answerText(pi, pa) : "";
+    return pi && v ? `<div class="hint">${esc(pi.label)}: <span style="color:#111">${esc(v)}${pa?.comment ? ` (${esc(pa.comment)})` : ""}</span></div>` : "";
+  }).join("");
   const body = visibleSections(t, o.grade, { answers: o.answers }).map(s => {
     const items = s.items;
     const ratings = items.filter(i => i.kind === "rating");
@@ -136,7 +146,10 @@ export async function sessionSheet(org: PrintOrg, c: PrintChild, o: { cardToken:
       const n = normFor(i, o.grade);
       return `<tr><td>${esc(i.label)}</td>${scale.map(x => `<td style="text-align:center;font-weight:700">${a?.rating === x.id ? "✓" : ""}</td>`).join("")}<td>${m ? `<div>${m}${n ? ` <span class="hint">(${esc(normText(n))})</span>` : ""}</div>` : ""}${a?.comment ? `<div>${esc(a.comment)}</div>` : ""}</td></tr>`;
     }).join("")}</table>` : "";
-    const rest = other.map(i => { const v = answerText(i, o.answers[i.id]); return `<div style="margin:6px 0"><span class="hint">${esc(i.label)}</span><div>${v ? esc(v) : "—"}${o.answers[i.id]?.comment ? ` · ${esc(o.answers[i.id]!.comment)}` : ""}</div></div>`; }).join("");
+    const rest = other.map(i => {
+      const v = answerText(i, o.answers[i.id]); const par = fromParent(i);
+      return `<div style="margin:6px 0"><span class="hint">${esc(i.label)}</span>${v || !par ? `<div>${v ? esc(v) : "—"}${o.answers[i.id]?.comment ? ` · ${esc(o.answers[i.id]!.comment)}` : ""}</div>` : ""}${par ? `<div style="margin-top:2px">${v ? `<div class="hint">Из анкеты родителя:</div>` : ""}${par}</div>` : ""}</div>`;
+    }).join("");
     return `<h2>${esc(s.title)}</h2>${table}${rest}`;
   }).join("");
   const outcome = t.outcome ? `<h2>${esc(t.outcome.label)}</h2>${t.outcome.options.map(x => `<p>${x.id === o.outcome ? "☑" : "☐"} ${x.id === o.outcome ? `<b>${esc(x.label)}.</b>` : `${esc(x.label)}.`} <span class="hint">${esc(x.description)}</span></p>`).join("")}` : "";
@@ -262,7 +275,8 @@ const scopedCss = (root: string) => CSS.replace(/@page\{[^}]*\}/, "").replace(/(
 export function sheetDocument(sheets: string): string {
   const body = DOMPurify.sanitize(sheets, { FORCE_BODY: true, ADD_TAGS: ["style"] });
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>${CSS.replace(/@page\{[^}]*\}/, "")}
-html,body{margin:0;background:#fff}body{width:186mm;padding:12mm;color:#111;line-height:1.35}td,th{line-height:1.3;padding:4px 6px 8px}p{margin:4px 0}</style></head><body>${body}</body></html>`;
+html,body{margin:0;background:#fff}body{width:186mm;padding:12mm;color:#111;line-height:1.35}td,th{line-height:1.3;padding:4px 6px 8px}p{margin:4px 0}
+.sheet+.sheet{border-top:2px dashed #bbb;margin-top:12mm;padding-top:10mm}</style></head><body>${body}</body></html>`;
 }
 
 /** Скачать листы файлом PDF (A4), без окна печати. */
