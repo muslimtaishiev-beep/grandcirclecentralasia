@@ -177,7 +177,7 @@ export function folderPath(folder: DocFolder, byId: Map<string, DocFolder>): Doc
 
 export const FILE_LIMIT = 50 * 1024 * 1024;
 /** Общий объём на организацию по умолчанию (можно поднять в настройках). */
-export const TENANT_QUOTA = 5 * 1024 * 1024 * 1024;
+export const TENANT_QUOTA = 20 * 1024 * 1024 * 1024;
 
 /** Разрешённые расширения → тип. Всё прочее (exe, скрипты, html) — нельзя. */
 export const FILE_TYPES: Record<string, string> = {
