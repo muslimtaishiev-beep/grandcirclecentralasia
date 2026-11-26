@@ -27,6 +27,7 @@ import {
 } from "../shared/admissions.js";
 import { cancelJob, registerJobHandler, scheduleJob } from "../server/scheduler.js";
 import { SOURCE_SLOT, answered, cardValue, intakeTemplate, profileAnswers, splitIntake } from "../shared/candidateIntake.js";
+import { findChild, matchChild, nameKey, probeOf, type ChildProbe } from "../shared/applicantMatch.js";
 import { isPermissionKey, type PermissionKey } from "../shared/permissions.js";
 
 /**
@@ -844,10 +845,13 @@ router.get("/:tenantId/applicants", ...staff, async (req: any, res: any) => {
     const c: StaffCaller = req.caller; const academic = seesAcademic(c);
     const archived = req.query.archived === "1" && hasPerm(c, "admission:manage");
     const [snap, attempts, tpls] = await Promise.all([col(t, "applicants").orderBy("createdAt", "desc").limit(3000).get(), academic ? attemptsOf(t) : [], loadTemplates(t)]);
-    const list = snap.docs.map(d => ({ ...(d.data() as Applicant), id: d.id })).filter(a => !!a.archived === archived);
+    const everyone = snap.docs.map(d => ({ ...(d.data() as Applicant), id: d.id }));
+    const list = everyone.filter(a => !!a.archived === archived);
+    // Возможный дубль (тот же ребёнок в другой карточке) — значок в списке; объединяет администрация.
+    const twin = new Set(archived || !hasPerm(c, "admission:manage") ? [] : list.filter(a => twinsOf(a, list).length).map(a => a.id));
     return res.json({
       success: true,
-      applicants: list.map(a => ({ ...row(a, attempts, academic), ...(a.archived ? { archived: a.archived } : {}), referralBlocked: !!a.referralBlocked })),
+      applicants: list.map(a => ({ ...row(a, attempts, academic), ...(a.archived ? { archived: a.archived } : {}), referralBlocked: !!a.referralBlocked, ...(twin.has(a.id) ? { twin: true } : {}) })),
       me: meOf(c, tpls),
     });
   } catch (e: any) { return oops(res, e); }
@@ -876,8 +880,19 @@ router.get("/:tenantId/by-no/:n", ...staff, async (req: any, res: any) => {
 // ── Работа экзамена ↔ карточка поступающего ─────────────────────────────
 
 /** ФИО для сравнения: без регистра, «ё» = «е», без знаков, слова по алфавиту (порядок не важен). */
-const nameKey = (v: unknown) => String(v || "").toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9\s]/g, " ").split(/\s+/).filter(Boolean).sort().join(" ");
-const phoneKey = (v: unknown) => { const d = String(v || "").replace(/\D/g, ""); return d.length >= 7 ? d.slice(-9) : ""; };
+/** Карточки организации, не в архиве, — среди них ищется «тот же ребёнок». */
+async function liveApplicants(t: string): Promise<Applicant[]> {
+  return (await col(t, "applicants").get()).docs.map(d => ({ ...(d.data() as Applicant), id: d.id })).filter(a => !a.archived);
+}
+/**
+ * Карточка этого ребёнка для входа на тест без направления: только
+ * подтверждённое совпадение (ФИО + дата рождения или телефон). null — нет
+ * или неясно: тогда работа привяжется после сдачи.
+ */
+export async function applicantForStudent(t: string, probe: ChildProbe): Promise<Applicant | null> {
+  const r = findChild<Applicant>(await liveApplicants(t), probe, probeOf);
+  return r.found && r.strong ? r.found : null;
+}
 
 export { isAdmissionExam };
 
@@ -907,19 +922,11 @@ export async function linkAttempt(t: string, attemptId: string, c: { uid: string
     parent: sanitizeParent({ name: extra.parentName, phone: extra.parentPhone, email: extra.parentEmail }),
   };
   const intake: QAnswers = x.intake?.free && typeof x.intake.free === "object" ? x.intake.free : {};
-  const birth = /^\d{4}-\d{2}-\d{2}$/.test(String(extra.birthDate || "")) ? String(extra.birthDate) : "";
-  const key = nameKey(x.student?.name);
-  if (!key) return null;
-  const phones = [extra.parentPhone, extra.studentPhone, x.student?.phone].map(phoneKey).filter(Boolean);
-  const all = (await col(t, "applicants").get()).docs.map(d => ({ ...(d.data() as Applicant), id: d.id })).filter(a => !a.archived && nameKey(a.child?.name) === key);
-  // «Это другой ребёнок» — отдельная карточка, без поиска совпадений.
-  if (o.create) all.length = 0;
-  const byBirth = birth ? all.filter(a => a.child.birthDate === birth) : [];
-  const byPhone = phones.length ? all.filter(a => { const p = phoneKey(a.parent?.phone); return !!p && phones.includes(p); }) : [];
-  const noConflict = (a: Applicant) => (!birth || !a.child.birthDate || a.child.birthDate === birth);
-  const found = byBirth.length === 1 ? byBirth[0] : byPhone.length === 1 ? byPhone[0]
-    : all.length === 1 && noConflict(all[0]) ? all[0] : undefined;
-  if (!found && all.length > 1) return { ambiguous: all.length };
+  if (!nameKey(x.student?.name)) return null;
+  // «Это другой ребёнок» — отдельная карточка, без поиска совпадений. Иначе — общее правило «тот же ребёнок».
+  const m: ReturnType<typeof findChild<Applicant>> = o.create ? {} : findChild<Applicant>(await liveApplicants(t), { name: x.student?.name, birthDate: extra.birthDate, phones: [extra.parentPhone, extra.studentPhone, x.student?.phone] }, probeOf);
+  const found = m.found;
+  if (!found && m.ambiguous) return { ambiguous: m.ambiguous };
   let id: string; let refNo: number; let created = false;
   if (found) {
     id = found.id; refNo = found.refNo;
@@ -978,9 +985,8 @@ router.post("/:tenantId/applicants", ...staff, async (req: any, res: any) => {
     if (gradeOf(child.grade) === null) return fail(res, 400, "Укажите класс, в который поступает");
     // Тот же ребёнок уже есть (ФИО + дата рождения, либо ФИО без даты) — не плодим дубль без явного «создать всё равно».
     if (req.body?.force !== true) {
-      const k = nameKey(child.name);
-      const same = (await col(t, "applicants").get()).docs.map(d => ({ ...(d.data() as Applicant), id: d.id }))
-        .find(a => !a.archived && nameKey(a.child?.name) === k && (!child.birthDate || !a.child?.birthDate || a.child.birthDate === child.birthDate));
+      const probe = { name: child.name, birthDate: child.birthDate, phones: [child.phone, sanitizeParent(req.body?.parent).phone] };
+      const same = (await liveApplicants(t)).find(a => matchChild(probe, probeOf(a)) !== "no");
       if (same) return res.status(409).json({ success: false, error: `Такой поступающий уже есть: № ${String(same.refNo).padStart(4, "0")}`, duplicate: { id: same.id, refNo: same.refNo } });
     }
     const ref = col(t, "applicants").doc();
@@ -1035,6 +1041,8 @@ router.get("/:tenantId/applicants/:id", ...staff, async (req: any, res: any) => 
       // Тест ребёнка по направлению: если на бумаге — администрация вносит правильные ответы.
       candidateForm,
       // «Сведения об ученике» анкеты кандидата — из всех источников сразу (родитель, ученик перед тестом, карточка).
+      // Тот же ребёнок в другой карточке — предложим объединить.
+      twins: hasPerm(c, "admission:manage") && !a.archived ? twinsOf(a, await liveApplicants(t)) : [],
       sheet: candidateForm ? sheetSource(a, candidateForm, parentDoc?.template || parentTemplate(templates), parentDoc?.answers) : null,
       // Анкету родителя ещё не начинали — сотруднику она открывается с тем, что уже известно (карточка, ответы ученика).
       parentPrefill: !parentDoc && parentTemplate(templates) && (canFillMap[parentTemplate(templates)!.id] || canSeeMap[parentTemplate(templates)!.id]) ? profileAnswers(a, parentTemplate(templates), null) : null,
@@ -1130,6 +1138,107 @@ async function purgeApplicant(t: string, a: Applicant) {
   ];
   for (let i = 0; i < refs.length; i += 400) { const b = db().batch(); refs.slice(i, i + 400).forEach(r => b.delete(r)); await b.commit(); }
 }
+
+/** Возможные дубли карточки: тот же ребёнок по общему правилу, кроме отмеченных «это другой». */
+function twinsOf(a: Applicant, all: Applicant[]) {
+  const skip = new Set(a.notTwin || []);
+  return all.filter(b => b.id !== a.id && !b.archived && !skip.has(b.id) && !(b.notTwin || []).includes(a.id))
+    .map(b => ({ b, m: matchChild(probeOf(a), probeOf(b)) })).filter(x => x.m !== "no")
+    .map(x => ({ id: x.b.id, refNo: x.b.refNo, name: x.b.child.name, grade: x.b.child.grade, sure: x.m === "same" }));
+}
+
+/**
+ * Объединить карточки одного ребёнка: работы, анкеты, этапы, история и
+ * недостающие данные из drop переходят в keep; drop уходит в архив с
+ * пометкой. Заполненное в keep не перезаписывается.
+ */
+export async function mergeApplicants(t: string, keep: Applicant, drop: Applicant, by: { uid: string; name: string }): Promise<void> {
+  const now = Date.now();
+  // 1. Работы экзаменов.
+  const atts = await col(t, "exam_attempts").where("applicantId", "==", drop.id).get();
+  for (const d of atts.docs) {
+    await d.ref.update({ applicantId: keep.id, refNo: keep.refNo, ...(d.data().identity === `a:${drop.id}` ? { identity: `a:${keep.id}` } : {}) });
+  }
+  // 2. Анкеты: переносятся те, которых у keep нет.
+  const [kf, df] = await Promise.all([col(t, "applicant_forms").where("applicantId", "==", keep.id).get(), col(t, "applicant_forms").where("applicantId", "==", drop.id).get()]);
+  const have = new Set(kf.docs.map(d => String(d.data().templateId)));
+  const stages: Record<string, StageSummary> = { ...keep.stages };
+  let parentForm = keep.parentForm;
+  for (const d of df.docs) {
+    const f = d.data() as ApplicantForm;
+    if (have.has(String(f.templateId))) continue;
+    await col(t, "applicant_forms").doc(`${keep.id}_${f.templateId}`).set({ ...f, id: `${keep.id}_${f.templateId}`, applicantId: keep.id });
+    await d.ref.delete();
+    if (f.template?.audience === "parent") parentForm = drop.parentForm;
+    else if (drop.stages?.[f.templateId]) stages[f.templateId] = drop.stages[f.templateId];
+  }
+  // 3. Данные карточки: только в пустые поля.
+  const child: any = { ...keep.child }; const parent: any = { ...keep.parent }; const auto = new Set(keep.autoFilled || []);
+  for (const [k, src, dst] of [["child", drop.child || {}, child], ["parent", drop.parent || {}, parent]] as const) {
+    for (const [f, v] of Object.entries(src)) if (v && !dst[f] && f !== "name") { dst[f] = v; auto.add(`${k}.${f}`); }
+  }
+  const patch: Record<string, unknown> = {
+    child, parent, autoFilled: [...auto], stages, parentForm, updatedAt: now,
+    intake: { ...Object.fromEntries(Object.entries(drop.intake || {}).filter(([, v]) => answered(v))), ...Object.fromEntries(Object.entries(keep.intake || {}).filter(([, v]) => answered(v))) },
+    paperResults: [...(keep.paperResults || []), ...(drop.paperResults || []).filter(p => !(keep.paperResults || []).some(q => q.id === p.id))],
+    note: [keep.note, drop.note].filter(Boolean).join("\n").slice(0, 1000),
+    notTwin: [...new Set([...(keep.notTwin || []), ...(drop.notTwin || [])])].filter(x => x !== drop.id && x !== keep.id),
+  };
+  if (!keep.candidate && !keep.decision && drop.candidate) patch.candidate = drop.candidate;
+  // Направление: у keep его нет — переходит вместе с QR (ссылка теперь ведёт в keep).
+  if (!keep.referral && drop.referral) {
+    patch.referral = drop.referral;
+    if (!keep.tokens.referral && drop.tokens.referral) {
+      await db().collection(LINKS).doc(drop.tokens.referral).update({ applicantId: keep.id }).catch(() => {});
+      patch["tokens.referral"] = drop.tokens.referral;
+    }
+  }
+  await col(t, "applicants").doc(keep.id).update(deep(patch));
+  // 4. История — в одну ленту.
+  const hist = await col(t, "applicant_audit").where("applicantId", "==", drop.id).get();
+  for (const d of hist.docs) await d.ref.update({ applicantId: keep.id });
+  // 5. Дубль — в архив с пометкой; публикация по таймеру у него снимается.
+  await cancelJob(t, pubKey(drop.id)).catch(() => false);
+  await col(t, "applicants").doc(drop.id).update({
+    archived: { at: now, by: by.uid, byName: by.name }, mergedInto: { id: keep.id, refNo: keep.refNo }, updatedAt: now,
+    ...(drop.tokens.referral && patch["tokens.referral"] ? { "tokens.referral": admin.firestore.FieldValue.delete(), referral: null } : {}),
+  });
+  await audit(t, keep.id, by, "merged", `объединена с карточкой № ${String(drop.refNo).padStart(4, "0")} (${drop.child.name}): работы ${atts.size}, анкеты ${df.docs.filter(d => !have.has(String(d.data().templateId))).length}`);
+  await audit(t, drop.id, by, "merged", `всё перенесено в карточку № ${String(keep.refNo).padStart(4, "0")}`);
+  const fresh = await loadApplicant(t, keep.id);
+  if (fresh) await syncReferral(t, fresh).catch(() => {});
+  await bumpLive(t, ["admissions", "exams"], keep.id).catch(() => {});
+}
+
+/** Объединить с дублем: остаётся более ранняя карточка (с ней уже работали), вторая уходит в архив. */
+router.post("/:tenantId/applicants/:id/merge", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Объединяет карточки администрация приёма");
+    const [a, b] = await Promise.all([loadApplicant(t, String(req.params.id)), loadApplicant(t, String(req.body?.with || ""))]);
+    if (!a || !b || a.id === b.id) return fail(res, 404, "Карточка не найдена");
+    if (a.archived || b.archived) return fail(res, 409, "Карточка в архиве — сначала верните её");
+    const [ca, cb] = [candidateOf(a), candidateOf(b)];
+    if (ca?.published || cb?.published) return fail(res, 409, PUBLISHED_LOCK);
+    const [keep, drop] = a.refNo <= b.refNo ? [a, b] : [b, a];
+    await mergeApplicants(t, keep, drop, c);
+    return res.json({ success: true, keep: { id: keep.id, refNo: keep.refNo }, drop: { id: drop.id, refNo: drop.refNo } });
+  } catch (e: any) { return oops(res, e); }
+});
+
+/** «Это другой ребёнок» — подсказка дубля для этой пары больше не показывается. */
+router.post("/:tenantId/applicants/:id/not-twin", ...staff, async (req: any, res: any) => {
+  try {
+    const t = req.params.tenantId; const c: StaffCaller = req.caller;
+    if (!hasPerm(c, "admission:manage")) return fail(res, 403, "Нет прав");
+    const [a, b] = await Promise.all([loadApplicant(t, String(req.params.id)), loadApplicant(t, String(req.body?.other || ""))]);
+    if (!a || !b || a.id === b.id) return fail(res, 404, "Карточка не найдена");
+    await col(t, "applicants").doc(a.id).update({ notTwin: admin.firestore.FieldValue.arrayUnion(b.id) });
+    await col(t, "applicants").doc(b.id).update({ notTwin: admin.firestore.FieldValue.arrayUnion(a.id) });
+    await audit(t, a.id, c, "edited", `отмечено: № ${String(b.refNo).padStart(4, "0")} — другой ребёнок`);
+    return res.json({ success: true });
+  } catch (e: any) { return oops(res, e); }
+});
 
 router.post("/:tenantId/applicants/:id/restore", ...staff, async (req: any, res: any) => {
   try {

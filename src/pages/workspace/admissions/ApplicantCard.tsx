@@ -1,7 +1,7 @@
 import EmailResend from "../../../components/workspace/EmailResend";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLive } from "../../../lib/useLive";
-import { Archive, ArchiveRestore, Camera, CheckCircle2, ClipboardList, Copy, Download, ExternalLink, History, Loader2, Lock, Pencil, Printer, QrCode, RefreshCw, RotateCcw, ShieldAlert, Trash2, Undo2 } from "lucide-react";
+import { Archive, ArchiveRestore, Camera, CheckCircle2, ClipboardList, Copy, Download, ExternalLink, History, Loader2, Lock, Pencil, Printer, QrCode, RefreshCw, RotateCcw, ShieldAlert, Trash2, Undo2, Users } from "lucide-react";
 import FormFiller from "../../../components/admissions/FormFiller";
 import { STAGE_LABEL, stageOf, type Applicant, type CandidateInfo, type PaperResult } from "../../../shared/admissions";
 import { NEUTRAL_CANDIDATE_FORM, type CandidateFormConfig } from "../../../shared/candidateForm";
@@ -43,18 +43,23 @@ interface Data {
   resultDelivery?: { delivery: "email" | "page"; sendOn: "publish" | "manual" } | null;
   candidateForm: CandidateFormConfig | null;
   parentPrefill?: QAnswers | null;
+  /** Тот же ребёнок в другой карточке (общее правило) — предложение объединить. */
+  twins?: { id: string; refNo: number; name: string; grade: string; sure: boolean }[];
 }
 const no = (n: number) => `№ ${String(n).padStart(4, "0")}`;
 
-export default function ApplicantCard({ id, api, tenant, initialTab, section, autoQr, staffMode, onClose, onChanged }: {
+export default function ApplicantCard({ id, api, tenant, initialTab, section, autoQr, staffMode, onClose, onChanged, onMerged }: {
+  /** Карточку объединили с более ранней — открыть ту. */
+  onMerged?: (keepId: string) => void;
   id: string; api: Api; tenant: any; initialTab?: string; section?: string;
   /** «Мои анкеты»: только свои анкеты, даже у того, у кого есть и права приёма. */
   staffMode?: boolean;
   /** Сразу показать QR (после «Завести» — анкета для родителя). */
-  autoQr?: "parent";
+  autoQr?: "parent" | "referral";
   onClose: () => void; onChanged: () => void;
 }) {
   const [qr, setQr] = useState<null | "referral" | "parent">(null);
+  const [merging, setMerging] = useState(false);
   const [sheet, setSheet] = useState<null | { edit?: boolean }>(null);
   const [history, setHistory] = useState(false);
   const autoShown = useRef(false);
@@ -93,6 +98,7 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
     if (tab === "own" || tab === "psych" || (!d.me.admission && ["profile", "parent", "history"].includes(tab))) setTab(own);
     else if (tab === "test" && !d.me.academic) setTab(d.me.admission ? "profile" : own);
     if (autoQr === "parent" && !autoShown.current && d.me.admission && d.applicant.tokens.parent) { autoShown.current = true; setQr("parent"); }
+    if (autoQr === "referral" && !autoShown.current && d.me.admission && d.applicant.referral && d.applicant.tokens.referral) { autoShown.current = true; setQr("referral"); }
   }, [d]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (section) setTimeout(() => document.getElementById(`sec-${section}`)?.scrollIntoView({ behavior: "smooth" }), 400); }, [section, d]);
 
@@ -128,6 +134,21 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
     onClose();
   };
 
+  const merge = async (tw: NonNullable<Data["twins"]>[number]) => {
+    const [keepNo, dropNo] = a.refNo <= tw.refNo ? [a.refNo, tw.refNo] : [tw.refNo, a.refNo];
+    if (!(await confirmDialog({ title: `Объединить ${no(dropNo)} с ${no(keepNo)}?`, message: `Работы, анкеты, история и недостающие данные перейдут в ${no(keepNo)}. Карточка ${no(dropNo)} уйдёт в архив.`, confirmLabel: "Объединить" }))) return;
+    setMerging(true);
+    try {
+      const j = await api(`/applicants/${a.id}/merge`, { method: "POST", body: JSON.stringify({ with: tw.id }) });
+      toast.success(`Объединено в ${no(j.keep.refNo)}`);
+      onChanged();
+      if (j.keep.id !== a.id) onMerged?.(j.keep.id); else await changed();
+    } catch (e: any) { toast.error(e.message); } finally { setMerging(false); }
+  };
+  const notTwin = async (tw: NonNullable<Data["twins"]>[number]) => {
+    try { await api(`/applicants/${a.id}/not-twin`, { method: "POST", body: JSON.stringify({ other: tw.id }) }); await changed(); } catch (e: any) { toast.error(e.message); }
+  };
+
   return (
     <Modal title={`${a.child.name} · ${no(a.refNo)}`} onClose={guardedClose} xwide>
       <div className="space-y-4">
@@ -141,6 +162,16 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
             }}>Удалить навсегда</Button>}
           </div>
         )}
+        {d.me.admission && (d.twins || []).map(tw => (
+          <div key={tw.id} className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm flex flex-wrap items-center gap-2 text-[var(--text-main)]">
+            <Users className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>{tw.sure ? "Тот же ребёнок" : "Возможно, тот же ребёнок"}: <b>{no(tw.refNo)} {tw.name}</b>{tw.grade ? `, ${tw.grade} класс` : ""}</span>
+            <span className="ml-auto flex flex-wrap gap-1.5">
+              <Button size="sm" variant="primary" loading={merging} onClick={() => void merge(tw)}>Объединить</Button>
+              <Button size="sm" variant="ghost" disabled={merging} onClick={() => void notTwin(tw)}>Это другой ребёнок</Button>
+            </span>
+          </div>
+        ))}
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="px-2 py-0.5 rounded bg-[var(--bg-surface-hover)] text-[var(--text-main)]">{a.child.grade} класс</span>
           <span className="text-[var(--text-muted)]">{STAGE_LABEL[stageOf(a, d.attempts[0] || null)]}</span>
@@ -149,7 +180,8 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
             {d.me.academic && <button className={btn} onClick={() => setSheet({})}><ClipboardList className="w-4 h-4" /> Анкета кандидата</button>}
             {d.me.admission && <button className={btn} onClick={() => setHistory(true)}><History className="w-4 h-4" /> История</button>}
             {sessions.length > 0 && <button className={btn} disabled={saving} onClick={downloadSession}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Бланк сессии</button>}
-            {d.me.admission && printReferral && <button className={btnPrimary} onClick={() => setQr("referral")}><QrCode className="w-4 h-4" /> Направление</button>}
+            {d.me.admission && printReferral && <button className={btnPrimary} onClick={() => setQr("referral")}><QrCode className="w-4 h-4" /> QR на тест</button>}
+            {d.me.admission && !printReferral && !a.archived && !d.attempts.length && <button className={btn} onClick={() => setTab("test")}><QrCode className="w-4 h-4" /> QR на тест</button>}
             {d.me.admission && parentTpl && a.tokens.parent && <button className={btn} onClick={() => setQr("parent")}><QrCode className="w-4 h-4" /> Анкета родителю</button>}
           </div>
         </div>
@@ -162,7 +194,7 @@ export default function ApplicantCard({ id, api, tenant, initialTab, section, au
 
         {qr && (
           <QrModal mark={mark} onClose={() => setQr(null)}
-            title={qr === "referral" ? "Направление на тест" : "Анкета для родителя"}
+            title={qr === "referral" ? "QR и ссылка на тест" : "Анкета для родителя"}
             sub={`${a.child.name} · ${no(a.refNo)}${qr === "referral" && a.referral?.examTitle ? ` · ${a.referral.examTitle}` : ""}`}
             url={linkUrl(qr === "referral" ? a.tokens.referral! : a.tokens.parent)}
             onPrint={qr === "referral" ? printReferral! : printParent}

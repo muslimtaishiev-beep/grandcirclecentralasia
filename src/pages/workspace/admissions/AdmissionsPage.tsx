@@ -107,6 +107,8 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
   }, [source, q, grade, stage, sort, dir, classGrades]);
   const page = visible.slice(0, shown);
 
+  /** Сразу QR и ссылка на тест — без поиска кнопки в карточке. */
+  const openQr = (id: string) => { const p = new URLSearchParams(params); p.set("open", id); p.set("ctab", "test"); p.set("qr", "referral"); setParams(p, { replace: true }); };
   const openCard = (id: string | null, tabKey?: string) => {
     const p = new URLSearchParams(params);
     if (id) { p.set("open", id); if (tabKey) p.set("ctab", tabKey); else p.delete("ctab"); } else { p.delete("open"); p.delete("ctab"); p.delete("s"); p.delete("qr"); }
@@ -261,7 +263,7 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
                     <tr key={r.id} className="cursor-pointer" onClick={() => openCard(r.id)}>
                       {reception && <td onClick={e => e.stopPropagation()}><input type="checkbox" aria-label={`Выбрать ${r.child.name}`} checked={picked.has(r.id)} onChange={() => togglePick(r.id)} /></td>}
                       <td className="font-mono text-[var(--text-muted)]">{no(r.refNo)}</td>
-                      <td><div className="font-medium text-[var(--text-main)]">{r.child.name}</div><div className="text-[11px] text-[var(--text-muted)]">{r.parent.name}{r.parent.phone ? ` · ${r.parent.phone}` : ""}</div></td>
+                      <td><div className="font-medium text-[var(--text-main)]">{r.child.name}{r.twin && <span className="ml-1.5 align-middle px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-400" title="Тот же ребёнок есть в другой карточке — откройте, чтобы объединить">дубль?</span>}</div><div className="text-[11px] text-[var(--text-muted)]">{r.parent.name}{r.parent.phone ? ` · ${r.parent.phone}` : ""}</div></td>
                       <td>{r.child.grade}</td>
                       <td>{r.parentForm.status === "done" ? <span className="text-emerald-700 dark:text-emerald-400">✓</span> : <span className="text-[var(--text-muted)]">—</span>}</td>
                       <td>{Object.values(r.stages).map(s => <span key={s.templateId} className={`inline-block mr-1 mb-0.5 px-2 py-0.5 rounded text-[11px] font-medium ${s.status === "done" && s.tone ? TONE[s.tone] : s.status === "draft" ? "text-emerald-700 dark:text-emerald-400 bg-emerald-500/10" : "text-[var(--text-muted)] bg-[var(--bg-surface-hover)]"}`}>{s.status === "done" ? s.outcomeLabel : "● идёт"}</span>)}{!Object.keys(r.stages).length && <span className="text-[var(--text-muted)]">—</span>}
@@ -272,7 +274,8 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
                       {acad && <td className="text-xs">
                         {r.attempt ? <><div className="text-[var(--text-main)]">{r.attempt.examTitle}</div><div className="text-[var(--text-muted)]">{r.attempt.status === "in_progress" ? <span className="text-emerald-700 dark:text-emerald-400 font-medium">● пишет сейчас</span> : r.attempt.parts.map(p => `${p.title}: ${p.value}`).join(" · ") || (r.attempt.percent != null ? `${r.attempt.percent}%` : "сдан")}</div>
                           <button className="mt-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20" onClick={e => { e.stopPropagation(); setResult({ id: r.attempt!.id, examId: r.attempt!.examId }); }}>Результаты</button></>
-                          : r.referral ? <span className="text-sky-700 dark:text-sky-400">направлен{r.referral.manual ? " (вручную)" : ""}</span> : r.referralBlocked ? <span className="text-amber-700 dark:text-amber-400">снято</span> : r.paperResults ? "на бумаге" : <span className="text-[var(--text-muted)]">—</span>}
+                          : r.referral ? <><span className="text-sky-700 dark:text-sky-400">направлен{r.referral.manual ? " (вручную)" : ""}</span>
+                            {reception && view !== "archive" && <button className="ml-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20" onClick={e => { e.stopPropagation(); openQr(r.id); }}><QrCode className="w-3 h-3" /> QR на тест</button>}</> : r.referralBlocked ? <span className="text-amber-700 dark:text-amber-400">снято</span> : r.paperResults ? "на бумаге" : <span className="text-[var(--text-muted)]">—</span>}
                       </td>}
                       {acad && <td className="text-xs">{r.decision || "—"}</td>}
                       <td className="text-xs whitespace-nowrap text-[var(--text-muted)]">{STAGE_LABEL[mode === "staff" && ACADEMIC_STAGES.has(r.stage) ? "referred" : r.stage]}</td>
@@ -289,7 +292,7 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
                   <li key={r.id} className={`${card} p-3 flex items-start gap-2`} onClick={() => openCard(r.id)}>
                     {reception && <input type="checkbox" className="mt-1" aria-label={`Выбрать ${r.child.name}`} checked={picked.has(r.id)} onClick={e => e.stopPropagation()} onChange={() => togglePick(r.id)} />}
                     <div className="min-w-0 flex-1">
-                      <div className="font-medium text-[var(--text-main)] truncate">{r.child.name}</div>
+                      <div className="font-medium text-[var(--text-main)] truncate">{r.child.name}{r.twin && <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-700">дубль?</span>}</div>
                       <div className="text-xs text-[var(--text-muted)]">{no(r.refNo)} · {r.child.grade} класс · {STAGE_LABEL[mode === "staff" && ACADEMIC_STAGES.has(r.stage) ? "referred" : r.stage]}</div>
                       {view === "archive" && <div className="pt-1.5 flex gap-1.5" onClick={e => e.stopPropagation()}>
                         <Button size="sm" onClick={() => restore(r)} icon={<ArchiveRestore className="w-3.5 h-3.5" />}>Вернуть</Button>
@@ -315,7 +318,7 @@ export default function AdmissionsPage({ embedded, mode = "admin", classGrades }
       {scan && <QrScanModal onClose={() => setScan(false)} />}
       {sectionHistory && <HistoryModal api={api} scope="section" onClose={() => setSectionHistory(false)} />}
       {result && <AttemptViewer tenant={activeTenant} attemptId={result.id} examId={result.examId} onClose={() => setResult(null)} onChanged={load} />}
-      {open && <ApplicantCard key={open} id={open} api={api} tenant={activeTenant} staffMode={mode === "staff"} initialTab={params.get("ctab") || undefined} section={params.get("s") || undefined} autoQr={params.get("qr") === "parent" ? "parent" : undefined} onClose={() => openCard(null)} onChanged={load} />}
+      {open && <ApplicantCard key={open} id={open} api={api} tenant={activeTenant} staffMode={mode === "staff"} initialTab={params.get("ctab") || undefined} section={params.get("s") || undefined} autoQr={params.get("qr") === "parent" ? "parent" : params.get("qr") === "referral" ? "referral" : undefined} onClose={() => openCard(null)} onChanged={load} onMerged={id => openCard(id)} />}
     </div>
   );
 }

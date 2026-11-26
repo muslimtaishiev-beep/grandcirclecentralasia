@@ -30,6 +30,8 @@ export interface Row {
   archived?: { at: number; byName: string } | null;
   referralBlocked?: boolean;
   published?: boolean; scheduled?: number | null;
+  /** Возможный дубль: тот же ребёнок есть в другой карточке. */
+  twin?: boolean;
 }
 /**
  * admission — администрация приёма; conduct — проводит анкеты (по праву или по праву анкеты);

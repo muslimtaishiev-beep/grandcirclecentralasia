@@ -1,5 +1,6 @@
 import { bumpLive } from "../server/live.js";
-import { applyIntake, intakeFor, isAdmissionExam, notifyApplicantStep, notifyTested, readIntake, syncReferral } from "./admissionRoutes.js";
+import { applicantForStudent, applyIntake, intakeFor, isAdmissionExam, notifyApplicantStep, notifyTested, readIntake, syncReferral } from "./admissionRoutes.js";
+import { nameKey } from "../shared/applicantMatch.js";
 import { splitIntake } from "../shared/candidateIntake.js";
 import { gradeOf } from "../shared/questionnaires.js";
 import type { Applicant } from "../shared/admissions.js";
@@ -124,10 +125,14 @@ async function notifyTestStep(t: string, exam: Exam, a: Full, step: "start" | "s
 }
 
 export async function supersedeOthers(t: string, a: Full) {
-  const key = identityKey(a.student);
-  const snap = await col(t, "exam_attempts").where("examId", "==", a.examId).where("identity", "==", key).get();
+  // Тот же человек — по ключу работы (по направлению он «a:карточка», а не ФИО+телефон) и по карточке поступающего:
+  // вошёл ли он по QR или по общей ссылке, в зачёт идёт одна, последняя работа.
+  const key = String((a as any).identity || identityKey(a.student));
+  const q = col(t, "exam_attempts").where("examId", "==", a.examId);
+  const [byKey, byCard] = await Promise.all([q.where("identity", "==", key).get(), a.applicantId ? q.where("applicantId", "==", a.applicantId).get() : null]);
+  const docs = new Map([...byKey.docs, ...(byCard?.docs || [])].map(d => [d.id, d]));
   const b = db().batch(); let n = 0;
-  for (const d of snap.docs) if (d.id !== a.id && d.data().status === "finished" && !d.data().superseded) { b.update(d.ref, { superseded: true, supersededBy: a.id }); n++; }
+  for (const d of docs.values()) if (d.id !== a.id && d.data().status === "finished" && !d.data().superseded) { b.update(d.ref, { superseded: true, supersededBy: a.id }); n++; }
   if (n) await b.commit();
 }
 
@@ -175,7 +180,6 @@ function fail1(key: string) {
  * начать «его» работу (и заблокировать ему вход) или сдать пустую
  * пересдачу, которая заменяла его настоящую.
  */
-const nameKey = (n: string) => n.toLowerCase().replace(/ё/g, "е").split(/[^\p{L}\p{N}]+/u).filter(Boolean).sort().join(" ");
 const identityKey = (st: Attempt["student"]) => `${digits(st.phone).slice(-9) ? `p:${digits(st.phone).slice(-9)}|` : ""}n:${nameKey(st.name)}`;
 
 /** То, что ученик видит про работу: без ключей и без чужих разделов. */
@@ -395,9 +399,28 @@ router.post("/:code/start", async (req: any, res: any) => {
     if (!pinOk(exam, req, res)) return;
     const about = { ...extra.values, ...intake.extra };
     if (!student.email && intake.email) student.email = intake.email;
+    // Вступительный экзамен без QR направления: у ребёнка уже может быть карточка в «Приёме» (ФИО + дата рождения
+    // или телефон совпали) — работа сразу идёт в неё, как по направлению, а не заводит вторую карточку после сдачи.
+    const card = isAdmissionExam(exam)
+      ? await applicantForStudent(exam.tenantId, { name: student.name, birthDate: about.birthDate, phones: [student.phone, about.studentPhone, about.parentPhone] }).catch(() => null)
+      : null;
+    if (card) {
+      const live = await col(exam.tenantId, "exam_attempts").where("examId", "==", exam.id).where("applicantId", "==", card.id).where("status", "==", "in_progress").limit(1).get();
+      if (!live.empty) return fail(res, 409, "Работа уже начата на другом устройстве. Продолжите там или обратитесь к организатору.");
+    }
     // Ответы на вопросы анкеты кандидата едут в работе и попадут в карточку, когда работа привяжется к поступающему.
-    const made = await createAttempt(exam, tenant, { ...student, ...(Object.keys(about).length ? { extra: about } : {}) }, identityKey(student), req,
-      intakeTpl && intake.rows.length ? { intake: { rows: intake.rows, free: splitIntake(intakeTpl, intake.answers).free } } : {});
+    const made = await createAttempt(exam, tenant, { ...student, ...(Object.keys(about).length ? { extra: about } : {}) }, card ? `a:${card.id}` : identityKey(student), req, {
+      ...(intakeTpl && intake.rows.length ? { intake: { rows: intake.rows, free: splitIntake(intakeTpl, intake.answers).free } } : {}),
+      ...(card ? { applicantId: card.id, refNo: Number(card.refNo) || null } : {}),
+    });
+    // Ученик дописал о себе — пустые поля карточки и ответы анкеты заполняются (заполненное не трогаем).
+    if (card && !("error" in made)) {
+      await applyIntake(exam.tenantId, card, intakeTpl, intake.answers).catch(e => console.warn("[exam] intake", e?.message));
+      const fill: Record<string, unknown> = {};
+      if (student.phone && !card.child?.phone) fill["child.phone"] = student.phone;
+      if (student.email && !card.child?.email) fill["child.email"] = student.email;
+      if (Object.keys(fill).length) await col(exam.tenantId, "applicants").doc(card.id).update({ ...fill, updatedAt: Date.now() }).catch(() => {});
+    }
     if ("error" in made) return fail(res, made.status, made.error);
     return res.json({ success: true, token: made.attempt.token, shortId: made.attempt.shortId, org: orgView(tenant), state: studentState(exam, made.attempt) });
   } catch (e: any) { return oops(res, e); }

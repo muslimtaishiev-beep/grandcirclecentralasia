@@ -23,5 +23,5 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "exclude": ["scratch", "node_modules", "dist"]
+  "exclude": ["scratch", "tests", "node_modules", "dist"]
 }

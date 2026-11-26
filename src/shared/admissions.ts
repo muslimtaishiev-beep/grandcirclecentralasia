@@ -118,6 +118,10 @@ export interface Applicant {
   paperResults: PaperResult[];
   /** Направление снято администрацией — система не выдаёт его заново, пока не вернут. */
   referralBlocked?: { by: string; byName: string; at: number; reason: string } | null;
+  /** Карточка-дубль объединена с этой (всё перенесено туда). */
+  mergedInto?: { id: string; refNo: number } | null;
+  /** Карточки, про которые сказали «это другой ребёнок» — подсказка дубля для них не показывается. */
+  notTwin?: string[];
   /** В архиве: из списка убрана, данные целы, можно вернуть. */
   archived?: { at: number; by: string; byName: string } | null;
   /** Прежнее решение (Принят / Резерв / Не принят) — читается через candidateOf. */
