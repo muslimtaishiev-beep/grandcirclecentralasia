@@ -146,7 +146,7 @@ export const isSystemRoleName = (name: unknown): boolean =>
   FULL_ACCESS_ROLES.has(String(name ?? "").trim().toLowerCase());
 
 /** Пресеты должностей — стартовая точка, владелец правит галочки. */
-export const ROLE_PRESETS: { name: string; description: string; permissions: PermissionKey[] }[] = [
+export const ROLE_PRESETS: { name: string; description: string; permissions: PermissionKey[]; teacher?: boolean }[] = [
   {
     name: "Администратор",
     description: "Полный доступ, кроме биллинга",
@@ -159,6 +159,7 @@ export const ROLE_PRESETS: { name: string; description: string; permissions: Per
   },
   {
     name: "Преподаватель",
+    teacher: true,
     description: "Расписание, журнал, свои тесты",
     permissions: ["edu:schedule", "tests:read", "tests:review", "chat:use", "tasks:use", "docs:use"],
   },

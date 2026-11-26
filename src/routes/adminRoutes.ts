@@ -12,6 +12,7 @@ import { forgetAccount, revokeAllSessions } from "../server/session.js";
 import { checkTenantOpen, invalidateTenant } from "../server/tenantAccess.js";
 import { AUDIT_ACTIONS, actorOf, writeAudit, type AuditSection } from "../server/audit.js";
 import { resolveWorkspaceConfig } from "../shared/workspaceConfig.js";
+import { applyBulk, classesText, levelsOf, mergeDirectory, placementOf, sanitizeDirectory, sanitizePlacement, LEVEL_LABEL, type StaffDirectory, type StaffPlacement } from "../shared/staffPlacement.js";
 
 /**
  * Администрирование организации: сотрудники, их доступ и входы, действия над
@@ -127,9 +128,10 @@ router.get("/:id/staff", requireFirebaseAuth, need("team:view", "team:manage"), 
     const members = await tenantMembers(t);
     const users = await authUsers(members.map(m => String(m.userId)));
     const roles = new Map<string, string>();
+    const teacherRoles = new Set<string>();
     for (const id of new Set(members.map(m => m.customRoleId).filter(Boolean).map(String))) {
       const r = await db().collection("custom_roles").doc(id).get();
-      if (r.exists && r.data()?.tenantId === t) roles.set(id, String(r.data()?.name || ""));
+      if (r.exists && r.data()?.tenantId === t) { roles.set(id, String(r.data()?.name || "")); if (r.data()?.teacher === true) teacherRoles.add(id); }
     }
     const depts = new Map<string, string>();
     try {
@@ -152,9 +154,12 @@ router.get("/:id/staff", requireFirebaseAuth, need("team:view", "team:manage"), 
         lastSeenAt: lastSeen(u) || null,
         joinedAt: ms(m.joinedAt) || null,
         personalPermissions: migrateLegacyPermissions(m).length,
+        placement: placementOf(m),
+        /** Должность учителя — классы нужно указать. */
+        teacher: !!m.customRoleId && teacherRoles.has(String(m.customRoleId)),
       };
     }).sort((a, b) => a.name.localeCompare(b.name, "ru"));
-    return res.json({ success: true, staff, canManage: hasPerm(req.caller, "team:manage") });
+    return res.json({ success: true, staff, canManage: hasPerm(req.caller, "team:manage"), directory: await staffDirectory(t) });
   } catch (e: any) {
     console.error("[admin] staff", e);
     return fail(res, 500, "Не удалось загрузить сотрудников");
@@ -194,7 +199,10 @@ router.get("/:id/staff/:uid", requireFirebaseAuth, need("team:view", "team:manag
         status: statusOf(m, u), lastSeenAt: lastSeen(u) || null, joinedAt: ms(m.joinedAt) || null,
         invitedBy: m.invitedBy || null, suspendedAt: ms(m.suspendedAt) || null,
         isSelf: uid === req.user.uid,
+        placement: placementOf(m),
+        teacher: !!m.customRoleId && (await db().collection("custom_roles").doc(String(m.customRoleId)).get()).data()?.teacher === true,
       },
+      directory: await staffDirectory(t),
       access,
       member: { id: m.id, role: m.role || "", customRoleId: m.customRoleId || null, permissions: m.permissions ?? null, customPermissions: m.customPermissions ?? null },
       activity: recent(byHim),
@@ -207,6 +215,82 @@ router.get("/:id/staff/:uid", requireFirebaseAuth, need("team:view", "team:manag
     console.error("[admin] staff card", e);
     return fail(res, 500, "Не удалось загрузить сотрудника");
   }
+});
+
+// ─────────────────────── Где работает ───────────────────────
+
+const dirRef = (t: string) => db().collection("tenants").doc(t).collection("edu_settings").doc("staffDirectory");
+async function staffDirectory(t: string): Promise<StaffDirectory> {
+  return sanitizeDirectory((await dirRef(t).get()).data());
+}
+const placementRows = (a: StaffPlacement, b: StaffPlacement): { label: string; from: string; to: string }[] => [
+  ["Классы", classesText(a), classesText(b)],
+  ["Ступени", levelsOf(a).map(l => LEVEL_LABEL[l]).join(", "), levelsOf(b).map(l => LEVEL_LABEL[l]).join(", ")],
+  ["Предметы", a.subjects.join(", "), b.subjects.join(", ")],
+  ["Группы", a.groups.join(", "), b.groups.join(", ")],
+].filter(([, x, y]) => x !== y).map(([label, from, to]) => ({ label, from, to }));
+
+/** Все документы членства сотрудника в организации получают одно место работы. */
+async function writePlacement(t: string, uid: string, p: StaffPlacement) {
+  const list = await membershipsOf(db(), uid, t);
+  await Promise.all(list.map(m => db().collection("memberships").doc(m.id).update({ grades: p.grades, classes: p.classes, levels: p.levels, subjects: p.subjects, groups: p.groups })));
+}
+
+/** PUT /api/tenants/:id/staff/:uid/placement — классы, ступени, предметы, группы. Себе тоже можно. */
+router.put("/:id/staff/:uid/placement", requireFirebaseAuth, need("team:manage"), async (req: any, res: any) => {
+  try {
+    const { id: t, uid } = req.params;
+    const m = await memberOr404(t, uid, res);
+    if (!m) return;
+    const before = placementOf(m);
+    const next = sanitizePlacement(req.body?.placement);
+    await writePlacement(t, uid, next);
+    await dirRef(t).set(mergeDirectory(await staffDirectory(t), next), { merge: true });
+    const changes = placementRows(before, next);
+    if (changes.length) await writeAudit(db(), t, { actor: actorOf(req.user), action: "staff.placement", section: "staff", target: { kind: "member", id: uid, name: String(m.displayName || "") }, changes });
+    return res.json({ success: true, placement: next });
+  } catch (e: any) { console.error("[admin] placement", e); return fail(res, 500, "Не удалось сохранить"); }
+});
+
+/** POST /api/tenants/:id/staff-placement — пачкой: { uids, add, remove } (отметить или снять у нескольких). */
+router.post("/:id/staff-placement", requireFirebaseAuth, need("team:manage"), async (req: any, res: any) => {
+  try {
+    const t = req.params.id;
+    const uids = [...new Set((Array.isArray(req.body?.uids) ? req.body.uids : []).map(String))].slice(0, 300) as string[];
+    if (!uids.length) return fail(res, 400, "Выберите сотрудников");
+    const add = sanitizePlacement(req.body?.add); const remove = sanitizePlacement(req.body?.remove);
+    // Литеры в «убрать» не уводят параллель: снимаются только они.
+    remove.grades = (Array.isArray(req.body?.remove?.grades) ? req.body.remove.grades : []).map(Number).filter((g: number) => g >= 1 && g <= 11);
+    let done = 0;
+    for (const uid of uids) {
+      const list = await membershipsOf(db(), uid, t);
+      if (!list.length) continue;
+      const m = pickStrongest(list);
+      const before = placementOf(m);
+      const next = applyBulk(before, add, remove);
+      await writePlacement(t, uid, next);
+      const changes = placementRows(before, next);
+      if (changes.length) await writeAudit(db(), t, { actor: actorOf(req.user), action: "staff.placement", section: "staff", target: { kind: "member", id: uid, name: String(m.displayName || "") }, changes, detail: "Массовая отметка" });
+      done++;
+    }
+    await dirRef(t).set(mergeDirectory(await staffDirectory(t), add), { merge: true });
+    return res.json({ success: true, done });
+  } catch (e: any) { console.error("[admin] placement bulk", e); return fail(res, 500, "Не удалось сохранить"); }
+});
+
+/** Справочник предметов и групп организации. */
+router.get("/:id/staff-directory", requireFirebaseAuth, need("team:view", "team:manage"), async (req: any, res: any) => {
+  try { return res.json({ success: true, directory: await staffDirectory(req.params.id) }); }
+  catch (e: any) { console.error("[admin] directory", e); return fail(res, 500, "Не удалось загрузить"); }
+});
+router.put("/:id/staff-directory", requireFirebaseAuth, need("team:manage"), async (req: any, res: any) => {
+  try {
+    const t = req.params.id;
+    const next = sanitizeDirectory(req.body?.directory);
+    await dirRef(t).set(next);
+    await writeAudit(db(), t, { actor: actorOf(req.user), action: "staff.directory", section: "settings", target: { kind: "settings", id: "staffDirectory", name: "Предметы и группы" }, detail: `Предметов: ${next.subjects.length}, групп: ${next.groups.length}` });
+    return res.json({ success: true, directory: next });
+  } catch (e: any) { console.error("[admin] directory", e); return fail(res, 500, "Не удалось сохранить"); }
 });
 
 /** Цель действия + защита: себя нельзя, владельца — только владелец, шире своих прав — нельзя. */

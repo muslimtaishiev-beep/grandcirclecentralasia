@@ -9,6 +9,8 @@ import {
   type PermissionKey,
 } from "../../../shared/permissions";
 import EmployeeAccessModal from "./EmployeeAccessModal";
+import { PlacementFields } from "../admin/PlacementFields";
+import { EMPTY_PLACEMENT, type StaffDirectory, type StaffPlacement } from "../../../shared/staffPlacement";
 
 /**
  * Должности, права и модули организации — один экран вместо трёх.
@@ -23,7 +25,7 @@ import EmployeeAccessModal from "./EmployeeAccessModal";
  * подходил только школе.
  */
 
-type Role = { id: string; name: string; description?: string; permissions: PermissionKey[]; memberCount?: number };
+type Role = { id: string; name: string; description?: string; permissions: PermissionKey[]; memberCount?: number; teacher?: boolean };
 
 async function authHeaders() {
   const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
@@ -60,6 +62,16 @@ export default function RolesAndAccess({ view, onInviteClose, onInvited }: { vie
   const [inviting, setInvitingRaw] = useState(view === "invite");
   const setInviting = (v: boolean) => { setInvitingRaw(v); if (!v) onInviteClose?.(); };
   const [invite, setInvite] = useState({ fullName: "", email: "", customRoleId: "" });
+  /** Учительская должность — классы, предметы и группы прямо в приглашении. */
+  const [invitePlace, setInvitePlace] = useState<StaffPlacement>(EMPTY_PLACEMENT);
+  const [directory, setDirectory] = useState<StaffDirectory>({ subjects: [], groups: [] });
+  const inviteTeacher = !!roles.find(r => r.id === invite.customRoleId)?.teacher;
+  useEffect(() => {
+    if (!inviteTeacher || !tenantId) return;
+    void (async () => {
+      try { const r = await fetch(`/api/tenants/${tenantId}/staff-directory`, { headers: await authHeaders() }); const j = await r.json(); if (j.success) setDirectory(j.directory); } catch { /* подсказок не будет */ }
+    })();
+  }, [inviteTeacher, tenantId]);
   const [inviteMsg, setInviteMsg] = useState<{ ok: boolean; text: string; link?: string } | null>(null);
 
   const say = (msg: string) => { setNotice(msg); setTimeout(() => setNotice(null), 5000); };
@@ -95,7 +107,7 @@ export default function RolesAndAccess({ view, onInviteClose, onInvited }: { vie
         method: "POST", headers: await authHeaders(),
         body: JSON.stringify({
           roleId: role.id.startsWith("new_") ? undefined : role.id,
-          name: role.name, description: role.description, permissions: role.permissions,
+          name: role.name, description: role.description, permissions: role.permissions, teacher: !!role.teacher,
         }),
       });
       const j = await res.json();
@@ -154,6 +166,7 @@ export default function RolesAndAccess({ view, onInviteClose, onInvited }: { vie
           tenantName: tenant?.name || "Организация",
           tenantId,
           customRoleId: invite.customRoleId || null,
+          ...(inviteTeacher ? { placement: invitePlace } : {}),
         }),
       });
       const j = await res.json();
@@ -169,7 +182,7 @@ export default function RolesAndAccess({ view, onInviteClose, onInvited }: { vie
               : `Сотрудник добавлен, но письмо не ушло. ${j.emailError || ""}`.trim(),
         link: j.emailSent ? undefined : (j.inviteLink || undefined),
       });
-      setInvite({ fullName: "", email: "", customRoleId: "" });
+      setInvite({ fullName: "", email: "", customRoleId: "" }); setInvitePlace(EMPTY_PLACEMENT);
       void loadRoles();
       // Сообщение со ссылкой не прячем по таймеру: руководителю нужно успеть
       // её скопировать, иначе сотрудник не войдёт вовсе.
@@ -257,7 +270,7 @@ export default function RolesAndAccess({ view, onInviteClose, onInvited }: { vie
             <span className="text-xs text-[var(--text-muted)]">или из готовых:</span>
             {ROLE_PRESETS.map(p => (
               <button key={p.name}
-                onClick={() => setEditing({ id: `new_${Date.now()}`, name: p.name, description: p.description, permissions: [...p.permissions] })}
+                onClick={() => setEditing({ id: `new_${Date.now()}`, name: p.name, description: p.description, permissions: [...p.permissions], teacher: !!p.teacher })}
                 className="px-3 py-1.5 rounded-lg border border-[var(--border-color)] text-xs font-semibold hover:border-emerald-500/50">
                 {p.name}
               </button>
@@ -505,6 +518,7 @@ export default function RolesAndAccess({ view, onInviteClose, onInvited }: { vie
                 {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
             </div>
+            {inviteTeacher && <PlacementFields value={invitePlace} onChange={setInvitePlace} directory={directory} />}
 
             <div className="flex gap-2 pt-2 border-t border-[var(--border-color)]">
               <button onClick={() => setInviting(false)} disabled={busy}
@@ -537,6 +551,14 @@ export default function RolesAndAccess({ view, onInviteClose, onInvited }: { vie
             <input value={editing.description || ""} onChange={e => setEditing({ ...editing, description: e.target.value })}
               placeholder="Кратко: чем занимается"
               className="w-full px-3 py-2.5 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl text-sm" />
+
+            <label className="flex items-start gap-2.5 cursor-pointer rounded-xl border border-[var(--border-color)] p-3">
+              <input type="checkbox" className="mt-0.5" checked={!!editing.teacher} onChange={e => setEditing({ ...editing, teacher: e.target.checked })} />
+              <span className="min-w-0">
+                <span className="text-sm font-semibold">Учительская должность</span>
+                <span className="block text-[11px] text-[var(--text-muted)]">При назначении спрашиваются классы и предметы</span>
+              </span>
+            </label>
 
             {categories.map(cat => (
               <div key={cat} className="space-y-1.5">

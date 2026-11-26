@@ -21,6 +21,10 @@ export interface StaffRow {
   lastSeenAt: number | null;
   joinedAt: number | null;
   personalPermissions: number;
+  /** Где работает: классы, ступени, предметы, группы. */
+  placement: import("../../../shared/staffPlacement").StaffPlacement;
+  /** Учительская должность — классы нужно указать. */
+  teacher: boolean;
 }
 
 export interface AuditEventRow {

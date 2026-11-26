@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { sanitizePlacement } from "../shared/staffPlacement.js";
 import { hasFullAccess, isPermissionKey } from "../shared/permissions.js";
 import admin from "firebase-admin";
 import { sendStaffInviteEmail } from "../../emailService.js";
@@ -299,6 +300,8 @@ router.post("/send-employee-invite", requireFirebaseAuth, async (req: any, res: 
       // Права — ровно отмеченные галочками (проверены выше).
       membershipDoc.permissions = invitedPerms;
     }
+    // Где работает (классы, предметы, группы) — сразу при приглашении, если указали.
+    if (req.body?.placement) { const p = sanitizePlacement(req.body.placement); Object.assign(membershipDoc, { grades: p.grades, classes: p.classes, levels: p.levels, subjects: p.subjects, groups: p.groups }); }
     await db.collection("memberships").doc(membershipId).set(membershipDoc, { merge: true });
     await writeAudit(db, targetTenantId, { actor: actorOf(req.user), action: was ? "role.change" : "invite", section: was ? "access" : "staff", target: { kind: "member", id: uid, name: String(membershipDoc.displayName || "") }, detail: `${String(email || "")} · ${String(membershipDoc.role || "")}` });
 

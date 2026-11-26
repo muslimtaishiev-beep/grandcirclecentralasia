@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { sanitizePlacement } from "../shared/staffPlacement.js";
 import admin from "firebase-admin";
 import { randomBytes } from "crypto";
 import {
@@ -359,7 +360,9 @@ router.post("/:id/invite", requireFirebaseAuth, requireTeam, async (req: any, re
       const deniedExisting = await accessChangeDenied(db, req.user, tenantId, existing, hasFullAccess(assignedRole) ? [] : new Set([...roleGrant, ...wantedPerms]));
       if (deniedExisting) return res.status(403).json({ success: false, error: deniedExisting });
       const docId = existing.id;
+      const place = req.body?.placement ? sanitizePlacement(req.body.placement) : null;
       await db.collection("memberships").doc(docId).update({
+        ...(place ? { grades: place.grades, classes: place.classes, levels: place.levels, subjects: place.subjects, groups: place.groups } : {}),
         displayName: staffName,
         role: assignedRole,
         permissions: wantedPerms,
@@ -373,7 +376,10 @@ router.post("/:id/invite", requireFirebaseAuth, requireTeam, async (req: any, re
     }
 
     const membershipId = `mem_${targetUserId}_${tenantId}`;
+    // Где работает (классы, предметы, группы) — сразу при приглашении, если указали.
+    const place = req.body?.placement ? sanitizePlacement(req.body.placement) : null;
     await db.collection("memberships").doc(membershipId).set({
+      ...(place ? { grades: place.grades, classes: place.classes, levels: place.levels, subjects: place.subjects, groups: place.groups } : {}),
       id: membershipId,
       userId: targetUserId,
       tenantId: tenantId,
@@ -612,7 +618,7 @@ router.post("/:id/roles", requireFirebaseAuth, requireTeam, requireScreen("permi
   try {
     const db = admin.firestore();
     const tenantId = req.params.id;
-    const { roleId, name, description, permissions } = req.body || {};
+    const { roleId, name, description, permissions, teacher } = req.body || {};
     const cleanName = String(name || "").trim().slice(0, 40);
     if (!cleanName) return res.status(400).json({ success: false, error: "Укажите название должности" });
     // Название должности не может совпадать с системной ролью: иначе строка
@@ -652,6 +658,8 @@ router.post("/:id/roles", requireFirebaseAuth, requireTeam, requireScreen("permi
       id, tenantId, name: cleanName,
       description: String(description || "").trim().slice(0, 200),
       permissions: wanted,
+      // Учительская должность: при назначении спрашиваются классы и предметы.
+      teacher: teacher === true,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedBy: req.user?.email || req.user?.uid || "",
       ...(roleId ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),

@@ -9,9 +9,13 @@ import ActionMenu from "./ActionMenu";
 import { STATUS_LABEL, STATUS_STYLE, apiCall, errText, fmtDate, post, useAdminCtx, type AuditEventRow, type StaffStatus } from "./api";
 import { runStaffAction, staffMenu, type StaffActionKind } from "./staffActions";
 import { AuditList } from "./AuditPage";
+import { PlacementModal, placementLine } from "./PlacementFields";
+import { put } from "./api";
+import type { StaffDirectory, StaffPlacement } from "../../../shared/staffPlacement";
 
 interface Card {
-  staff: { uid: string; name: string; email: string; role: string; roleName: string; systemRole: "owner" | "admin" | null; status: StaffStatus; lastSeenAt: number | null; joinedAt: number | null; isSelf: boolean };
+  staff: { uid: string; name: string; email: string; role: string; roleName: string; systemRole: "owner" | "admin" | null; status: StaffStatus; lastSeenAt: number | null; joinedAt: number | null; isSelf: boolean; placement: StaffPlacement; teacher: boolean };
+  directory: StaffDirectory;
   access: { full: boolean; role: { id: string; name: string } | null; permissions: { key: string; label: string; granted: boolean; via: string[]; moduleOff: boolean }[] };
   member: any;
   activity: AuditEventRow[];
@@ -29,7 +33,8 @@ export default function StaffCard() {
   const [tab, setTab] = useUrlTab<Tab>("tab", TABS, "access");
   const [card, setCard] = useState<Card | null>(null);
   const [error, setError] = useState("");
-  const [roles, setRoles] = useState<{ id: string; name: string; permissions: PermissionKey[] }[]>([]);
+  const [roles, setRoles] = useState<{ id: string; name: string; permissions: PermissionKey[]; teacher?: boolean }[]>([]);
+  const [placing, setPlacing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -53,7 +58,14 @@ export default function StaffCard() {
       await post(`/api/tenants/${tenantId}/members/${card.member.id}/role`, patch);
       toast.success("Доступ сохранён");
       setEditing(false); await load();
+      // Учительская должность — сразу спросить классы, если их ещё нет.
+      if (patch.customRoleId && roles.find(r => r.id === patch.customRoleId)?.teacher && !card.staff.placement.grades.length) setPlacing(true);
     } catch (e) { toast.error(errText(e)); } finally { setBusy(false); }
+  };
+
+  const savePlacement = async (placement: StaffPlacement) => {
+    try { await put(`/api/tenants/${tenantId}/staff/${encodeURIComponent(uid)}/placement`, { placement }); toast.success("Сохранено"); setPlacing(false); await load(); }
+    catch (e) { toast.error(errText(e)); }
   };
 
   if (error) return <EmptyState title={error} action={<Link to={`${base}/admin/staff`} className="text-sm text-[var(--accent)]">К списку</Link>} />;
@@ -77,6 +89,11 @@ export default function StaffCard() {
         <span>{s.roleName}</span>
         <span>Последний вход: {fmtDate(s.lastSeenAt)}</span>
         <span>В организации с {fmtDate(s.joinedAt)}</span>
+      </div>
+      <div className={`mb-4 flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-sm ${s.teacher && !s.placement.grades.length ? "border-amber-500/40 bg-amber-500/10" : "border-[var(--border-color)]"}`}>
+        <span className="text-[var(--text-muted)]">Где работает:</span>
+        <span className="text-[var(--text-main)]">{placementLine(s.placement) || (s.teacher ? "не указаны классы" : "—")}</span>
+        {card.canManage && <button type="button" className="ml-auto text-sm text-[var(--accent)] hover:underline" onClick={() => setPlacing(true)}>Изменить</button>}
       </div>
 
       {tab === "access" && (
@@ -114,6 +131,7 @@ export default function StaffCard() {
         </Table>
       ))}
 
+      {placing && <PlacementModal title={`Где работает · ${s.name || s.email}`} value={s.placement} directory={card.directory} onClose={() => setPlacing(false)} onSave={savePlacement} />}
       {editing && card.member && (
         <EmployeeAccessModal member={card.member} roles={roles} tenant={tenant} busy={busy}
           onClose={() => !busy && setEditing(false)} onSave={saveAccess} />
