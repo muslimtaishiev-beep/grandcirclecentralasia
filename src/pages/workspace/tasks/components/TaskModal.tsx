@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Archive, ArchiveRestore, Plus, Send, Trash2, X } from 'lucide-react';
+import { Archive, ArchiveRestore, Plus, Send, Trash2, Upload, X } from 'lucide-react';
 import { Modal, btn, btnPrimary, input, label, toast, confirmDialog } from '../../../../components/ui';
 import { WorkspaceTask, TaskComment, TaskPriority, TaskStatus } from '../../../../types/tasks';
 import { taskService, TaskMember } from '../../../../services/taskService';
@@ -57,6 +57,11 @@ export default function TaskModal({ task, members, nameOf, isAdmin, onClose }: P
         <div className="flex-1 min-w-0 space-y-5">
           <input id="task-title" className={`${input} text-lg font-bold`} value={title} onChange={e => setTitle(e.target.value)}
             onBlur={() => { if (title.trim() && title.trim() !== task.title) patch({ title: title.trim() }); else setTitle(task.title); }} />
+          {task.requestId && (
+            <a href={`/workspace/${tid}/files?tab=requests&r=${encodeURIComponent(task.requestId)}`} className={`${btnPrimary} w-full justify-center`}>
+              <Upload className="w-4 h-4" /> Загрузить документы
+            </a>
+          )}
           <div>
             <label className={label}>Описание</label>
             <textarea id="task-desc" className={`${input} resize-none`} rows={4} value={description} onChange={e => setDescription(e.target.value)}

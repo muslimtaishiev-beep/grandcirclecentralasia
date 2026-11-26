@@ -1,5 +1,6 @@
 import { apiCall, del, post, put } from "../../../lib/eduApi";
-import type { Audience, FolderAccess, FolderRights } from "../../../shared/schoolDocs";
+import type { Audience, DocRequest, FolderAccess, FolderRights, RequestStats, Submission, SubmitStatus } from "../../../shared/schoolDocs";
+import type { StaffPlacement } from "../../../shared/staffPlacement";
 import type { DocsStaff } from "./AudiencePicker";
 
 /** /api/school-docs/<организация> */
@@ -16,6 +17,12 @@ export const docsApi = (t: string) => ({
   deleteFile: (id: string) => del(`/api/school-docs/${t}/files/${id}`),
   uploadUrl: (body: { folderId?: string; requestId?: string; itemId?: string; name: string; size: number }) => post<{ id: string; uploadUrl: string; contentType: string }>(body.requestId ? `/api/school-docs/${t}/requests/${body.requestId}/upload-url` : `/api/school-docs/${t}/upload-url`, body),
   finalize: (id: string) => post<{ file: FileRow }>(`/api/school-docs/${t}/files/${id}/finalize`),
+  requests: () => apiCall<{ manage: RequestRow[]; mine: RequestRow[] }>(`/api/school-docs/${t}/requests`),
+  request: (id: string) => apiCall<RequestDetail>(`/api/school-docs/${t}/requests/${id}`),
+  createRequest: (body: object) => post<{ id: string; recipients: number }>(`/api/school-docs/${t}/requests`, body),
+  updateRequest: (id: string, body: object) => put<{ added: number; dropped: number }>(`/api/school-docs/${t}/requests/${id}`, body),
+  remind: (id: string) => post<{ sent: number; left: number }>(`/api/school-docs/${t}/requests/${id}/remind`),
+  review: (id: string, uid: string, status: "accepted" | "returned", comment = "") => post(`/api/school-docs/${t}/requests/${id}/review`, { uid, status, comment }),
 });
 export type DocsApi = ReturnType<typeof docsApi>;
 
@@ -41,4 +48,23 @@ export async function uploadOne(api: DocsApi, file: File, target: { folderId?: s
   const u = await api.uploadUrl({ ...target, name: file.name, size: file.size });
   await putFile(u.uploadUrl, file, u.contentType, onProgress);
   return (await api.finalize(u.id)).file;
+}
+
+export type RequestRow = Pick<DocRequest, "id" | "folderId" | "title" | "note" | "dueAt" | "status" | "items" | "lateOk" | "review" | "notifyMode" | "remind" | "audience" | "createdBy" | "createdAt" | "sampleFileIds"> & {
+  recipients: number;
+  stats?: { total: number; done: number; late: number; partial: number; none: number; returned: number };
+  my?: { status: SubmitStatus; files: number; review: Submission["review"] };
+};
+export interface RecipientRow {
+  uid: string; name: string; positionName: string; placement: StaffPlacement | null; active: boolean; status: SubmitStatus; statusText: string;
+  files: Submission["files"]; at: number | null; late: boolean; review: Submission["review"]; items: { id: string; label: string }[];
+}
+export interface RequestDetail {
+  request: RequestRow & { folderName: string };
+  samples: FileRow[];
+  manage: boolean;
+  my: { items: { id: string; label: string }[]; submission: Submission | null; status: SubmitStatus; canUpload: boolean } | null;
+  rows?: RecipientRow[];
+  stats?: RequestStats;
+  audienceText?: string;
 }

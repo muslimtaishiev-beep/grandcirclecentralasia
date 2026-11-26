@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
-import { ChevronRight, Download, ExternalLink, File, FileImage, FileSpreadsheet, FileText, Folder, FolderOpen, FolderPlus, Pencil, RotateCcw, Shield, Trash2, Upload } from "lucide-react";
+import { ChevronRight, ClipboardCheck, Download, ExternalLink, File, FileImage, FileSpreadsheet, FileText, Folder, FolderOpen, FolderPlus, Pencil, RotateCcw, Shield, Trash2, Upload } from "lucide-react";
 import { Button, EmptyState, Modal, PageHeader, Spinner, Tabs, confirmDialog, input, toast, useUrlTab } from "../../../components/ui";
 import { fmtSize, type FolderAccess } from "../../../shared/schoolDocs";
 import { docsApi, uploadOne, type FileRow, type FolderRow } from "./docsApi";
@@ -122,6 +122,7 @@ export default function SchoolDocsPage() {
               </nav>
               {canCreate && <Button size="sm" icon={<FolderPlus className="h-4 w-4" />} onClick={createFolder}>Папка</Button>}
               {folder?.rights.upload && <Button size="sm" variant="primary" icon={<Upload className="h-4 w-4" />} onClick={() => pick.current?.click()}>Загрузить</Button>}
+              {folder?.rights.manage && <Button size="sm" icon={<ClipboardCheck className="h-4 w-4" />} onClick={() => { const p = new URLSearchParams(params); p.set("tab", "requests"); p.set("new", "1"); setParams(p); }}>Собрать документы</Button>}
               {folder?.rights.manage && <Button size="sm" icon={<Shield className="h-4 w-4" />} onClick={() => setAccess(folder)}>Доступ</Button>}
               {folder?.rights.manage && <Button size="sm" variant="ghost" aria-label="Переименовать" icon={<Pencil className="h-4 w-4" />} onClick={() => renameFolder(folder)} />}
               {folder?.rights.manage && <Button size="sm" variant="ghost" aria-label="В корзину" icon={<Trash2 className="h-4 w-4 text-rose-600" />} onClick={() => void deleteFolder(folder)} />}

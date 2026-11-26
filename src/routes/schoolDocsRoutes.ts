@@ -6,7 +6,13 @@ import { hasPerm, staffCaller } from "../server/access.js";
 import { actorOf, writeAudit } from "../server/audit.js";
 import { requireScreen } from "../server/tenantAccess.js";
 import { bucket, ensureBucketCors } from "../server/storage.js";
+import { deliver } from "../server/notify.js";
+import { cancelJob, registerJobHandler, scheduleJob } from "../server/scheduler.js";
+import { appUrl } from "../server/emailEvents.js";
+import { orgTimeZone } from "../server/orgTime.js";
 import {
+  MAX_RECIPIENTS, STATUS_TEXT, audienceEmpty, audienceMembers, describeAudience, isComplete, itemsFor, requestStats, sanitizeRequestInput, shortName, submitStatus,
+  type DocRequest, type Submission,
   CHILD_ACCESS, FILE_TYPES, ROOT_ACCESS, TENANT_QUOTA, cleanFileName, extOf, fileProblem, folderPath, folderRights, fmtSize,
   sanitizeAccess, staffLite, type DocFile, type DocFolder, type FolderRights, type StaffLite,
 } from "../shared/schoolDocs.js";
@@ -271,7 +277,9 @@ router.post("/:t/files/:id/finalize", ...guard, async (req: any, res: any) => {
     const r = await finishUpload(x.t, x.c, String(req.params.id));
     if (r.error) return fail(res, r.status || 400, r.error);
     await audit(req, x.t, "docs.upload", { kind: "file", id: r.file!.id, name: r.file!.name }, fmtSize(r.file!.size));
-    return res.json({ success: true, file: fileView(r.file!) });
+    // Файл по сбору — отметка в сдаче, задача, уведомление завучу.
+    const sub = r.file!.requestId ? await afterSubmitChange(x.t, r.file!.requestId, x.c.uid, x.staff) : null;
+    return res.json({ success: true, file: fileView(r.file!), ...(sub ? { submission: sub } : {}) });
   } catch (e) { return oops(res, e); }
 });
 
@@ -334,9 +342,348 @@ router.delete("/:t/files/:id", ...guard, async (req: any, res: any) => {
     const o = await fileFor(x, String(req.params.id));
     if (!o || !o.see || o.f.deletedAt) return fail(res, 404, "Файл не найден");
     if (!o.edit) return fail(res, 403, "Удалять можно свои файлы");
+    if (o.f.requestId && o.f.uploadedBy.uid === x.c.uid) {
+      const sub = (await reqRef(x.t, o.f.requestId).collection("submissions").doc(x.c.uid).get()).data() as Submission | undefined;
+      if (sub?.review?.status === "accepted") return fail(res, 409, "Документы уже приняты — удалить нельзя");
+    }
     await col(x.t, "doc_files").doc(o.f.id).update({ deletedAt: Date.now(), deletedBy: { uid: x.c.uid, name: x.c.name } });
     await audit(req, x.t, "docs.file", { kind: "file", id: o.f.id, name: o.f.name }, "В корзину");
+    if (o.f.requestId) await afterSubmitChange(x.t, o.f.requestId, o.f.uploadedBy.uid, x.staff);
     return res.json({ success: true });
+  } catch (e) { return oops(res, e); }
+});
+
+
+// ── Сборы документов ────────────────────────────────────────────────────
+
+const reqRef = (t: string, id: string) => col(t, "doc_requests").doc(id);
+const reqUrl = async (t: string, id: string) => `/workspace/${t}/files?tab=requests&r=${encodeURIComponent(id)}`;
+async function loadRequest(t: string, id: string): Promise<DocRequest | null> {
+  if (!ID.test(id)) return null;
+  const s = await reqRef(t, id).get();
+  return s.exists ? ({ ...(s.data() as DocRequest), id: s.id }) : null;
+}
+async function loadSubs(t: string, id: string): Promise<Record<string, Submission>> {
+  const s = await reqRef(t, id).collection("submissions").get();
+  return Object.fromEntries(s.docs.map(d => [d.id, d.data() as Submission]));
+}
+/** Управляет сбором: автор, право «Управление документами» или управляющий папкой. */
+async function canManageRequest(t: string, r: DocRequest, c: DocsCaller): Promise<boolean> {
+  if (c.manageAll || c.me.full || r.createdBy.uid === c.uid) return true;
+  const byId = await loadFolders(t);
+  const f = byId.get(r.folderId);
+  return !!f && rightsIn(f, byId, c).manage;
+}
+const dueText = async (t: string, ms: number) => new Intl.DateTimeFormat("ru-RU", { timeZone: await orgTimeZone(t), day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(ms));
+const dueDay = async (t: string, ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: await orgTimeZone(t), year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
+
+/** Задача в трекере каждому адресату — от сервера, со ссылкой на сбор. */
+async function createTask(t: string, r: DocRequest, uid: string): Promise<string> {
+  const ref = col(t, "workspace_tasks").doc(`docreq_${r.id}_${uid}`.slice(0, 1400));
+  const now = Date.now();
+  await ref.set({
+    id: ref.id, tenantId: t, title: `Сдать: ${r.title}`, description: [r.note, `Загрузить документы: ${await appUrl()}${await reqUrl(t, r.id)}`].filter(Boolean).join("\n\n"),
+    status: "todo", priority: "medium", creatorStaffId: r.createdBy.uid, assigneeStaffIds: [uid], subtasks: [], commentsCount: 0,
+    dueDate: await dueDay(t, r.dueAt), tags: ["doc-request"], requestId: r.id, createdAt: now, updatedAt: now,
+  });
+  return ref.id;
+}
+const taskStatus = (t: string, taskId: string | null | undefined, status: string) => taskId ? col(t, "workspace_tasks").doc(taskId).update({ status, updatedAt: Date.now() }).catch(() => {}) : Promise.resolve();
+
+/** Напоминания и срок — задачи будильника; продление срока их переставляет. */
+async function scheduleRequestJobs(t: string, r: DocRequest, by: { uid: string; name: string }) {
+  const now = Date.now();
+  for (const h of [0, 1, 2, 3, 6, 12, 24, 48, 72, 96, 120, 168, 336]) await cancelJob(t, `docreq:${r.id}:remind:${h}`).catch(() => false);
+  if (r.status !== "open") { await cancelJob(t, `docreq:${r.id}:due`).catch(() => false); return; }
+  for (const h of r.remind) {
+    const at = r.dueAt - h * 3600_000 - (h === 0 ? 3 * 3600_000 : 0); // «в день срока» — за 3 часа
+    if (at > now + 60_000) await scheduleJob({ tenantId: t, kind: "docs_remind", key: `docreq:${r.id}:remind:${h}`, runAt: at, payload: { requestId: r.id }, by });
+  }
+  if (r.dueAt > now) await scheduleJob({ tenantId: t, kind: "docs_due", key: `docreq:${r.id}:due`, runAt: r.dueAt, payload: { requestId: r.id }, by });
+}
+
+/** Новые адресаты: сдача-заготовка, задача, уведомление. */
+async function addRecipients(t: string, r: DocRequest, people: { uid: string; name: string }[], fromName: string) {
+  for (const p of people) {
+    const ref = reqRef(t, r.id).collection("submissions").doc(p.uid);
+    if ((await ref.get()).exists) continue;
+    const taskId = await createTask(t, r, p.uid).catch(() => null);
+    const sub: Submission = { uid: p.uid, name: p.name, files: [], complete: false, at: null, late: false, review: null, taskId };
+    await ref.set(sub);
+  }
+  if (people.length) await deliver({
+    tenantId: t, event: "docs.request", uids: people.map(p => p.uid), type: "docs",
+    title: `${fromName} просит сдать: ${r.title}`, body: `Срок — ${await dueText(t, r.dueAt)}`,
+    url: await reqUrl(t, r.id), docId: u => `docreq_${r.id}_${u}`,
+  }).catch(e => console.warn("[docs] notify", e?.message));
+}
+
+/**
+ * Сдача изменилась (файл загружен или удалён): пересчитать «сдано», отметку
+ * опоздания, задачу в трекере; завучу — уведомление по его настройке.
+ */
+async function afterSubmitChange(t: string, requestId: string, uid: string, staff: StaffLite[]): Promise<Submission | null> {
+  const r = await loadRequest(t, requestId);
+  if (!r) return null;
+  const ref = reqRef(t, r.id).collection("submissions").doc(uid);
+  const prev = (await ref.get()).data() as Submission | undefined;
+  if (!prev) return null;
+  const files = (await col(t, "doc_files").where("requestId", "==", r.id).get()).docs.map(d => ({ ...(d.data() as DocFile), id: d.id }))
+    .filter(f => f.uploadedBy.uid === uid && f.status === "ready" && !f.deletedAt).sort((a, b) => a.at - b.at)
+    .map(f => ({ id: f.id, name: f.name, itemId: f.itemId || null, at: f.at, size: f.size }));
+  const me = staff.find(s => s.uid === uid) || null;
+  const complete = isComplete(r.items, itemsFor(r.items, me?.placement || null), files);
+  const at = complete ? (prev.complete && prev.at ? prev.at : Date.now()) : null;
+  // Проверка: принятое не трогаем; сдал полностью (впервые или после доработки) — ждёт проверки.
+  let review: Submission["review"] = null;
+  if (r.review) {
+    if (prev.review?.status === "accepted") review = prev.review;
+    else if (complete && !prev.complete) review = { status: "pending", comment: prev.review?.comment || "", by: "", at: Date.now() };
+    else if (complete) review = prev.review;
+    else review = prev.review?.status === "returned" ? prev.review : null;
+  }
+  const next: Submission = { ...prev, files, complete, at, late: !!at && at > r.dueAt, review };
+  await ref.set(JSON.parse(JSON.stringify(next)));
+  await taskStatus(t, prev.taskId, complete ? (r.review && review?.status !== "accepted" ? "review" : "done") : files.length ? "in_progress" : "todo");
+  if (complete && !prev.complete) {
+    if (r.notifyMode === "each") await deliver({
+      tenantId: t, event: "docs.submitted", uids: [r.createdBy.uid], type: "docs",
+      title: `${prev.name} сдал(а): ${r.title}`, body: `${files.length} ${files.length === 1 ? "файл" : "файлов"}${next.late ? " · с опозданием" : ""}`,
+      url: await reqUrl(t, r.id), docId: u => `docsub_${r.id}_${uid}_${u}`,
+    }).catch(() => {});
+    else if (r.notifyMode === "digest") await scheduleJob({ tenantId: t, kind: "docs_digest", key: `docreq:${r.id}:digest`, runAt: Math.max(Date.now() + 60_000, (r.lastDigestAt || 0) + 3600_000), payload: { requestId: r.id }, by: r.createdBy }).catch(() => {});
+  }
+  return next;
+}
+
+// Будильник: напоминания не сдавшим, итог по сроку, сводка сдач завучу.
+registerJobHandler("docs_remind", async job => {
+  const t = job.tenantId; const r = await loadRequest(t, String(job.payload?.requestId || ""));
+  if (!r || r.status !== "open") return "Сбор закрыт";
+  const subs = await loadSubs(t, r.id);
+  const left = r.recipients.filter(x => !subs[x.uid]?.complete).map(x => x.uid);
+  if (!left.length) return "Все сдали";
+  await deliver({ tenantId: t, event: "docs.remind", uids: left, type: "docs", title: `Напоминание: ${r.title}`, body: `Срок — ${await dueText(t, r.dueAt)}`, url: await reqUrl(t, r.id), docId: u => `docreq_${r.id}_${u}` });
+  return `Напомнили: ${left.length}`;
+});
+registerJobHandler("docs_due", async job => {
+  const t = job.tenantId; const r = await loadRequest(t, String(job.payload?.requestId || ""));
+  if (!r || r.status !== "open") return "Сбор закрыт";
+  const subs = await loadSubs(t, r.id);
+  const left = r.recipients.filter(x => !subs[x.uid]?.complete);
+  await deliver({
+    tenantId: t, event: "docs.due", uids: [r.createdBy.uid], type: "docs",
+    title: `Срок прошёл: ${r.title}`, body: left.length ? `Не сдали ${left.length} из ${r.recipients.length}: ${left.slice(0, 8).map(x => x.name).join(", ")}${left.length > 8 ? "…" : ""}` : `Сдали все ${r.recipients.length}`,
+    url: await reqUrl(t, r.id), docId: u => `docdue_${r.id}_${u}`,
+  });
+  return `Не сдали: ${left.length}`;
+});
+registerJobHandler("docs_digest", async job => {
+  const t = job.tenantId; const r = await loadRequest(t, String(job.payload?.requestId || ""));
+  if (!r) return "Нет сбора";
+  const subs = await loadSubs(t, r.id);
+  const fresh = Object.values(subs).filter(s => s.complete && s.at && s.at > (r.lastDigestAt || 0));
+  await reqRef(t, r.id).update({ lastDigestAt: Date.now() });
+  if (!fresh.length) return "Новых сдач нет";
+  const done = Object.values(subs).filter(s => s.complete).length;
+  await deliver({
+    tenantId: t, event: "docs.submitted", uids: [r.createdBy.uid], type: "docs",
+    title: `Сдали: ${r.title} — ${done} из ${r.recipients.length}`, body: fresh.map(s => s.name).slice(0, 10).join(", ") + (fresh.length > 10 ? "…" : ""),
+    url: await reqUrl(t, r.id), docId: u => `docsub_${r.id}_${u}`,
+  });
+  return `Сводка: ${fresh.length}`;
+});
+
+const requestView = (r: DocRequest) => ({ id: r.id, folderId: r.folderId, title: r.title, note: r.note, dueAt: r.dueAt, status: r.status, items: r.items, lateOk: r.lateOk, review: r.review, notifyMode: r.notifyMode, remind: r.remind, audience: r.audience, createdBy: r.createdBy, createdAt: r.createdAt, sampleFileIds: r.sampleFileIds, recipients: r.recipients.length });
+
+/** Сборы: которыми управляю (со сводкой) и где я адресат (мой статус). */
+router.get("/:t/requests", ...guard, async (req: any, res: any) => {
+  try {
+    const x = await callerOf(req, res); if (!x) return;
+    const all = (await col(x.t, "doc_requests").get()).docs.map(d => ({ ...(d.data() as DocRequest), id: d.id })).sort((a, b) => b.createdAt - a.createdAt);
+    const manage: any[] = []; const mine: any[] = [];
+    for (const r of all) {
+      if (await canManageRequest(x.t, r, x.c)) {
+        const subs = await loadSubs(x.t, r.id);
+        const st = requestStats(r, subs, x.staff);
+        manage.push({ ...requestView(r), stats: { total: st.total, done: st.done + st.late + st.accepted, late: st.late, partial: st.partial, none: st.none, returned: st.returned } });
+      }
+      if (r.recipients.some(p => p.uid === x.c.uid)) {
+        const s = (await reqRef(x.t, r.id).collection("submissions").doc(x.c.uid).get()).data() as Submission | undefined;
+        mine.push({ ...requestView(r), my: { status: submitStatus(r, s), files: s?.files.length || 0, review: s?.review || null } });
+      }
+    }
+    return res.json({ success: true, manage, mine });
+  } catch (e) { return oops(res, e); }
+});
+
+/** Объявить сбор: адресаты по признакам, задача каждому, уведомления, будильник. */
+router.post("/:t/requests", ...guard, async (req: any, res: any) => {
+  try {
+    const x = await callerOf(req, res); if (!x) return;
+    const byId = await loadFolders(x.t);
+    const folder = byId.get(String(req.body?.folderId || ""));
+    if (!folder || inTrash(folder, byId)) return fail(res, 404, "Папка не найдена");
+    if (!rightsIn(folder, byId, x.c).manage) return fail(res, 403, "Собирать документы в эту папку может тот, кто ею управляет");
+    const inp = sanitizeRequestInput(req.body);
+    if (!inp.title) return fail(res, 400, "Напишите, что сдать");
+    if (!inp.dueAt || inp.dueAt < Date.now() + 10 * 60_000) return fail(res, 400, "Укажите срок в будущем");
+    if (audienceEmpty(inp.audience)) return fail(res, 400, "Выберите, кому сдавать");
+    const people = audienceMembers(inp.audience, x.staff).filter(s => s.uid !== x.c.uid).map(s => ({ uid: s.uid, name: s.name }));
+    if (!people.length) return fail(res, 400, "Под выбранные признаки никто не подходит");
+    if (people.length > MAX_RECIPIENTS) return fail(res, 400, `Слишком много адресатов (${people.length}) — не больше ${MAX_RECIPIENTS}`);
+    const files = inp.sampleFileIds.length ? (await Promise.all(inp.sampleFileIds.map(id => col(x.t, "doc_files").doc(id).get()))).filter(s => s.exists && s.data()?.folderId === folder.id).map(s => s.id) : [];
+    const id = newId("dr"); const now = Date.now();
+    const r: DocRequest = { id, folderId: folder.id, ...inp, sampleFileIds: files, recipients: people, status: "open", createdBy: { uid: x.c.uid, name: x.c.name }, createdAt: now, updatedAt: now };
+    await reqRef(x.t, id).set(JSON.parse(JSON.stringify(r)));
+    await addRecipients(x.t, r, people, x.c.name);
+    await scheduleRequestJobs(x.t, r, { uid: x.c.uid, name: x.c.name });
+    await audit(req, x.t, "docs.request", { kind: "request", id, name: r.title }, `Адресатов: ${people.length}, срок ${await dueText(x.t, r.dueAt)}`);
+    return res.json({ success: true, id, recipients: people.length });
+  } catch (e) { return oops(res, e); }
+});
+
+/** Сбор: управляющему — все адресаты и сводка; адресату — его пункты, файлы и образцы. */
+router.get("/:t/requests/:id", ...guard, async (req: any, res: any) => {
+  try {
+    const x = await callerOf(req, res); if (!x) return;
+    const r = await loadRequest(x.t, String(req.params.id));
+    if (!r) return fail(res, 404, "Сбор не найден");
+    const manage = await canManageRequest(x.t, r, x.c);
+    const isRecipient = r.recipients.some(p => p.uid === x.c.uid);
+    if (!manage && !isRecipient) return fail(res, 403, "Этот сбор не для вас");
+    const samples = r.sampleFileIds.length ? (await Promise.all(r.sampleFileIds.map(id => col(x.t, "doc_files").doc(id).get()))).filter(s => s.exists && !s.data()?.deletedAt).map(s => fileView({ ...(s.data() as DocFile), id: s.id })) : [];
+    const folderName = (await col(x.t, "doc_folders").doc(r.folderId).get()).data()?.name || "";
+    const base = { request: { ...requestView(r), folderName }, samples, manage };
+    const mineItems = itemsFor(r.items, x.c.me.placement);
+    const mySub = isRecipient ? ((await reqRef(x.t, r.id).collection("submissions").doc(x.c.uid).get()).data() as Submission | undefined) || null : null;
+    const my = isRecipient ? { items: mineItems, submission: mySub, status: submitStatus(r, mySub), canUpload: r.status === "open" && (r.lateOk || Date.now() <= r.dueAt) && mySub?.review?.status !== "accepted" } : null;
+    if (!manage) return res.json({ success: true, ...base, my });
+    const subs = await loadSubs(x.t, r.id);
+    const byUid = new Map(x.staff.map(s => [s.uid, s]));
+    const positions = Object.fromEntries((await db().collection("custom_roles").where("tenantId", "==", x.t).get()).docs.map(d => [d.id, String(d.data().name || "")]));
+    const rows = r.recipients.map(p => {
+      const s = subs[p.uid] || null; const st = byUid.get(p.uid);
+      return { uid: p.uid, name: p.name, positionName: st?.positionName || "", placement: st?.placement || null, active: !!st, status: submitStatus(r, s), statusText: STATUS_TEXT[submitStatus(r, s)], files: s?.files || [], at: s?.at || null, late: !!s?.late, review: s?.review || null, items: itemsFor(r.items, st?.placement || null) };
+    });
+    return res.json({ success: true, ...base, my, rows, stats: requestStats(r, subs, x.staff, positions), audienceText: describeAudience(r.audience, { positions, people: Object.fromEntries(x.staff.map(s => [s.uid, s.name])) }) });
+  } catch (e) { return oops(res, e); }
+});
+
+/** Изменить сбор: срок, текст, добавить людей; закрыть или открыть снова; пересобрать адресатов. */
+router.put("/:t/requests/:id", ...guard, async (req: any, res: any) => {
+  try {
+    const x = await callerOf(req, res); if (!x) return;
+    const r = await loadRequest(x.t, String(req.params.id));
+    if (!r) return fail(res, 404, "Сбор не найден");
+    if (!(await canManageRequest(x.t, r, x.c))) return fail(res, 403, "Сбором управляет его автор или завуч");
+    const b = req.body || {};
+    const patch: Partial<DocRequest> = { updatedAt: Date.now() };
+    const changes: string[] = [];
+    if (b.title !== undefined) { const v = String(b.title).trim().slice(0, 120); if (!v) return fail(res, 400, "Напишите, что сдать"); patch.title = v; }
+    if (b.note !== undefined) patch.note = String(b.note).replace(/\r/g, "").trim().slice(0, 2000);
+    if (b.dueAt !== undefined) {
+      const d = Math.floor(Number(b.dueAt));
+      if (!Number.isFinite(d) || d < Date.now()) return fail(res, 400, "Новый срок — в будущем");
+      patch.dueAt = d; changes.push(`срок → ${await dueText(x.t, d)}`);
+    }
+    if (b.status === "closed" || b.status === "open") { patch.status = b.status; changes.push(b.status === "closed" ? "закрыт" : "открыт снова"); }
+    let added: { uid: string; name: string }[] = []; let dropped = 0;
+    if (b.add || b.rebuild) {
+      const want = b.rebuild ? audienceMembers(r.audience, x.staff).filter(s => s.uid !== r.createdBy.uid) : x.staff.filter(s => (Array.isArray(b.add) ? b.add.map(String) : []).includes(s.uid));
+      added = want.filter(s => !r.recipients.some(p => p.uid === s.uid)).map(s => ({ uid: s.uid, name: s.name }));
+      let recipients = [...r.recipients, ...added];
+      if (b.rebuild) {
+        // Ушедшие из организации и не сдававшие — выпадают; сдавшие остаются в отчёте.
+        const subs = await loadSubs(x.t, r.id);
+        const live = new Set(x.staff.map(s => s.uid));
+        const keep = recipients.filter(p => live.has(p.uid) || (subs[p.uid]?.files.length || 0) > 0);
+        dropped = recipients.length - keep.length; recipients = keep;
+      }
+      if (recipients.length > MAX_RECIPIENTS) return fail(res, 400, `Не больше ${MAX_RECIPIENTS} адресатов`);
+      patch.recipients = recipients;
+      if (added.length) changes.push(`добавлено ${added.length}`); if (dropped) changes.push(`убрано ${dropped}`);
+    }
+    await reqRef(x.t, r.id).update(JSON.parse(JSON.stringify(patch)));
+    const next = { ...r, ...patch } as DocRequest;
+    if (added.length) await addRecipients(x.t, next, added, x.c.name);
+    if (patch.dueAt !== undefined || patch.status !== undefined) {
+      await scheduleRequestJobs(x.t, next, { uid: x.c.uid, name: x.c.name });
+      if (patch.dueAt !== undefined) { const day = await dueDay(x.t, next.dueAt); const subs = await loadSubs(x.t, r.id); await Promise.all(Object.values(subs).map(s => s.taskId ? col(x.t, "workspace_tasks").doc(s.taskId).update({ dueDate: day }).catch(() => {}) : null)); }
+    }
+    if (changes.length || patch.title) await audit(req, x.t, "docs.request", { kind: "request", id: r.id, name: next.title }, changes.join(", ") || "изменён");
+    return res.json({ success: true, added: added.length, dropped });
+  } catch (e) { return oops(res, e); }
+});
+
+/** Напомнить вручную всем, кто ещё не сдал. */
+router.post("/:t/requests/:id/remind", ...guard, async (req: any, res: any) => {
+  try {
+    const x = await callerOf(req, res); if (!x) return;
+    const r = await loadRequest(x.t, String(req.params.id));
+    if (!r) return fail(res, 404, "Сбор не найден");
+    if (!(await canManageRequest(x.t, r, x.c))) return fail(res, 403, "Нет прав");
+    const subs = await loadSubs(x.t, r.id);
+    const left = r.recipients.filter(p => !subs[p.uid]?.complete || subs[p.uid]?.review?.status === "returned").map(p => p.uid);
+    if (!left.length) return res.json({ success: true, sent: 0 });
+    const sent = await deliver({ tenantId: x.t, event: "docs.remind", uids: left, type: "docs", title: `Напоминание от ${x.c.name}: ${r.title}`, body: `Срок — ${await dueText(x.t, r.dueAt)}`, url: await reqUrl(x.t, r.id), docId: u => `docreq_${r.id}_${u}` });
+    return res.json({ success: true, sent: sent.length, left: left.length });
+  } catch (e) { return oops(res, e); }
+});
+
+/** Проверка: «Принято» или «На доработку» с комментарием. */
+router.post("/:t/requests/:id/review", ...guard, async (req: any, res: any) => {
+  try {
+    const x = await callerOf(req, res); if (!x) return;
+    const r = await loadRequest(x.t, String(req.params.id));
+    if (!r) return fail(res, 404, "Сбор не найден");
+    if (!(await canManageRequest(x.t, r, x.c))) return fail(res, 403, "Проверяет автор сбора или завуч");
+    const uid = String(req.body?.uid || ""); const status = req.body?.status === "returned" ? "returned" : req.body?.status === "accepted" ? "accepted" : null;
+    if (!status) return fail(res, 400, "Неизвестное решение");
+    const ref = reqRef(x.t, r.id).collection("submissions").doc(uid);
+    const s = (await ref.get()).data() as Submission | undefined;
+    if (!s || !s.files.length) return fail(res, 409, "Этот сотрудник ещё ничего не сдал");
+    const comment = String(req.body?.comment ?? "").trim().slice(0, 1000);
+    const review = { status, comment, by: x.c.name, at: Date.now() } as Submission["review"];
+    // Вернули — снова не сдано, пока не загрузит исправленное.
+    await ref.update({ review, ...(status === "returned" ? { complete: false, at: null } : {}) });
+    await taskStatus(x.t, s.taskId, status === "accepted" ? "done" : "in_progress");
+    await deliver({
+      tenantId: x.t, event: "docs.review", uids: [uid], type: "docs",
+      title: status === "accepted" ? `Приняли: ${r.title}` : `Вернули на доработку: ${r.title}`, body: comment || (status === "accepted" ? "Документы приняты" : "Исправьте и загрузите заново"),
+      url: await reqUrl(x.t, r.id), docId: u => `docrev_${r.id}_${u}`,
+    }).catch(() => {});
+    await audit(req, x.t, "docs.review", { kind: "request", id: r.id, name: r.title }, `${s.name}: ${status === "accepted" ? "принято" : "на доработку"}${comment ? ` — ${comment}` : ""}`);
+    return res.json({ success: true });
+  } catch (e) { return oops(res, e); }
+});
+
+/**
+ * Ссылка на загрузку по сбору: адресат кладёт файл прямо в папку сбора, даже
+ * без доступа к самой папке. Имя — с фамилией и пунктом.
+ */
+router.post("/:t/requests/:id/upload-url", ...guard, async (req: any, res: any) => {
+  try {
+    const x = await callerOf(req, res); if (!x) return;
+    const r = await loadRequest(x.t, String(req.params.id));
+    if (!r) return fail(res, 404, "Сбор не найден");
+    const sub = (await reqRef(x.t, r.id).collection("submissions").doc(x.c.uid).get()).data() as Submission | undefined;
+    if (!sub) return fail(res, 403, "Этот сбор не для вас");
+    if (r.status !== "open") return fail(res, 409, "Сбор закрыт");
+    if (!r.lateOk && Date.now() > r.dueAt) return fail(res, 409, "Срок прошёл — после срока этот сбор не принимает");
+    if (sub.review?.status === "accepted") return fail(res, 409, "Документы уже приняты");
+    const byId = await loadFolders(x.t);
+    const folder = byId.get(r.folderId);
+    if (!folder || inTrash(folder, byId)) return fail(res, 409, "Папку сбора удалили — напишите завучу");
+    const items = itemsFor(r.items, x.c.me.placement);
+    const itemId = req.body?.itemId ? String(req.body.itemId) : "";
+    if (items.length && !items.some(i => i.id === itemId)) return fail(res, 400, "Выберите, к какому пункту файл");
+    const item = items.find(i => i.id === itemId);
+    const original = cleanFileName(req.body?.name);
+    const name = `${shortName(x.c.name)} — ${item ? `${item.label} — ` : ""}${original}`.slice(0, 180);
+    const out = await startUpload(x.t, x.c, folder, { name, size: req.body?.size }, { requestId: r.id, itemId: item?.id });
+    if ("error" in out) return fail(res, 400, out.error!);
+    return res.json({ success: true, ...out });
   } catch (e) { return oops(res, e); }
 });
 

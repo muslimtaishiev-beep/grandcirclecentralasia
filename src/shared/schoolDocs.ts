@@ -209,3 +209,144 @@ export function fileProblem(name: string, size: number): string | null {
 }
 
 export const fmtSize = (n: number) => (n >= 1073741824 ? `${(n / 1073741824).toFixed(1)} ГБ` : n >= 1048576 ? `${(n / 1048576).toFixed(1)} МБ` : `${Math.max(1, Math.round(n / 1024))} КБ`).replace(".", ",");
+
+// ── Сбор документов ─────────────────────────────────────────────────────
+
+/**
+ * Что сдать: просто файлы (не меньше min), список пунктов (по файлу на
+ * каждый) или «по классам учителя» — пункт на каждый его класс (литеры,
+ * если указаны, иначе параллели).
+ */
+export interface RequestItems { mode: "files" | "list" | "perClass"; list: { id: string; label: string }[]; min: number; prefix: string }
+
+export interface DocRequest {
+  id: string;
+  folderId: string;
+  title: string;
+  note: string;
+  /** Образцы и шаблоны (файлы этой папки) — видят все адресаты. */
+  sampleFileIds: string[];
+  audience: Audience;
+  /** Адресаты — зафиксированы при отправке (пересобираются кнопкой). */
+  recipients: { uid: string; name: string }[];
+  items: RequestItems;
+  dueAt: number;
+  /** Напоминания: за сколько часов до срока. */
+  remind: number[];
+  lateOk: boolean;
+  review: boolean;
+  /** Уведомления завучу о сдаче: раз в час одной сводкой, сразу или только итог по сроку. */
+  notifyMode: "digest" | "each" | "summary";
+  status: "open" | "closed";
+  createdBy: { uid: string; name: string };
+  createdAt: number;
+  updatedAt: number;
+  lastDigestAt?: number;
+}
+
+export interface Submission {
+  uid: string;
+  name: string;
+  files: { id: string; name: string; itemId: string | null; at: number; size: number }[];
+  complete: boolean;
+  /** Когда сдано полностью (последний нужный файл). */
+  at: number | null;
+  late: boolean;
+  review: { status: "pending" | "accepted" | "returned"; comment: string; by: string; at: number } | null;
+  taskId?: string | null;
+}
+
+export const REMIND_DEFAULT = [48, 0];
+export const MAX_RECIPIENTS = 500;
+
+export function sanitizeItems(raw: unknown): RequestItems {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const mode = r.mode === "list" || r.mode === "perClass" ? r.mode : "files";
+  const seen = new Set<string>();
+  const list = mode === "list" ? (Array.isArray(r.list) ? r.list : []).slice(0, 30).map((x: any, i: number) => ({ id: /^[\w-]{1,30}$/.test(String(x?.id)) ? String(x.id) : `i${i + 1}`, label: clip(x?.label, 80) }))
+    .filter((x: { id: string; label: string }) => x.label && !seen.has(x.id) && (seen.add(x.id), true)) : [];
+  const min = Math.round(Number(r.min));
+  return { mode: mode === "list" && !list.length ? "files" : mode, list, min: Number.isFinite(min) ? Math.max(1, Math.min(50, min)) : 1, prefix: clip(r.prefix, 60) };
+}
+
+export function sanitizeRequestInput(raw: any) {
+  const due = Number(raw?.dueAt);
+  return {
+    title: clip(raw?.title, 120), note: String(raw?.note ?? "").replace(/\r/g, "").trim().slice(0, 2000),
+    audience: sanitizeAudience(raw?.audience), items: sanitizeItems(raw?.items),
+    dueAt: Number.isFinite(due) && due > 0 ? Math.floor(due) : 0,
+    remind: [...new Set((Array.isArray(raw?.remind) ? raw.remind : REMIND_DEFAULT).map(Number).filter((h: number) => Number.isInteger(h) && h >= 0 && h <= 24 * 14))].slice(0, 4).sort((a: number, b: number) => b - a) as number[],
+    lateOk: raw?.lateOk !== false, review: raw?.review === true,
+    notifyMode: (raw?.notifyMode === "each" || raw?.notifyMode === "summary" ? raw.notifyMode : "digest") as DocRequest["notifyMode"],
+    sampleFileIds: ids(raw?.sampleFileIds, 10),
+  };
+}
+
+/** Пункты сдачи этого сотрудника. Пусто — сдаёт просто файлы. */
+export function itemsFor(items: RequestItems, p: StaffPlacement | null): { id: string; label: string }[] {
+  if (items.mode === "list") return items.list;
+  if (items.mode !== "perClass" || !p) return [];
+  const withLetters = new Set(p.classes.map(c => Number((c.match(/^\d+/) || ["0"])[0])));
+  const labels = [...p.classes, ...p.grades.filter(g => !withLetters.has(g)).map(g => `${g} класс`)];
+  return labels.map(l => ({ id: `c_${l.replace(/\s+/g, "")}`, label: `${items.prefix ? `${items.prefix} — ` : ""}${l}` }));
+}
+
+/** Сдано полностью: на каждый пункт есть файл, иначе файлов не меньше min. */
+export function isComplete(items: RequestItems, own: { id: string; label: string }[], files: { itemId: string | null }[]): boolean {
+  if (own.length) return own.every(i => files.some(f => f.itemId === i.id));
+  return files.length >= (items.mode === "files" ? items.min : 1);
+}
+
+export type SubmitStatus = "done" | "late" | "partial" | "none" | "returned" | "accepted";
+
+/** Статус адресата для списков и графиков. */
+export function submitStatus(r: Pick<DocRequest, "dueAt">, s: Submission | null | undefined, now = Date.now()): SubmitStatus {
+  if (s?.review?.status === "accepted") return "accepted";
+  if (s?.review?.status === "returned") return "returned";
+  if (s?.complete) return s.late ? "late" : "done";
+  if (s?.files.length) return "partial";
+  return "none";
+}
+export const STATUS_TEXT: Record<SubmitStatus, string> = { done: "Сдал", late: "Сдал с опозданием", partial: "Сдал частично", none: "Не сдал", returned: "На доработке", accepted: "Принято" };
+export const isDone = (st: SubmitStatus) => st === "done" || st === "late" || st === "accepted";
+
+export interface RequestStats {
+  total: number; done: number; late: number; partial: number; none: number; returned: number; accepted: number;
+  /** По признаку: класс, ступень, предмет, группа → сдали / всего; uids — для «кто это». */
+  by: Record<"grade" | "level" | "subject" | "group" | "position", { key: string; label: string; done: number; total: number; missing: string[] }[]>;
+  /** Сдачи по дням: день (ГГГГ-ММ-ДД) → сколько сдали полностью. */
+  days: { day: string; count: number }[];
+}
+
+/** Сводка сбора — общая для сервера (уведомления) и кабинета (графики). */
+export function requestStats(r: Pick<DocRequest, "dueAt" | "recipients">, subs: Record<string, Submission>, staff: StaffLite[], posNames: Record<string, string> = {}): RequestStats {
+  const st = new Map(r.recipients.map(x => [x.uid, submitStatus(r, subs[x.uid])]));
+  const out: RequestStats = { total: r.recipients.length, done: 0, late: 0, partial: 0, none: 0, returned: 0, accepted: 0, by: { grade: [], level: [], subject: [], group: [], position: [] }, days: [] };
+  for (const s of st.values()) out[s] += 1;
+  const byUid = new Map(staff.map(s => [s.uid, s]));
+  const bucket = (dim: keyof RequestStats["by"], keys: (s: StaffLite) => { key: string; label: string }[]) => {
+    const m = new Map<string, { key: string; label: string; done: number; total: number; missing: string[] }>();
+    for (const x of r.recipients) {
+      const s = byUid.get(x.uid); if (!s) continue;
+      for (const k of keys(s)) {
+        const b = m.get(k.key) || { ...k, done: 0, total: 0, missing: [] };
+        b.total++; if (isDone(st.get(x.uid)!)) b.done++; else b.missing.push(x.uid);
+        m.set(k.key, b);
+      }
+    }
+    out.by[dim] = [...m.values()];
+  };
+  bucket("grade", s => s.placement.grades.map(g => ({ key: String(g), label: `${g} класс` })));
+  bucket("level", s => levelsOf(s.placement).map(l => ({ key: l, label: { primary: "Начальная", middle: "Средняя", high: "Старшая" }[l] })));
+  bucket("subject", s => s.placement.subjects.map(x => ({ key: x.toLowerCase(), label: x })));
+  bucket("group", s => s.placement.groups.map(x => ({ key: x.toLowerCase(), label: x })));
+  bucket("position", s => (s.positionId ? [{ key: s.positionId, label: posNames[s.positionId] || s.positionName || "Должность" }] : []));
+  out.by.grade.sort((a, b) => Number(a.key) - Number(b.key));
+  const days = new Map<string, number>();
+  for (const x of r.recipients) { const s = subs[x.uid]; if (s?.complete && s.at) { const d = new Date(s.at).toISOString().slice(0, 10); days.set(d, (days.get(d) || 0) + 1); } }
+  out.days = [...days.entries()].sort().map(([day, count]) => ({ day, count }));
+  return out;
+}
+
+/** «Петрова Анна Сергеевна» → «Петрова А. С.» — для имени сданного файла. */
+export const shortName = (n: string) => { const [a, ...rest] = String(n).trim().split(/\s+/); return [a, ...rest.map(w => `${w[0] || ""}.`)].join(" ").trim(); };

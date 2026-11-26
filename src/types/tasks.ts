@@ -27,6 +27,8 @@ export interface WorkspaceTask {
   creatorStaffId: string;
   assigneeStaffIds: string[];
   relatedDealId?: string;
+  /** Задача сбора документов («Документы школы»): сдаётся там, закрывается сама. */
+  requestId?: string;
   relatedContactId?: string;
   subtasks: TaskSubItem[];
   commentsCount: number;

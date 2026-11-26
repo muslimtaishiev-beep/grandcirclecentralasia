@@ -8,12 +8,13 @@ import type { PermissionKey } from "./permissions.js";
  * `for` — у кого есть хотя бы одно из прав, тому действие и показывается
  * в настройках (пусто — всем сотрудникам). `on` — включено по умолчанию.
  */
-export type NotifySection = "admissions" | "exams" | "forms" | "email" | "work";
+export type NotifySection = "admissions" | "exams" | "forms" | "docs" | "email" | "work";
 
 export const NOTIFY_SECTIONS: { id: NotifySection; label: string }[] = [
   { id: "admissions", label: "Поступающие" },
   { id: "exams", label: "Экзамены" },
   { id: "forms", label: "Формы и заявки" },
+  { id: "docs", label: "Документы школы" },
   { id: "email", label: "Письма" },
   { id: "work", label: "Задачи и чат" },
 ];
@@ -50,6 +51,11 @@ export const NOTIFY_EVENTS: NotifyEventDef[] = [
 
   { key: "form.submission", section: "forms", label: "Новая заявка в моих формах", for: [], on: true },
 
+  { key: "docs.request", section: "docs", label: "Просят сдать документы", for: [], on: true },
+  { key: "docs.remind", section: "docs", label: "Напоминание о сроке сдачи", for: [], on: true },
+  { key: "docs.review", section: "docs", label: "Мои документы приняли или вернули", for: [], on: true },
+  { key: "docs.submitted", section: "docs", label: "Сдали документы по моему сбору", for: [], on: true },
+  { key: "docs.due", section: "docs", label: "Срок моего сбора прошёл — кто не сдал", for: [], on: true },
   { key: "email.failed", section: "email", label: "Письмо не ушло", for: ["admission:manage", "tests:manage", "team:manage", "certificates:issue", "crm:manage"], on: true },
 
   { key: "task", live: false, section: "work", label: "Задачи", for: [], on: true },
