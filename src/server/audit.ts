@@ -58,6 +58,7 @@ export async function writeAudit(db: FirebaseFirestore.Firestore, tenantId: stri
 
 /** Подписи действий — общие для сервера и экрана журнала. */
 export const AUDIT_ACTIONS: Record<string, string> = {
+  "docs.folder": "Папка документов", "docs.file": "Файл документов", "docs.upload": "Загружен документ", "docs.restore": "Возвращено из корзины документов", "docs.request": "Сбор документов", "docs.review": "Проверка сданных документов",
   "staff.placement": "Изменено место работы сотрудника", "staff.directory": "Изменён справочник предметов и групп",
   "login": "Вход",
   "invite": "Приглашение",

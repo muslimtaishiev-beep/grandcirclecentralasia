@@ -4,9 +4,9 @@ import { randomBytes } from "crypto";
 import { requireFirebaseAuth } from "./authRoutes.js";
 import { hasPerm, staffCaller } from "../server/access.js";
 import { actorOf, writeAudit } from "../server/audit.js";
-import { appUrl } from "../server/emailEvents.js";
 import { loadCandidateForm } from "./admissionRoutes.js";
 import { loadPage, pageDoc, readUrl, resultBucket, signVariant } from "../server/resultPages.js";
+import { ensureBucketCors } from "../server/storage.js";
 import { DECISION_LABEL } from "../shared/examRun.js";
 import { resolveDecisions } from "../shared/formDecisions.js";
 import { MEDIA_UPLOAD, presetVariant, blankVariant, sanitizeResultPage, DEFAULT_VARIANT_KEY, PRESETS } from "../shared/resultPages.js";
@@ -135,24 +135,6 @@ router.delete("/:t/:id", requireFirebaseAuth, async (req: any, res: any) => {
 });
 
 // ── Загрузка видео и картинок ───────────────────────────────────────────
-
-let corsReady: Promise<void> | null = null;
-/** Один раз: бакет принимает PUT с домена сайта (дописывается к существующим правилам, лишнее не трогаем). */
-function ensureBucketCors(): Promise<void> {
-  if (corsReady) return corsReady;
-  corsReady = (async () => {
-    const bucket = resultBucket();
-    const [meta] = await bucket.getMetadata();
-    const cors: any[] = Array.isArray(meta?.cors) ? meta.cors : [];
-    const MARK = "x-goog-content-length-range";
-    if (cors.some(r => (r.responseHeader || []).includes(MARK))) return;
-    const origin = [...new Set([await appUrl(), "http://localhost:5173", "http://localhost:3000"])];
-    // Хранилище берёт первое подходящее правило — заголовок нужен и в уже существующих.
-    const patched = cors.map(r => ({ ...r, responseHeader: [...new Set([...(r.responseHeader || []), "Content-Type", MARK])] }));
-    await bucket.setCorsConfiguration([...patched, { origin, method: ["PUT", "GET", "HEAD"], responseHeader: ["Content-Type", MARK], maxAgeSeconds: 3600 }]);
-  })().catch(e => { console.error("[result-pages] cors:", e?.message || e); corsReady = null; });
-  return corsReady;
-}
 
 /**
  * Подписанная ссылка на загрузку файла прямо в бакет. Клиент делает PUT на

@@ -30,6 +30,8 @@ export type PermissionKey =
   | "journals:all"
   // Презентации
   | "presentations:manage"
+  // Документы школы: папки, сборы документов, аналитика
+  | "files:manage"
   // Поступающие: приём, психологическая диагностика
   | "admission:manage" | "psych:conduct" | "psych:view"
   // Приём заявок и бронирование
@@ -72,6 +74,7 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: "admission:manage", label: "Поступающие: приём", description: "Карточки поступающих, академическая часть, направления на тест, бумажные результаты, решение", category: "Поступающие" },
   { key: "psych:conduct", label: "Психологическая диагностика", description: "Проводить диагностику по анкетам психолога и видеть её результаты", category: "Поступающие" },
   { key: "psych:view", label: "Просмотр психологических заключений", description: "Видеть психологические анкеты целиком (без права заполнять) — директор, завуч", category: "Поступающие" },
+  { key: "files:manage", label: "Управление документами школы", description: "Папки и доступ к ним, сбор документов у сотрудников, проверка и аналитика сдачи", category: "Работа" },
   { key: "presentations:manage", label: "Управление презентациями", description: "Загрузка презентаций, удаление и настройка доступа ко всем презентациям организации", category: "Работа" },
 
   { key: "intake:manage", label: "Приём заявок и бронирование", description: "Потоки приёма с внешних сайтов, занимаемые ресурсы и брони", category: "CRM и продажи" },
@@ -115,7 +118,7 @@ export const PERMISSION_CODES: Record<PermissionKey, string> = {
   "tests:read": "tr", "tests:manage": "tm", "tests:review": "tv", "certificates:issue": "ci", "placement:manage": "pm",
   "edu:schedule": "es", "edu:payroll": "ep",
   "crm:read": "cr", "crm:manage": "cm", "intake:manage": "ik", "forms:notify": "fn",
-  "chat:use": "ch", "tasks:use": "ta", "docs:use": "dc", "sheets:use": "sh", "tickets:check": "tk", "journals:manage": "jm", "journals:all": "ja", "presentations:manage": "pr",
+  "chat:use": "ch", "tasks:use": "ta", "docs:use": "dc", "sheets:use": "sh", "tickets:check": "tk", "journals:manage": "jm", "journals:all": "ja", "presentations:manage": "pr", "files:manage": "fm",
   "admission:manage": "ad", "psych:conduct": "ps", "psych:view": "pv",
   "team:manage": "tg", "settings:manage": "sg", "team:view": "tw", "audit:view": "au", "finance:view": "fv",
 };
@@ -224,6 +227,8 @@ export const NAV_PERMISSION: Record<string, PermissionKey | PermissionKey[] | nu
   journals: null,
   // Открыт всем сотрудникам: каждый видит презентации, которые ему открыты.
   presentations: null,
+  // Открыт всем сотрудникам: папки видны по их доступу, сборы — адресатам.
+  schoolDocs: null,
   schedule: "edu:schedule",
   subscriptions: "edu:schedule",
   payroll: "edu:payroll",
@@ -266,6 +271,7 @@ export const ORG_MODULES: { key: string; label: string; description: string; per
   { key: "mod_crm", label: "CRM и продажи", description: "Контакты, сделки, воронки", permissions: ["crm:read", "crm:manage"], screens: ["crm"] },
   { key: "mod_tickets", label: "Заявки и билеты", description: "Конструктор заявок, QR-билеты, проверка на входе", permissions: ["tickets:check"], screens: ["forms", "tickets"] },
   { key: "mod_intake", label: "Приём и бронирование", description: "Заявки с внешних сайтов, занимаемые ресурсы, брони", permissions: ["intake:manage"], screens: ["intake"] },
+  { key: "mod_files", label: "Документы школы", description: "Папки, сбор документов у сотрудников, сроки и аналитика", permissions: ["files:manage"], screens: ["schoolDocs"] },
   { key: "mod_docs", label: "Документы и таблицы", description: "Совместные документы и таблицы", permissions: ["docs:use", "sheets:use"], screens: ["docs", "sheets"] },
 ];
 

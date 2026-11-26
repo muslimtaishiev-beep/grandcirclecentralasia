@@ -77,6 +77,7 @@ const JournalsListPage = lazy(() => import("./pages/workspace/journals/JournalsL
 const JournalPage = lazy(() => import("./pages/workspace/journals/JournalPage"));
 const JournalSign = lazy(() => import("./pages/public/JournalSign"));
 const PresentationsPage = lazy(() => import("./pages/workspace/presentations/PresentationsPage"));
+const SchoolDocsPage = lazy(() => import("./pages/workspace/schoolDocs/SchoolDocsPage"));
 const ShowPresentation = lazy(() => import("./pages/public/ShowPresentation"));
 const AdmissionLink = lazy(() => import("./pages/public/AdmissionLink"));
 const AdmissionsScreen = lazy(() => import("./pages/workspace/admissions/AdmissionsScreen"));
@@ -339,6 +340,7 @@ export default function App() {
             {/* «Поступающие» живут во вкладке «Психолог» раздела «Экзамены»; старый адрес ведёт туда. */}
             <Route path=":orgId/admissions" element={<RequirePermission navKey="admissions"><GracefulErrorBoundary fallbackTitle="Ошибка Приёма"><AdmissionsScreen /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/presentations" element={<RequirePermission navKey="presentations"><GracefulErrorBoundary fallbackTitle="Ошибка Презентаций"><Suspense fallback={null}><PresentationsPage /></Suspense></GracefulErrorBoundary></RequirePermission>} />
+            <Route path=":orgId/files" element={<RequirePermission navKey="schoolDocs"><GracefulErrorBoundary fallbackTitle="Ошибка Документов школы"><Suspense fallback={null}><SchoolDocsPage /></Suspense></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/journals/:journalId" element={<RequirePermission navKey="journals"><GracefulErrorBoundary fallbackTitle="Ошибка Журнала"><JournalPage /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/tickets" element={<RequirePermission navKey="tickets"><GracefulErrorBoundary fallbackTitle="Ошибка Сканера Билетов"><TicketScanner /></GracefulErrorBoundary></RequirePermission>} />
             <Route path=":orgId/functions/studio" element={<RequirePermission navKey="functions"><GracefulErrorBoundary fallbackTitle="Ошибка Визуального Конструктора"><FunctionStudio /></GracefulErrorBoundary></RequirePermission>} />

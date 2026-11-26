@@ -14,7 +14,7 @@ import type { PermissionKey } from "./permissions.js";
 export type NavIcon =
   | "home" | "admissions" | "exams" | "schedule" | "journals" | "subscriptions" | "presentations"
   | "crm" | "forms" | "tickets" | "intake" | "chat" | "tasks" | "docs" | "sheets" | "digitize" | "payroll"
-  | "team" | "audit" | "integrations" | "departments" | "workspace" | "emails" | "automations" | "sites" | "functions" | "billing" | "builder";
+  | "files" | "team" | "audit" | "integrations" | "departments" | "workspace" | "emails" | "automations" | "sites" | "functions" | "billing" | "builder";
 
 export interface NavSub { label: string; path: string; keywords?: string }
 
@@ -87,6 +87,10 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         screen: "tasks", label: "Задачи", path: "/tasks", icon: "tasks",
         sub: [{ label: "Задачи: список", path: "/tasks/list" }, { label: "Задачи: доска", path: "/tasks/board", keywords: "канбан" }],
+      },
+      {
+        screen: "schoolDocs", label: "Документы школы", path: "/files", icon: "files",
+        sub: [{ label: "Папки", path: "/files", keywords: "диск файлы отчёты контрольные" }, { label: "Сборы документов", path: "/files?tab=requests", keywords: "сдать отчёт срок" }],
       },
       { screen: "docs", label: "Документы", path: "/docs", icon: "docs", sub: [{ label: "Новый документ", path: "/docs/new" }] },
       { screen: "sheets", label: "Таблицы", path: "/sheets", icon: "sheets", sub: [{ label: "Новая таблица", path: "/sheets/new" }] },
